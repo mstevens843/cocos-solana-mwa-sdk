@@ -29,6 +29,7 @@ export interface CachedAuth {
     pubkey: string;
     authToken: string;
     walletUriBase: string;
+    walletPackage: string;  // Android package name of wallet used (e.g., "app.phantom", "" for Seed Vault)
     timestamp: number;      // Unix timestamp (seconds)
 }
 
@@ -50,6 +51,25 @@ export interface SendResult {
     signatures: string[];   // base58-encoded transaction signatures
 }
 
+// ─── Wallet Adapter Types ────────────────────────────────────────────────────
+
+/** Info about a known MWA-compatible wallet, returned by detectWallets(). */
+export interface WalletInfo {
+    name: string;           // display name (e.g., "Phantom")
+    packageName: string;    // Android package (e.g., "app.phantom")
+    installed: boolean;     // whether the wallet is installed on this device
+    storeUrl: string;       // Play Store URL for installation
+}
+
+/** Device detection result, returned by detectDevice(). */
+export interface DeviceInfo {
+    isSeeker: boolean;      // Solana Mobile Seeker (Chapter2)
+    isSaga: boolean;        // Solana Mobile Saga
+    isSolanaMobile: boolean; // any Solana Mobile device
+    manufacturer: string;   // Build.MANUFACTURER
+    model: string;          // Build.MODEL
+}
+
 // ─── Bridge Protocol ─────────────────────────────────────────────────────────
 
 /** Command names supported by the JsbBridge protocol. */
@@ -57,10 +77,15 @@ export type MWACommandName =
     | 'authorize'
     | 'reauthorize'
     | 'deauthorize'
+    | 'authorize_and_sign'
+    | 'sign_and_deauthorize'
     | 'sign_messages'
     | 'sign_and_send'
     | 'get_capabilities'
-    | 'is_available';
+    | 'is_available'
+    | 'detect_wallets'
+    | 'detect_device'
+    | 'open_url';
 
 /** Command sent from TypeScript to Java via JsbBridge. */
 export interface MWACommand {

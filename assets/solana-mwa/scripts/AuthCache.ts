@@ -79,8 +79,8 @@ export class AuthCache {
      * Validates pubkey before storing (Bug #5 prevention).
      * Logs auth_token_len for visibility (Bug U3 prevention).
      */
-    set(pubkey: string, authToken: string, walletUriBase: string = ''): void {
-        console.log(`${TAG} set | START pubkey=${pubkey} auth_token_len=${authToken?.length ?? 0} wallet_uri_base=${walletUriBase || '(empty)'}`);
+    set(pubkey: string, authToken: string, walletUriBase: string = '', walletPackage: string = ''): void {
+        console.log(`${TAG} set | START pubkey=${pubkey} auth_token_len=${authToken?.length ?? 0} wallet_uri_base=${walletUriBase || '(empty)'} wallet_package=${walletPackage || '(default)'}`);
 
         // Bug #5 prevention: reject empty/invalid pubkeys
         if (!isValidBase58Pubkey(pubkey)) {
@@ -97,6 +97,7 @@ export class AuthCache {
             pubkey,
             authToken: authToken || '',
             walletUriBase: walletUriBase || '',
+            walletPackage: walletPackage || '',
             timestamp: Math.floor(Date.now() / 1000),
         };
 

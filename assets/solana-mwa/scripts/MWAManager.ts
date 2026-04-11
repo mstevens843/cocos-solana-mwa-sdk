@@ -32,6 +32,8 @@ import { isValidBase58Pubkey } from './Base58';
 import {
     AuthorizeResult,
     WalletCapabilities,
+    WalletInfo,
+    DeviceInfo,
     MWAError,
 } from './MWATypes';
 import {
@@ -72,6 +74,9 @@ export class MWAManager extends Component {
 
     /** Wallet URI base from MWA authorize response. */
     public walletUriBase: string = '';
+
+    /** Android package name of the connected wallet (e.g., "app.phantom"). Empty if connected via default picker. */
+    public connectedWalletPackage: string = '';
 
     // ─── Internal ────────────────────────────────────────────────────────
 
@@ -151,6 +156,73 @@ export class MWAManager extends Component {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    //  WALLET & DEVICE DETECTION
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Detect which MWA-compatible wallets are installed on the device.
+     * @returns Array of {name, packageName, installed, storeUrl}
+     */
+    async detectWallets(): Promise<WalletInfo[]> {
+        console.log(`${TAG} detectWallets | START — sending detect_wallets to bridge`);
+        try {
+            const result = await this._bridge.sendCommand<{ wallets: WalletInfo[] }>('detect_wallets', {});
+            const wallets = result?.wallets ?? [];
+            const installed = wallets.filter(w => w.installed).length;
+            for (const w of wallets) {
+                console.log(`${TAG} detectWallets |   ${w.installed ? 'INSTALLED' : 'NOT_INSTALLED'} ${w.name} (${w.packageName})`);
+            }
+            console.log(`${TAG} detectWallets | DONE total=${wallets.length} installed=${installed} not_installed=${wallets.length - installed}`);
+            return wallets;
+        } catch (e: any) {
+            console.log(`${TAG} detectWallets | FAIL error="${e?.message || e}"`);
+            return [];
+        }
+    }
+
+    /**
+     * Detect if running on a Solana Mobile device (Seeker/Saga).
+     * @returns {isSeeker, isSaga, isSolanaMobile, manufacturer, model}
+     */
+    async detectDevice(): Promise<DeviceInfo> {
+        console.log(`${TAG} detectDevice | START`);
+        const fallback: DeviceInfo = { isSeeker: false, isSaga: false, isSolanaMobile: false, manufacturer: '', model: '' };
+        try {
+            const result = await this._bridge.sendCommand<DeviceInfo>('detect_device', {});
+            console.log(`${TAG} detectDevice | DONE isSeeker=${result?.isSeeker} isSaga=${result?.isSaga} manufacturer=${result?.manufacturer} model=${result?.model}`);
+            return result ?? fallback;
+        } catch (e: any) {
+            console.log(`${TAG} detectDevice | FAIL ${e?.message || e}`);
+            return fallback;
+        }
+    }
+
+    /**
+     * Authorize with a specific wallet by Android package name.
+     * Uses Intent.setPackage() to bypass the OS wallet picker.
+     *
+     * @param targetPackage Android package name (e.g., "app.phantom")
+     * @returns AuthorizeResult on success, null on failure
+     */
+    async authorizeWithWallet(targetPackage: string): Promise<AuthorizeResult | null> {
+        console.log(`${TAG} authorizeWithWallet | START targetPackage=${targetPackage}`);
+        return this.authorize(targetPackage);
+    }
+
+    /**
+     * Open a URL via native Android intent (e.g., Play Store link).
+     */
+    async openUrl(url: string): Promise<void> {
+        console.log(`${TAG} openUrl | START url=${url}`);
+        try {
+            await this._bridge.sendCommand('open_url', { url });
+            console.log(`${TAG} openUrl | DONE`);
+        } catch (e: any) {
+            console.log(`${TAG} openUrl | FAIL ${e?.message || e}`);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     //  AUTHORIZE
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -168,8 +240,8 @@ export class MWAManager extends Component {
      *
      * @returns AuthorizeResult on success, null on failure/cancellation
      */
-    async authorize(): Promise<AuthorizeResult | null> {
-        console.log(`${TAG} authorize | START is_connected=${this.isConnected} authorizing=${this._authorizing}`);
+    async authorize(targetPackage?: string): Promise<AuthorizeResult | null> {
+        console.log(`${TAG} authorize | START is_connected=${this.isConnected} authorizing=${this._authorizing} targetPackage=${targetPackage || '(none)'}`);
 
         // Guard: don't allow concurrent authorizations
         if (this._authorizing) {
@@ -192,14 +264,25 @@ export class MWAManager extends Component {
             // Compound command: authorize + signMessage in one MWA session
             // Matches Unity/Godot which chain signMessage for biometric confirmation
             const signInMessage = `Sign in to ${identity.appName}`;
-            const compoundParams = {
+            const compoundParams: Record<string, any> = {
                 ...params,
                 signInMessage,
             };
+            if (targetPackage) {
+                compoundParams.targetPackage = targetPackage;
+            }
 
-            console.log(`${TAG} authorize | sending authorize_and_sign command via bridge app="${identity.appName}" cluster=${identity.cluster}`);
-
-            const result = await this._bridge.sendCommand<AuthorizeResult & { signInSignature: string }>('authorize_and_sign', compoundParams);
+            // Seed Vault: compound authorize + signMessage in one session (biometric)
+            // Third-party wallets (Phantom etc.): plain authorize only (no sign chaining — Phantom returns -3)
+            let result: (AuthorizeResult & { signInSignature?: string }) | null;
+            if (targetPackage) {
+                console.log(`${TAG} authorize | sending PLAIN authorize command (third-party wallet) app="${identity.appName}" cluster=${identity.cluster} targetPackage=${targetPackage}`);
+                const authorizeParams: Record<string, any> = { ...params, targetPackage };
+                result = await this._bridge.sendCommand<AuthorizeResult>('authorize', authorizeParams);
+            } else {
+                console.log(`${TAG} authorize | sending authorize_and_sign command (Seed Vault) app="${identity.appName}" cluster=${identity.cluster}`);
+                result = await this._bridge.sendCommand<AuthorizeResult & { signInSignature: string }>('authorize_and_sign', compoundParams);
+            }
 
             // Validate response (Bug G4, G5 prevention)
             if (!result || !result.pubkey) {
@@ -216,31 +299,34 @@ export class MWAManager extends Component {
                 return null;
             }
 
-            // Check biometric confirmation signature
-            if (!result.signInSignature) {
+            // Check biometric confirmation signature (only for Seed Vault compound flow)
+            if (!targetPackage && !result.signInSignature) {
                 console.log(`${TAG} authorize | FAIL biometric confirmation rejected — no sign-in signature`);
                 this._updateStatus('Authorization cancelled — biometric not confirmed');
                 this.node.emit(MWA_AUTH_FAILED, 'Biometric confirmation rejected');
                 return null;
             }
 
-            console.log(`${TAG} authorize | biometric confirmed sig_len=${result.signInSignature.length}`);
+            if (result.signInSignature) {
+                console.log(`${TAG} authorize | biometric confirmed sig_len=${result.signInSignature.length}`);
+            }
 
             // Bug U3 prevention: warn if auth token is empty
             if (!result.authToken || result.authToken.length === 0) {
                 console.log(`${TAG} authorize | WARN auth_token is empty — reauthorization may fail (Unity Bug U3)`);
             }
 
-            // Set connected state
+            // Set connected state (needed for signMessage to work)
             this.connectedPubkey = result.pubkey;
             this.authToken = result.authToken || '';
             this.walletUriBase = result.walletUriBase || '';
+            this.connectedWalletPackage = targetPackage || '';
             this.isConnected = true;
 
-            console.log(`${TAG} authorize | SUCCESS pubkey=${this.connectedPubkey} auth_token_len=${this.authToken.length} wallet_uri_base=${this.walletUriBase || '(empty)'}`);
+            console.log(`${TAG} authorize | SUCCESS pubkey=${this.connectedPubkey} auth_token_len=${this.authToken.length} wallet_uri_base=${this.walletUriBase || '(empty)'} connectedWalletPackage="${this.connectedWalletPackage || '(default picker)'}"`);
 
             // ─── Cache Auth ──────────────────────────────────────────────
-            this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase);
+            this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase, this.connectedWalletPackage);
             console.log(`${TAG} authorize | cached auth pubkey=${this.connectedPubkey} token_len=${this.authToken.length}`);
 
             // ─── Emit Success ────────────────────────────────────────────
@@ -285,7 +371,13 @@ export class MWAManager extends Component {
             return null;
         }
 
-        console.log(`${TAG} reauthorize | cached_pubkey=${cached.pubkey} cached_token_len=${cached.authToken?.length ?? 0} timestamp=${cached.timestamp}`);
+        // Restore connectedWalletPackage from cache if not already set (e.g., app restart)
+        if (!this.connectedWalletPackage && cached.walletPackage) {
+            this.connectedWalletPackage = cached.walletPackage;
+            console.log(`${TAG} reauthorize | RESTORED walletPackage="${cached.walletPackage}" from cache`);
+        }
+
+        console.log(`${TAG} reauthorize | cached_pubkey=${cached.pubkey} cached_token_len=${cached.authToken?.length ?? 0} walletPackage=${this.connectedWalletPackage || '(default)'} timestamp=${cached.timestamp}`);
         this._updateStatus('Reauthorizing with cached token...');
 
         try {
@@ -298,8 +390,8 @@ export class MWAManager extends Component {
                 authToken: cached.authToken,
             };
 
-            console.log(`${TAG} reauthorize | sending reauthorize command via bridge`);
-            const result = await this._bridge.sendCommand<AuthorizeResult>('reauthorize', params);
+            console.log(`${TAG} reauthorize | sending reauthorize command via bridge targetPackage=${this.connectedWalletPackage || '(default)'}`);
+            const result = await this._bridge.sendCommand<AuthorizeResult>('reauthorize', this._withTargetPackage(params));
 
             if (!result || !result.pubkey || !isValidBase58Pubkey(result.pubkey)) {
                 console.log(`${TAG} reauthorize | FAIL invalid response — falling back to full authorize()`);
@@ -318,7 +410,7 @@ export class MWAManager extends Component {
             this.isConnected = true;
 
             // Update cache with fresh token
-            this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase);
+            this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase, this.connectedWalletPackage);
 
             console.log(`${TAG} reauthorize | SUCCESS pubkey=${this.connectedPubkey} auth_token_len=${this.authToken.length}`);
             this._updateStatus(`Reconnected: ${this._truncatePubkey(this.connectedPubkey)}`);
@@ -356,7 +448,7 @@ export class MWAManager extends Component {
         if (this.isConnected && this.authToken) {
             try {
                 console.log(`${TAG} deauthorize | sending deauthorize command to wallet via bridge`);
-                await this._bridge.sendCommand('deauthorize', { authToken: this.authToken });
+                await this._bridge.sendCommand('deauthorize', this._withTargetPackage({ authToken: this.authToken }));
                 console.log(`${TAG} deauthorize | deauthorize RPC sent successfully`);
             } catch (e: any) {
                 // Deauthorize failure is non-fatal — we still clear local state
@@ -368,12 +460,14 @@ export class MWAManager extends Component {
 
         // Clear local state
         const oldPubkey = this.connectedPubkey;
+        const oldPackage = this.connectedWalletPackage;
         this.connectedPubkey = '';
         this.authToken = '';
         this.walletUriBase = '';
+        this.connectedWalletPackage = '';
         this.isConnected = false;
 
-        console.log(`${TAG} deauthorize | DONE old_pubkey=${oldPubkey} state_cleared=true`);
+        console.log(`${TAG} deauthorize | DONE old_pubkey=${oldPubkey} old_walletPackage="${oldPackage}" state_cleared=true`);
         this._updateStatus('Disconnected');
         this.node.emit(MWA_DISCONNECTED);
     }
@@ -412,11 +506,11 @@ export class MWAManager extends Component {
 
             console.log(`${TAG} signMessage | sending sign_messages command payload_bytes=${messageBytes.length} payload_base64_len=${payloadBase64.length}`);
 
-            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_messages', {
+            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_messages', this._withTargetPackage({
                 payloads: [payloadBase64],
                 addresses: [this.connectedPubkey],
                 authToken: this.authToken,
-            });
+            }));
 
             // Validate response
             if (!result || !result.signatures || result.signatures.length === 0) {
@@ -466,11 +560,11 @@ export class MWAManager extends Component {
             const payloadsBase64 = payloads.map(p => this._uint8ArrayToBase64(p));
             console.log(`${TAG} signMessages | sending sign_messages command payload_count=${payloadsBase64.length}`);
 
-            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_messages', {
+            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_messages', this._withTargetPackage({
                 payloads: payloadsBase64,
                 addresses: [this.connectedPubkey],
                 authToken: this.authToken,
-            });
+            }));
 
             if (!result || !result.signatures) {
                 console.log(`${TAG} signMessages | FAIL empty response`);
@@ -538,10 +632,10 @@ export class MWAManager extends Component {
 
             console.log(`${TAG} signAndSendTransactions | sending sign_and_send command payload_count=${payloadsBase64.length}`);
 
-            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_send', {
+            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_send', this._withTargetPackage({
                 payloads: payloadsBase64,
                 authToken: this.authToken,
-            });
+            }));
 
             if (!result || !result.signatures) {
                 console.log(`${TAG} signAndSendTransactions | FAIL empty response`);
@@ -591,7 +685,7 @@ export class MWAManager extends Component {
         try {
             console.log(`${TAG} getCapabilities | sending get_capabilities command`);
 
-            const result = await this._bridge.sendCommand<WalletCapabilities>('get_capabilities');
+            const result = await this._bridge.sendCommand<WalletCapabilities>('get_capabilities', this._withTargetPackage({}));
 
             if (!result) {
                 console.log(`${TAG} getCapabilities | FAIL empty response`);
@@ -642,47 +736,63 @@ export class MWAManager extends Component {
             return;
         }
 
-        // Compound command: sign confirmation + deauthorize in one MWA session
-        // Fixes bug where back-to-back intents caused the deauthorize to be dismissed
-        const identity = getAppIdentity();
-        const params = {
-            authToken: this.authToken,
-            appName: identity.appName,
-            appUri: identity.appUri,
-            appIconPath: identity.appIconPath,
-            message: `Confirm account deletion for ${identity.appName}`,
-            pubkey: this.connectedPubkey,
-        };
+        // Third-party wallets (Phantom, Backpack, etc.): use confirmDelete() first
+        // which requires a double-tap in-app (no extra wallet interaction).
+        // The caller (AppUI._onDelete) handles the double-tap confirmation UX.
+        if (this.connectedWalletPackage) {
+            console.log(`${TAG} deleteAccount | THIRD_PARTY wallet="${this.connectedWalletPackage}" — deauthorize + clear cache`);
+            this._updateStatus('Deleting account...');
+            try {
+                await this.deauthorize();
+            } catch (e: any) {
+                console.log(`${TAG} deleteAccount | deauthorize failed: ${e?.message || e} — clearing local state anyway`);
+            }
+            this._cache.clearAll();
+            console.log(`${TAG} deleteAccount | DONE (third-party) cache cleared`);
+            this._updateStatus('Account deleted — all cached data cleared');
+        } else {
+            // Seed Vault: compound sign confirmation + deauthorize in one MWA session
+            const identity = getAppIdentity();
+            const params = {
+                authToken: this.authToken,
+                appName: identity.appName,
+                appUri: identity.appUri,
+                appIconPath: identity.appIconPath,
+                message: `Confirm account deletion for ${identity.appName}`,
+                pubkey: this.connectedPubkey,
+            };
 
-        this._updateStatus('Confirm deletion in wallet...');
-        console.log(`${TAG} deleteAccount | sending sign_and_deauthorize compound command`);
+            this._updateStatus('Confirm deletion in wallet...');
+            console.log(`${TAG} deleteAccount | SEED_VAULT — sending sign_and_deauthorize compound command`);
 
-        try {
-            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_deauthorize', params);
+            try {
+                const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_deauthorize', this._withTargetPackage(params));
 
-            if (!result?.signatures || result.signatures.length === 0) {
-                console.log(`${TAG} deleteAccount | ABORTED user did not confirm — no signature returned`);
-                this._updateStatus('Delete cancelled — confirmation required');
+                if (!result?.signatures || result.signatures.length === 0) {
+                    console.log(`${TAG} deleteAccount | ABORTED user did not confirm — no signature returned`);
+                    this._updateStatus('Delete cancelled — confirmation required');
+                    return;
+                }
+
+                console.log(`${TAG} deleteAccount | CONFIRMED sig=${result.signatures[0].substring(0, 20)}... — deauthorized in same session`);
+            } catch (e: any) {
+                console.log(`${TAG} deleteAccount | REJECTED error=${e?.message || e}`);
+                this._updateStatus('Delete cancelled');
                 return;
             }
 
-            console.log(`${TAG} deleteAccount | CONFIRMED sig=${result.signatures[0].substring(0, 20)}... — deauthorized in same session`);
-        } catch (e: any) {
-            console.log(`${TAG} deleteAccount | REJECTED error=${e?.message || e}`);
-            this._updateStatus('Delete cancelled');
-            return;
+            // Clear local state (Seed Vault path)
+            this.isConnected = false;
+            this.connectedPubkey = '';
+            this.authToken = '';
+            this.walletUriBase = '';
+            this.connectedWalletPackage = '';
+            this._cache.clearAll();
+            this.node.emit(MWA_DISCONNECTED);
+
+            console.log(`${TAG} deleteAccount | DONE cache cleared, session destroyed`);
+            this._updateStatus('Account deleted — all cached data cleared');
         }
-
-        // Clear local state
-        this.isConnected = false;
-        this.connectedPubkey = '';
-        this.authToken = '';
-        this.walletUriBase = '';
-        this._cache.clearAll();
-        this.node.emit(MWA_DISCONNECTED);
-
-        console.log(`${TAG} deleteAccount | DONE cache cleared, session destroyed`);
-        this._updateStatus('Account deleted — all cached data cleared');
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -700,6 +810,19 @@ export class MWAManager extends Component {
     private _truncatePubkey(pubkey: string): string {
         if (!pubkey || pubkey.length <= 8) return pubkey || '';
         return pubkey.substring(0, 4) + '...' + pubkey.substring(pubkey.length - 4);
+    }
+
+    /**
+     * Inject connectedWalletPackage as targetPackage into bridge command params.
+     * Ensures subsequent operations target the same wallet the user chose at connect.
+     */
+    private _withTargetPackage(params: Record<string, any>): Record<string, any> {
+        if (this.connectedWalletPackage) {
+            console.log(`${TAG} _withTargetPackage | INJECTING targetPackage="${this.connectedWalletPackage}" into params`);
+            return { ...params, targetPackage: this.connectedWalletPackage };
+        }
+        console.log(`${TAG} _withTargetPackage | NO_TARGET — connectedWalletPackage is empty, using default picker`);
+        return params;
     }
 
     /**

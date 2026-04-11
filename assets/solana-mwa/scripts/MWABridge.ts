@@ -226,8 +226,9 @@ export class MWABridge {
     private async _mockResponse<T>(cmd: MWACommandName, params: Record<string, any>, id: string): Promise<T> {
         console.log(`${TAG} mockResponse | START cmd=${cmd} id=${id}`);
 
-        // Simulate wallet interaction delay (500ms-2s)
-        const delay = cmd === 'is_available' ? 100 : 1500;
+        // Simulate wallet interaction delay
+        const fastCmds = ['is_available', 'detect_wallets', 'detect_device', 'open_url'];
+        const delay = fastCmds.includes(cmd) ? 100 : 1500;
         await this._delay(delay);
 
         let result: any;
@@ -292,6 +293,51 @@ export class MWABridge {
             case 'is_available':
                 result = { available: true };
                 console.log(`${TAG} mockResponse | cmd=is_available result=true (mock always available)`);
+                break;
+
+            case 'authorize_and_sign':
+                result = {
+                    pubkey: 'MockPK111111111111111111111111111111111111111',
+                    authToken: 'mock_auth_token_' + Date.now(),
+                    walletUriBase: 'https://mock-wallet.example.com',
+                    signInSignature: 'MOCK_SIG_' + btoa(String(Date.now())).substring(0, 79),
+                };
+                console.log(`${TAG} mockResponse | cmd=authorize_and_sign mock_pubkey=${result.pubkey}`);
+                break;
+
+            case 'sign_and_deauthorize': {
+                const mockDelSig = 'MOCK_SIG_' + btoa(String(Date.now())).substring(0, 79);
+                result = { signatures: [mockDelSig] };
+                console.log(`${TAG} mockResponse | cmd=sign_and_deauthorize mock_sig_len=${mockDelSig.length}`);
+                break;
+            }
+
+            case 'detect_wallets':
+                result = {
+                    wallets: [
+                        { name: 'Phantom', packageName: 'app.phantom', installed: true, storeUrl: 'https://play.google.com/store/apps/details?id=app.phantom' },
+                        { name: 'Backpack', packageName: 'app.backpack', installed: false, storeUrl: 'https://play.google.com/store/apps/details?id=app.backpack' },
+                        { name: 'Solflare', packageName: 'com.solflare.mobile', installed: true, storeUrl: 'https://play.google.com/store/apps/details?id=com.solflare.mobile' },
+                        { name: 'Espresso Cash', packageName: 'com.pleasecrypto.flutter', installed: false, storeUrl: 'https://play.google.com/store/apps/details?id=com.pleasecrypto.flutter' },
+                    ],
+                };
+                console.log(`${TAG} mockResponse | cmd=detect_wallets mock_wallet_count=4`);
+                break;
+
+            case 'detect_device':
+                result = {
+                    isSeeker: false,
+                    isSaga: false,
+                    isSolanaMobile: false,
+                    manufacturer: 'MockManufacturer',
+                    model: 'MockModel',
+                };
+                console.log(`${TAG} mockResponse | cmd=detect_device mock_device isSeeker=false`);
+                break;
+
+            case 'open_url':
+                result = {};
+                console.log(`${TAG} mockResponse | cmd=open_url mock (no-op in editor)`);
                 break;
 
             default:
