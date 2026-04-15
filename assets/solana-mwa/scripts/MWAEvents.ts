@@ -23,7 +23,7 @@ export const MWA_DISCONNECTED = 'mwa-disconnected';
 /** Emitted after successful message signing. Data: signature (string). */
 export const MWA_MESSAGE_SIGNED = 'mwa-message-signed';
 
-/** Emitted after successful transaction signing. Data: signature (string). */
+/** Emitted after successful transaction signing (sign-only, no broadcast). Data: signedTransactions (Uint8Array[]). */
 export const MWA_TRANSACTION_SIGNED = 'mwa-transaction-signed';
 
 /** Emitted after successful sign & send. Data: signatures (string[]). */

@@ -29,6 +29,7 @@ const WALLET_BUTTONS = [
     { nodeName: 'BackpackButton', pkg: 'app.backpack' },
     { nodeName: 'SolflareButton', pkg: 'com.solflare.mobile' },
     { nodeName: 'EspressoButton', pkg: 'com.pleasecrypto.flutter' },
+    { nodeName: 'JupiterButton',  pkg: 'ag.jup.app' },
 ];
 
 @ccclass('AppUI')
@@ -130,11 +131,11 @@ export class AppUI extends Component {
 
         // ── Wire home buttons ──
         const homeBtnNames = [
-            'SignMessageButton', 'SignSendButton',
+            'SignMessageButton', 'SignTxButton', 'SignSendButton',
             'CapabilitiesButton', 'ReconnectHomeButton', 'DisconnectButton', 'DeleteButton',
         ];
         const homeHandlers = [
-            this._onSignMessage, this._onSignAndSend,
+            this._onSignMessage, this._onSignTransaction, this._onSignAndSend,
             this._onCapabilities, this._onReconnectHome, this._onDisconnect, this._onDelete,
         ];
 
@@ -427,14 +428,18 @@ export class AppUI extends Component {
         console.log(`${TAG} _showHome | switching to home panel`);
         this._landingPanel.active = false;
         this._homePanel.active = true;
-        const pubkey = MWAManager.instance?.connectedPubkey ?? '';
+        const mwa = MWAManager.instance;
+        const pubkey = mwa?.connectedPubkey ?? '';
         if (this._pubkeyLabel) {
-            this._pubkeyLabel.string = pubkey.length > 8
+            const short = pubkey.length > 8
                 ? pubkey.substring(0, 4) + '...' + pubkey.substring(pubkey.length - 4)
                 : pubkey || 'Not connected';
+            const walletName = mwa?.walletDisplayName() ?? '';
+            this._pubkeyLabel.string = walletName ? `${short} (${walletName})` : short;
         }
         if (this._homeStatus) this._homeStatus.string = 'Connected \u2014 choose an action';
         this._setHomeEnabled(true);
+        console.log(`${TAG} _showHome | DONE pubkeyLabel="${this._pubkeyLabel?.string}" walletPackage=${MWAManager.instance?.connectedWalletPackage || '(default)'}`);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -448,12 +453,12 @@ export class AppUI extends Component {
 
         const result = await MWAManager.instance?.authorize();
         if (result) {
-            console.log(`${TAG} onConnect | SUCCESS — switching to home`);
+            console.log(`${TAG} onConnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0} walletUriBase=${result.walletUriBase || '(empty)'}`);
             showToast(`Connected: ${result.pubkey.substring(0, 4)}...${result.pubkey.substring(result.pubkey.length - 4)}`);
             showToast('Auth cached');
             this._showHome();
         } else {
-            console.log(`${TAG} onConnect | FAIL`);
+            console.log(`${TAG} onConnect | FAIL result=null`);
             showToast('Authorization failed');
             this._setLandingEnabled(true);
         }
@@ -474,9 +479,11 @@ export class AppUI extends Component {
 
         const result = await MWAManager.instance?.reauthorize();
         if (result) {
+            console.log(`${TAG} onReconnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0}`);
             showToast('Reconnected');
             this._showHome();
         } else {
+            console.log(`${TAG} onReconnect | FAIL result=null`);
             showToast('Reconnect failed');
             this._setLandingEnabled(true);
         }
@@ -487,24 +494,58 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════════
 
     private async _onSignMessage(): Promise<void> {
-        console.log(`${TAG} onSignMessage | START`);
+        console.log(`${TAG} onSignMessage | START message="Hello from Cocos MWA SDK!" message_len=25`);
         this._setHomeEnabled(false);
         const sig = await MWAManager.instance!.signMessage('Hello from Cocos MWA SDK!');
+        console.log(`${TAG} onSignMessage | RESULT sig_len=${sig?.length ?? 0} sig=${sig || '(empty)'}`);
         if (this._homeStatus) this._homeStatus.string = sig ? `Signed: ${sig.substring(0, 20)}...` : 'Sign failed';
         if (sig) showToast(`Message Signed!`);
         else showToast('Sign message failed');
         this._setHomeEnabled(true);
     }
 
-    private async _onSignAndSend(): Promise<void> {
-        console.log(`${TAG} onSignAndSend | START`);
+    private async _onSignTransaction(): Promise<void> {
+        console.log(`${TAG} onSignTransaction | START pubkey=${MWAManager.instance!.connectedPubkey}`);
         this._setHomeEnabled(false);
         if (this._homeStatus) this._homeStatus.string = 'Fetching blockhash...';
         const bh = await this._rpc.getLatestBlockhash();
-        if (!bh) { if (this._homeStatus) this._homeStatus.string = 'Failed to get blockhash'; this._setHomeEnabled(true); return; }
+        if (!bh) {
+            console.log(`${TAG} onSignTransaction | FAIL blockhash=null`);
+            if (this._homeStatus) this._homeStatus.string = 'Failed to get blockhash';
+            this._setHomeEnabled(true);
+            return;
+        }
+        console.log(`${TAG} onSignTransaction | blockhash=${bh.blockhash} lastValidBlockHeight=${bh.lastValidBlockHeight}`);
         const tx = buildMemoTransaction(MWAManager.instance!.connectedPubkey, 'Hello from Cocos Creator MWA SDK!', bh.blockhash);
+        console.log(`${TAG} onSignTransaction | built_tx_bytes=${tx.length}`);
+        if (this._homeStatus) this._homeStatus.string = 'Approve in wallet...';
+        const signed = await MWAManager.instance!.signTransaction(tx);
+        console.log(`${TAG} onSignTransaction | RESULT signed_bytes=${signed.length} success=${signed.length > 0}`);
+        if (this._homeStatus) this._homeStatus.string = signed.length > 0
+            ? 'Transaction signed successfully!'
+            : 'Sign transaction failed';
+        if (signed.length > 0) showToast('Transaction Signed!');
+        else showToast('Sign transaction failed');
+        this._setHomeEnabled(true);
+    }
+
+    private async _onSignAndSend(): Promise<void> {
+        console.log(`${TAG} onSignAndSend | START pubkey=${MWAManager.instance!.connectedPubkey}`);
+        this._setHomeEnabled(false);
+        if (this._homeStatus) this._homeStatus.string = 'Fetching blockhash...';
+        const bh = await this._rpc.getLatestBlockhash();
+        if (!bh) {
+            console.log(`${TAG} onSignAndSend | FAIL blockhash=null`);
+            if (this._homeStatus) this._homeStatus.string = 'Failed to get blockhash';
+            this._setHomeEnabled(true);
+            return;
+        }
+        console.log(`${TAG} onSignAndSend | blockhash=${bh.blockhash} lastValidBlockHeight=${bh.lastValidBlockHeight}`);
+        const tx = buildMemoTransaction(MWAManager.instance!.connectedPubkey, 'Hello from Cocos Creator MWA SDK!', bh.blockhash);
+        console.log(`${TAG} onSignAndSend | built_tx_bytes=${tx.length}`);
         if (this._homeStatus) this._homeStatus.string = 'Signing & sending...';
         const sig = await MWAManager.instance!.signAndSendTransaction(tx);
+        console.log(`${TAG} onSignAndSend | RESULT sig_len=${sig?.length ?? 0} sig=${sig || '(empty)'}`);
         if (this._homeStatus) this._homeStatus.string = sig ? `Sent! ${sig.substring(0, 24)}...` : 'Send failed';
         if (sig) showToast(`Transaction Sent!`, true);
         else showToast('Sign & send failed');
@@ -515,6 +556,7 @@ export class AppUI extends Component {
         console.log(`${TAG} onCapabilities | START`);
         this._setHomeEnabled(false);
         const caps = await MWAManager.instance!.getCapabilities();
+        console.log(`${TAG} onCapabilities | RESULT success=${caps != null} max_txs=${caps?.maxTransactionsPerRequest ?? 'N/A'} max_msgs=${caps?.maxMessagesPerRequest ?? 'N/A'} versions=${JSON.stringify(caps?.supportedTransactionVersions ?? [])} features=${JSON.stringify(caps?.features ?? [])}`);
         if (this._homeStatus) this._homeStatus.string = caps
             ? `max_txs: ${caps.maxTransactionsPerRequest}\nmax_msgs: ${caps.maxMessagesPerRequest}`
             : 'Failed';
@@ -524,9 +566,10 @@ export class AppUI extends Component {
     }
 
     private async _onReconnectHome(): Promise<void> {
-        console.log(`${TAG} onReconnectHome | START`);
+        console.log(`${TAG} onReconnectHome | START current_pubkey=${MWAManager.instance!.connectedPubkey}`);
         this._setHomeEnabled(false);
         const result = await MWAManager.instance!.reauthorize();
+        console.log(`${TAG} onReconnectHome | RESULT success=${result != null} pubkey=${result?.pubkey || '(null)'}`);
         if (this._homeStatus) this._homeStatus.string = result ? 'Reconnected' : 'Reconnect failed';
         if (result) showToast('Reconnected');
         else showToast('Reconnect failed');
@@ -534,45 +577,20 @@ export class AppUI extends Component {
     }
 
     private async _onDisconnect(): Promise<void> {
-        console.log(`${TAG} onDisconnect | START`);
-        await MWAManager.instance!.deauthorize();
+        const mwa = MWAManager.instance!;
+        console.log(`${TAG} onDisconnect | START pubkey=${mwa.connectedPubkey} walletPackage=${mwa.connectedWalletPackage || '(default)'} authToken_len=${mwa.authToken?.length ?? 0}`);
+        await mwa.deauthorize();
+        console.log(`${TAG} onDisconnect | DONE isConnected=${mwa.isConnected}`);
         showToast('Disconnected');
-        // _showLanding is triggered by MWA_DISCONNECTED event listener (no direct call needed)
     }
 
-    private _deleteConfirmPending: boolean = false;
-    private _deleteConfirmTimer: any = null;
-
     private async _onDelete(): Promise<void> {
-        console.log(`${TAG} onDelete | START confirmPending=${this._deleteConfirmPending} isThirdParty=${!!MWAManager.instance?.connectedWalletPackage}`);
-
-        // Third-party wallets: double-tap confirmation (no wallet interaction)
-        if (MWAManager.instance?.connectedWalletPackage && !this._deleteConfirmPending) {
-            console.log(`${TAG} onDelete | THIRD_PARTY — requesting in-app confirmation (tap again within 5s)`);
-            this._deleteConfirmPending = true;
-            if (this._homeStatus) this._homeStatus.string = 'Tap Delete again to confirm';
-            showToast('Tap Delete again to confirm');
-
-            // Reset after 5 seconds if not confirmed
-            this._deleteConfirmTimer = setTimeout(() => {
-                this._deleteConfirmPending = false;
-                if (this._homeStatus) this._homeStatus.string = 'Delete cancelled — timed out';
-                console.log(`${TAG} onDelete | confirmation timed out`);
-            }, 5000);
-            return;
-        }
-
-        // Clear the timer if confirming
-        if (this._deleteConfirmTimer) {
-            clearTimeout(this._deleteConfirmTimer);
-            this._deleteConfirmTimer = null;
-        }
-        this._deleteConfirmPending = false;
-
-        console.log(`${TAG} onDelete | CONFIRMED — proceeding with delete`);
+        const mwa = MWAManager.instance!;
+        console.log(`${TAG} onDelete | START pubkey=${mwa.connectedPubkey} walletPackage=${mwa.connectedWalletPackage || '(default)'}`);
         this._setHomeEnabled(false);
-        await MWAManager.instance!.deleteAccount();
-        if (!MWAManager.instance?.isConnected) {
+        await mwa.deleteAccount();
+        console.log(`${TAG} onDelete | DONE isConnected=${mwa.isConnected} cache_has_auth=${mwa.cache?.hasCachedAuth() ?? false}`);
+        if (!mwa.isConnected) {
             showToast('Account deleted');
         } else {
             this._setHomeEnabled(true);
@@ -592,6 +610,7 @@ export class AppUI extends Component {
     private _setLandingEnabled(enabled: boolean): void {
         console.log(`${TAG} _setLandingEnabled | enabled=${enabled} walletButtons=${this._walletButtons.size}`);
         if (this._connectButton) this._connectButton.interactable = enabled;
+        if (this._connectViaWalletButton) this._connectViaWalletButton.interactable = enabled;
         if (this._reconnectButton) this._reconnectButton.interactable = enabled;
         for (const btn of this._walletButtons.values()) {
             btn.interactable = enabled;

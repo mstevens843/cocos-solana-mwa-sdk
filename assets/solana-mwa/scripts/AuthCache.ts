@@ -45,7 +45,8 @@ export class AuthCache {
 
         try {
             const cached: CachedAuth = JSON.parse(json);
-            console.log(`${TAG} get | FOUND auth_token_len=${cached.authToken?.length ?? 0} timestamp=${cached.timestamp} wallet_uri_base=${cached.walletUriBase || '(empty)'}`);
+            const ageSeconds = Math.floor(Date.now() / 1000) - (cached.timestamp || 0);
+            console.log(`${TAG} get | FOUND pubkey=${cached.pubkey} auth_token_len=${cached.authToken?.length ?? 0} walletPackage=${cached.walletPackage || '(default)'} walletUriBase=${cached.walletUriBase || '(empty)'} timestamp=${cached.timestamp} age_seconds=${ageSeconds}`);
             return cached;
         } catch (e) {
             console.log(`${TAG} get | PARSE_ERROR key=${key} error=${e}`);
@@ -68,7 +69,7 @@ export class AuthCache {
 
         console.log(`${TAG} getLatest | latest_pubkey=${latestPubkey}`);
         const result = this.get(latestPubkey);
-        console.log(`${TAG} getLatest | DONE found=${result != null}`);
+        console.log(`${TAG} getLatest | DONE found=${result != null} pubkey=${result?.pubkey || '(none)'} walletPackage=${result?.walletPackage || '(none)'}`);
         return result;
     }
 
@@ -107,12 +108,13 @@ export class AuthCache {
 
         // Track all known pubkeys for clearAll
         const allKeys = this._getAllKeys();
-        if (!allKeys.includes(pubkey)) {
+        const isNew = !allKeys.includes(pubkey);
+        if (isNew) {
             allKeys.push(pubkey);
             this._saveAllKeys(allKeys);
         }
 
-        console.log(`${TAG} set | DONE total_cached=${allKeys.length} timestamp=${cached.timestamp}`);
+        console.log(`${TAG} set | DONE pubkey=${pubkey} auth_token_len=${cached.authToken.length} walletPackage=${cached.walletPackage || '(default)'} timestamp=${cached.timestamp} json_len=${json.length} is_new_entry=${isNew} total_cached=${allKeys.length}`);
     }
 
     // ─── Clear ───────────────────────────────────────────────────────────
@@ -153,14 +155,14 @@ export class AuthCache {
         console.log(`${TAG} clearAll | START count=${allKeys.length}`);
 
         for (const pubkey of allKeys) {
-            console.log(`${TAG} clearAll | removing pubkey=${pubkey}`);
+            console.log(`${TAG} clearAll | removing pubkey=${pubkey} key=${CACHE_PREFIX}${pubkey}`);
             sys.localStorage.removeItem(CACHE_PREFIX + pubkey);
         }
 
         sys.localStorage.removeItem(LATEST_KEY);
         sys.localStorage.removeItem(ALL_KEYS_KEY);
 
-        console.log(`${TAG} clearAll | DONE`);
+        console.log(`${TAG} clearAll | DONE removed_count=${allKeys.length} keys_removed=[${allKeys.join(',')}]`);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

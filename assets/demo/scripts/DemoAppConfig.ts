@@ -18,13 +18,14 @@ export class DemoAppConfig extends Component {
     onLoad(): void {
         console.log(`${TAG} onLoad | START — configuring demo app identity`);
 
-        setAppIdentity({
+        const identity = {
             appName: 'Cocos MWA Example',
             appUri: 'https://example.com',
             appIconPath: '/icon.png',
-            cluster: 'devnet',
-        });
+            cluster: 'devnet' as const,
+        };
+        setAppIdentity(identity);
 
-        console.log(`${TAG} onLoad | DONE`);
+        console.log(`${TAG} onLoad | DONE appName="${identity.appName}" appUri="${identity.appUri}" appIconPath="${identity.appIconPath}" cluster="${identity.cluster}"`);
     }
 }

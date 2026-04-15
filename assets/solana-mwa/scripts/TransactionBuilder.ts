@@ -84,6 +84,7 @@ export function buildMemoTransaction(
 
     const feePayer = base58Decode(feePayerBase58);
     const blockhash = base58Decode(recentBlockhash);
+    console.log(`${TAG} buildMemoTransaction | decoded fee_payer_bytes=${feePayer.length} blockhash_bytes=${blockhash.length}`);
 
     if (feePayer.length !== 32) {
         console.log(`${TAG} buildMemoTransaction | FAIL invalid fee_payer length=${feePayer.length} (expected 32)`);
@@ -97,6 +98,7 @@ export function buildMemoTransaction(
     // Memo instruction: data = raw UTF-8 bytes of the memo string
     const encoder = new TextEncoder();
     const memoData = encoder.encode(memoText);
+    console.log(`${TAG} buildMemoTransaction | memo_data_bytes=${memoData.length} memo_text="${memoText}"`);
 
     const instruction: Instruction = {
         programId: MEMO_PROGRAM_ID,

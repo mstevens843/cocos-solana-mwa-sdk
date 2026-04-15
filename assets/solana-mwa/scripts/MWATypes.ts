@@ -24,6 +24,22 @@ export interface AuthorizeResult {
     walletUriBase: string;  // wallet's URI base (optional)
 }
 
+/** Returned by authorizeSiws on success (MWA 2.0 Sign In With Solana). */
+export interface AuthorizeSiwsResult extends AuthorizeResult {
+    signInResult?: SignInResult;   // SIWS proof-of-ownership data
+    accountLabel?: string;         // wallet-reported account label
+    accountChains?: string;        // comma-separated chain IDs (e.g., "solana:mainnet,solana:devnet")
+    accountFeatures?: string;      // comma-separated feature IDs
+}
+
+/** SIWS sign-in result — proof that the wallet owner authorized this app. */
+export interface SignInResult {
+    address: string;        // base58 public key (matches pubkey)
+    signature: string;      // base64-encoded Ed25519 signature
+    signedMessage: string;  // base64-encoded signed message bytes
+    signatureType: string;  // usually "ed25519"
+}
+
 /** Cached authorization for offline reconnection. */
 export interface CachedAuth {
     pubkey: string;
@@ -78,8 +94,10 @@ export type MWACommandName =
     | 'reauthorize'
     | 'deauthorize'
     | 'authorize_and_sign'
+    | 'authorize_siws'
     | 'sign_and_deauthorize'
     | 'sign_messages'
+    | 'sign_transactions'
     | 'sign_and_send'
     | 'get_capabilities'
     | 'is_available'

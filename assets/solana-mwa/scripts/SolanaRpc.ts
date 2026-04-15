@@ -72,7 +72,7 @@ export class SolanaRpc {
             return null;
         }
 
-        console.log(`${TAG} getLatestBlockhash | SUCCESS blockhash=${result.value.blockhash.substring(0, 12)}... lastValidBlockHeight=${result.value.lastValidBlockHeight}`);
+        console.log(`${TAG} getLatestBlockhash | SUCCESS blockhash=${result.value.blockhash} lastValidBlockHeight=${result.value.lastValidBlockHeight}`);
         return {
             blockhash: result.value.blockhash,
             lastValidBlockHeight: result.value.lastValidBlockHeight,
@@ -88,7 +88,7 @@ export class SolanaRpc {
      * @returns Balance in lamports, or -1 on error
      */
     async getBalance(pubkey: string): Promise<number> {
-        console.log(`${TAG} getBalance | START pubkey=${pubkey.substring(0, 8)}...`);
+        console.log(`${TAG} getBalance | START pubkey=${pubkey}`);
 
         const result = await this._call<{ value: number }>('getBalance', [pubkey]);
 
@@ -116,7 +116,7 @@ export class SolanaRpc {
         signedTxBase64: string,
         options?: { skipPreflight?: boolean; preflightCommitment?: Commitment }
     ): Promise<string> {
-        console.log(`${TAG} sendTransaction | START tx_base64_len=${signedTxBase64.length}`);
+        console.log(`${TAG} sendTransaction | START tx_base64_len=${signedTxBase64.length} skipPreflight=${options?.skipPreflight ?? false} preflightCommitment=${options?.preflightCommitment ?? 'confirmed'}`);
 
         const params: any[] = [signedTxBase64, {
             encoding: 'base64',
@@ -131,7 +131,7 @@ export class SolanaRpc {
             return '';
         }
 
-        console.log(`${TAG} sendTransaction | SUCCESS signature=${result.substring(0, 20)}...`);
+        console.log(`${TAG} sendTransaction | SUCCESS signature=${result}`);
         return result;
     }
 
@@ -151,7 +151,7 @@ export class SolanaRpc {
         commitment: Commitment = 'confirmed',
         maxRetries: number = 30
     ): Promise<boolean> {
-        console.log(`${TAG} confirmTransaction | START signature=${signature.substring(0, 16)}... commitment=${commitment} max_retries=${maxRetries}`);
+        console.log(`${TAG} confirmTransaction | START signature=${signature} commitment=${commitment} max_retries=${maxRetries}`);
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             const result = await this._call<{
@@ -164,10 +164,10 @@ export class SolanaRpc {
                     const confirmed = this._commitmentMet(status.confirmationStatus, commitment);
                     if (confirmed) {
                         const hasError = status.err != null;
-                        console.log(`${TAG} confirmTransaction | CONFIRMED attempt=${attempt} status=${status.confirmationStatus} has_error=${hasError}`);
+                        console.log(`${TAG} confirmTransaction | CONFIRMED attempt=${attempt}/${maxRetries} confirmationStatus=${status.confirmationStatus} err=${JSON.stringify(status.err)}`);
                         return !hasError;
                     }
-                    console.log(`${TAG} confirmTransaction | PENDING attempt=${attempt} status=${status.confirmationStatus} (need=${commitment})`);
+                    console.log(`${TAG} confirmTransaction | PENDING attempt=${attempt}/${maxRetries} confirmationStatus=${status.confirmationStatus} need=${commitment}`);
                 } else {
                     console.log(`${TAG} confirmTransaction | PENDING attempt=${attempt} status=null`);
                 }
@@ -191,7 +191,7 @@ export class SolanaRpc {
      * @returns Airdrop transaction signature or empty string on error
      */
     async requestAirdrop(pubkey: string, lamports: number = 1_000_000_000): Promise<string> {
-        console.log(`${TAG} requestAirdrop | START pubkey=${pubkey.substring(0, 8)}... lamports=${lamports}`);
+        console.log(`${TAG} requestAirdrop | START pubkey=${pubkey} lamports=${lamports} sol=${(lamports / 1_000_000_000).toFixed(9)}`);
 
         const result = await this._call<string>('requestAirdrop', [pubkey, lamports]);
 
@@ -200,7 +200,7 @@ export class SolanaRpc {
             return '';
         }
 
-        console.log(`${TAG} requestAirdrop | SUCCESS signature=${result.substring(0, 20)}...`);
+        console.log(`${TAG} requestAirdrop | SUCCESS signature=${result}`);
         return result;
     }
 
@@ -219,7 +219,7 @@ export class SolanaRpc {
             params,
         });
 
-        console.log(`${TAG} _call | POST method=${method} id=${id} body_len=${body.length}`);
+        console.log(`${TAG} _call | POST url=${this._url} method=${method} id=${id} body_len=${body.length}`);
 
         try {
             const response = await fetch(this._url, {
@@ -236,14 +236,15 @@ export class SolanaRpc {
             const json: RpcResponse<T> = await response.json();
 
             if (json.error) {
-                console.log(`${TAG} _call | RPC_ERROR method=${method} code=${json.error.code} message="${json.error.message}"`);
+                console.log(`${TAG} _call | RPC_ERROR method=${method} code=${json.error.code} message="${json.error.message}" data=${JSON.stringify(json.error.data ?? null)}`);
                 return null;
             }
 
+            console.log(`${TAG} _call | SUCCESS method=${method} id=${id} has_result=${json.result != null}`);
             return json.result ?? null;
 
         } catch (e) {
-            console.log(`${TAG} _call | FETCH_ERROR method=${method} error=${e}`);
+            console.log(`${TAG} _call | FETCH_ERROR method=${method} url=${this._url} error=${e}`);
             return null;
         }
     }

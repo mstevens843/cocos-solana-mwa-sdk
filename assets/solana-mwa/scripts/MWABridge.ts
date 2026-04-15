@@ -269,6 +269,17 @@ export class MWABridge {
                 break;
             }
 
+            case 'sign_transactions': {
+                const stxCount = (params.payloads as any[])?.length ?? 1;
+                const mockSignedPayloads: string[] = [];
+                for (let i = 0; i < stxCount; i++) {
+                    mockSignedPayloads.push('MOCK_SIGNED_TX_' + btoa(String(Date.now()) + '_' + i).substring(0, 60));
+                }
+                result = { signedPayloads: mockSignedPayloads };
+                console.log(`${TAG} mockResponse | cmd=sign_transactions mock_signed_count=${mockSignedPayloads.length}`);
+                break;
+            }
+
             case 'sign_and_send': {
                 const txCount = (params.payloads as any[])?.length ?? 1;
                 const mockTxSigs: string[] = [];
@@ -319,6 +330,7 @@ export class MWABridge {
                         { name: 'Backpack', packageName: 'app.backpack', installed: false, storeUrl: 'https://play.google.com/store/apps/details?id=app.backpack' },
                         { name: 'Solflare', packageName: 'com.solflare.mobile', installed: true, storeUrl: 'https://play.google.com/store/apps/details?id=com.solflare.mobile' },
                         { name: 'Espresso Cash', packageName: 'com.pleasecrypto.flutter', installed: false, storeUrl: 'https://play.google.com/store/apps/details?id=com.pleasecrypto.flutter' },
+                        { name: 'Jupiter', packageName: 'ag.jup.app', installed: false, storeUrl: 'https://play.google.com/store/apps/details?id=ag.jup.app' },
                     ],
                 };
                 console.log(`${TAG} mockResponse | cmd=detect_wallets mock_wallet_count=4`);

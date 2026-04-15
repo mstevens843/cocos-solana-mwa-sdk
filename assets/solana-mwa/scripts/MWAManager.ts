@@ -31,6 +31,8 @@ import { getAppIdentity } from './AppIdentity';
 import { isValidBase58Pubkey } from './Base58';
 import {
     AuthorizeResult,
+    AuthorizeSiwsResult,
+    SignInResult,
     WalletCapabilities,
     WalletInfo,
     DeviceInfo,
@@ -41,6 +43,7 @@ import {
     MWA_AUTH_FAILED,
     MWA_DISCONNECTED,
     MWA_MESSAGE_SIGNED,
+    MWA_TRANSACTION_SIGNED,
     MWA_TRANSACTIONS_SENT,
     MWA_CAPABILITIES_RECEIVED,
     MWA_STATUS,
@@ -88,6 +91,9 @@ export class MWAManager extends Component {
 
     /** Guard against concurrent authorize calls. */
     private _authorizing: boolean = false;
+
+    /** Pubkeys that have been deleted this session — prevents reconnect to deleted account. */
+    private _deletedPubkeys: Set<string> = new Set();
 
     // ─── Lifecycle ───────────────────────────────────────────────────────
 
@@ -249,6 +255,13 @@ export class MWAManager extends Component {
             return null;
         }
         this._authorizing = true;
+
+        // Clear deleted keys on fresh connect (matches Unity/Godot behavior)
+        if (this._deletedPubkeys.size > 0) {
+            console.log(`${TAG} authorize | clearing ${this._deletedPubkeys.size} deleted key(s) — fresh connect = clean slate`);
+            this._deletedPubkeys.clear();
+        }
+
         this._updateStatus('Requesting wallet authorization...');
 
         try {
@@ -323,11 +336,11 @@ export class MWAManager extends Component {
             this.connectedWalletPackage = targetPackage || '';
             this.isConnected = true;
 
-            console.log(`${TAG} authorize | SUCCESS pubkey=${this.connectedPubkey} auth_token_len=${this.authToken.length} wallet_uri_base=${this.walletUriBase || '(empty)'} connectedWalletPackage="${this.connectedWalletPackage || '(default picker)'}"`);
+            console.log(`${TAG} authorize | STATE_SET pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} walletUriBase=${this.walletUriBase || '(empty)'} walletPackage="${this.connectedWalletPackage || '(default picker)'}" isConnected=${this.isConnected}`);
 
             // ─── Cache Auth ──────────────────────────────────────────────
             this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase, this.connectedWalletPackage);
-            console.log(`${TAG} authorize | cached auth pubkey=${this.connectedPubkey} token_len=${this.authToken.length}`);
+            console.log(`${TAG} authorize | CACHED pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} walletPackage=${this.connectedWalletPackage || '(default)'}`);
 
             // ─── Emit Success ────────────────────────────────────────────
             this._updateStatus(`Connected: ${this._truncatePubkey(this.connectedPubkey)}`);
@@ -340,6 +353,108 @@ export class MWAManager extends Component {
             const error = e as MWAError;
             console.log(`${TAG} authorize | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
             this._updateStatus(`Authorization failed: ${error?.message || e}`);
+            this.node.emit(MWA_AUTH_FAILED, error?.message || String(e));
+            return null;
+        } finally {
+            this._authorizing = false;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  AUTHORIZE SIWS (MWA 2.0 — Sign In With Solana)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * MWA 2.0 authorize with Sign In With Solana (SIWS).
+     * One-shot connect + prove ownership — wallet returns a signed message
+     * proving the user owns the account.
+     *
+     * Matches Godot connectWalletSiws (myAction=5) and Unity _Login SIWS path.
+     *
+     * @param domain  SIWS domain (e.g., "myapp.example.com")
+     * @param statement  SIWS statement (e.g., "Sign in to MyApp")
+     * @param targetPackage  Optional wallet package to target directly
+     * @returns AuthorizeSiwsResult on success, null on failure
+     */
+    async authorizeSiws(domain: string, statement: string, targetPackage?: string): Promise<AuthorizeSiwsResult | null> {
+        console.log(`${TAG} authorizeSiws | START domain=${domain} statement=${statement} targetPackage=${targetPackage || '(none)'} is_connected=${this.isConnected} authorizing=${this._authorizing}`);
+
+        if (this._authorizing) {
+            console.log(`${TAG} authorizeSiws | BLOCKED — already authorizing, ignoring duplicate call`);
+            return null;
+        }
+        this._authorizing = true;
+
+        this._updateStatus('Requesting SIWS authorization...');
+
+        try {
+            const identity = getAppIdentity();
+            const params: Record<string, any> = {
+                appName: identity.appName,
+                appUri: identity.appUri,
+                appIconPath: identity.appIconPath,
+                cluster: identity.cluster,
+                siwsDomain: domain,
+                siwsStatement: statement,
+            };
+            if (targetPackage) {
+                params.targetPackage = targetPackage;
+            }
+
+            console.log(`${TAG} authorizeSiws | sending authorize_siws command app="${identity.appName}" cluster=${identity.cluster} domain=${domain} statement=${statement}`);
+            const result = await this._bridge.sendCommand<AuthorizeSiwsResult>('authorize_siws', params);
+
+            if (!result || !result.pubkey) {
+                console.log(`${TAG} authorizeSiws | FAIL result is null or missing pubkey`);
+                this._updateStatus('SIWS authorization failed — no response from wallet');
+                this.node.emit(MWA_AUTH_FAILED, 'Wallet returned null or empty response');
+                return null;
+            }
+
+            if (!isValidBase58Pubkey(result.pubkey)) {
+                console.log(`${TAG} authorizeSiws | FAIL invalid pubkey="${result.pubkey}" length=${result.pubkey.length}`);
+                this._updateStatus('SIWS authorization failed — invalid pubkey');
+                this.node.emit(MWA_AUTH_FAILED, `Invalid pubkey from wallet: ${result.pubkey}`);
+                return null;
+            }
+
+            // Log SIWS result details
+            if (result.signInResult) {
+                console.log(`${TAG} authorizeSiws | SIWS_RESULT address=${result.signInResult.address} sig_len=${result.signInResult.signature?.length || 0} signedMsg_len=${result.signInResult.signedMessage?.length || 0} sigType=${result.signInResult.signatureType}`);
+            } else {
+                console.log(`${TAG} authorizeSiws | WARN signInResult is null — wallet may not support SIWS`);
+            }
+
+            console.log(`${TAG} authorizeSiws | ACCOUNT_META label="${result.accountLabel || ''}" chains="${result.accountChains || ''}" features="${result.accountFeatures || ''}"`);
+
+            if (!result.authToken || result.authToken.length === 0) {
+                console.log(`${TAG} authorizeSiws | WARN auth_token is empty — reauthorization may fail`);
+            }
+
+            // Set connected state
+            this.connectedPubkey = result.pubkey;
+            this.authToken = result.authToken || '';
+            this.walletUriBase = result.walletUriBase || '';
+            this.connectedWalletPackage = targetPackage || '';
+            this.isConnected = true;
+
+            console.log(`${TAG} authorizeSiws | STATE_SET pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} isConnected=${this.isConnected}`);
+
+            // Cache auth
+            this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase, this.connectedWalletPackage);
+            console.log(`${TAG} authorizeSiws | CACHED pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length}`);
+
+            // Emit success
+            this._updateStatus(`SIWS Connected: ${this._truncatePubkey(this.connectedPubkey)}`);
+            this.node.emit(MWA_AUTHORIZED, this.connectedPubkey);
+
+            console.log(`${TAG} authorizeSiws | DONE connected=true pubkey=${this.connectedPubkey} hasSiws=${result.signInResult != null} — emitted MWA_AUTHORIZED`);
+            return result;
+
+        } catch (e: any) {
+            const error = e as MWAError;
+            console.log(`${TAG} authorizeSiws | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
+            this._updateStatus(`SIWS authorization failed: ${error?.message || e}`);
             this.node.emit(MWA_AUTH_FAILED, error?.message || String(e));
             return null;
         } finally {
@@ -377,7 +492,8 @@ export class MWAManager extends Component {
             console.log(`${TAG} reauthorize | RESTORED walletPackage="${cached.walletPackage}" from cache`);
         }
 
-        console.log(`${TAG} reauthorize | cached_pubkey=${cached.pubkey} cached_token_len=${cached.authToken?.length ?? 0} walletPackage=${this.connectedWalletPackage || '(default)'} timestamp=${cached.timestamp}`);
+        const cacheAge = Math.floor(Date.now() / 1000) - (cached.timestamp || 0);
+        console.log(`${TAG} reauthorize | cached_pubkey=${cached.pubkey} cached_token_len=${cached.authToken?.length ?? 0} walletPackage=${this.connectedWalletPackage || '(default)'} timestamp=${cached.timestamp} age_seconds=${cacheAge}`);
         this._updateStatus('Reauthorizing with cached token...');
 
         try {
@@ -395,6 +511,12 @@ export class MWAManager extends Component {
 
             if (!result || !result.pubkey || !isValidBase58Pubkey(result.pubkey)) {
                 console.log(`${TAG} reauthorize | FAIL invalid response — falling back to full authorize()`);
+                return await this.authorize();
+            }
+
+            // Reject deleted pubkeys — prevent reconnect to deleted account
+            if (this._deletedPubkeys.has(result.pubkey)) {
+                console.log(`${TAG} reauthorize | REJECTED pubkey=${result.pubkey} is in deleted keys — falling back to full authorize()`);
                 return await this.authorize();
             }
 
@@ -461,13 +583,14 @@ export class MWAManager extends Component {
         // Clear local state
         const oldPubkey = this.connectedPubkey;
         const oldPackage = this.connectedWalletPackage;
+        const oldTokenLen = this.authToken?.length ?? 0;
         this.connectedPubkey = '';
         this.authToken = '';
         this.walletUriBase = '';
         this.connectedWalletPackage = '';
         this.isConnected = false;
 
-        console.log(`${TAG} deauthorize | DONE old_pubkey=${oldPubkey} old_walletPackage="${oldPackage}" state_cleared=true`);
+        console.log(`${TAG} deauthorize | DONE old_pubkey=${oldPubkey} old_walletPackage="${oldPackage}" old_authToken_len=${oldTokenLen} isConnected=${this.isConnected}`);
         this._updateStatus('Disconnected');
         this.node.emit(MWA_DISCONNECTED);
     }
@@ -580,6 +703,91 @@ export class MWAManager extends Component {
             const error = e as MWAError;
             console.log(`${TAG} signMessages | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
             this._updateStatus(`Sign messages failed: ${error?.message || e}`);
+            return [];
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  SIGN TRANSACTIONS (sign-only, no broadcast)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Sign a single transaction without broadcasting. Returns the signed tx bytes.
+     *
+     * Port of Unity MWAManager.cs:SignTransaction / Godot mwa_manager.gd:sign_transaction.
+     *
+     * @param transaction - Serialized transaction as Uint8Array (unsigned)
+     * @returns Signed transaction bytes as Uint8Array, or empty Uint8Array on failure
+     */
+    async signTransaction(transaction: Uint8Array): Promise<Uint8Array> {
+        console.log(`${TAG} signTransaction | START tx_bytes=${transaction.length} is_connected=${this.isConnected}`);
+
+        const results = await this.signTransactions([transaction]);
+        if (results.length > 0 && results[0].length > 0) {
+            console.log(`${TAG} signTransaction | SUCCESS signed_bytes=${results[0].length}`);
+            return results[0];
+        }
+        console.log(`${TAG} signTransaction | FAIL results_count=${results.length} first_len=${results[0]?.length ?? 0}`);
+        return new Uint8Array(0);
+    }
+
+    /**
+     * Sign multiple transactions without broadcasting. Returns the signed tx bytes.
+     *
+     * The wallet injects signatures into each transaction and returns them.
+     * Unlike signAndSendTransactions, these are NOT broadcast — the caller
+     * can inspect the signed bytes, broadcast at their own pace, or discard.
+     *
+     * @param transactions - Array of serialized transactions (unsigned Uint8Arrays)
+     * @returns Array of signed transaction bytes as Uint8Arrays
+     */
+    async signTransactions(transactions: Uint8Array[]): Promise<Uint8Array[]> {
+        console.log(`${TAG} signTransactions | START tx_count=${transactions.length} is_connected=${this.isConnected}`);
+
+        if (!this.isConnected || !this.connectedPubkey) {
+            console.log(`${TAG} signTransactions | FAIL not connected`);
+            this._updateStatus('Not connected');
+            return [];
+        }
+
+        this._updateStatus(`Signing ${transactions.length} transaction(s)...`);
+
+        try {
+            const payloadsBase64 = transactions.map((tx, i) => {
+                const b64 = this._uint8ArrayToBase64(tx);
+                console.log(`${TAG} signTransactions | payload[${i}] bytes=${tx.length} base64_len=${b64.length}`);
+                return b64;
+            });
+
+            console.log(`${TAG} signTransactions | sending sign_transactions command payload_count=${payloadsBase64.length}`);
+
+            const result = await this._bridge.sendCommand<{ signedPayloads: string[] }>('sign_transactions', this._withTargetPackage({
+                payloads: payloadsBase64,
+                authToken: this.authToken,
+            }));
+
+            if (!result || !result.signedPayloads || result.signedPayloads.length === 0) {
+                console.log(`${TAG} signTransactions | FAIL empty or missing signedPayloads in response`);
+                this._updateStatus('Sign transaction failed — no signed data returned');
+                return [];
+            }
+
+            // Decode base64 signed payloads back to Uint8Arrays
+            const signedTxs = result.signedPayloads.map((b64, i) => {
+                const bytes = this._base64ToUint8Array(b64);
+                console.log(`${TAG} signTransactions | signedPayload[${i}] base64_len=${b64.length} decoded_bytes=${bytes.length}`);
+                return bytes;
+            });
+
+            console.log(`${TAG} signTransactions | SUCCESS signed_count=${signedTxs.length}`);
+            this._updateStatus(`Transaction signed!`);
+            this.node.emit(MWA_TRANSACTION_SIGNED, signedTxs);
+            return signedTxs;
+
+        } catch (e: any) {
+            const error = e as MWAError;
+            console.log(`${TAG} signTransactions | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
+            this._updateStatus(`Sign transaction failed: ${error?.message || e}`);
             return [];
         }
     }
@@ -736,63 +944,57 @@ export class MWAManager extends Component {
             return;
         }
 
-        // Third-party wallets (Phantom, Backpack, etc.): use confirmDelete() first
-        // which requires a double-tap in-app (no extra wallet interaction).
-        // The caller (AppUI._onDelete) handles the double-tap confirmation UX.
-        if (this.connectedWalletPackage) {
-            console.log(`${TAG} deleteAccount | THIRD_PARTY wallet="${this.connectedWalletPackage}" — deauthorize + clear cache`);
-            this._updateStatus('Deleting account...');
-            try {
-                await this.deauthorize();
-            } catch (e: any) {
-                console.log(`${TAG} deleteAccount | deauthorize failed: ${e?.message || e} — clearing local state anyway`);
-            }
-            this._cache.clearAll();
-            console.log(`${TAG} deleteAccount | DONE (third-party) cache cleared`);
-            this._updateStatus('Account deleted — all cached data cleared');
-        } else {
-            // Seed Vault: compound sign confirmation + deauthorize in one MWA session
-            const identity = getAppIdentity();
-            const params = {
-                authToken: this.authToken,
-                appName: identity.appName,
-                appUri: identity.appUri,
-                appIconPath: identity.appIconPath,
-                message: `Confirm account deletion for ${identity.appName}`,
-                pubkey: this.connectedPubkey,
-            };
+        // Compound sign + deauthorize in a single MWA session.
+        // Works for both third-party wallets (Phantom, Solflare, etc.) and Seed Vault.
+        // _withTargetPackage injects targetPackage for third-party wallets automatically.
+        const walletLabel = this.connectedWalletPackage || 'SeedVault';
+        console.log(`${TAG} deleteAccount | wallet="${walletLabel}" — sending sign_and_deauthorize compound command`);
 
-            this._updateStatus('Confirm deletion in wallet...');
-            console.log(`${TAG} deleteAccount | SEED_VAULT — sending sign_and_deauthorize compound command`);
+        const identity = getAppIdentity();
+        const params = {
+            authToken: this.authToken,
+            appName: identity.appName,
+            appUri: identity.appUri,
+            appIconPath: identity.appIconPath,
+            message: `Confirm account deletion for ${identity.appName}`,
+            pubkey: this.connectedPubkey,
+        };
 
-            try {
-                const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_deauthorize', this._withTargetPackage(params));
+        this._updateStatus('Confirm deletion in wallet...');
 
-                if (!result?.signatures || result.signatures.length === 0) {
-                    console.log(`${TAG} deleteAccount | ABORTED user did not confirm — no signature returned`);
-                    this._updateStatus('Delete cancelled — confirmation required');
-                    return;
-                }
+        try {
+            const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_deauthorize', this._withTargetPackage(params));
 
-                console.log(`${TAG} deleteAccount | CONFIRMED sig=${result.signatures[0].substring(0, 20)}... — deauthorized in same session`);
-            } catch (e: any) {
-                console.log(`${TAG} deleteAccount | REJECTED error=${e?.message || e}`);
-                this._updateStatus('Delete cancelled');
+            if (!result?.signatures || result.signatures.length === 0) {
+                console.log(`${TAG} deleteAccount | ABORTED user did not confirm — no signature returned`);
+                this._updateStatus('Delete cancelled — confirmation required');
                 return;
             }
 
-            // Clear local state (Seed Vault path)
-            this.isConnected = false;
-            this.connectedPubkey = '';
-            this.authToken = '';
-            this.walletUriBase = '';
-            this.connectedWalletPackage = '';
-            this._cache.clearAll();
-            this.node.emit(MWA_DISCONNECTED);
-
-            console.log(`${TAG} deleteAccount | DONE cache cleared, session destroyed`);
-            this._updateStatus('Account deleted — all cached data cleared');
+            console.log(`${TAG} deleteAccount | CONFIRMED sig=${result.signatures[0].substring(0, 20)}... — deauthorized in same session`);
+        } catch (e: any) {
+            console.log(`${TAG} deleteAccount | REJECTED error=${e?.message || e}`);
+            this._updateStatus('Delete cancelled');
+            return;
         }
+
+        // Record deleted pubkey before clearing state
+        if (this.connectedPubkey) {
+            this._deletedPubkeys.add(this.connectedPubkey);
+            console.log(`${TAG} deleteAccount | recorded deleted key=${this.connectedPubkey} total_deleted=${this._deletedPubkeys.size}`);
+        }
+
+        // Clear local state
+        this.isConnected = false;
+        this.connectedPubkey = '';
+        this.authToken = '';
+        this.walletUriBase = '';
+        this.connectedWalletPackage = '';
+        this._cache.clearAll();
+        this.node.emit(MWA_DISCONNECTED);
+
+        console.log(`${TAG} deleteAccount | DONE cache cleared, session destroyed`);
+        this._updateStatus('Account deleted — all cached data cleared');
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -805,6 +1007,25 @@ export class MWAManager extends Component {
      */
     truncatePubkey(pubkey: string): string {
         return this._truncatePubkey(pubkey);
+    }
+
+    /**
+     * Get display name for a wallet package. Used for Home screen labeling.
+     * Maps Android package names to human-readable wallet names.
+     *
+     * @param packageName Optional override; defaults to connectedWalletPackage
+     * @returns Display name (e.g., "Phantom", "Seed Vault")
+     */
+    walletDisplayName(packageName?: string): string {
+        const pkg = packageName || this.connectedWalletPackage;
+        const NAMES: Record<string, string> = {
+            'app.phantom': 'Phantom',
+            'app.backpack': 'Backpack',
+            'com.solflare.mobile': 'Solflare',
+            'com.pleasecrypto.flutter': 'Espresso Cash',
+            'ag.jup.app': 'Jupiter',
+        };
+        return NAMES[pkg] || (pkg ? pkg : 'Seed Vault');
     }
 
     private _truncatePubkey(pubkey: string): string {
