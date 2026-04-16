@@ -377,6 +377,7 @@ export class MWAManager extends Component {
      * @returns AuthorizeSiwsResult on success, null on failure
      */
     async authorizeSiws(domain: string, statement: string, targetPackage?: string): Promise<AuthorizeSiwsResult | null> {
+        const startTime = Date.now();
         console.log(`${TAG} authorizeSiws | START domain=${domain} statement=${statement} targetPackage=${targetPackage || '(none)'} is_connected=${this.isConnected} authorizing=${this._authorizing}`);
 
         if (this._authorizing) {
@@ -388,6 +389,7 @@ export class MWAManager extends Component {
         this._updateStatus('Requesting SIWS authorization...');
 
         try {
+            // STEP 1: Build command parameters
             const identity = getAppIdentity();
             const params: Record<string, any> = {
                 appName: identity.appName,
@@ -400,60 +402,66 @@ export class MWAManager extends Component {
             if (targetPackage) {
                 params.targetPackage = targetPackage;
             }
+            console.log(`${TAG} authorizeSiws | STEP_1_PARAMS_BUILT app="${identity.appName}" cluster=${identity.cluster} domain=${domain} statement=${statement} elapsed_ms=${Date.now() - startTime}`);
 
-            console.log(`${TAG} authorizeSiws | sending authorize_siws command app="${identity.appName}" cluster=${identity.cluster} domain=${domain} statement=${statement}`);
+            // STEP 2: Send authorize_siws command to native bridge
+            console.log(`${TAG} authorizeSiws | STEP_2_BRIDGE_SENDING cmd=authorize_siws elapsed_ms=${Date.now() - startTime}`);
             const result = await this._bridge.sendCommand<AuthorizeSiwsResult>('authorize_siws', params);
+            console.log(`${TAG} authorizeSiws | STEP_3_RESULT_RECEIVED has_result=${result != null} has_pubkey=${!!(result?.pubkey)} elapsed_ms=${Date.now() - startTime}`);
 
+            // STEP 4: Validate pubkey
             if (!result || !result.pubkey) {
-                console.log(`${TAG} authorizeSiws | FAIL result is null or missing pubkey`);
+                console.log(`${TAG} authorizeSiws | STEP_4_FAIL result is null or missing pubkey elapsed_ms=${Date.now() - startTime}`);
                 this._updateStatus('SIWS authorization failed — no response from wallet');
                 this.node.emit(MWA_AUTH_FAILED, 'Wallet returned null or empty response');
                 return null;
             }
 
             if (!isValidBase58Pubkey(result.pubkey)) {
-                console.log(`${TAG} authorizeSiws | FAIL invalid pubkey="${result.pubkey}" length=${result.pubkey.length}`);
+                console.log(`${TAG} authorizeSiws | STEP_4_FAIL invalid pubkey="${result.pubkey}" length=${result.pubkey.length} elapsed_ms=${Date.now() - startTime}`);
                 this._updateStatus('SIWS authorization failed — invalid pubkey');
                 this.node.emit(MWA_AUTH_FAILED, `Invalid pubkey from wallet: ${result.pubkey}`);
                 return null;
             }
+            console.log(`${TAG} authorizeSiws | STEP_4_PUBKEY_VALID pubkey=${result.pubkey} elapsed_ms=${Date.now() - startTime}`);
 
-            // Log SIWS result details
+            // STEP 5: Extract SIWS result
             if (result.signInResult) {
-                console.log(`${TAG} authorizeSiws | SIWS_RESULT address=${result.signInResult.address} sig_len=${result.signInResult.signature?.length || 0} signedMsg_len=${result.signInResult.signedMessage?.length || 0} sigType=${result.signInResult.signatureType}`);
+                console.log(`${TAG} authorizeSiws | STEP_5_SIWS_EXTRACTED address=${result.signInResult.address} sig_len=${result.signInResult.signature?.length || 0} sig_preview=${(result.signInResult.signature || '').substring(0, 20)}... signedMsg_len=${result.signInResult.signedMessage?.length || 0} sigType=${result.signInResult.signatureType} elapsed_ms=${Date.now() - startTime}`);
             } else {
-                console.log(`${TAG} authorizeSiws | WARN signInResult is null — wallet may not support SIWS`);
+                console.log(`${TAG} authorizeSiws | STEP_5_SIWS_NULL wallet did not return signInResult elapsed_ms=${Date.now() - startTime}`);
             }
 
-            console.log(`${TAG} authorizeSiws | ACCOUNT_META label="${result.accountLabel || ''}" chains="${result.accountChains || ''}" features="${result.accountFeatures || ''}"`);
+            console.log(`${TAG} authorizeSiws | STEP_5_ACCOUNT_META label="${result.accountLabel || ''}" chains="${result.accountChains || ''}" features="${result.accountFeatures || ''}" elapsed_ms=${Date.now() - startTime}`);
 
             if (!result.authToken || result.authToken.length === 0) {
-                console.log(`${TAG} authorizeSiws | WARN auth_token is empty — reauthorization may fail`);
+                console.log(`${TAG} authorizeSiws | STEP_5_WARN auth_token is empty — reauthorization may fail`);
             }
 
-            // Set connected state
+            // STEP 6: Set connected state
             this.connectedPubkey = result.pubkey;
             this.authToken = result.authToken || '';
             this.walletUriBase = result.walletUriBase || '';
             this.connectedWalletPackage = targetPackage || '';
             this.isConnected = true;
+            console.log(`${TAG} authorizeSiws | STEP_6_STATE_SET pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} isConnected=${this.isConnected} elapsed_ms=${Date.now() - startTime}`);
 
-            console.log(`${TAG} authorizeSiws | STATE_SET pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} isConnected=${this.isConnected}`);
-
-            // Cache auth
+            // STEP 7: Cache auth
             this._cache.set(this.connectedPubkey, this.authToken, this.walletUriBase, this.connectedWalletPackage);
-            console.log(`${TAG} authorizeSiws | CACHED pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length}`);
+            console.log(`${TAG} authorizeSiws | STEP_7_CACHED pubkey=${this.connectedPubkey} authToken_len=${this.authToken.length} elapsed_ms=${Date.now() - startTime}`);
 
-            // Emit success
+            // STEP 8: Emit success event
             this._updateStatus(`SIWS Connected: ${this._truncatePubkey(this.connectedPubkey)}`);
             this.node.emit(MWA_AUTHORIZED, this.connectedPubkey);
 
-            console.log(`${TAG} authorizeSiws | DONE connected=true pubkey=${this.connectedPubkey} hasSiws=${result.signInResult != null} — emitted MWA_AUTHORIZED`);
+            const totalMs = Date.now() - startTime;
+            console.log(`${TAG} authorizeSiws | STEP_8_DONE pubkey=${this.connectedPubkey} hasSiws=${result.signInResult != null} total_elapsed_ms=${totalMs}`);
             return result;
 
         } catch (e: any) {
+            const elapsed = Date.now() - startTime;
             const error = e as MWAError;
-            console.log(`${TAG} authorizeSiws | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
+            console.log(`${TAG} authorizeSiws | FAIL_EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e} elapsed_ms=${elapsed}`);
             this._updateStatus(`SIWS authorization failed: ${error?.message || e}`);
             this.node.emit(MWA_AUTH_FAILED, error?.message || String(e));
             return null;
@@ -821,6 +829,7 @@ export class MWAManager extends Component {
      * @returns Array of transaction signature strings
      */
     async signAndSendTransactions(transactions: Uint8Array[]): Promise<string[]> {
+        const startTime = Date.now();
         console.log(`${TAG} signAndSendTransactions | START tx_count=${transactions.length} is_connected=${this.isConnected}`);
 
         if (!this.isConnected || !this.connectedPubkey) {
@@ -832,37 +841,46 @@ export class MWAManager extends Component {
         this._updateStatus(`Signing and sending ${transactions.length} transaction(s)...`);
 
         try {
+            // STEP 1: Encode transaction payloads as base64
             const payloadsBase64 = transactions.map((tx, i) => {
                 const b64 = this._uint8ArrayToBase64(tx);
-                console.log(`${TAG} signAndSendTransactions | payload[${i}] bytes=${tx.length} base64_len=${b64.length}`);
+                console.log(`${TAG} signAndSendTransactions | STEP_1_PAYLOAD_ENCODED [${i}] bytes=${tx.length} base64_len=${b64.length}`);
                 return b64;
             });
+            console.log(`${TAG} signAndSendTransactions | STEP_1_PAYLOADS_ENCODED count=${payloadsBase64.length} elapsed_ms=${Date.now() - startTime}`);
 
-            console.log(`${TAG} signAndSendTransactions | sending sign_and_send command payload_count=${payloadsBase64.length}`);
-
+            // STEP 2: Send sign_and_send command to native bridge
+            console.log(`${TAG} signAndSendTransactions | STEP_2_BRIDGE_SENDING cmd=sign_and_send authToken_len=${this.authToken.length} elapsed_ms=${Date.now() - startTime}`);
             const result = await this._bridge.sendCommand<{ signatures: string[] }>('sign_and_send', this._withTargetPackage({
                 payloads: payloadsBase64,
                 authToken: this.authToken,
             }));
+            console.log(`${TAG} signAndSendTransactions | STEP_3_RESULT_RECEIVED has_result=${result != null} has_signatures=${!!(result?.signatures)} elapsed_ms=${Date.now() - startTime}`);
 
+            // STEP 4: Validate and extract signatures
             if (!result || !result.signatures) {
-                console.log(`${TAG} signAndSendTransactions | FAIL empty response`);
+                console.log(`${TAG} signAndSendTransactions | STEP_4_FAIL empty response elapsed_ms=${Date.now() - startTime}`);
                 this._updateStatus('Sign & send failed — no signatures returned');
                 return [];
             }
 
             for (let i = 0; i < result.signatures.length; i++) {
-                console.log(`${TAG} signAndSendTransactions | sig[${i}]=${result.signatures[i].substring(0, 20)}...`);
+                console.log(`${TAG} signAndSendTransactions | STEP_4_SIG[${i}] base58=${result.signatures[i].substring(0, 20)}... sig_len=${result.signatures[i].length}`);
             }
+            console.log(`${TAG} signAndSendTransactions | STEP_4_SIGNATURES_EXTRACTED count=${result.signatures.length} elapsed_ms=${Date.now() - startTime}`);
 
-            console.log(`${TAG} signAndSendTransactions | SUCCESS signature_count=${result.signatures.length}`);
+            // STEP 5: Emit success event
             this._updateStatus(`Sent! Sig: ${result.signatures[0]?.substring(0, 20)}...`);
             this.node.emit(MWA_TRANSACTIONS_SENT, result.signatures);
+
+            const totalMs = Date.now() - startTime;
+            console.log(`${TAG} signAndSendTransactions | STEP_5_DONE sig_count=${result.signatures.length} first_sig=${result.signatures[0]?.substring(0, 24)}... total_elapsed_ms=${totalMs}`);
             return result.signatures;
 
         } catch (e: any) {
+            const elapsed = Date.now() - startTime;
             const error = e as MWAError;
-            console.log(`${TAG} signAndSendTransactions | EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e}`);
+            console.log(`${TAG} signAndSendTransactions | FAIL_EXCEPTION code=${error?.code || 'UNKNOWN'} message=${error?.message || e} elapsed_ms=${elapsed}`);
             this._updateStatus(`Sign & send failed: ${error?.message || e}`);
             return [];
         }
