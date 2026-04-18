@@ -11,7 +11,7 @@
  */
 
 import { sys } from 'cc';
-import { CachedAuth } from './MWATypes';
+import { CachedAuth, IMWAAuthCache } from './MWATypes';
 import { isValidBase58Pubkey } from './Base58';
 
 const TAG = '[AuthCache]';
@@ -19,7 +19,7 @@ const CACHE_PREFIX = 'mwa_auth_';
 const LATEST_KEY = 'mwa_auth_latest';
 const ALL_KEYS_KEY = 'mwa_auth_all_keys';
 
-export class AuthCache {
+export class AuthCache implements IMWAAuthCache {
 
     constructor() {
         console.log(`${TAG} constructor | START storage_available=${sys.localStorage != null}`);
@@ -100,6 +100,10 @@ export class AuthCache {
             walletUriBase: walletUriBase || '',
             walletPackage: walletPackage || '',
             timestamp: Math.floor(Date.now() / 1000),
+            // Pass 10: every `set()` represents a successful auth/reauth, so
+            // the entry is flagged authenticated. `deauthorize()` flips it
+            // via `markDisconnected()`. Drives cold-start auto-sign-in.
+            isAuthenticated: true,
         };
 
         const json = JSON.stringify(cached);
@@ -114,7 +118,45 @@ export class AuthCache {
             this._saveAllKeys(allKeys);
         }
 
-        console.log(`${TAG} set | DONE pubkey=${pubkey} auth_token_len=${cached.authToken.length} walletPackage=${cached.walletPackage || '(default)'} timestamp=${cached.timestamp} json_len=${json.length} is_new_entry=${isNew} total_cached=${allKeys.length}`);
+        console.log(`${TAG} set | DONE pubkey=${pubkey} auth_token_len=${cached.authToken.length} walletPackage=${cached.walletPackage || '(default)'} timestamp=${cached.timestamp} isAuthenticated=${cached.isAuthenticated} json_len=${json.length} is_new_entry=${isNew} total_cached=${allKeys.length}`);
+    }
+
+    /**
+     * Mark an existing cache entry as disconnected — flips `isAuthenticated`
+     * to `false` while preserving all other fields so the Landing Reconnect
+     * (cached) button continues to work. Used by `MWAManager.deauthorize()`.
+     * No-op when the entry doesn't exist.
+     */
+    markDisconnected(pubkey: string): void {
+        const existing = this.get(pubkey);
+        if (!existing) {
+            console.log(`${TAG} markDisconnected | NO_ENTRY pubkey=${pubkey}`);
+            return;
+        }
+        const updated: CachedAuth = { ...existing, isAuthenticated: false };
+        const json = JSON.stringify(updated);
+        sys.localStorage.setItem(CACHE_PREFIX + pubkey, json);
+        console.log(`${TAG} markDisconnected | DONE pubkey=${pubkey} isAuthenticated=false (auth_token preserved len=${updated.authToken.length})`);
+    }
+
+    /**
+     * Returns true iff the latest cached entry exists AND represents a
+     * currently-authenticated session. Legacy entries (missing
+     * `isAuthenticated`) are treated as authenticated so pre-Pass-10 users
+     * don't get logged out on upgrade. Used by `AppUI.start()` to decide
+     * whether to auto-sign-in on cold start.
+     */
+    hasAutoLoginAuth(): boolean {
+        const latest = this.getLatest();
+        if (!latest) {
+            console.log(`${TAG} hasAutoLoginAuth | result=false reason=no_cached_auth`);
+            return false;
+        }
+        // Legacy pre-Pass-10 entries have `isAuthenticated === undefined` —
+        // treat those as authenticated so upgrades don't log users out.
+        const authed = latest.isAuthenticated !== false;
+        console.log(`${TAG} hasAutoLoginAuth | result=${authed} pubkey=${latest.pubkey} isAuthenticated=${latest.isAuthenticated ?? '(legacy/undefined)'}`);
+        return authed;
     }
 
     // ─── Clear ───────────────────────────────────────────────────────────

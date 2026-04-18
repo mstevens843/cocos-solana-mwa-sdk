@@ -32,10 +32,30 @@ export type Commitment = 'processed' | 'confirmed' | 'finalized';
 
 // ─── RPC Client ──────────────────────────────────────────────────────────────
 
+/**
+ * Last error captured from a JSON-RPC call. Populated inside `_call` whenever
+ * the endpoint returns an `error` field, cleared at the start of every new
+ * `_call`. Callers that need to branch on the specific error payload (e.g.,
+ * detect `InsufficientFundsForRent` inside a sendTransaction failure) can read
+ * `SolanaRpc.lastRpcError` immediately after the call returns null/empty.
+ */
+export interface RpcLastError {
+    code: number;
+    message: string;
+    data: any;
+}
+
 export class SolanaRpc {
 
     private _url: string;
     private _nextId: number = 1;
+
+    /**
+     * Last JSON-RPC error from an immediately preceding `_call`. Null if the
+     * last call succeeded, the last call was never made, or the failure was a
+     * fetch/network error (not a protocol-level RPC error).
+     */
+    public lastRpcError: RpcLastError | null = null;
 
     /**
      * @param rpcUrl The Solana RPC endpoint URL
@@ -211,6 +231,9 @@ export class SolanaRpc {
      */
     private async _call<T>(method: string, params: any[] = []): Promise<T | null> {
         const id = this._nextId++;
+        // Reset at the start of every call so `lastRpcError` always reflects
+        // the most recent `_call` outcome — never a stale earlier error.
+        this.lastRpcError = null;
 
         const body = JSON.stringify({
             jsonrpc: '2.0',
@@ -237,6 +260,7 @@ export class SolanaRpc {
 
             if (json.error) {
                 console.log(`${TAG} _call | RPC_ERROR method=${method} code=${json.error.code} message="${json.error.message}" data=${JSON.stringify(json.error.data ?? null)}`);
+                this.lastRpcError = { code: json.error.code, message: json.error.message, data: json.error.data ?? null };
                 return null;
             }
 

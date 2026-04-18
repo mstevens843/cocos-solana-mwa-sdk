@@ -64,6 +64,23 @@ MWAManager.ts
 
 ---
 
+## Cross-SDK parity notes — Unity-triggered audits
+
+Periodic audits confirm the Cocos SDK has feature surfaces the Unity SDK has
+since added. No code changes needed — logged here so future reviewers can
+skip redundant parity work.
+
+### 2026-04-17 audit vs Unity PRs #274 + `feat/expose-mwa-auth-token`
+
+| Feature | Unity change | Cocos status |
+|---|---|---|
+| `signMessage(string)` convenience | Unity PR #274 adds string overload to `WalletBase.cs` + `IWalletBase.cs`. | **Already present.** `MWAManager.ts:634` `async signMessage(message: string): Promise<string>`. UTF-8 encodes internally at line 648. Bytes variant lives separately as `signMessages(Uint8Array[])` at line 692. |
+| Public MWA auth token | Unity `feat/expose-mwa-auth-token` adds `public string AuthToken` getter on `SolanaMobileWalletAdapter` + `SolanaWalletAdapter`. | **Already present.** `MWAManager.ts:77` `public authToken: string = ''`. Readable as `MWAManager.instance.authToken`. No getter wrapper — TS uses plain public fields. |
+
+No code changes applied to the Cocos SDK as a result of this audit.
+
+---
+
 ## Implementation 1: Authorize (Basic)
 
 ### What It Does
@@ -849,3 +866,68 @@ is handled by this single Kotlin library. Zero custom crypto code.
 - [ ] Transaction signature is valid base58 (check on Solana Explorer)
 - [ ] No NOT_SUBMITTED or INVALID_PAYLOADS errors
 - [ ] elapsed_ms for STEP_6 (RPC) includes network confirmation time
+
+---
+
+## Extensible Auth Cache Layer
+
+### Interface: `IMWAAuthCache`
+
+Defined in `MWATypes.ts`. Developers implement this to provide custom storage backends.
+
+```typescript
+export interface IMWAAuthCache {
+    get(pubkey: string): CachedAuth | null;
+    getLatest(): CachedAuth | null;
+    set(pubkey: string, authToken: string, walletUriBase?: string, walletPackage?: string): void;
+    clear(pubkey: string): void;
+    clearAll(): void;
+    hasCachedAuth(): boolean;
+}
+```
+
+### Default: `AuthCache` (sys.localStorage)
+
+`AuthCache` implements `IMWAAuthCache` using Cocos Creator's `sys.localStorage` (backed by SQLite on
+Android). Persists auth tokens across app restarts. Includes:
+- Pubkey validation (Bug #5 prevention)
+- Empty token warnings (Bug U3 prevention)
+- Cache age logging for debugging
+- Multi-pubkey tracking via `mwa_auth_all_keys`
+
+### Custom Cache Injection
+
+```typescript
+// Use default (sys.localStorage):
+// No code needed — AuthCache is created automatically in onLoad().
+
+// Use custom encrypted cache:
+class MyEncryptedCache implements IMWAAuthCache {
+    get(pubkey: string): CachedAuth | null { /* ... */ }
+    getLatest(): CachedAuth | null { /* ... */ }
+    set(pubkey: string, authToken: string, walletUriBase?: string, walletPackage?: string): void { /* ... */ }
+    clear(pubkey: string): void { /* ... */ }
+    clearAll(): void { /* ... */ }
+    hasCachedAuth(): boolean { /* ... */ }
+}
+
+// Inject before first authorize:
+MWAManager.instance.setCache(new MyEncryptedCache());
+```
+
+### Deterministic Logging
+
+Every cache operation logs with `[AuthCache]` prefix:
+- `set | START pubkey=... auth_token_len=... wallet_package=...`
+- `get | FOUND pubkey=... age_seconds=...` or `get | NOT_FOUND`
+- `getLatest | latest_pubkey=... found=true/false`
+- `clear | START pubkey=... existed=true/false`
+- `clearAll | START count=... removed_count=...`
+- `hasCachedAuth | result=true/false`
+
+### Cache Flow
+
+1. **authorize()** → on success, calls `cache.set(pubkey, authToken, walletUriBase, walletPackage)`
+2. **reauthorize()** → calls `cache.getLatest()`, sends cached token to wallet for silent re-auth
+3. **deauthorize()** → cache NOT cleared (user can reconnect later with cached token)
+4. **deleteAccount()** → calls `cache.clearAll()` (permanent removal, prevents reconnect)

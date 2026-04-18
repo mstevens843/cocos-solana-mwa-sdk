@@ -94,59 +94,28 @@ function generate() {
     sb.custom(mwaN, UUIDS.DemoAppConfig);
 
     // ═══════════════════════════════════════════════════════════════
-    // LANDING PANEL — portrait layout with TabBar + sub-panels
+    // LANDING PANEL — simple: Connect Wallet + Reconnect (Unity-style)
     // ═══════════════════════════════════════════════════════════════
     const lpN = sb.e.length;
     sb.node('LandingPanel', canvas, [], [lpN+1], v3(0,0,0));
     sb.ut(lpN, 720, 1280);
 
-    // Title + Subtitle (always visible)
-    const title = mkLabel(sb, 'TitleLabel', lpN, 'Cocos MWA SDK', 56, 420, 680, 90);
-    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Solana Mobile Wallet Adapter', 30, 340, 680, 60, 204, 204, 204);
+    // Title + Subtitle
+    const title = mkLabel(sb, 'TitleLabel', lpN, 'MWA Example App', 56, 420, 680, 90);
+    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Solana Mobile Wallet Adapter Demo', 30, 340, 680, 60, 204, 204, 204);
 
-    // ── TabBar (hidden by default — AppUI enables on Seeker/Saga) ──
-    const tabBarN = sb.e.length;
-    sb.node('TabBar', lpN, [], [tabBarN+1], v3(0, 240, 0));
-    sb.ut(tabBarN, 680, 80);
-    sb.e[tabBarN]._active = false;
+    // Connect Wallet — opens OS picker (no targetPackage)
+    const connectBtn = mkBtn(sb, 'ConnectButton', lpN, 'Connect Wallet', 120, 680, 100, 51, 153, 255);
 
-    const seedVaultTab = mkBtn(sb, 'SeedVaultTab', tabBarN, 'Seed Vault', 0, 310, 70, 0, 210, 136);
-    sb.e[seedVaultTab]._lpos = v3(-170, 0, 0);
-    const walletTab = mkBtn(sb, 'WalletTab', tabBarN, 'Wallets', 0, 310, 70, 120, 120, 120);
-    sb.e[walletTab]._lpos = v3(170, 0, 0);
+    // Reconnect (hidden by default — shown when cached auth exists)
+    const reconnBtn = mkBtn(sb, 'ReconnectButton', lpN, 'Reconnect (Cached)', 10, 680, 100, 77, 179, 102);
+    sb.e[reconnBtn]._active = false;
 
-    sb.e[tabBarN]._children = [rf(seedVaultTab), rf(walletTab)];
-
-    // ── SeedVaultPanel (default active sub-panel) ──
-    const svpN = sb.e.length;
-    sb.node('SeedVaultPanel', lpN, [], [svpN+1], v3(0, 0, 0));
-    sb.ut(svpN, 720, 800);
-
-    const connectBtn = mkBtn(sb, 'ConnectButton', svpN, 'Connect via Seed Vault', 120, 680, 100, 0, 210, 136);
-    const connectWalletBtn = mkBtn(sb, 'ConnectViaWalletButton', svpN, 'Connect via Wallet', 10, 680, 100, 120, 120, 180);
-    const reconnBtn = mkBtn(sb, 'ReconnectButton', svpN, 'Reconnect (Cached)', -100, 680, 100, 77, 179, 102);
-    const seedVaultStatus = mkLabel(sb, 'StatusLabel', svpN, 'Tap Connect to link your wallet', 26, -240, 680, 90, 204, 204, 204);
-
-    sb.e[svpN]._children = [rf(connectBtn), rf(connectWalletBtn), rf(reconnBtn), rf(seedVaultStatus)];
-
-    // ── WalletListPanel (hidden by default — shown when Wallet tab active or non-Seeker) ──
-    const wlpN = sb.e.length;
-    sb.node('WalletListPanel', lpN, [], [wlpN+1], v3(0, 0, 0));
-    sb.ut(wlpN, 720, 800);
-    sb.e[wlpN]._active = false;
-
-    // Wallet buttons with brand colors
-    const phantomBtn   = mkBtn(sb, 'PhantomButton',   wlpN, 'Phantom',       100, 680, 90, 171, 159, 242);
-    const backpackBtn  = mkBtn(sb, 'BackpackButton',  wlpN, 'Backpack',        0, 680, 90, 227,  62,  63);
-    const solflareBtn  = mkBtn(sb, 'SolflareButton',  wlpN, 'Solflare',     -100, 680, 90, 252, 159,  34);
-    const espressoBtn  = mkBtn(sb, 'EspressoButton',  wlpN, 'Espresso Cash', -200, 680, 90,  46, 196, 182);
-    const jupiterBtn   = mkBtn(sb, 'JupiterButton',   wlpN, 'Jupiter',      -300, 680, 90,  25, 172, 107);
-    const walletStatus = mkLabel(sb, 'WalletStatusLabel', wlpN, 'Detecting wallets...', 24, -420, 680, 70, 204, 204, 204);
-
-    sb.e[wlpN]._children = [rf(phantomBtn), rf(backpackBtn), rf(solflareBtn), rf(espressoBtn), rf(jupiterBtn), rf(walletStatus)];
+    // Status label
+    const statusLbl = mkLabel(sb, 'StatusLabel', lpN, 'Tap Connect to link your wallet', 26, -100, 680, 90, 204, 204, 204);
 
     // Patch LandingPanel children
-    sb.e[lpN]._children = [rf(title), rf(sub), rf(tabBarN), rf(svpN), rf(wlpN)];
+    sb.e[lpN]._children = [rf(title), rf(sub), rf(connectBtn), rf(reconnBtn), rf(statusLbl)];
 
     // ═══════════════════════════════════════════════════════════════
     // HOME PANEL — portrait layout, color-coded buttons
@@ -156,18 +125,19 @@ function generate() {
     sb.ut(hpN, 720, 1280);
 
     // Unity: pubkey=cyan(128,204,255), btns=blue(51,153,255), caps=slate(102,128,179),
-    //        reconnect=green(77,179,102), disconnect=orange(204,102,51), delete=red(204,51,51)
+    //        disconnect=orange(204,102,51), delete=red(204,51,51)
+    // Home has no Reconnect button — user reconnects from Landing's "Reconnect (cached)"
+    // button (shown after a previous successful connect, cache retained through disconnect).
     const pubkey = mkLabel(sb, 'PubkeyLabel', hpN, 'Not connected', 26, 470, 680, 50, 128, 204, 255);
     const signMsg  = mkBtn(sb, 'SignMessageButton', hpN, 'Sign Message',      370, 680, 90, 51, 153, 255);
     const signTx   = mkBtn(sb, 'SignTxButton', hpN, 'Sign Transaction',     270, 680, 90, 51, 153, 255);
     const signSend = mkBtn(sb, 'SignSendButton', hpN, 'Sign & Send',        170, 680, 90, 51, 153, 255);
     const caps     = mkBtn(sb, 'CapabilitiesButton', hpN, 'Get Capabilities', 70, 680, 90, 102, 128, 179);
-    const reconn2  = mkBtn(sb, 'ReconnectHomeButton', hpN, 'Reconnect',      -30, 680, 90, 77, 179, 102);
-    const disconn  = mkBtn(sb, 'DisconnectButton', hpN, 'Disconnect',       -130, 680, 90, 204, 102, 51);
-    const del      = mkBtn(sb, 'DeleteButton', hpN, 'Delete Account',       -230, 680, 90, 204, 51, 51);
-    const homeStatus = mkLabel(sb, 'HomeStatusLabel', hpN, 'Connected — choose an action', 26, -380, 680, 90, 204, 204, 204);
+    const disconn  = mkBtn(sb, 'DisconnectButton', hpN, 'Disconnect',        -30, 680, 90, 204, 102, 51);
+    const del      = mkBtn(sb, 'DeleteButton', hpN, 'Delete Account',       -130, 680, 90, 204, 51, 51);
+    const homeStatus = mkLabel(sb, 'HomeStatusLabel', hpN, 'Connected — choose an action', 26, -280, 680, 90, 204, 204, 204);
 
-    sb.e[hpN]._children = [rf(pubkey), rf(signMsg), rf(signTx), rf(signSend), rf(caps), rf(reconn2), rf(disconn), rf(del), rf(homeStatus)];
+    sb.e[hpN]._children = [rf(pubkey), rf(signMsg), rf(signTx), rf(signSend), rf(caps), rf(disconn), rf(del), rf(homeStatus)];
 
     // AppUI component on Canvas
     const appUI = sb.custom(canvas, UUIDS.AppUI);

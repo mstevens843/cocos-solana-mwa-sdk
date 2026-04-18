@@ -15,6 +15,15 @@ export interface AppIdentity {
 
 export type SolanaCluster = 'devnet' | 'testnet' | 'mainnet-beta';
 
+/**
+ * SIWS (Sign-In-With-Solana) identity payload. When `domain` is non-empty,
+ * the Connect flow issues MWA 2.0 `authorize_siws` with `sign_in_payload`.
+ */
+export interface SiwsIdentity {
+    domain: string;
+    statement: string;
+}
+
 // ─── MWA Results ─────────────────────────────────────────────────────────────
 
 /** Returned by authorize/reauthorize on success. */
@@ -47,6 +56,51 @@ export interface CachedAuth {
     walletUriBase: string;
     walletPackage: string;  // Android package name of wallet used (e.g., "app.phantom", "" for Seed Vault)
     timestamp: number;      // Unix timestamp (seconds)
+    /**
+     * Whether the user is currently signed in. `true` when the entry was
+     * written by a successful authorize/reauthorize; flipped to `false` by
+     * `markDisconnected` when the user taps Disconnect (cache contents are
+     * retained so Landing's Reconnect button still works). Used by
+     * `hasAutoLoginAuth()` to decide cold-start auto-sign-in. Optional for
+     * backward compat with pre-Pass-10 cache entries — treat `undefined` as
+     * `true` so existing users don't get logged out on upgrade.
+     */
+    isAuthenticated?: boolean;
+}
+
+/**
+ * Extensible interface for MWA authorization token caching.
+ * Implement this to provide custom storage backends (encrypted, cloud, SQLite, etc.).
+ * Default implementation: AuthCache (uses sys.localStorage, backed by SQLite on Android).
+ */
+export interface IMWAAuthCache {
+    /** Retrieve cached auth for a specific pubkey. Returns null if not found. */
+    get(pubkey: string): CachedAuth | null;
+    /** Retrieve the most recently cached auth (any pubkey). Returns null if none. */
+    getLatest(): CachedAuth | null;
+    /** Store an authorization result keyed by wallet public key. */
+    set(pubkey: string, authToken: string, walletUriBase?: string, walletPackage?: string): void;
+    /** Remove cached auth for a specific pubkey. */
+    clear(pubkey: string): void;
+    /** Clear ALL cached authorizations. */
+    clearAll(): void;
+    /** Check if any cached auth exists. */
+    hasCachedAuth(): boolean;
+    /**
+     * Flip `isAuthenticated=false` on an existing entry while retaining
+     * pubkey/authToken/walletUriBase/walletPackage so the Landing
+     * "Reconnect (cached)" button still works. Called from
+     * `MWAManager.deauthorize()`. No-op if the entry doesn't exist.
+     */
+    markDisconnected(pubkey: string): void;
+    /**
+     * True iff the latest cached entry exists AND its `isAuthenticated`
+     * is `true` (or `undefined` — legacy entries from before Pass 10 are
+     * treated as authenticated so existing users don't lose their
+     * session on upgrade). Drives the cold-start auto-sign-in in
+     * `AppUI.start()`.
+     */
+    hasAutoLoginAuth(): boolean;
 }
 
 /** Wallet capabilities returned by get_capabilities. */
@@ -121,7 +175,14 @@ export interface MWAResponse {
 
 /** Error returned from the native layer. */
 export interface MWAError {
-    code: string;           // e.g., "USER_REJECTED", "TIMEOUT", "WALLET_ERROR"
+    // Common codes: "USER_REJECTED", "TIMEOUT", "WALLET_ERROR",
+    // "WALLET_CRASHED" (peer closed WebSocket mid-request — KNOWN_ISSUES #6),
+    // "WALLET_HUNG" (no reply within SIGN_TIMEOUT_MS — #11),
+    // "WALLET_AUTH_MISMATCH" (Pass 13: wallet rejected a cached authToken it
+    //     didn't issue — user picked a different wallet in the OS picker than
+    //     the one that authorized; see KNOWN_ISSUES #17),
+    // "INVALID_PAYLOADS", "NOT_SUBMITTED", "INSUFFICIENT_FUNDS_FOR_RENT".
+    code: string;
     message: string;        // human-readable error description
 }
 

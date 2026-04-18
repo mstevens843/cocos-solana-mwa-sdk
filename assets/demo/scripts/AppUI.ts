@@ -1,36 +1,20 @@
 /**
- * AppUI.ts — Single unified UI controller for Landing + Home panels.
+ * AppUI.ts — Unified UI controller for Landing + Home panels.
  *
- * Replaces LandingUI + HomeUI to avoid scene transition bugs.
- * Both panels exist in one scene — show/hide based on connection state.
- *
- * Landing panel has:
- *   - TabBar (visible on Seeker/Saga only) with Seed Vault + Wallets tabs
- *   - SeedVaultPanel: Connect via Seed Vault (existing flow)
- *   - WalletListPanel: Phantom, Backpack, Solflare, Espresso Cash buttons
- *   - On non-Seeker: tabs hidden, wallet list shown directly
+ * Landing: single "Connect Wallet" button → OS picker selects wallet.
+ * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color } from 'cc';
+import { _decorator, Component, Label, Button, Node } from 'cc';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
 import { MWA_AUTHORIZED, MWA_AUTH_FAILED, MWA_DISCONNECTED, MWA_STATUS } from '../../solana-mwa/scripts/MWAEvents';
 import { getAppIdentity } from '../../solana-mwa/scripts/AppIdentity';
-import { WalletInfo, DeviceInfo } from '../../solana-mwa/scripts/MWATypes';
 import { showToast } from './AndroidToast';
 
 const { ccclass } = _decorator;
 const TAG = '[AppUI]';
-
-/** Wallet button config — maps scene node names to Android package names. */
-const WALLET_BUTTONS = [
-    { nodeName: 'PhantomButton',  pkg: 'app.phantom' },
-    { nodeName: 'BackpackButton', pkg: 'app.backpack' },
-    { nodeName: 'SolflareButton', pkg: 'com.solflare.mobile' },
-    { nodeName: 'EspressoButton', pkg: 'com.pleasecrypto.flutter' },
-    { nodeName: 'JupiterButton',  pkg: 'ag.jup.app' },
-];
 
 @ccclass('AppUI')
 export class AppUI extends Component {
@@ -39,24 +23,10 @@ export class AppUI extends Component {
     private _landingPanel: Node = null!;
     private _homePanel: Node = null!;
 
-    // Tab bar (Seeker/Saga only)
-    private _tabBar: Node = null!;
-    private _seedVaultTab: Button = null!;
-    private _walletTab: Button = null!;
-
-    // Sub-panels within Landing
-    private _seedVaultPanel: Node = null!;
-    private _walletListPanel: Node = null!;
-
-    // Seed Vault panel elements
+    // Landing elements
     private _connectButton: Button = null!;
-    private _connectViaWalletButton: Button = null!;
     private _reconnectButton: Button = null!;
     private _landingStatus: Label = null!;
-
-    // Wallet list elements
-    private _walletButtons: Map<string, Button> = new Map();
-    private _walletStatusLabel: Label = null!;
 
     // Home elements
     private _pubkeyLabel: Label = null!;
@@ -65,11 +35,6 @@ export class AppUI extends Component {
 
     // RPC
     private _rpc!: SolanaRpc;
-
-    // Wallet adapter state
-    private _wallets: WalletInfo[] = [];
-    private _deviceInfo: DeviceInfo = { isSeeker: false, isSaga: false, isSolanaMobile: false, manufacturer: '', model: '' };
-    private _adapterReady: boolean = false;
 
     start(): void {
         console.log(`${TAG} start | START`);
@@ -83,65 +48,35 @@ export class AppUI extends Component {
             return;
         }
 
-        // ── Tab bar ──
-        this._tabBar = this._landingPanel.getChildByName('TabBar')!;
-        console.log(`${TAG} start | TabBar found=${!!this._tabBar}`);
-        if (this._tabBar) {
-            this._seedVaultTab = this._tabBar.getChildByName('SeedVaultTab')?.getComponent(Button)!;
-            this._walletTab = this._tabBar.getChildByName('WalletTab')?.getComponent(Button)!;
-            console.log(`${TAG} start | SeedVaultTab found=${!!this._seedVaultTab} WalletTab found=${!!this._walletTab}`);
-            this._seedVaultTab?.node.on(Button.EventType.CLICK, this._onSeedVaultTab, this);
-            this._walletTab?.node.on(Button.EventType.CLICK, this._onWalletTab, this);
-        }
+        // ── Landing elements ──
+        this._connectButton = this._landingPanel.getChildByName('ConnectButton')?.getComponent(Button)!;
+        this._reconnectButton = this._landingPanel.getChildByName('ReconnectButton')?.getComponent(Button)!;
+        this._landingStatus = this._landingPanel.getChildByName('StatusLabel')?.getComponent(Label)!;
+        console.log(`${TAG} start | ConnectButton=${!!this._connectButton} ReconnectButton=${!!this._reconnectButton} StatusLabel=${!!this._landingStatus}`);
 
-        // ── Sub-panels ──
-        this._seedVaultPanel = this._landingPanel.getChildByName('SeedVaultPanel')!;
-        this._walletListPanel = this._landingPanel.getChildByName('WalletListPanel')!;
-        console.log(`${TAG} start | SeedVaultPanel found=${!!this._seedVaultPanel} WalletListPanel found=${!!this._walletListPanel}`);
-
-        // ── Seed Vault panel elements ──
-        if (this._seedVaultPanel) {
-            this._connectButton = this._seedVaultPanel.getChildByName('ConnectButton')?.getComponent(Button)!;
-            this._connectViaWalletButton = this._seedVaultPanel.getChildByName('ConnectViaWalletButton')?.getComponent(Button)!;
-            this._reconnectButton = this._seedVaultPanel.getChildByName('ReconnectButton')?.getComponent(Button)!;
-            this._landingStatus = this._seedVaultPanel.getChildByName('StatusLabel')?.getComponent(Label)!;
-            console.log(`${TAG} start | SeedVault elements: ConnectButton=${!!this._connectButton} ConnectViaWalletButton=${!!this._connectViaWalletButton} ReconnectButton=${!!this._reconnectButton} StatusLabel=${!!this._landingStatus}`);
-
-            this._connectButton?.node.on(Button.EventType.CLICK, this._onConnect, this);
-            this._connectViaWalletButton?.node.on(Button.EventType.CLICK, this._onConnectViaWallet, this);
-            this._reconnectButton?.node.on(Button.EventType.CLICK, this._onReconnect, this);
-        }
-
-        // ── Wallet list elements ──
-        if (this._walletListPanel) {
-            this._walletStatusLabel = this._walletListPanel.getChildByName('WalletStatusLabel')?.getComponent(Label)!;
-            console.log(`${TAG} start | WalletStatusLabel found=${!!this._walletStatusLabel}`);
-
-            for (const cfg of WALLET_BUTTONS) {
-                const node = this._walletListPanel.getChildByName(cfg.nodeName);
-                const btn = node?.getComponent(Button);
-                console.log(`${TAG} start | wallet button ${cfg.nodeName} (${cfg.pkg}): node_found=${!!node} btn_found=${!!btn}`);
-                if (node && btn) {
-                    this._walletButtons.set(cfg.pkg, btn);
-                    btn.node.on(Button.EventType.CLICK, () => this._onWalletTapped(cfg.pkg), this);
-                }
-            }
-            console.log(`${TAG} start | wallet buttons wired: ${this._walletButtons.size}/4`);
-        }
+        this._connectButton?.node.on(Button.EventType.CLICK, this._onConnect, this);
+        this._reconnectButton?.node.on(Button.EventType.CLICK, this._onReconnect, this);
 
         // ── Wire home buttons ──
         const homeBtnNames = [
             'SignMessageButton', 'SignTxButton', 'SignSendButton',
-            'CapabilitiesButton', 'ReconnectHomeButton', 'DisconnectButton', 'DeleteButton',
+            'CapabilitiesButton', 'DisconnectButton', 'DeleteButton',
         ];
         const homeHandlers = [
             this._onSignMessage, this._onSignTransaction, this._onSignAndSend,
-            this._onCapabilities, this._onReconnectHome, this._onDisconnect, this._onDelete,
+            this._onCapabilities, this._onDisconnect, this._onDelete,
         ];
 
-        // Home elements
         this._pubkeyLabel = this._homePanel.getChildByName('PubkeyLabel')?.getComponent(Label)!;
         this._homeStatus = this._homePanel.getChildByName('HomeStatusLabel')?.getComponent(Label)!;
+
+        // Belt-and-suspenders: hide stale ReconnectHomeButton if the scene
+        // JSON wasn't regenerated after generate-scenes.js removed it.
+        const staleReconnect = this._homePanel.getChildByName('ReconnectHomeButton');
+        if (staleReconnect) {
+            staleReconnect.active = false;
+            console.log(`${TAG} start | hid stale ReconnectHomeButton from scene (scene not yet regenerated)`);
+        }
 
         for (let i = 0; i < homeBtnNames.length; i++) {
             const node = this._homePanel.getChildByName(homeBtnNames[i]);
@@ -167,200 +102,50 @@ export class AppUI extends Component {
             identity.cluster === 'mainnet-beta' ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com'
         );
 
-        // Show landing initially
-        this._showLanding();
-
-        // Check cached auth for Seed Vault reconnect button
-        if (mwa?.cache?.hasCachedAuth()) {
-            if (this._reconnectButton) this._reconnectButton.node.active = true;
-            showToast('Cached session found');
+        // Pass 10: extensible auth-cache cold-start auto-sign-in. If the
+        // user was signed in (not disconnected) when the app was last
+        // killed, restore their session silently and land on Home. Any
+        // other state (fresh install, explicit disconnect, deleted account)
+        // falls through to the Landing panel. See KNOWN_ISSUES.md #15.
+        if (mwa?.cache?.hasAutoLoginAuth()) {
+            console.log(`${TAG} start | AUTO_SIGN_IN_CANDIDATE cache.hasAutoLoginAuth=true — attempting reauthorize`);
+            this._attemptAutoSignIn();
+        } else {
+            console.log(`${TAG} start | AUTO_SIGN_IN_SKIP cache.hasAutoLoginAuth=false — showing Landing`);
+            this._showLanding();
         }
-
-        // Init wallet adapter (async — detect device + wallets)
-        this._initWalletAdapter();
 
         console.log(`${TAG} start | DONE`);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  WALLET ADAPTER INITIALIZATION
-    // ═══════════════════════════════════════════════════════════════════
-
-    private async _initWalletAdapter(): Promise<void> {
-        console.log(`${TAG} _initWalletAdapter | START`);
+    /**
+     * Restore a signed-in session from the extensible auth cache on cold
+     * start. Runs asynchronously so `start()` can return immediately.
+     * On success: show Home with a toast acknowledging the cache hit.
+     * On failure: fall through to the Landing panel — the cache entry was
+     * present but `reauthorize()` couldn't validate it (cleared keys,
+     * expired token, etc.). The user can still tap Reconnect from Landing
+     * if they want to retry manually.
+     */
+    private async _attemptAutoSignIn(): Promise<void> {
         const mwa = MWAManager.instance;
         if (!mwa) {
-            console.log(`${TAG} _initWalletAdapter | SKIP no MWAManager instance`);
+            this._showLanding();
             return;
         }
-
-        // Detect device and wallets in parallel
-        const [deviceInfo, wallets] = await Promise.all([
-            mwa.detectDevice(),
-            mwa.detectWallets(),
-        ]);
-
-        this._deviceInfo = deviceInfo;
-        this._wallets = wallets;
-
-        console.log(`${TAG} _initWalletAdapter | DEVICE manufacturer="${deviceInfo.manufacturer}" model="${deviceInfo.model}" isSeeker=${deviceInfo.isSeeker} isSaga=${deviceInfo.isSaga} isSolanaMobile=${deviceInfo.isSolanaMobile}`);
-        console.log(`${TAG} _initWalletAdapter | WALLETS total=${wallets.length} installed=${wallets.filter(w => w.installed).length}`);
-        for (const w of wallets) {
-            console.log(`${TAG} _initWalletAdapter |   ${w.name} (${w.packageName}) installed=${w.installed}`);
-        }
-
-        // Re-run _showLanding now that adapter is ready — it handles all layout logic
-        this._showLanding();
-
-        // Update wallet button states (installed vs not-installed)
-        this._updateWalletButtons();
-
-        this._adapterReady = true;
-        console.log(`${TAG} _initWalletAdapter | DONE adapterReady=true`);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  TAB SWITCHING
-    // ═══════════════════════════════════════════════════════════════════
-
-    private _onSeedVaultTab(): void {
-        console.log(`${TAG} _onSeedVaultTab`);
-        this._showSeedVaultTab();
-    }
-
-    private _onWalletTab(): void {
-        console.log(`${TAG} _onWalletTab`);
-        this._showWalletTab();
-
-        // Re-detect wallets each time user switches to this tab
-        // (catches wallets installed after app launch)
-        this._refreshWallets();
-    }
-
-    private _showSeedVaultTab(): void {
-        console.log(`${TAG} _showSeedVaultTab | SeedVaultPanel=visible WalletListPanel=hidden`);
-        if (this._seedVaultPanel) this._seedVaultPanel.active = true;
-        if (this._walletListPanel) this._walletListPanel.active = false;
-        this._updateTabColors(true);
-    }
-
-    private _showWalletTab(): void {
-        console.log(`${TAG} _showWalletTab | SeedVaultPanel=hidden WalletListPanel=visible`);
-        if (this._seedVaultPanel) this._seedVaultPanel.active = false;
-        if (this._walletListPanel) this._walletListPanel.active = true;
-        this._updateTabColors(false);
-    }
-
-    private _updateTabColors(seedVaultActive: boolean): void {
-        // Active tab = bright color, inactive = dim grey
-        if (this._seedVaultTab) {
-            const spr = this._seedVaultTab.node.getComponent(Sprite);
-            if (spr) spr.color = seedVaultActive ? new Color(0, 210, 136) : new Color(80, 80, 80);
-        }
-        if (this._walletTab) {
-            const spr = this._walletTab.node.getComponent(Sprite);
-            if (spr) spr.color = seedVaultActive ? new Color(80, 80, 80) : new Color(100, 140, 220);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  WALLET LIST
-    // ═══════════════════════════════════════════════════════════════════
-
-    private async _refreshWallets(): Promise<void> {
-        console.log(`${TAG} _refreshWallets | START`);
-        const mwa = MWAManager.instance;
-        if (!mwa) {
-            console.log(`${TAG} _refreshWallets | SKIP no MWAManager`);
-            return;
-        }
-        this._wallets = await mwa.detectWallets();
-        console.log(`${TAG} _refreshWallets | DONE total=${this._wallets.length} installed=${this._wallets.filter(w => w.installed).length}`);
-        this._updateWalletButtons();
-    }
-
-    private _updateWalletButtons(): void {
-        console.log(`${TAG} _updateWalletButtons | START wallet_count=${this._wallets.length} button_count=${this._walletButtons.size}`);
-
-        for (const wallet of this._wallets) {
-            const btn = this._walletButtons.get(wallet.packageName);
-            if (!btn) {
-                console.log(`${TAG} _updateWalletButtons | WARN no button mapped for ${wallet.name} (${wallet.packageName})`);
-                continue;
-            }
-
-            const label = btn.node.getChildByName('Label')?.getComponent(Label);
-            const spr = btn.node.getComponent(Sprite);
-
-            if (wallet.installed) {
-                btn.interactable = true;
-                if (label) label.string = wallet.name;
-                if (spr) {
-                    const nc = btn.normalColor;
-                    spr.color = new Color(nc.r, nc.g, nc.b, 255);
-                }
-                console.log(`${TAG} _updateWalletButtons | ${wallet.name} → INSTALLED label="${wallet.name}" color=full`);
-            } else {
-                btn.interactable = true; // still tappable (opens store)
-                if (label) label.string = `${wallet.name}  [Install]`;
-                if (spr) {
-                    const nc = btn.normalColor;
-                    spr.color = new Color(
-                        Math.floor(nc.r * 0.4),
-                        Math.floor(nc.g * 0.4),
-                        Math.floor(nc.b * 0.4),
-                        160
-                    );
-                }
-                console.log(`${TAG} _updateWalletButtons | ${wallet.name} → NOT_INSTALLED label="${wallet.name}  [Install]" color=dimmed`);
-            }
-        }
-
-        const installedCount = this._wallets.filter(w => w.installed).length;
-        const statusMsg = this._wallets.length === 0
-            ? 'Detecting wallets...'
-            : installedCount > 0
-                ? `${installedCount} wallet(s) detected`
-                : 'No MWA wallets installed \u2014 tap to install';
-
-        if (this._walletStatusLabel) {
-            this._walletStatusLabel.string = statusMsg;
-        }
-        console.log(`${TAG} _updateWalletButtons | DONE status="${statusMsg}"`)
-    }
-
-    private async _onWalletTapped(packageName: string): Promise<void> {
-        console.log(`${TAG} _onWalletTapped | START pkg=${packageName} wallets_loaded=${this._wallets.length}`);
-        const wallet = this._wallets.find(w => w.packageName === packageName);
-        if (!wallet) {
-            console.log(`${TAG} _onWalletTapped | ABORT wallet data not found for pkg=${packageName} — _wallets has: [${this._wallets.map(w => w.packageName).join(', ')}]`);
-            return;
-        }
-
-        console.log(`${TAG} _onWalletTapped | WALLET name="${wallet.name}" pkg=${wallet.packageName} installed=${wallet.installed} storeUrl=${wallet.storeUrl}`);
-
-        if (wallet.installed) {
-            console.log(`${TAG} _onWalletTapped | ACTION=connect — calling authorizeWithWallet("${packageName}")`);
-            this._setLandingEnabled(false);
-            if (this._walletStatusLabel) this._walletStatusLabel.string = `Connecting to ${wallet.name}...`;
-
-            const result = await MWAManager.instance?.authorizeWithWallet(packageName);
+        try {
+            const result = await mwa.reauthorize();
             if (result) {
-                console.log(`${TAG} _onWalletTapped | RESULT=SUCCESS wallet="${wallet.name}" pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0}`);
-                showToast(`Connected via ${wallet.name}`);
-                showToast('Auth cached');
+                console.log(`${TAG} _attemptAutoSignIn | SUCCESS pubkey=${result.pubkey} — showing Home`);
+                showToast('Extensible auth cache — session restored', true);
                 this._showHome();
             } else {
-                console.log(`${TAG} _onWalletTapped | RESULT=FAIL wallet="${wallet.name}" — authorizeWithWallet returned null`);
-                showToast(`${wallet.name} connection failed`);
-                if (this._walletStatusLabel) this._walletStatusLabel.string = `${wallet.name} connection failed`;
-                this._setLandingEnabled(true);
+                console.log(`${TAG} _attemptAutoSignIn | FAIL reauthorize returned null — showing Landing`);
+                this._showLanding();
             }
-        } else {
-            console.log(`${TAG} _onWalletTapped | ACTION=install — opening Play Store url=${wallet.storeUrl}`);
-            showToast(`Opening Play Store for ${wallet.name}`);
-            await MWAManager.instance?.openUrl(wallet.storeUrl);
-            console.log(`${TAG} _onWalletTapped | DONE store intent launched for ${wallet.name}`);
+        } catch (e: any) {
+            console.log(`${TAG} _attemptAutoSignIn | EXCEPTION err=${e?.message || e} — showing Landing`);
+            this._showLanding();
         }
     }
 
@@ -370,58 +155,12 @@ export class AppUI extends Component {
 
     private _showLanding(): void {
         const hasCached = MWAManager.instance?.cache?.hasCachedAuth() ?? false;
-        console.log(`${TAG} _showLanding | START adapterReady=${this._adapterReady} hasCached=${hasCached} isSeeker=${this._deviceInfo.isSeeker} isSaga=${this._deviceInfo.isSaga}`);
+        console.log(`${TAG} _showLanding | hasCached=${hasCached}`);
         this._landingPanel.active = true;
         this._homePanel.active = false;
         if (this._landingStatus) this._landingStatus.string = 'Tap Connect to link your wallet';
         if (this._reconnectButton) this._reconnectButton.node.active = hasCached;
         this._setLandingEnabled(true);
-
-        // Mutually exclusive visibility: TabBar (side-by-side) vs stacked buttons — NEVER both
-        if (this._adapterReady) {
-            const isSeeker = this._deviceInfo.isSeeker || this._deviceInfo.isSaga;
-
-            if (isSeeker && hasCached) {
-                // CACHED SEEKER: side-by-side tabs + Reconnect. NO stacked buttons.
-                console.log(`${TAG} _showLanding | LAYOUT=cached_seeker — TabBar=visible, stacked=hidden, Reconnect=visible`);
-                if (this._tabBar) this._tabBar.active = true;
-                if (this._connectButton) this._connectButton.node.active = false;
-                if (this._connectViaWalletButton) this._connectViaWalletButton.node.active = false;
-                if (this._reconnectButton) {
-                    this._reconnectButton.node.active = true;
-                    // Keep Reconnect at default position, move TabBar down instead
-                    this._reconnectButton.node.setPosition(0, -100, 0);
-                }
-                // Move TabBar down closer to Reconnect (default y=240 is too high)
-                if (this._tabBar) this._tabBar.node.setPosition(0, 20, 0);
-                if (this._seedVaultPanel) this._seedVaultPanel.active = true;
-                if (this._walletListPanel) this._walletListPanel.active = false;
-                this._showSeedVaultTab();
-            } else if (isSeeker && !hasCached) {
-                // FRESH SEEKER: stacked full-width buttons. NO side-by-side tabs.
-                console.log(`${TAG} _showLanding | LAYOUT=fresh_seeker — TabBar=hidden, stacked=visible, Reconnect=hidden`);
-                if (this._tabBar) this._tabBar.active = false;
-                if (this._connectButton) this._connectButton.node.active = true;
-                if (this._connectViaWalletButton) this._connectViaWalletButton.node.active = true;
-                if (this._reconnectButton) {
-                    this._reconnectButton.node.active = false;
-                    this._reconnectButton.node.setPosition(0, -100, 0);
-                }
-                // Reset TabBar position back to default
-                if (this._tabBar) this._tabBar.node.setPosition(0, 240, 0);
-                if (this._seedVaultPanel) this._seedVaultPanel.active = true;
-                if (this._walletListPanel) this._walletListPanel.active = false;
-            } else {
-                // NON-SEEKER: wallet list only
-                console.log(`${TAG} _showLanding | LAYOUT=generic — everything hidden except WalletListPanel`);
-                if (this._tabBar) this._tabBar.active = false;
-                if (this._seedVaultPanel) this._seedVaultPanel.active = false;
-                if (this._walletListPanel) this._walletListPanel.active = true;
-            }
-        } else {
-            console.log(`${TAG} _showLanding | LAYOUT=scene_defaults — adapter not ready yet, skipping sub-panel logic`);
-        }
-        console.log(`${TAG} _showLanding | DONE`);
     }
 
     private _showHome(): void {
@@ -439,37 +178,56 @@ export class AppUI extends Component {
         }
         if (this._homeStatus) this._homeStatus.string = 'Connected \u2014 choose an action';
         this._setHomeEnabled(true);
-        console.log(`${TAG} _showHome | DONE pubkeyLabel="${this._pubkeyLabel?.string}" walletPackage=${MWAManager.instance?.connectedWalletPackage || '(default)'}`);
+
+        // Hide Sign Message button on wallets that don't implement sign_messages
+        // (Phantom, Solflare). See MWAManager.supportsSignMessages() and
+        // KNOWN_ISSUES.md #11 for the evidence.
+        const signMsgBtnNode = this._homePanel.getChildByName('SignMessageButton');
+        if (signMsgBtnNode) {
+            const supported = mwa?.supportsSignMessages() ?? true;
+            signMsgBtnNode.active = supported;
+            if (!supported) {
+                console.log(`${TAG} _showHome | hiding SignMessageButton — wallet doesn't declare sign_messages support (pkg="${mwa?.connectedWalletPackage || '(unknown)'}")`);
+            }
+        }
+        console.log(`${TAG} _showHome | DONE pubkey=${this._pubkeyLabel?.string}`);
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  LANDING HANDLERS (Seed Vault flow)
+    //  LANDING HANDLERS
     // ═══════════════════════════════════════════════════════════════════
 
     private async _onConnect(): Promise<void> {
-        console.log(`${TAG} onConnect | START`);
+        console.log(`${TAG} onConnect | START — opening OS wallet picker`);
         this._setLandingEnabled(false);
         if (this._landingStatus) this._landingStatus.string = 'Opening wallet...';
 
         const result = await MWAManager.instance?.authorize();
         if (result) {
-            console.log(`${TAG} onConnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0} walletUriBase=${result.walletUriBase || '(empty)'}`);
-            showToast(`Connected: ${result.pubkey.substring(0, 4)}...${result.pubkey.substring(result.pubkey.length - 4)}`);
-            showToast('Auth cached');
+            // Pass 10: `authorize()` delegates to `authorizeSiws()` when a
+            // SIWS identity is configured (DemoAppConfig enables this). The
+            // returned shape may include `signInResult` — if it does, the
+            // wallet produced a CAIP-122 proof-of-ownership signature (native
+            // from Backpack; fallback from Jupiter / Seed Vault). Phantom and
+            // Solflare degrade to a plain authorize session without SIWS
+            // (sign_messages fallback times out at 15 s — KNOWN_ISSUES #11).
+            const siwsResult = (result as any).signInResult;
+            const hasSiws = siwsResult && siwsResult.signature && siwsResult.signature.length > 0;
+            console.log(`${TAG} onConnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0} siws=${hasSiws ? 'yes' : 'no'} siws_sig_len=${siwsResult?.signature?.length ?? 0}`);
+            const shortPk = `${result.pubkey.substring(0, 4)}...${result.pubkey.substring(result.pubkey.length - 4)}`;
+            if (hasSiws) {
+                showToast(`Signed in with Solana: ${shortPk}`, true);
+            } else {
+                showToast(`Connected: ${shortPk}`);
+                showToast('Auth cached');
+            }
             this._showHome();
         } else {
             console.log(`${TAG} onConnect | FAIL result=null`);
             showToast('Authorization failed');
+            if (this._landingStatus) this._landingStatus.string = 'Authorization failed';
             this._setLandingEnabled(true);
         }
-    }
-
-    private _onConnectViaWallet(): void {
-        console.log(`${TAG} _onConnectViaWallet | switching to WalletListPanel`);
-        if (this._tabBar) this._tabBar.active = false;
-        if (this._seedVaultPanel) this._seedVaultPanel.active = false;
-        if (this._walletListPanel) this._walletListPanel.active = true;
-        this._refreshWallets();
     }
 
     private async _onReconnect(): Promise<void> {
@@ -479,12 +237,13 @@ export class AppUI extends Component {
 
         const result = await MWAManager.instance?.reauthorize();
         if (result) {
-            console.log(`${TAG} onReconnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0}`);
+            console.log(`${TAG} onReconnect | SUCCESS pubkey=${result.pubkey}`);
             showToast('Reconnected');
             this._showHome();
         } else {
             console.log(`${TAG} onReconnect | FAIL result=null`);
             showToast('Reconnect failed');
+            if (this._landingStatus) this._landingStatus.string = 'Reconnect failed';
             this._setLandingEnabled(true);
         }
     }
@@ -494,18 +253,35 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════════
 
     private async _onSignMessage(): Promise<void> {
-        console.log(`${TAG} onSignMessage | START message="Hello from Cocos MWA SDK!" message_len=25`);
+        console.log(`${TAG} onSignMessage | START`);
         this._setHomeEnabled(false);
-        const sig = await MWAManager.instance!.signMessage('Hello from Cocos MWA SDK!');
-        console.log(`${TAG} onSignMessage | RESULT sig_len=${sig?.length ?? 0} sig=${sig || '(empty)'}`);
+        const mwa = MWAManager.instance!;
+        const sig = await mwa.signMessage('Hello from Cocos MWA SDK!');
+        console.log(`${TAG} onSignMessage | RESULT sig_len=${sig?.length ?? 0} lastError=${mwa.lastError?.code ?? '(none)'}`);
         if (this._homeStatus) this._homeStatus.string = sig ? `Signed: ${sig.substring(0, 20)}...` : 'Sign failed';
-        if (sig) showToast(`Message Signed!`);
-        else showToast('Sign message failed');
+        if (sig) {
+            showToast('Message Signed!');
+        } else if (mwa.lastError?.code === 'UNSUPPORTED') {
+            // Wallet declared no sign_messages support, or static map flagged it. See KNOWN_ISSUES.md #11.
+            showToast("This wallet doesn't support sign_messages — try Backpack or Jupiter", true);
+        } else if (mwa.lastError?.code === 'WALLET_HUNG') {
+            // Wallet didn't respond — usually means it silently doesn't implement the method. See KNOWN_ISSUES.md #11.
+            showToast("Wallet didn't respond — may not support this operation. Try Backpack or Jupiter", true);
+        } else if (mwa.lastError?.code === 'WALLET_CRASHED') {
+            // Wallet closed WebSocket without reply — Solflare-class crash or unsupported method. See KNOWN_ISSUES.md #6/#11.
+            showToast('Wallet crashed — try Backpack, Phantom, or Jupiter', true);
+        } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+            // Pass 13: user picked a different wallet in the OS picker than the
+            // one that issued the cached authToken. See KNOWN_ISSUES.md #17.
+            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+        } else {
+            showToast('Sign message failed');
+        }
         this._setHomeEnabled(true);
     }
 
     private async _onSignTransaction(): Promise<void> {
-        console.log(`${TAG} onSignTransaction | START pubkey=${MWAManager.instance!.connectedPubkey}`);
+        console.log(`${TAG} onSignTransaction | START`);
         this._setHomeEnabled(false);
         if (this._homeStatus) this._homeStatus.string = 'Fetching blockhash...';
         const bh = await this._rpc.getLatestBlockhash();
@@ -515,22 +291,28 @@ export class AppUI extends Component {
             this._setHomeEnabled(true);
             return;
         }
-        console.log(`${TAG} onSignTransaction | blockhash=${bh.blockhash} lastValidBlockHeight=${bh.lastValidBlockHeight}`);
         const tx = buildMemoTransaction(MWAManager.instance!.connectedPubkey, 'Hello from Cocos Creator MWA SDK!', bh.blockhash);
         console.log(`${TAG} onSignTransaction | built_tx_bytes=${tx.length}`);
         if (this._homeStatus) this._homeStatus.string = 'Approve in wallet...';
-        const signed = await MWAManager.instance!.signTransaction(tx);
-        console.log(`${TAG} onSignTransaction | RESULT signed_bytes=${signed.length} success=${signed.length > 0}`);
+        const mwa = MWAManager.instance!;
+        const signed = await mwa.signTransaction(tx);
+        console.log(`${TAG} onSignTransaction | RESULT signed_bytes=${signed.length} lastError=${mwa.lastError?.code ?? '(none)'}`);
         if (this._homeStatus) this._homeStatus.string = signed.length > 0
             ? 'Transaction signed successfully!'
             : 'Sign transaction failed';
-        if (signed.length > 0) showToast('Transaction Signed!');
-        else showToast('Sign transaction failed');
+        if (signed.length > 0) {
+            showToast('Transaction Signed!');
+        } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+            // Pass 13 — KNOWN_ISSUES.md #17.
+            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+        } else {
+            showToast('Sign transaction failed');
+        }
         this._setHomeEnabled(true);
     }
 
     private async _onSignAndSend(): Promise<void> {
-        console.log(`${TAG} onSignAndSend | START pubkey=${MWAManager.instance!.connectedPubkey}`);
+        console.log(`${TAG} onSignAndSend | START`);
         this._setHomeEnabled(false);
         if (this._homeStatus) this._homeStatus.string = 'Fetching blockhash...';
         const bh = await this._rpc.getLatestBlockhash();
@@ -540,15 +322,33 @@ export class AppUI extends Component {
             this._setHomeEnabled(true);
             return;
         }
-        console.log(`${TAG} onSignAndSend | blockhash=${bh.blockhash} lastValidBlockHeight=${bh.lastValidBlockHeight}`);
-        const tx = buildMemoTransaction(MWAManager.instance!.connectedPubkey, 'Hello from Cocos Creator MWA SDK!', bh.blockhash);
+        const mwa = MWAManager.instance!;
+        const tx = buildMemoTransaction(mwa.connectedPubkey, 'Hello from Cocos Creator MWA SDK!', bh.blockhash);
         console.log(`${TAG} onSignAndSend | built_tx_bytes=${tx.length}`);
         if (this._homeStatus) this._homeStatus.string = 'Signing & sending...';
-        const sig = await MWAManager.instance!.signAndSendTransaction(tx);
-        console.log(`${TAG} onSignAndSend | RESULT sig_len=${sig?.length ?? 0} sig=${sig || '(empty)'}`);
+        const sig = await mwa.signAndSendTransaction(tx);
+        console.log(`${TAG} onSignAndSend | RESULT sig=${sig || '(empty)'} lastError=${mwa.lastError?.code ?? '(none)'}`);
         if (this._homeStatus) this._homeStatus.string = sig ? `Sent! ${sig.substring(0, 24)}...` : 'Send failed';
-        if (sig) showToast(`Transaction Sent!`, true);
-        else showToast('Sign & send failed');
+        if (sig) {
+            showToast('Transaction Sent!', true);
+        } else if (mwa.lastError?.code === 'INSUFFICIENT_FUNDS_FOR_RENT') {
+            // Fee-payer is below rent-exempt minimum + fee + priority-fee buffer.
+            // Seed Vault's wrapper injects priority-fee instructions which raises
+            // the required balance. See KNOWN_ISSUES.md #13.
+            showToast('Fee-payer account underfunded — send ≥0.001 SOL and retry', true);
+        } else if (mwa.lastError?.code === 'WALLET_HUNG') {
+            showToast("Wallet didn't respond — try reconnecting or a different wallet", true);
+        } else if (mwa.lastError?.code === 'WALLET_CRASHED') {
+            // Wallet crashed during signing (Solflare-class bug). See KNOWN_ISSUES.md #6.
+            showToast('Wallet crashed — try Backpack, Phantom, or Jupiter', true);
+        } else if (mwa.lastError?.code === 'RPC_BROADCAST_FAILED') {
+            showToast('Sign succeeded but RPC broadcast was rejected', true);
+        } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+            // Pass 13 — KNOWN_ISSUES.md #17.
+            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+        } else {
+            showToast('Sign & send failed');
+        }
         this._setHomeEnabled(true);
     }
 
@@ -556,7 +356,7 @@ export class AppUI extends Component {
         console.log(`${TAG} onCapabilities | START`);
         this._setHomeEnabled(false);
         const caps = await MWAManager.instance!.getCapabilities();
-        console.log(`${TAG} onCapabilities | RESULT success=${caps != null} max_txs=${caps?.maxTransactionsPerRequest ?? 'N/A'} max_msgs=${caps?.maxMessagesPerRequest ?? 'N/A'} versions=${JSON.stringify(caps?.supportedTransactionVersions ?? [])} features=${JSON.stringify(caps?.features ?? [])}`);
+        console.log(`${TAG} onCapabilities | RESULT success=${caps != null}`);
         if (this._homeStatus) this._homeStatus.string = caps
             ? `max_txs: ${caps.maxTransactionsPerRequest}\nmax_msgs: ${caps.maxMessagesPerRequest}`
             : 'Failed';
@@ -565,33 +365,36 @@ export class AppUI extends Component {
         this._setHomeEnabled(true);
     }
 
-    private async _onReconnectHome(): Promise<void> {
-        console.log(`${TAG} onReconnectHome | START current_pubkey=${MWAManager.instance!.connectedPubkey}`);
-        this._setHomeEnabled(false);
-        const result = await MWAManager.instance!.reauthorize();
-        console.log(`${TAG} onReconnectHome | RESULT success=${result != null} pubkey=${result?.pubkey || '(null)'}`);
-        if (this._homeStatus) this._homeStatus.string = result ? 'Reconnected' : 'Reconnect failed';
-        if (result) showToast('Reconnected');
-        else showToast('Reconnect failed');
-        this._setHomeEnabled(true);
-    }
-
     private async _onDisconnect(): Promise<void> {
-        const mwa = MWAManager.instance!;
-        console.log(`${TAG} onDisconnect | START pubkey=${mwa.connectedPubkey} walletPackage=${mwa.connectedWalletPackage || '(default)'} authToken_len=${mwa.authToken?.length ?? 0}`);
-        await mwa.deauthorize();
-        console.log(`${TAG} onDisconnect | DONE isConnected=${mwa.isConnected}`);
+        console.log(`${TAG} onDisconnect | START`);
+        await MWAManager.instance!.deauthorize();
+        console.log(`${TAG} onDisconnect | DONE`);
         showToast('Disconnected');
     }
 
     private async _onDelete(): Promise<void> {
         const mwa = MWAManager.instance!;
-        console.log(`${TAG} onDelete | START pubkey=${mwa.connectedPubkey} walletPackage=${mwa.connectedWalletPackage || '(default)'}`);
+        console.log(`${TAG} onDelete | START pubkey=${mwa.connectedPubkey}`);
         this._setHomeEnabled(false);
         await mwa.deleteAccount();
-        console.log(`${TAG} onDelete | DONE isConnected=${mwa.isConnected} cache_has_auth=${mwa.cache?.hasCachedAuth() ?? false}`);
+        console.log(`${TAG} onDelete | DONE isConnected=${mwa.isConnected} lastError=${mwa.lastError?.code ?? '(none)'}`);
         if (!mwa.isConnected) {
             showToast('Account deleted');
+        } else if (mwa.lastError?.code === 'WALLET_HUNG') {
+            showToast("Wallet didn't respond — try reconnecting or a different wallet", true);
+            this._setHomeEnabled(true);
+        } else if (mwa.lastError?.code === 'WALLET_CRASHED') {
+            // Wallet crashed during sign confirmation — see KNOWN_ISSUES.md #6/#11.
+            showToast('Wallet crashed — try Backpack, Phantom, or Jupiter', true);
+            this._setHomeEnabled(true);
+        } else if (mwa.lastError?.code === 'RPC_BLOCKHASH_FAILED') {
+            showToast('Delete failed — could not reach Solana RPC', true);
+            this._setHomeEnabled(true);
+        } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+            // Pass 13 — user picked a different wallet in the OS picker than
+            // the one that issued the cached authToken. KNOWN_ISSUES.md #17.
+            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+            this._setHomeEnabled(true);
         } else {
             this._setHomeEnabled(true);
         }
@@ -602,19 +405,13 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════════
 
     private _onStatus(message: string): void {
-        // Update whichever status label is visible
         if (this._landingPanel.active && this._landingStatus) this._landingStatus.string = message;
         if (this._homePanel.active && this._homeStatus) this._homeStatus.string = message;
     }
 
     private _setLandingEnabled(enabled: boolean): void {
-        console.log(`${TAG} _setLandingEnabled | enabled=${enabled} walletButtons=${this._walletButtons.size}`);
         if (this._connectButton) this._connectButton.interactable = enabled;
-        if (this._connectViaWalletButton) this._connectViaWalletButton.interactable = enabled;
         if (this._reconnectButton) this._reconnectButton.interactable = enabled;
-        for (const btn of this._walletButtons.values()) {
-            btn.interactable = enabled;
-        }
     }
 
     private _setHomeEnabled(enabled: boolean): void {
