@@ -1,0 +1,24 @@
+{
+  "name": "token-duel-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Node scripts for the Token Duel Anchor program (deploy helpers, smoke tests).",
+  "scripts": {
+    "smoke": "ts-node smoke-test.ts",
+    "smoke-backend": "ts-node smoke-anchor-backend.ts",
+    "smoke-tiers": "ts-node smoke-tiers.ts",
+    "smoke-negatives": "ts-node smoke-negatives.ts",
+    "init-leaderboard": "ts-node init-leaderboard.ts",
+    "smoke-leaderboard": "ts-node smoke-leaderboard.ts",
+    "verify-scene": "ts-node verify-scene-bindings.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

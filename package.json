@@ -3,5 +3,14 @@
   "uuid": "7eeb683c-e22a-4811-8410-5dfcabf1ee1c",
   "creator": {
     "version": "3.8.8"
+  },
+  "scripts": {
+    "scenes": "node generate-scenes.js",
+    "anchor-build": "anchor build",
+    "anchor-deploy": "anchor deploy --provider.cluster devnet"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0"
   }
 }

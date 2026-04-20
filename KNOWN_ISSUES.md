@@ -943,3 +943,65 @@ The Delete flow is unchanged since Pass 7 — `MWAManager.deleteAccount()` build
    - Expected UI: "Wrong wallet — use the wallet you connected with, or Disconnect and Connect again" toast. Home buttons re-enabled.
 3. **Workaround still works:** Disconnect → Connect fresh with Solflare → retry Delete. Succeeds (the new `authToken` was issued by Solflare).
 4. **Happy-path regression:** Connect and act on the same wallet (no wallet-switch) — existing Sign / Delete flows unchanged.
+
+---
+
+## #18 — Token Duel runs on devnet; Backpack incompatible in v1
+
+**Status:** Accepted v1 limitation · **Added:** 2026-04-19 · **Reason:** Anchor program deployed to devnet for cost + safety
+
+### The situation
+
+The Token Duel Anchor program at `14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd` is deployed only on devnet in v1. To call it via MWA, the app must operate on `cluster: 'devnet'` — which flipping `DemoAppConfig.ts` does. However, **Backpack's MWA implementation rejects devnet** (cross-referenced with #6 of this doc), so users on Backpack can't complete the Token Duel flow in v1.
+
+### Workaround (v1)
+
+- **Seed Vault on Seeker** — works perfectly on devnet.
+- **Phantom** — works on devnet.
+- **Solflare** — works on devnet (still has the unrelated `sign_messages` crash bug #6, so hero-pick is unsupported).
+- **Jupiter** — mainnet-only, so Token Duel v1 is also unavailable on Jupiter.
+- **Backpack** — cannot use Token Duel in v1. The rest of the Home panel (SDK test buttons) also runs on devnet until Phase 7 flips the app back.
+
+### v2 resolution
+
+Phase 7 of the Anchor rollout deploys the same program (same address — same keypair, deterministic) to mainnet-beta. `DemoAppConfig.ts` flips back to `mainnet-beta`, restoring Backpack + Jupiter-Seeker compatibility. Cost: ~2 SOL mainnet rent for the program + 0.05 SOL pool seed. Scheduled for 5–7 days before the Colosseum submission deadline.
+
+### Reference files
+
+- `programs/token-duel/` — Anchor program source.
+- `assets/token-duel/scripts/AnchorBackend.ts` — client tx-builder (no Anchor JS dep).
+- `scripts/smoke-tiers.ts` — all-tiers regression test (passes on devnet).
+- `scripts/smoke-negatives.ts` — all error-path test (passes on devnet).
+- `USER_TASKS.md` — what the user needs to do for Phase 7 mainnet deploy.
+
+---
+
+## #19 — Birdeye logo CDN content-type variability (Session 3)
+
+**Status:** Mitigated · **Added:** 2026-04-20
+
+Birdeye's `logo_uri` field sometimes resolves to `image/webp` or a redirect chain that Cocos's native `assetManager.loadRemote` refuses. Without a fallback, logos silently fail to render (rest of the row is fine — no cascade failure).
+
+**Mitigation (Session 4 A2):** `AppUI._loadLogoInto` tries `assetManager.loadRemote` first; on error falls back to `fetch(url) → blob → Image → Texture2D.initWithElement`. Each path logs distinct `PRIMARY_OK`, `PRIMARY_ERR`, `FALLBACK_OK`, `FALLBACK_FETCH_ERR`, etc. Cache by URL so we don't refetch.
+
+## #20 — Cocos 3.8 event-name variance (Session 4)
+
+**Status:** Mitigated · **Added:** 2026-04-20
+
+Cocos 3.x emits EditBox / Slider events under inconsistent names across point releases — `'text-changed'` in some, `'textChanged'` in others. Registering only one means half of production users might see dead search / slider handlers.
+
+**Mitigation (Session 4 A1):** `AppUI._bindEvent` registers BOTH variants. The first one to fire is logged as `FIRST_FIRE label=<ctx> event="<name>"` so we know at runtime which one the user's Cocos build dispatches.
+
+## #21 — Leaderboard requires pre-init; settle fails until bootstrap runs (Session 3)
+
+**Status:** Known · **Added:** 2026-04-20
+
+`settle` constraint-requires the `[b"leaderboard"]` PDA as a mutable `Account<'info, Leaderboard>`. Before `scripts/init-leaderboard.ts` runs once per deploy, every settle tx reverts with Anchor `AccountNotInitialized`.
+
+**Resolution:** run `npm run init-leaderboard` once per deployment (devnet now, mainnet at Phase 7). The script is idempotent — re-runs against an existing PDA print `ALREADY_INITIALIZED` and exit 0. Failure to run it is the first thing to check when the commit flow works but settle fails.
+
+## #22 — Scene depends on Cocos 3.8.8 bundled asset UUIDs (Session 3)
+
+**Status:** Accepted v1 limitation · **Added:** 2026-04-20
+
+`generate-scenes.js` embeds UUIDs for Cocos's default EditBox background, Slider rail, Slider handle, and base white sprite. If a future Cocos update retires any of these, the scene JSON will fail to render those widgets. Workaround: ship our own SpriteFrames post-hackathon. For v1, the UUIDs are stable per the 3.8.8 editor install at `/Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/Resources/resources/3d/engine/editor/assets/default_prefab/ui/`.

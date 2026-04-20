@@ -22,3 +22,13 @@ node_modules/
 # WebStorm
 #//////////////////////////
 .idea/
+
+#//////////////////////////
+# Anchor / Rust (Token Duel program)
+#//////////////////////////
+target/
+.anchor/
+test-ledger/
+**/*.rs.bk
+.yarn/
+yarn.lock

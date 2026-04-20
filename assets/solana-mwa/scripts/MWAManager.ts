@@ -24,7 +24,7 @@
  *   U3  — Validate authToken.length after authorize (warn if empty)
  */
 
-import { _decorator, Component, game, sys, director } from 'cc';
+import { _decorator, Component, game, sys, director, view, screen, ResolutionPolicy } from 'cc';
 import { MWABridge } from './MWABridge';
 import { AuthCache } from './AuthCache';
 import { getAppIdentity, getSiwsIdentity } from './AppIdentity';
@@ -61,10 +61,50 @@ export class MWAManager extends Component {
     // ─── Singleton ───────────────────────────────────────────────────────
 
     private static _instance: MWAManager | null = null;
+    private static _resolutionSetupDone: boolean = false;
 
     /** Global singleton access. Null until onLoad fires. */
     static get instance(): MWAManager | null {
         return MWAManager._instance;
+    }
+
+    /**
+     * Force the design resolution to 720×1280 portrait with FIXED_WIDTH policy.
+     *
+     * The Cocos project ships without `settings/v2/packages/project.json`
+     * populated, so the editor defaults leak in as 1280×720 landscape at
+     * SHOW_ALL — which when rendered inside a portrait-locked Activity
+     * produces a small centered rectangle with massive black borders (the
+     * "phone inside a phone" look).
+     *
+     * FIXED_WIDTH scales the design's 720 horizontal units to fill the real
+     * device width; height scales proportionally so content extends edge-to-
+     * edge vertically and nothing gets clipped on taller screens.
+     *
+     * Idempotent: first caller wins. Safe to call multiple times.
+     */
+    private static _setupPortraitResolution(): void {
+        if (MWAManager._resolutionSetupDone) {
+            console.log(`${TAG} _setupPortraitResolution | SKIP already_done`);
+            return;
+        }
+        try {
+            const winSize = screen?.windowSize;
+            const devW = winSize?.width ?? -1;
+            const devH = winSize?.height ?? -1;
+            // Use FIXED_WIDTH so 720 units == device width. On a 1080×2340 phone
+            // that gives a ~1.5× scale; content at y=640 still clips only if
+            // the device is shorter than 1280 design units scaled — virtually
+            // no modern phone is, so fill is complete.
+            view.setDesignResolutionSize(720, 1280, ResolutionPolicy.FIXED_WIDTH);
+            MWAManager._resolutionSetupDone = true;
+            const vs = view.getVisibleSize();
+            const scaleX = view.getScaleX?.() ?? -1;
+            const scaleY = view.getScaleY?.() ?? -1;
+            console.log(`${TAG} _setupPortraitResolution | DONE design_w=720 design_h=1280 policy=FIXED_WIDTH device_w=${devW} device_h=${devH} visible_w=${vs.width.toFixed(1)} visible_h=${vs.height.toFixed(1)} scale_x=${scaleX} scale_y=${scaleY}`);
+        } catch (e: any) {
+            console.log(`${TAG} _setupPortraitResolution | FAIL error="${e?.message ?? e}" — scene will fall back to Cocos defaults (landscape letterbox)`);
+        }
     }
 
     // ─── Public State ────────────────────────────────────────────────────
@@ -135,6 +175,14 @@ export class MWAManager extends Component {
 
     onLoad(): void {
         console.log(`${TAG} onLoad | START instance_exists=${MWAManager._instance != null} node=${this.node.name}`);
+
+        // Session 5 fullscreen fix — runs FIRST so every subsequent UI component
+        // gets the right viewport. Cocos defaults to 1280×720 landscape at
+        // SHOW_ALL on this project (see build/android/data/src/settings.json),
+        // which letterboxes a landscape design inside a portrait phone → tiny
+        // centered rectangle with black borders. Overriding here at runtime is
+        // editor-proof — survives every rebuild regardless of editor state.
+        MWAManager._setupPortraitResolution();
 
         // Singleton enforcement
         if (MWAManager._instance != null && MWAManager._instance !== this) {
@@ -959,10 +1007,9 @@ export class MWAManager extends Component {
         console.log(`${TAG} signAndSendTransaction | START tx_bytes=${transaction.length} is_connected=${this.isConnected}`);
 
         const sigs = await this.signAndSendTransactions([transaction]);
-        if (sigs.length > 0 && sigs[0]) {
-            return sigs[0];
-        }
-        return '';
+        const sig = sigs.length > 0 ? sigs[0] : '';
+        console.log(`${TAG} signAndSendTransaction | DONE returned_count=${sigs.length} sig_len=${sig.length} sig_preview="${sig.substring(0, 16)}${sig.length > 16 ? '...' : ''}" lastError=${this.lastError?.code ?? '(none)'}`);
+        return sig;
     }
 
     /**
@@ -1403,20 +1450,26 @@ export class MWAManager extends Component {
      */
     supportsSignMessages(): boolean {
         const caps = this._cachedCapabilities;
+        const pkg = this.connectedWalletPackage;
+        let result: boolean;
+        let path: string;
         if (caps && caps.features) {
             const features = caps.features;
-            return (
+            result = (
                 features.indexOf('solana:signMessages') >= 0 ||
                 features.indexOf('supports_sign_messages') >= 0 ||
                 features.indexOf('sign_messages') >= 0
             );
+            path = 'capabilities';
+        } else if (pkg && MWAManager._KNOWN_NO_SIGN_MESSAGES.has(pkg)) {
+            result = false;
+            path = 'static_blocklist';
+        } else {
+            result = true;
+            path = 'optimistic_default';
         }
-        // No capability response cached — fall back to known-bad package list.
-        const pkg = this.connectedWalletPackage;
-        if (pkg && MWAManager._KNOWN_NO_SIGN_MESSAGES.has(pkg)) {
-            return false;
-        }
-        return true; // optimistic: unknown wallet, let user try
+        console.log(`${TAG} supportsSignMessages | DONE result=${result} path=${path} walletPackage="${pkg || '(none)'}" caps_cached=${!!caps} features_len=${caps?.features?.length ?? 0}`);
+        return result;
     }
 
     /**

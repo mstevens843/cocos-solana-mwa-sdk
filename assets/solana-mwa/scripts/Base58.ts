@@ -3,6 +3,8 @@
  * No dependencies. Uses the Bitcoin/Solana alphabet.
  */
 
+const TAG = '[Base58]';
+
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE = ALPHABET.length; // 58
 
@@ -16,7 +18,10 @@ for (let i = 0; i < ALPHABET.length; i++) {
  * Encode a Uint8Array to a base58 string.
  */
 export function base58Encode(bytes: Uint8Array): string {
-    if (bytes.length === 0) return '';
+    if (bytes.length === 0) {
+        console.log(`${TAG} base58Encode | DONE input_len=0 output_len=0 path=empty`);
+        return '';
+    }
 
     // Count leading zeros
     let zeros = 0;
@@ -56,6 +61,10 @@ export function base58Encode(bytes: Uint8Array): string {
         result += ALPHABET[b58[i]];
     }
 
+    const preview = result.length >= 8
+        ? `${result.slice(0, 4)}..${result.slice(-4)}`
+        : result;
+    console.log(`${TAG} base58Encode | DONE input_len=${bytes.length} leading_zeros=${zeros} output_len=${result.length} output_preview="${preview}"`);
     return result;
 }
 
@@ -64,7 +73,11 @@ export function base58Encode(bytes: Uint8Array): string {
  * Returns empty Uint8Array on invalid input.
  */
 export function base58Decode(str: string): Uint8Array {
-    if (str.length === 0) return new Uint8Array(0);
+    if (str.length === 0) {
+        console.log(`${TAG} base58Decode | DONE input_len=0 output_len=0 path=empty`);
+        return new Uint8Array(0);
+    }
+    const preview = str.length >= 8 ? `${str.slice(0, 4)}..${str.slice(-4)}` : str;
 
     // Count leading '1's (they map to zero bytes)
     let zeros = 0;
@@ -80,7 +93,7 @@ export function base58Decode(str: string): Uint8Array {
     for (let i = zeros; i < str.length; i++) {
         const value = ALPHABET_MAP.get(str[i]);
         if (value === undefined) {
-            // Invalid character — return empty
+            console.log(`${TAG} base58Decode | FAIL input_len=${str.length} preview="${preview}" invalid_char="${str[i]}" at_index=${i}`);
             return new Uint8Array(0);
         }
         let carry = value;
@@ -107,6 +120,7 @@ export function base58Decode(str: string): Uint8Array {
         result[zeros + (i - start)] = b256[i];
     }
 
+    console.log(`${TAG} base58Decode | DONE input_len=${str.length} preview="${preview}" leading_ones=${zeros} output_len=${result.length}`);
     return result;
 }
 
@@ -115,9 +129,21 @@ export function base58Decode(str: string): Uint8Array {
  * Public keys are 32 bytes, which encode to 32-44 base58 characters.
  */
 export function isValidBase58Pubkey(str: string): boolean {
-    if (!str || str.length < 32 || str.length > 44) return false;
-    for (let i = 0; i < str.length; i++) {
-        if (!ALPHABET_MAP.has(str[i])) return false;
+    const len = typeof str === 'string' ? str.length : 0;
+    if (!str) {
+        console.log(`${TAG} isValidBase58Pubkey | DONE result=false reason=null_or_undefined input_type=${typeof str}`);
+        return false;
     }
+    if (len < 32 || len > 44) {
+        console.log(`${TAG} isValidBase58Pubkey | DONE result=false reason=length_out_of_range input_len=${len} required=[32,44]`);
+        return false;
+    }
+    for (let i = 0; i < len; i++) {
+        if (!ALPHABET_MAP.has(str[i])) {
+            console.log(`${TAG} isValidBase58Pubkey | DONE result=false reason=invalid_char input_len=${len} bad_char="${str[i]}" at_index=${i}`);
+            return false;
+        }
+    }
+    console.log(`${TAG} isValidBase58Pubkey | DONE result=true input_len=${len}`);
     return true;
 }

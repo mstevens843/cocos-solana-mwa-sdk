@@ -225,6 +225,72 @@ export function buildSplTokenTransfer(
     return tx;
 }
 
+/**
+ * Input shape for `buildAnchorTransaction` — mirrors web3.js `AccountMeta`
+ * but in base58 + booleans, so callers don't need web3.js or Buffer.
+ */
+export interface AnchorAccountMetaInput {
+    pubkeyBase58: string;
+    isSigner: boolean;
+    isWritable: boolean;
+}
+
+/**
+ * Build an unsigned transaction carrying a single Anchor instruction.
+ *
+ * Input format is base58 strings + raw bytes — no web3.js, no Buffer.
+ * Serialized output matches `Transaction.serialize({requireAllSignatures:false})`
+ * byte-for-byte (verified against the Node smoke test).
+ *
+ * @param programIdBase58 Base58 program ID (e.g., Token Duel program).
+ * @param accounts Ordered accounts — MUST match the #[derive(Accounts)] struct
+ *                 field order in the target Rust program.
+ * @param data Instruction data = 8-byte discriminator + borsh-encoded args.
+ * @param feePayerBase58 Base58 fee payer (typically the player).
+ * @param recentBlockhash Base58 blockhash from `getLatestBlockhash`.
+ * @returns Unsigned tx bytes ready for `MWAManager.signTransaction` /
+ *          `signAndSendTransaction`, or empty on invalid input.
+ */
+export function buildAnchorTransaction(
+    programIdBase58: string,
+    accounts: AnchorAccountMetaInput[],
+    data: Uint8Array,
+    feePayerBase58: string,
+    recentBlockhash: string,
+): Uint8Array {
+    console.log(`${TAG} buildAnchorTransaction | START program=${programIdBase58.substring(0, 8)}... account_count=${accounts.length} data_bytes=${data.length} fee_payer=${feePayerBase58.substring(0, 8)}... blockhash=${recentBlockhash.substring(0, 12)}...`);
+
+    const programId = base58Decode(programIdBase58);
+    const feePayer = base58Decode(feePayerBase58);
+    const blockhash = base58Decode(recentBlockhash);
+
+    if (programId.length !== 32 || feePayer.length !== 32 || blockhash.length !== 32) {
+        console.log(`${TAG} buildAnchorTransaction | FAIL invalid key lengths program=${programId.length} fee_payer=${feePayer.length} blockhash=${blockhash.length}`);
+        return new Uint8Array(0);
+    }
+
+    const decodedAccounts: AccountMeta[] = [];
+    for (let i = 0; i < accounts.length; i++) {
+        const a = accounts[i];
+        const pk = base58Decode(a.pubkeyBase58);
+        if (pk.length !== 32) {
+            console.log(`${TAG} buildAnchorTransaction | FAIL account[${i}] invalid key length=${pk.length} base58="${a.pubkeyBase58}"`);
+            return new Uint8Array(0);
+        }
+        decodedAccounts.push({ pubkey: pk, isSigner: a.isSigner, isWritable: a.isWritable });
+    }
+
+    const instruction: Instruction = {
+        programId,
+        accounts: decodedAccounts,
+        data,
+    };
+
+    const tx = serializeTransaction(feePayer, blockhash, [instruction]);
+    console.log(`${TAG} buildAnchorTransaction | DONE tx_bytes=${tx.length} account_count=${accounts.length} data_bytes=${data.length}`);
+    return tx;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CORE SERIALIZER
 // ═══════════════════════════════════════════════════════════════════════════════

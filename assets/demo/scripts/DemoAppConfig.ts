@@ -32,11 +32,15 @@ export class DemoAppConfig extends Component {
         // the real fix is registering the dApp with Phantom's verification
         // program, documented in KNOWN_ISSUES.md #12. Downstream SDK consumers
         // can still override via `setAppIdentity()` / `setCluster()`.
+        // Phase 6: switched to devnet so the Token Duel panel can invoke the
+        // deployed Anchor program at 14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd.
+        // Backpack rejects devnet (KNOWN_ISSUES.md #6) — accepted v1 limitation.
+        // Phase 7 flips back to mainnet-beta once the program redeploys there.
         const identity = {
             appName: 'Cocos MWA SDK Demo',
             appUri: 'https://github.com/mstevens843/Cocos-Solana-MWA-SDK',
             appIconPath: '/icon.png',
-            cluster: 'mainnet-beta' as const,
+            cluster: 'devnet' as const,
         };
         setAppIdentity(identity);
 
@@ -74,7 +78,7 @@ export class DemoAppConfig extends Component {
         }
 
         console.log(`${TAG} onLoad | DONE appName="${identity.appName}" appUri="${identity.appUri}" appIconPath="${identity.appIconPath}" cluster="${identity.cluster}" siws_on_connect=${USE_SIWS_ON_CONNECT}`);
-        console.log(`${TAG} onLoad | NOTE demo cluster defaults to mainnet-beta (Backpack + Jupiter-Seeker require it); call setCluster('devnet') on AppIdentity for devnet testing`);
+        console.log(`${TAG} onLoad | NOTE demo cluster defaults to devnet (Phase 6 — Token Duel Anchor program lives at 14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd on devnet); Phase 7 flips back to mainnet-beta. Call setCluster('mainnet-beta') for mainnet testing.`);
         console.log(`${TAG} onLoad | NOTE flip USE_SIWS_ON_CONNECT=true in this file to re-engage Pass 11 SIWS flow (KNOWN_ISSUES.md #16)`);
     }
 }
