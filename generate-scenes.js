@@ -80,11 +80,18 @@ function generate() {
     const cCV = sb.canvas(canvas, camC);
     const cWG = sb.widget(canvas);
 
-    // Dark background — Unity: (0.05, 0.05, 0.12)
+    // Dark background — Unity: (0.05, 0.05, 0.12).
+    // cc.Widget anchored to all 4 edges so the sprite stretches to the actual
+    // visible viewport rather than the 720×1280 design bounds. On taller-than-
+    // 9:16 phones (most modern Androids) the design height is less than the
+    // device height under FIXED_WIDTH policy — the Widget extends this sprite
+    // beyond the design bounds to cover those letterbox bands with dark-navy
+    // instead of black.
     const bgN = sb.e.length;
-    sb.node('Background', canvas, [], [bgN+1, bgN+2], v3(0,0,0));
+    sb.node('Background', canvas, [], [bgN+1, bgN+2, bgN+3], v3(0,0,0));
     sb.ut(bgN, 720, 1280);
     sb.spr(bgN, 13, 13, 31, '57520716-48c8-4a19-8acf-41c9f8777fb0@f9941', 0);
+    sb.widget(bgN);
 
     // MWAManager node
     const mwaN = sb.e.length;

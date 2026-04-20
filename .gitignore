@@ -21,4 +21,8 @@ node_modules/
 #//////////////////////////
 # WebStorm
 #//////////////////////////
-.idea/
+.idea/target/
+Cargo.lock
+
+target/
+Cargo.lock

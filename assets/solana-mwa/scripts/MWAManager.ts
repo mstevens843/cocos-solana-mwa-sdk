@@ -24,7 +24,7 @@
  *   U3  — Validate authToken.length after authorize (warn if empty)
  */
 
-import { _decorator, Component, game, sys, director } from 'cc';
+import { _decorator, Component, game, sys, director, view, screen, ResolutionPolicy } from 'cc';
 import { MWABridge } from './MWABridge';
 import { AuthCache } from './AuthCache';
 import { getAppIdentity, getSiwsIdentity } from './AppIdentity';
@@ -61,10 +61,45 @@ export class MWAManager extends Component {
     // ─── Singleton ───────────────────────────────────────────────────────
 
     private static _instance: MWAManager | null = null;
+    private static _resolutionSetupDone: boolean = false;
 
     /** Global singleton access. Null until onLoad fires. */
     static get instance(): MWAManager | null {
         return MWAManager._instance;
+    }
+
+    /**
+     * Force the design resolution to 720×1280 portrait with FIXED_WIDTH policy.
+     *
+     * Cocos ships without `settings/v2/packages/project.json` populated, so the
+     * editor defaults leak in as 1280×720 landscape at SHOW_ALL — which when
+     * rendered inside a portrait-locked Activity produces a small centered
+     * rectangle with massive black borders (the "phone inside a phone" look).
+     *
+     * FIXED_WIDTH scales the design's 720 horizontal units to fill the real
+     * device width; height scales proportionally so content extends edge-to-
+     * edge vertically and nothing gets clipped on taller screens.
+     *
+     * Idempotent: first caller wins. Safe to call multiple times.
+     */
+    private static _setupPortraitResolution(): void {
+        if (MWAManager._resolutionSetupDone) {
+            console.log(`${TAG} _setupPortraitResolution | SKIP already_done`);
+            return;
+        }
+        try {
+            const winSize = screen?.windowSize;
+            const devW = winSize?.width ?? -1;
+            const devH = winSize?.height ?? -1;
+            view.setDesignResolutionSize(720, 1280, ResolutionPolicy.FIXED_WIDTH);
+            MWAManager._resolutionSetupDone = true;
+            const vs = view.getVisibleSize();
+            const scaleX = view.getScaleX?.() ?? -1;
+            const scaleY = view.getScaleY?.() ?? -1;
+            console.log(`${TAG} _setupPortraitResolution | DONE design_w=720 design_h=1280 policy=FIXED_WIDTH device_w=${devW} device_h=${devH} visible_w=${vs.width.toFixed(1)} visible_h=${vs.height.toFixed(1)} scale_x=${scaleX} scale_y=${scaleY}`);
+        } catch (e: any) {
+            console.log(`${TAG} _setupPortraitResolution | FAIL error="${e?.message ?? e}" — scene will fall back to Cocos defaults (landscape letterbox)`);
+        }
     }
 
     // ─── Public State ────────────────────────────────────────────────────
@@ -135,6 +170,14 @@ export class MWAManager extends Component {
 
     onLoad(): void {
         console.log(`${TAG} onLoad | START instance_exists=${MWAManager._instance != null} node=${this.node.name}`);
+
+        // Fullscreen fix — runs FIRST so every subsequent UI component gets the
+        // right viewport. Without this, Cocos defaults to 1280×720 landscape at
+        // SHOW_ALL policy (see build/android/data/src/settings.json), which
+        // letterboxes a landscape design inside a portrait-locked Activity →
+        // tiny centered rectangle with black borders. Overriding at runtime is
+        // editor-proof — survives every rebuild regardless of editor state.
+        MWAManager._setupPortraitResolution();
 
         // Singleton enforcement
         if (MWAManager._instance != null && MWAManager._instance !== this) {
