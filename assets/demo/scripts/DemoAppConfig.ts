@@ -18,6 +18,15 @@ export class DemoAppConfig extends Component {
     onLoad(): void {
         console.log(`${TAG} onLoad | START — configuring demo app identity`);
 
+        // betting-duel: point client HTTP + WS at the deployed Render backend
+        // so live opponent delta (publish-squad + /match/:pda/spectate) works
+        // on real devices. Set BEFORE any code imports constants.ts — AppUI
+        // reads RECEIPT_BACKEND_URL at module load, which resolves to
+        // globalThis.TD_RECEIPT_URL if set, else falls back to the 10.0.2.2
+        // emulator address.
+        (globalThis as any).TD_RECEIPT_URL = 'https://token-duel-backend.onrender.com';
+        console.log(`${TAG} onLoad | TD_RECEIPT_URL=${(globalThis as any).TD_RECEIPT_URL}`);
+
         // Placeholder `https://example.com` + "Example" appName was triggering
         // Phantom's Blowfish "unknown dApp / may be malicious" cascade on every
         // sign_transactions approval (KNOWN_ISSUES.md #12). Use a real repo URL
