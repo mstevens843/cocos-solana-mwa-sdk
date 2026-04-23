@@ -20,7 +20,6 @@
 import { BirdeyeClient } from './birdeye/BirdeyeClient';
 import { PriceUpdate, TokenRow } from './birdeye/types';
 import { PRICE_FEED_POLL_MS } from './constants';
-import { PriceFeedMock } from './PriceFeedMock';
 import { TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from './ModeDefs';
 
 const TAG = '[PriceFeed]';
@@ -74,25 +73,26 @@ export class PriceFeed {
             return {};
         }
 
-        // Deterministic-seed override (pitch-video recording) still wins.
+        // Deterministic-seed override (pitch-video recording) previously
+        // routed through PriceFeedMock; on betting-duel we drop the mock
+        // and return an empty map — callers must tolerate missing keys.
         const seed = (globalThis as any).TD_DEMO_SEED;
         if (typeof seed === 'number') {
-            const mock = PriceFeedMock.getSessionDeltas(mints);
-            console.log(`${TAG} getSessionDeltas | DEMO_SEED_OVERRIDE seed=${seed} returning mock`);
-            return mock;
+            console.log(`${TAG} getSessionDeltas | DEMO_SEED_OVERRIDE seed=${seed} — mock removed on betting-duel, returning {}`);
+            return {};
         }
 
         let live: Record<string, { priceUsd: number; change24hPct: number; volume24hUsd: number }>;
         try {
             live = await this._client.priceMulti(mints, this._currentTimeframe);
         } catch (e) {
-            console.log(`${TAG} getSessionDeltas | CLIENT_ERROR error=${e} falling back to mock`);
-            return PriceFeedMock.getSessionDeltas(mints);
+            console.log(`${TAG} getSessionDeltas | CLIENT_ERROR error=${e} — returning {} (no mock fallback on betting-duel)`);
+            return {};
         }
         const haveAny = Object.keys(live).length > 0;
         if (!haveAny) {
-            console.log(`${TAG} getSessionDeltas | BIRDEYE_EMPTY mints=${mints.length} falling back to mock`);
-            return PriceFeedMock.getSessionDeltas(mints);
+            console.log(`${TAG} getSessionDeltas | BIRDEYE_EMPTY mints=${mints.length} — returning {} (no mock fallback on betting-duel)`);
+            return {};
         }
 
         const out: Record<string, number> = {};

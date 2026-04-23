@@ -13,7 +13,6 @@
  */
 
 import { ModeId, MODES, WAGER_TIERS_LAMPORTS, MATCH_WAIT_TIMEOUT_MS } from './ModeDefs';
-import { sampleBotHeight, sampleBotHeights, resolveBotMatch, placementAmong } from './BotOpponent';
 import { Stats } from './Stats';
 import { TokenDuelRpc } from './TokenDuelRpc';
 import { AnchorBackend } from './AnchorBackend';
@@ -41,9 +40,12 @@ export interface MatchOutcome {
 }
 
 /**
- * Run a paper bot match immediately — no chain interaction. Supports any mode:
- * samples `requiredPlayers - 1` bot heights, ranks player among them,
- * computes placement + payout per mode's table, records paper Stats.
+ * Run a paper bot match immediately — no chain interaction.
+ *
+ * Phase 1 stub on the betting-duel branch: returns a deterministic
+ * forfeit outcome (player loses, all bots at height 0). The real
+ * implementation samples portfolio deltas for each bot squad in Phase 5
+ * once SquadBot.ts lands.
  */
 export function runPaperBotMatch(opts: {
     mode: ModeId;
@@ -54,36 +56,22 @@ export function runPaperBotMatch(opts: {
 }): MatchOutcome {
     const mode = MODES[opts.mode];
     const n = mode.requiredPlayers;
-    const botCount = n - 1;
-    console.log(`${TAG} runPaperBotMatch | START mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_height=${opts.playerHeight}`);
-    const bots = sampleBotHeights(botCount, {
-        leaderboardHeights: opts.leaderboardHeights,
-        botGamesRemaining: opts.botGamesRemaining,
-    });
-    const botHeights = bots.map((b) => b.botHeight);
-    const placement = placementAmong(opts.playerHeight, botHeights);
-    const playerWon = placement < mode.payoutBps.length;
-
-    // Compute payout using shared ModePayout logic.
-    // Build a heights array where slot 0 = player, slots 1..n-1 = bots.
+    console.log(`${TAG} runPaperBotMatch | STUB mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_height=${opts.playerHeight} — betting-duel Phase 1 stub, returning forfeit`);
+    const botHeights: number[] = new Array(n - 1).fill(0);
     const heights: number[] = [opts.playerHeight, ...botHeights];
     const pot = opts.wagerTierLamports * n;
     const breakdown = computeModePayout(opts.mode, pot, heights);
-    // Player is at slot 0; find their rank + payout (if any).
     const playerRankIdx = breakdown.sortedSlots.indexOf(0);
     const payoutLamports = playerRankIdx < breakdown.winnerLamports.length
         ? breakdown.winnerLamports[playerRankIdx]
         : 0;
     const xp = xpForPlacement(opts.mode, playerRankIdx);
-
-    // Paper P/L: payout minus wager (net). If unranked, you lose the wager.
     const pnl = payoutLamports - opts.wagerTierLamports;
+    const playerWon = payoutLamports > 0;
     Stats.record('paper', playerWon, pnl);
-
-    const bestOpp = botHeights.length > 0 ? Math.max(...botHeights) : 0;
-    const outcome: MatchOutcome = {
+    return {
         playerHeight: opts.playerHeight,
-        opponentHeight: bestOpp,
+        opponentHeight: 0,
         botHeights,
         playerWon,
         placement: playerRankIdx,
@@ -93,8 +81,6 @@ export function runPaperBotMatch(opts: {
         track: 'paper',
         isBot: true,
     };
-    console.log(`${TAG} runPaperBotMatch | DONE player=${opts.playerHeight} bots=[${botHeights.join(',')}] placement=${playerRankIdx + 1}/${n} won=${playerWon} payout=${payoutLamports} xp=${xp} pnl=${pnl}`);
-    return outcome;
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -14,7 +14,8 @@ import { STAKE_LAMPORTS, STAKE_MIN_SOL, STAKE_MAX_SOL, STAKE_DEFAULT_SOL, FEED_R
 import { MWA_AUTHORIZED, MWA_AUTH_FAILED, MWA_DISCONNECTED, MWA_STATUS } from '../../solana-mwa/scripts/MWAEvents';
 import { getAppIdentity } from '../../solana-mwa/scripts/AppIdentity';
 import { TokenDuelRpc, Holding } from '../../token-duel/scripts/TokenDuelRpc';
-import { TokenDuelGame } from '../../token-duel/scripts/TokenDuelGame';
+import { TokenDuelGame, RaceSnapshot } from '../../token-duel/scripts/TokenDuelGame';
+import { decodeScore } from '../../token-duel/scripts/ScoreEncoding';
 import { PriceFeed } from '../../token-duel/scripts/PriceFeed';
 import { TokenSquad } from '../../token-duel/scripts/TokenSquad';
 import { BirdeyeClient } from '../../token-duel/scripts/birdeye/BirdeyeClient';
@@ -99,6 +100,22 @@ export class AppUI extends Component {
     private _gameOverLabel: Label = null!;
     private _game: TokenDuelGame | null = null;
     private _priceFeed: PriceFeed | null = null;
+
+    // ── betting-duel Phase 3: RacePanel scene refs ──
+    private _racePanel: Node | null = null;
+    private _raceCountdownLabel: Label | null = null;
+    private _raceHeroDeltaLabel: Label | null = null;
+    private _raceHeroSubtitleLabel: Label | null = null;
+    private _raceTokenCards: Node[] = [];
+    private _raceTokenSymbolLabels: Label[] = [];
+    private _raceTokenEntryLabels: Label[] = [];
+    private _raceTokenCurrentLabels: Label[] = [];
+    private _raceTokenDeltaLabels: Label[] = [];
+    private _raceCancelButton: Button | null = null;
+    private _raceLastDeltaSign: 1 | -1 | 0 = 0; // tracks zero-crossings for haptic/sound cues
+    private _raceActiveHoldings: Holding[] = [];
+    private _raceTickBindingGapLogged = false;    // log TICK_BINDING_GAP at most once per race
+    private _raceLatestSnapshot: RaceSnapshot | null = null; // for cancel-time introspection
 
     // ── Phase III + Session 3: full Birdeye picker with native Cocos widgets ──
     private _squad: TokenSquad = new TokenSquad();
@@ -586,6 +603,27 @@ export class AppUI extends Component {
         this._gameArea?.on(Node.EventType.TOUCH_START, () => {
             if (this._game) this._game.onTap();
         }, this);
+
+        // ── betting-duel Phase 3: RacePanel binding ──
+        this._racePanel = this._tokenDuelPanel.getChildByName('RacePanel') ?? null;
+        if (this._racePanel) {
+            this._raceCountdownLabel     = this._racePanel.getChildByName('RaceCountdownLabel')?.getComponent(Label) ?? null;
+            this._raceHeroDeltaLabel     = this._racePanel.getChildByName('RaceHeroDeltaLabel')?.getComponent(Label) ?? null;
+            this._raceHeroSubtitleLabel  = this._racePanel.getChildByName('RaceHeroSubtitleLabel')?.getComponent(Label) ?? null;
+            for (let i = 0; i < 5; i++) {
+                const card = this._racePanel.getChildByName(`RaceTokenCard_${i}`);
+                if (card) {
+                    this._raceTokenCards.push(card);
+                    this._raceTokenSymbolLabels.push(card.getChildByName(`TokenSymbolLabel_${i}`)?.getComponent(Label) as Label);
+                    this._raceTokenEntryLabels.push(card.getChildByName(`TokenEntryLabel_${i}`)?.getComponent(Label) as Label);
+                    this._raceTokenCurrentLabels.push(card.getChildByName(`TokenCurrentLabel_${i}`)?.getComponent(Label) as Label);
+                    this._raceTokenDeltaLabels.push(card.getChildByName(`TokenDeltaLabel_${i}`)?.getComponent(Label) as Label);
+                }
+            }
+            this._raceCancelButton = this._racePanel.getChildByName('RaceCancelButton')?.getComponent(Button) ?? null;
+            this._raceCancelButton?.node.on(Button.EventType.CLICK, () => this._onRaceCancel(), this);
+            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton}`);
+        }
 
         // Phase E: Claim Payout button (revealed on game-over).
         this._claimButton = this._tokenDuelPanel.getChildByName('ClaimPayoutButton')?.getComponent(Button)!;
@@ -2004,6 +2042,14 @@ export class AppUI extends Component {
             }
         }
 
+        // betting-duel Phase 3: show RacePanel before the race starts so entry
+        // state renders at t=0 instead of popping in after the first tick.
+        this._showRacePanel(gameHoldings);
+
+        // betting-duel Phase 5: pick up race duration from the ModePicker window row.
+        const windowDef = TIME_WINDOWS[this._pickerSelectedWindow] ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW];
+        const windowMs = windowDef.durationMs;
+
         // Instantiate and start the game.
         this._game = new TokenDuelGame({
             gameArea: this._gameArea,
@@ -2012,8 +2058,10 @@ export class AppUI extends Component {
             tokenBadgeLabel: this._tokenBadgeLabel,
             holdings: gameHoldings,
             priceFeed: this._priceFeed,
+            windowMs,
             onBeforeFirstBlock: this._makeTutorialHook(),
             onBlockDrop: (ev) => this._receiptSession?.recordDrop(ev),
+            onRaceTick: (snap) => this._onRaceTick(snap),
             onGameOver: (h, d) => this._onGameOver(h, d),
         });
         // `start()` is now async (awaits Birdeye). Fire-and-forget; taps
@@ -2030,6 +2078,7 @@ export class AppUI extends Component {
             this._gameOverLabel.node.active = true;
         }
         if (this._gameArea) this._gameArea.active = false;
+        this._hideRacePanel();
         this._lastGameHeight = height;
         if (this._claimButton) {
             this._claimButton.node.active = true;
@@ -2170,6 +2219,132 @@ export class AppUI extends Component {
 
     private _tierFor(height: number): string { return this._tierInfo(height).label; }
     private _tierKey(height: number): string { return this._tierInfo(height).key; }
+
+    // ── betting-duel Phase 3: RacePanel show/hide + tick + cancel ──────────────
+
+    private _showRacePanel(holdings: Holding[]): void {
+        if (!this._racePanel) {
+            console.log(`${TAG} _showRacePanel | ABORT_NO_PANEL tokens=${holdings.length} — scene binding missing, race screen will not render`);
+            return;
+        }
+        this._raceActiveHoldings = holdings.slice();
+        this._raceLastDeltaSign = 0;
+        this._raceTickBindingGapLogged = false;
+        this._raceLatestSnapshot = null;
+
+        // Populate + activate N cards; hide the rest.
+        const n = Math.min(holdings.length, this._raceTokenCards.length);
+        for (let i = 0; i < this._raceTokenCards.length; i++) {
+            const card = this._raceTokenCards[i];
+            if (!card) continue;
+            const show = i < n;
+            card.active = show;
+            if (show && this._raceTokenSymbolLabels[i]) {
+                this._raceTokenSymbolLabels[i].string = holdings[i]?.symbol || '---';
+            }
+            if (show && this._raceTokenEntryLabels[i])   this._raceTokenEntryLabels[i].string   = 'entry —';
+            if (show && this._raceTokenCurrentLabels[i]) this._raceTokenCurrentLabels[i].string = '—';
+            if (show && this._raceTokenDeltaLabels[i]) {
+                this._raceTokenDeltaLabels[i].string = '0.00%';
+                this._raceTokenDeltaLabels[i].color = new Color(200, 200, 210);
+            }
+        }
+        if (this._raceCountdownLabel)    this._raceCountdownLabel.string = '—:—';
+        if (this._raceHeroDeltaLabel) {
+            this._raceHeroDeltaLabel.string = '+0.00%';
+            this._raceHeroDeltaLabel.color  = new Color(255, 255, 255);
+        }
+        if (this._raceHeroSubtitleLabel) this._raceHeroSubtitleLabel.string = 'Fetching entry prices…';
+        this._racePanel.active = true;
+        if (this._gameArea) this._gameArea.active = false;
+        const symbols = holdings.slice(0, n).map((h) => h?.symbol || '?').join(',');
+        console.log(`${TAG} _showRacePanel | SHOW tokens=${n} cards_available=${this._raceTokenCards.length} symbols=[${symbols}]`);
+    }
+
+    private _hideRacePanel(): void {
+        if (!this._racePanel) {
+            console.log(`${TAG} _hideRacePanel | NO_PANEL_REF — nothing to hide`);
+            return;
+        }
+        if (!this._racePanel.active) {
+            console.log(`${TAG} _hideRacePanel | ALREADY_HIDDEN`);
+            return;
+        }
+        this._racePanel.active = false;
+        console.log(`${TAG} _hideRacePanel | HIDDEN last_snapshot_portfolio=${this._raceLatestSnapshot?.portfolioDeltaPct?.toFixed(2) ?? 'null'}%`);
+    }
+
+    private _onRaceTick(snap: RaceSnapshot): void {
+        this._raceLatestSnapshot = snap;
+        if (!this._raceTickBindingGapLogged && (!this._raceCountdownLabel || !this._raceHeroDeltaLabel)) {
+            this._raceTickBindingGapLogged = true;
+            console.log(`${TAG} _onRaceTick | TICK_BINDING_GAP countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} hero_sub=${!!this._raceHeroSubtitleLabel} cards=${this._raceTokenCards.length}`);
+        }
+        // Countdown
+        if (this._raceCountdownLabel) {
+            const s = Math.max(0, Math.ceil(snap.remainingMs / 1000));
+            const mm = Math.floor(s / 60).toString();
+            const ss = (s % 60).toString().padStart(2, '0');
+            this._raceCountdownLabel.string = `${mm}:${ss}`;
+        }
+
+        // Hero delta
+        const deltaPct = snap.portfolioDeltaPct;
+        const sign = deltaPct >= 0 ? '+' : '';
+        const green = new Color(51, 204, 85);
+        const red = new Color(255, 85, 85);
+        const neutral = new Color(255, 255, 255);
+        if (this._raceHeroDeltaLabel) {
+            this._raceHeroDeltaLabel.string = `${sign}${deltaPct.toFixed(2)}%`;
+            this._raceHeroDeltaLabel.color = snap.resolvedCount === 0 ? neutral : (deltaPct >= 0 ? green : red);
+        }
+        if (this._raceHeroSubtitleLabel) {
+            this._raceHeroSubtitleLabel.string = snap.resolvedCount === 0
+                ? 'Waiting for price feed…'
+                : `Portfolio change (${snap.resolvedCount} token${snap.resolvedCount === 1 ? '' : 's'})`;
+        }
+
+        // Per-token cards
+        for (let i = 0; i < this._raceActiveHoldings.length && i < this._raceTokenCards.length; i++) {
+            const h = this._raceActiveHoldings[i];
+            const key = h?.mint || h?.symbol || '';
+            const info = snap.perToken[key];
+            if (!info) continue;
+            if (this._raceTokenEntryLabels[i])   this._raceTokenEntryLabels[i].string   = `entry ${this._fmtPrice(info.entryPrice)}`;
+            if (this._raceTokenCurrentLabels[i]) this._raceTokenCurrentLabels[i].string = this._fmtPrice(info.currentPrice);
+            if (this._raceTokenDeltaLabels[i]) {
+                const s = info.deltaPct >= 0 ? '+' : '';
+                this._raceTokenDeltaLabels[i].string = `${s}${info.deltaPct.toFixed(2)}%`;
+                this._raceTokenDeltaLabels[i].color = info.deltaPct >= 0 ? green : red;
+            }
+        }
+
+        // Haptic + sound on zero-cross (ignore first tick to avoid false-trigger at t=0).
+        const curSign: 1 | -1 | 0 = deltaPct > 0 ? 1 : (deltaPct < 0 ? -1 : 0);
+        if (this._raceLastDeltaSign !== 0 && curSign !== 0 && curSign !== this._raceLastDeltaSign) {
+            try { Haptics.fire(HapticType.MEDIUM); } catch (_) { /* editor no-op */ }
+            try { playSound(curSign > 0 ? 'stack' : 'miss'); } catch (_) { /* asset may be missing */ }
+        }
+        if (curSign !== 0) this._raceLastDeltaSign = curSign;
+    }
+
+    private _fmtPrice(p: number): string {
+        if (!Number.isFinite(p) || p <= 0) return '—';
+        if (p >= 1)       return `$${p.toFixed(3)}`;
+        if (p >= 0.001)   return `$${p.toFixed(5)}`;
+        return `$${p.toPrecision(3)}`;
+    }
+
+    private _onRaceCancel(): void {
+        const lastDelta = this._raceLatestSnapshot?.portfolioDeltaPct;
+        const lastResolved = this._raceLatestSnapshot?.resolvedCount;
+        const lastRemaining = this._raceLatestSnapshot?.remainingMs;
+        console.log(`${TAG} _onRaceCancel | FORFEIT last_delta=${lastDelta?.toFixed(2) ?? 'null'}% resolved=${lastResolved ?? 'null'} remaining=${lastRemaining ?? 'null'}ms last_sign=${this._raceLastDeltaSign} — submitting score=0 (encoded 0% delta)`);
+        this._game?.destroy();
+        this._game = null;
+        this._hideRacePanel();
+        this._onGameOver(0, {});
+    }
 
     private async _onClaim(): Promise<void> {
         console.log(`${TAG} onClaim | START height=${this._lastGameHeight}`);
@@ -4279,10 +4454,21 @@ export class AppUI extends Component {
         }
         if (this._postMatchPayoutLabel) {
             const sol = outcome.payoutLamports / 1e9;
-            this._postMatchPayoutLabel.string = outcome.won ? `+${sol.toFixed(3)} SOL` : '— 0.000 SOL';
+            // Set a start frame immediately (prevents flash of stale prior value)
+            // then tween to final over 1.2s when there's a positive payout.
+            this._postMatchPayoutLabel.string = outcome.won ? '+0.000 SOL' : '— 0.000 SOL';
+            if (outcome.won && sol > 0) {
+                this._animatePayoutTicker(this._postMatchPayoutLabel, sol, 1.2);
+            }
         }
 
-        // Subtitle: default = block-diff description; level-up message overrides;
+        // betting-duel: decode encoded u32 scores back into portfolio delta % for display.
+        const playerDeltaPct   = decodeScore(outcome.playerHeight);
+        const opponentDeltaPct = decodeScore(outcome.opponentHeight);
+        const deltaDiff        = Math.abs(playerDeltaPct - opponentDeltaPct);
+        console.log(`${TAG} _showPostMatchPanel | DECODED player_score=${outcome.playerHeight} player=${playerDeltaPct.toFixed(2)}% opp_score=${outcome.opponentHeight} opp=${opponentDeltaPct.toFixed(2)}% diff_pp=${deltaDiff.toFixed(2)} won=${outcome.won} track=${outcome.track}`);
+
+        // Subtitle: default = portfolio-delta diff; level-up message overrides;
         // unverified-real-match badge takes priority over both.
         if (this._postMatchSubtitleLabel) {
             if (outcome.track === 'real' && this._lastMatchUnverifiedReason) {
@@ -4293,8 +4479,8 @@ export class AppUI extends Component {
                 this._postMatchSubtitleLabel.color = new Color(218, 165, 32, 255);
             } else {
                 this._postMatchSubtitleLabel.string = outcome.won
-                    ? `You outlasted the opponent by ${outcome.playerHeight - outcome.opponentHeight} blocks.`
-                    : `Opponent edged you by ${outcome.opponentHeight - outcome.playerHeight} blocks.`;
+                    ? `Your portfolio beat theirs by ${deltaDiff.toFixed(2)} pp.`
+                    : `They beat you by ${deltaDiff.toFixed(2)} pp.`;
                 this._postMatchSubtitleLabel.color = new Color(180, 190, 210, 255);
             }
         }
@@ -4323,9 +4509,10 @@ export class AppUI extends Component {
             const prog = levelProgress(outcome.totalXp);
             xpCardString = `+${outcome.xpGained}\n${outcome.totalXp} · ${Math.round(prog.progress * 100)}%→L${prog.level + 1}`;
         }
+        const fmtPct = (p: number): string => `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
         const values = new Map([
-            ['you', String(outcome.playerHeight)],
-            ['opp', String(outcome.opponentHeight)],
+            ['you', fmtPct(playerDeltaPct)],
+            ['opp', fmtPct(opponentDeltaPct)],
             ['xp',  xpCardString],
             ['lvl', String(outcome.newLevel)],
         ]);
@@ -4333,6 +4520,15 @@ export class AppUI extends Component {
             const lbl = this._postMatchCardValues.get(k);
             if (lbl) lbl.string = v;
         }
+
+        // Color-code the delta cards by sign.
+        const youLbl = this._postMatchCardValues.get('you');
+        const oppLbl = this._postMatchCardValues.get('opp');
+        const green = new Color(48, 198, 155, 255);
+        const red = new Color(236, 88, 122, 255);
+        const neutral = new Color(255, 255, 255, 255);
+        if (youLbl) youLbl.color = playerDeltaPct > 0 ? green : (playerDeltaPct < 0 ? red : neutral);
+        if (oppLbl) oppLbl.color = opponentDeltaPct > 0 ? green : (opponentDeltaPct < 0 ? red : neutral);
 
         // Tint LEVEL card when leveled up.
         const lvlLabel = this._postMatchCardValues.get('lvl');
@@ -4513,6 +4709,38 @@ export class AppUI extends Component {
             Tween.stopAllByTarget(confN);
             confN.active = false;
         }
+    }
+
+    /**
+     * betting-duel Phase 4 — payout count-up.
+     * Tweens the PostMatchPayoutLabel from 0.000 to `toSol` over `durationS`
+     * using a proxy object (Label has no numeric value property). Quadratic
+     * ease-out feels satisfying; a periodic 'stack' tick keeps the ticker
+     * audible without getting noisy.
+     */
+    private _animatePayoutTicker(label: Label, toSol: number, durationS: number): void {
+        console.log(`${TAG} _animatePayoutTicker | TICKER_START to=${toSol.toFixed(6)} SOL dur=${durationS}s`);
+        const proxy = { v: 0 };
+        const stopAt = Date.now() + Math.ceil(durationS * 1000) + 50;
+        let lastTickMs = 0;
+        const tickEvery = 300;
+        tween(proxy)
+            .to(durationS, { v: toSol }, {
+                easing: 'quadOut',
+                onUpdate: () => {
+                    label.string = `+${proxy.v.toFixed(3)} SOL`;
+                    const now = Date.now();
+                    if (now < stopAt && now - lastTickMs >= tickEvery) {
+                        lastTickMs = now;
+                        try { playSound('stack'); } catch (e) { console.log(`${TAG} _animatePayoutTicker | SOUND_ERROR error=${e}`); }
+                    }
+                },
+            })
+            .call(() => {
+                label.string = `+${toSol.toFixed(3)} SOL`;
+                console.log(`${TAG} _animatePayoutTicker | TICKER_END final=${toSol.toFixed(6)} SOL`);
+            })
+            .start();
     }
 
     private _onPostMatchBack(): void {
