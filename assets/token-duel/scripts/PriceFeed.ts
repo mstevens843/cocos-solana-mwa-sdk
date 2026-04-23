@@ -18,9 +18,10 @@
  */
 
 import { BirdeyeClient } from './birdeye/BirdeyeClient';
-import { PriceUpdate } from './birdeye/types';
+import { PriceUpdate, TokenRow } from './birdeye/types';
 import { PRICE_FEED_POLL_MS } from './constants';
 import { PriceFeedMock } from './PriceFeedMock';
+import { TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from './ModeDefs';
 
 const TAG = '[PriceFeed]';
 
@@ -30,10 +31,27 @@ export class PriceFeed {
     private readonly _client: BirdeyeClient;
     private _timer: number | null = null;
     private _lastMints: string[] = [];
+    /** Part 9: currently-selected Birdeye `type` param (1h/24h/3d/7d). */
+    private _currentTimeframe: string = TIME_WINDOWS[DEFAULT_TIME_WINDOW].birdeyeTypeParam;
 
     constructor(client?: BirdeyeClient) {
         this._client = client ?? new BirdeyeClient();
-        console.log(`${TAG} ctor | DONE poll_ms=${PRICE_FEED_POLL_MS}`);
+        console.log(`${TAG} ctor | DONE poll_ms=${PRICE_FEED_POLL_MS} default_timeframe=${this._currentTimeframe}`);
+    }
+
+    /**
+     * Part 9: switch the session's price window. Called once per match,
+     * before `getSessionDeltas`, from AppUI's match-start flow.
+     */
+    setTimeframe(window: TimeWindowId): void {
+        const def = TIME_WINDOWS[window];
+        if (!def) {
+            console.log(`${TAG} setTimeframe | UNKNOWN_WINDOW window="${window}" — keeping ${this._currentTimeframe}`);
+            return;
+        }
+        const prev = this._currentTimeframe;
+        this._currentTimeframe = def.birdeyeTypeParam;
+        console.log(`${TAG} setTimeframe | DONE prev=${prev} next=${this._currentTimeframe} (window=${window})`);
     }
 
     /**
@@ -66,7 +84,7 @@ export class PriceFeed {
 
         let live: Record<string, { priceUsd: number; change24hPct: number; volume24hUsd: number }>;
         try {
-            live = await this._client.priceMulti(mints);
+            live = await this._client.priceMulti(mints, this._currentTimeframe);
         } catch (e) {
             console.log(`${TAG} getSessionDeltas | CLIENT_ERROR error=${e} falling back to mock`);
             return PriceFeedMock.getSessionDeltas(mints);
@@ -112,7 +130,7 @@ export class PriceFeed {
             // it's missing, the app is running in a stripped-down env (tests,
             // headless tooling). Fire a single tick instead of silent no-op.
             console.log(`${TAG} start | NO_SET_INTERVAL — firing one-shot tick only`);
-            this._client.priceMulti(this._lastMints).then((updates) => {
+            this._client.priceMulti(this._lastMints, this._currentTimeframe).then((updates) => {
                 try { onTick(updates); } catch (e) { console.log(`${TAG} start.tick | LISTENER_ERROR error=${e}`); }
             }).catch((e) => console.log(`${TAG} start | ONE_SHOT_ERROR error=${e}`));
             return;
@@ -120,8 +138,8 @@ export class PriceFeed {
 
         const tick = async () => {
             try {
-                const updates = await this._client.priceMulti(this._lastMints);
-                console.log(`${TAG} start.tick | mints=${this._lastMints.length} got=${Object.keys(updates).length}`);
+                const updates = await this._client.priceMulti(this._lastMints, this._currentTimeframe);
+                console.log(`${TAG} start.tick | mints=${this._lastMints.length} got=${Object.keys(updates).length} timeframe=${this._currentTimeframe}`);
                 try { onTick(updates); } catch (e) {
                     console.log(`${TAG} start.tick | LISTENER_ERROR error=${e}`);
                 }
@@ -143,6 +161,77 @@ export class PriceFeed {
     setMints(mints: string[]): void {
         this._lastMints = mints.slice();
         console.log(`${TAG} setMints | DONE mints=${this._lastMints.length}`);
+    }
+
+    /**
+     * Session 11: backfill price / 24h% / volume on rows that came back from
+     * Birdeye without them. Particularly for `/defi/v2/tokens/new_listing`
+     * which only returns address + symbol + liquidity — the trade-tab UI
+     * needs price + change to render sensibly.
+     *
+     * Only calls Birdeye when there ARE rows missing data. Returns a NEW
+     * array (immutable semantics) so callers can diff old vs new for
+     * change animations.
+     */
+    async enrichRows(rows: TokenRow[]): Promise<TokenRow[]> {
+        const candidates = rows.filter((r) => r.address && (r.priceUsd === 0 || r.change24hPct === 0));
+        if (candidates.length === 0) {
+            console.log(`${TAG} enrichRows | ENRICH_SKIP reason=nothing_missing rows=${rows.length}`);
+            return rows;
+        }
+        console.log(`${TAG} enrichRows | ENRICH_START candidates=${candidates.length} total=${rows.length}`);
+        const mints = candidates.map((r) => r.address);
+        let live: Record<string, PriceUpdate>;
+        try {
+            live = await this._client.priceMulti(mints);
+        } catch (e) {
+            console.log(`${TAG} enrichRows | ENRICH_ERROR error=${e} — returning rows as-is`);
+            return rows;
+        }
+        let applied = 0;
+        const out = rows.map((r) => {
+            const entry = live[r.address];
+            if (!entry) return r;
+            applied++;
+            return {
+                ...r,
+                priceUsd: r.priceUsd || entry.priceUsd,
+                change24hPct: r.change24hPct || entry.change24hPct,
+                volume24hUsd: r.volume24hUsd || entry.volume24hUsd,
+            };
+        });
+        console.log(`${TAG} enrichRows | ENRICH_DONE applied=${applied} skipped=${candidates.length - applied}`);
+        return out;
+    }
+
+    /**
+     * Session 11: backfill logo / name / symbol via Birdeye meta-data/multiple.
+     * Opt-in because it costs CU; call only for rows with missing logos on
+     * tabs where it matters (trending/smart-money tend to have gaps).
+     */
+    async enrichLogos(rows: TokenRow[]): Promise<TokenRow[]> {
+        const needLogo = rows.filter((r) => r.address && !r.logoUri);
+        if (needLogo.length === 0) {
+            console.log(`${TAG} enrichLogos | SKIP reason=all_have_logos rows=${rows.length}`);
+            return rows;
+        }
+        console.log(`${TAG} enrichLogos | START candidates=${needLogo.length} total=${rows.length}`);
+        let meta;
+        try {
+            meta = await this._client.getMetaDataMulti(needLogo.map((r) => r.address));
+        } catch (e) {
+            console.log(`${TAG} enrichLogos | ERROR error=${e} — returning rows as-is`);
+            return rows;
+        }
+        let applied = 0;
+        const out = rows.map((r) => {
+            const m = meta[r.address];
+            if (!m || !m.logoUri) return r;
+            applied++;
+            return { ...r, logoUri: r.logoUri || m.logoUri, name: r.name || m.name };
+        });
+        console.log(`${TAG} enrichLogos | DONE applied=${applied}`);
+        return out;
     }
 
     stop(): void {

@@ -291,6 +291,59 @@ export function buildAnchorTransaction(
     return tx;
 }
 
+/**
+ * Part 10 Bundle 1: build a multi-instruction transaction.
+ *
+ * Used when a single tx needs to carry the Ed25519 precompile instruction
+ * plus the Anchor `settle_match_verified` instruction in one atomic unit.
+ * The caller supplies each ix in the order it should run on-chain.
+ */
+export interface RawInstructionInput {
+    programIdBase58: string;
+    accounts: AnchorAccountMetaInput[];
+    data: Uint8Array;
+}
+
+export function buildMultiIxTransaction(
+    ixs: RawInstructionInput[],
+    feePayerBase58: string,
+    recentBlockhash: string,
+): Uint8Array {
+    console.log(`${TAG} buildMultiIxTransaction | START ix_count=${ixs.length} fee_payer=${feePayerBase58.substring(0, 8)}...`);
+
+    const feePayer = base58Decode(feePayerBase58);
+    const blockhash = base58Decode(recentBlockhash);
+    if (feePayer.length !== 32 || blockhash.length !== 32) {
+        console.log(`${TAG} buildMultiIxTransaction | FAIL invalid fee_payer or blockhash`);
+        return new Uint8Array(0);
+    }
+
+    const compiled: Instruction[] = [];
+    for (let i = 0; i < ixs.length; i++) {
+        const ix = ixs[i];
+        const programId = base58Decode(ix.programIdBase58);
+        if (programId.length !== 32) {
+            console.log(`${TAG} buildMultiIxTransaction | FAIL ix[${i}] invalid program_id length=${programId.length}`);
+            return new Uint8Array(0);
+        }
+        const metas: AccountMeta[] = [];
+        for (let j = 0; j < ix.accounts.length; j++) {
+            const a = ix.accounts[j];
+            const pk = base58Decode(a.pubkeyBase58);
+            if (pk.length !== 32) {
+                console.log(`${TAG} buildMultiIxTransaction | FAIL ix[${i}] account[${j}] invalid key length=${pk.length}`);
+                return new Uint8Array(0);
+            }
+            metas.push({ pubkey: pk, isSigner: a.isSigner, isWritable: a.isWritable });
+        }
+        compiled.push({ programId, accounts: metas, data: ix.data });
+    }
+
+    const tx = serializeTransaction(feePayer, blockhash, compiled);
+    console.log(`${TAG} buildMultiIxTransaction | DONE ix_count=${ixs.length} tx_bytes=${tx.length}`);
+    return tx;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CORE SERIALIZER
 // ═══════════════════════════════════════════════════════════════════════════════

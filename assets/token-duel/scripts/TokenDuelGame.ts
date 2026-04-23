@@ -22,6 +22,8 @@ import { Color, Label, Node, Sprite, SpriteFrame, Tween, UITransform, Vec3, twee
 import { Holding } from './TokenDuelRpc';
 import { PriceFeed } from './PriceFeed';
 import { PriceFeedMock } from './PriceFeedMock';
+import { Haptics, HapticType } from './Haptics';
+import { playSound } from './Sound';
 
 const TAG = '[TokenDuelGame]';
 
@@ -39,6 +41,25 @@ export interface TokenDuelGameOptions {
      * existing smoke tests and offline recording still work.
      */
     priceFeed?: PriceFeed;
+    /**
+     * Part 9: optional async hook invoked after deltas resolve but before
+     * the first active block spawns. AppUI uses it to display the first-run
+     * tutorial overlay and await the user's dismissal before play begins.
+     */
+    onBeforeFirstBlock?: () => Promise<void>;
+    /**
+     * Part 10 Bundle 1: fired on every block drop so the backend can
+     * validate physics in real time. Must be synchronous / fire-and-forget
+     * — tap latency is user-visible. On miss this fires once with
+     * outcome:'miss' before `onGameOver`.
+     */
+    onBlockDrop?: (ev: {
+        blockIdx: number;
+        tsMs: number;
+        xPos: number;
+        width: number;
+        outcome: 'ok' | 'miss';
+    }) => void;
 }
 
 interface TowerBlock {
@@ -111,6 +132,20 @@ export class TokenDuelGame {
 
         // 4. HUD initial state.
         this._opts.heightLabel.string = 'Height: 0';
+
+        // Part 9: optional first-run tutorial hook. AppUI resolves this
+        // Promise when the player dismisses the tutorial overlay. If the
+        // hook throws, we still start the game — the tutorial is a
+        // nice-to-have, never a blocker.
+        if (this._opts.onBeforeFirstBlock) {
+            try {
+                console.log(`${TAG} start | AWAIT onBeforeFirstBlock`);
+                await this._opts.onBeforeFirstBlock();
+                console.log(`${TAG} start | onBeforeFirstBlock resolved`);
+            } catch (e) {
+                console.log(`${TAG} start | onBeforeFirstBlock ERROR ${e}`);
+            }
+        }
 
         // 5. Spawn first active block + start oscillating.
         this._running = true;
@@ -202,6 +237,21 @@ export class TokenDuelGame {
         // Miss — active falls off-screen, then game over.
         if (overlapW <= 0) {
             console.log(`${TAG} onTap | MISS activeX=${activeX.toFixed(1)} prevX=${prev.x.toFixed(1)} overlapW=${overlapW.toFixed(1)}`);
+            // Part 10 Bundle 1: notify backend of the miss before the
+            // fall animation so the receipt-signer sees game-over events
+            // in real time.
+            try {
+                this._opts.onBlockDrop?.({
+                    blockIdx: this._tower.length - 1,
+                    tsMs: Date.now(),
+                    xPos: activeX,
+                    width: activeW,
+                    outcome: 'miss',
+                });
+            } catch (e) { console.log(`${TAG} onTap | onBlockDrop(miss) ERROR ${e}`); }
+            // Part 11 C: miss feedback.
+            Haptics.fire(HapticType.HEAVY);
+            playSound('miss');
             this._running = false;
             this._active = null;
             tween(activeNode)
@@ -216,6 +266,22 @@ export class TokenDuelGame {
 
         const overlapCx = (left + right) / 2;
         console.log(`${TAG} onTap | HIT overlapCx=${overlapCx.toFixed(1)} overlapW=${overlapW.toFixed(1)}`);
+
+        // Part 10 Bundle 1: notify backend of the successful drop. We
+        // fire BEFORE the drop animation tween so the wire event ordering
+        // is consistent with the game's block_idx counter.
+        try {
+            this._opts.onBlockDrop?.({
+                blockIdx: this._tower.length - 1,
+                tsMs: Date.now(),
+                xPos: overlapCx,
+                width: overlapW,
+                outcome: 'ok',
+            });
+        } catch (e) { console.log(`${TAG} onTap | onBlockDrop(ok) ERROR ${e}`); }
+        // Part 11 C: successful-stack feedback.
+        Haptics.fire(HapticType.MEDIUM);
+        playSound('stack');
 
         // Shrink active to overlap width and drop to fixed top-of-tower Y.
         const ut = activeNode.getComponent(UITransform);

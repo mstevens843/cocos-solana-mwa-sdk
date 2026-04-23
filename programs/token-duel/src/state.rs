@@ -1,6 +1,37 @@
 //! On-chain state + PDA seed constants for Token Duel.
 
 use anchor_lang::prelude::*;
+use anchor_lang::pubkey;
+
+/// Admin pubkey for privileged operations (Part 8: admin_withdraw,
+/// admin_withdraw_pool). Must match the wallet that deploys + initializes
+/// treasury/pool. Update this constant + redeploy to hand off admin rights.
+///
+/// Current value = devnet admin @ ~/.config/solana/id.json
+pub const ADMIN_PUBKEY: Pubkey = pubkey!("8FAPokEsm1CFbSsJ53DM8Bfe7QBmSN4TDrAQR2qXdcXe");
+
+/// Part 10 Bundle 1: the Ed25519 pubkey of the backend service that signs
+/// height receipts. `settle_match_verified` enforces this exact pubkey on
+/// the Ed25519 precompile instruction that precedes it in the transaction.
+///
+/// DEV default is deterministic (seed = sha256("token-duel-receipt-signer-devnet-v1"))
+/// so the backend and the program agree without any secret-management
+/// handshake for local / devnet work. The corresponding secret key is
+/// committed in `backend/.env.example` for onboarding — ROTATE before mainnet.
+///
+/// To rotate for production:
+///   1. `cd scripts && npm run keygen-receipt-signer` — prints pubkey + secret.
+///   2. Paste pubkey into this constant.
+///   3. `anchor build && anchor deploy` (program upgrade).
+///   4. Paste secret into backend env var `RECEIPT_SIGNER_SECRET`.
+///   5. Redeploy backend.
+pub const RECEIPT_SIGNER_PUBKEY: Pubkey = pubkey!("EiAotb9jwAbGjAWZ54bgHsS4QmUGQdETZL1Zmey4qRVA");
+
+/// Part 10 Bundle 1: max allowed drift between the server's `signed_at`
+/// timestamp on the receipt and the chain's `Clock::unix_timestamp` at
+/// settle time. 5 minutes covers network latency + signature-pending time
+/// without letting a cached receipt be replayed days later.
+pub const RECEIPT_MAX_AGE_SECS: i64 = 300;
 
 /// Seed for the singleton protocol pool PDA. All forfeits flow in; all
 /// tier-3 bonuses flow out. Pre-funded once via `initialize_pool`.
@@ -68,6 +99,7 @@ impl Leaderboard {
     /// the last one. No-op if `height == 0` or the candidate doesn't beat
     /// the tail. Returns Some(evicted_position) when an insert happened,
     /// None when the candidate didn't qualify.
+    // NOTE: Session D additions below this impl. See bottom of file.
     pub fn try_insert(&mut self, player: Pubkey, height: u8, settled_at: i64) -> Option<usize> {
         if height == 0 {
             return None;
@@ -93,5 +125,579 @@ impl Leaderboard {
             settled_at,
         };
         Some(idx)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Session D — Match / UserStats / Treasury / MatchCounter
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Seed for the singleton Treasury PDA. Holds rake SOL from settled matches.
+pub const TREASURY_SEED: &[u8] = b"treasury";
+
+/// Seed for the singleton MatchCounter PDA. Monotonic u64 so every fresh
+/// Match PDA has a unique address.
+pub const MATCH_COUNTER_SEED: &[u8] = b"match_counter";
+
+/// Seed for per-match PDAs. Keyed by `[b"match", mode_u8, wager_tier_u8, seq_u64_le]`.
+/// The seq is drawn from MatchCounter at create time.
+pub const MATCH_SEED: &[u8] = b"match";
+
+/// Seed for the per-match escrow that holds player wagers until settle.
+/// Keyed by `[b"match_escrow", match_pda]`.
+pub const MATCH_ESCROW_SEED: &[u8] = b"match_escrow";
+
+/// Seed for per-player UserStats PDA. Keyed by `[b"userstats", player_pubkey]`.
+pub const USER_STATS_SEED: &[u8] = b"userstats";
+
+/// Wager tiers (lamports). Indexed 0-5. Must match client `WAGER_TIERS_LAMPORTS`.
+/// Index 5 is the Part 11 "intro" tier (0.001 SOL) for brand-new players;
+/// appended at end so pre-existing Match PDAs with `wager_tier: 0..4` keep
+/// resolving to the same lamports value — no migration required.
+pub const WAGER_TIERS: [u64; 6] = [
+    10_000_000,    // 0.01 SOL
+    50_000_000,    // 0.05 SOL
+    100_000_000,   // 0.1  SOL
+    250_000_000,   // 0.25 SOL
+    500_000_000,   // 0.5  SOL
+    1_000_000,     // 0.001 SOL — INTRO (Part 11). Append-only; do not reorder.
+];
+
+/// Legacy flat-rake constant used by Part-1 solo settle.rs + compute_1v1_payout
+/// for the Session-A prototype. For multiplayer matches Part 13 uses per-player
+/// level-scaled rake via `rake_bps_for_level` — see `compute_mode_payout`.
+pub const RAKE_BPS: u64 = 300;
+pub const BPS_DENOM: u64 = 10_000;
+
+/// Part 13: level-scaled rake bounds. Level 1 pays RAKE_BPS_MAX, level 10+
+/// pays RAKE_BPS_MIN; linear interpolation in between. Keeping the discount
+/// intentionally narrow (5% → 3%) preserves protocol revenue while giving
+/// grinders a meaningful fee cut.
+pub const RAKE_BPS_MAX: u64 = 500; // 5.00%
+pub const RAKE_BPS_MIN: u64 = 300; // 3.00%
+
+/// Return the rake basis-points a player of `level` owes on their stake.
+/// Linear interpolation: lvl 1 → RAKE_BPS_MAX, lvl 10+ → RAKE_BPS_MIN.
+/// Level 0 (uninitialized UserStats) is treated as level 1.
+pub fn rake_bps_for_level(level: u16) -> u64 {
+    let clamped = if level < 1 { 1 } else if level > 10 { 10 } else { level };
+    let steps = (clamped - 1) as u64; // 0..=9
+    let range = RAKE_BPS_MAX - RAKE_BPS_MIN;
+    RAKE_BPS_MAX - (steps * range / 9)
+}
+
+/// How long a Waiting match can sit before anyone can cancel + refund.
+pub const MATCH_WAIT_TIMEOUT_SECS: i64 = 120;
+
+/// Part 9: once a match has been `Active` for this long without all players
+/// settling, anyone may call `force_settle` to pay out top-K among the players
+/// who did submit and force AFK players to forfeit (height = 0).
+pub const FORCE_SETTLE_TIMEOUT_SECS: i64 = 300;
+
+/// Starting value for `bot_games_remaining` (handicap window for new players).
+pub const BOT_HANDICAP_GAMES: u8 = 5;
+
+/// Max players supported by a single Match PDA. Sized to fit Battle Royale.
+pub const MATCH_MAX_PLAYERS: usize = 10;
+
+/// Game modes shipped in Session D Part 6. All modes share the same Match
+/// struct; `required_players` + payout tables + XP tables differ per mode.
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum GameMode {
+    OneVOne = 0,
+    FourPlayer = 1,
+    EightPlayer = 2,
+    BattleRoyale = 3,
+}
+
+impl GameMode {
+    pub fn from_u8(b: u8) -> Option<Self> {
+        match b {
+            0 => Some(GameMode::OneVOne),
+            1 => Some(GameMode::FourPlayer),
+            2 => Some(GameMode::EightPlayer),
+            3 => Some(GameMode::BattleRoyale),
+            _ => None,
+        }
+    }
+    pub fn required_players(self) -> u8 {
+        match self {
+            GameMode::OneVOne => 2,
+            GameMode::FourPlayer => 4,
+            GameMode::EightPlayer => 8,
+            GameMode::BattleRoyale => 10,
+        }
+    }
+    /// Payout tables in basis points (sum = 10_000 per mode). Caller applies
+    /// `RAKE_BPS` to the pot BEFORE distributing per this table.
+    pub fn payout_table(self) -> &'static [u16] {
+        match self {
+            GameMode::OneVOne      => &[10_000],
+            GameMode::FourPlayer   => &[7_000, 3_000],
+            GameMode::EightPlayer  => &[5_000, 3_000, 2_000],
+            GameMode::BattleRoyale => &[5_000, 2_500, 1_500, 1_000],
+        }
+    }
+    /// XP awarded per placement. Index 0 = 1st, index 1 = 2nd, etc. Unranked
+    /// (outside payout table) still get the "loser" value at end.
+    pub fn xp_table(self) -> &'static [u64] {
+        match self {
+            GameMode::OneVOne      => &[100, 25],
+            GameMode::FourPlayer   => &[100, 60, 30, 15],
+            GameMode::EightPlayer  => &[150, 80, 60, 40, 20, 20, 20, 20],
+            GameMode::BattleRoyale => &[200, 100, 70, 40, 10, 10, 10, 10, 10, 10],
+        }
+    }
+}
+
+/// Match lifecycle.
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum MatchStatus {
+    Waiting = 0,
+    Active = 1,
+    Settled = 2,
+    Cancelled = 3,
+}
+
+/// Part 9: price-delta time window used to drive each token's block width.
+/// Birdeye supplies `1h` / `24h` / `3d` / `7d` price-change percentages via
+/// the `/defi/price_volume/multi` endpoint; we pin one per match so every
+/// player in the same match sees the same widths.
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum TimeWindow {
+    H1 = 0,
+    D1 = 1,
+    D3 = 2,
+    D7 = 3,
+}
+
+impl TimeWindow {
+    pub fn from_u8(b: u8) -> Option<Self> {
+        match b {
+            0 => Some(TimeWindow::H1),
+            1 => Some(TimeWindow::D1),
+            2 => Some(TimeWindow::D3),
+            3 => Some(TimeWindow::D7),
+            _ => None,
+        }
+    }
+}
+
+#[account]
+pub struct MatchAccount {
+    pub mode: u8,
+    pub wager_tier: u8,
+    pub wager_lamports: u64,
+    pub xp_bucket: u16,
+    pub required_players: u8,
+    pub player_count: u8,
+    /// Slot i is Pubkey::default() until filled. Size 10 fits all modes.
+    pub players: [Pubkey; MATCH_MAX_PLAYERS],
+    /// Height[i] == u32::MAX until that slot has settled.
+    pub heights: [u32; MATCH_MAX_PLAYERS],
+    pub settled_count: u8,
+    pub created_at: i64,
+    pub started_at: i64,
+    pub closed_at: i64,
+    pub status: u8,
+    pub seq: u64,
+    pub bump: u8,
+    pub escrow_bump: u8,
+    /// Part 9: price-delta window backing this match. Stored as data only —
+    /// NOT part of the PDA seed. `MatchCounter.seq` is already globally
+    /// unique, so windows can share the seq space without collisions.
+    pub time_window: u8,
+}
+
+impl MatchAccount {
+    // 1+1+8+2+1+1 + (32*10) + (4*10) + 1 + 8+8+8 + 1 + 8 + 1 + 1 + 1 = 411
+    pub const SPACE: usize = 1 + 1 + 8 + 2 + 1 + 1 + (32 * MATCH_MAX_PLAYERS)
+        + (4 * MATCH_MAX_PLAYERS) + 1 + 8 + 8 + 8 + 1 + 8 + 1 + 1 + 1;
+
+    /// Returns the slot index for `player` in the match, or None if not enrolled.
+    pub fn slot_of(&self, player: &Pubkey) -> Option<usize> {
+        let n = (self.required_players as usize).min(MATCH_MAX_PLAYERS);
+        for i in 0..n {
+            if self.players[i] == *player {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Sort player slots by height descending. Returns `[(slot, height); required_players]`.
+    pub fn sorted_slots(&self) -> Vec<(usize, u32)> {
+        let n = (self.required_players as usize).min(MATCH_MAX_PLAYERS);
+        let mut out: Vec<(usize, u32)> = (0..n).map(|i| (i, self.heights[i])).collect();
+        out.sort_by(|a, b| b.1.cmp(&a.1)); // descending
+        out
+    }
+}
+
+#[account]
+pub struct UserStats {
+    // ─── v1 (preserved at identical offsets 0..72) ─────────────────────
+    pub player: Pubkey,           // 0..32
+    pub games_played: u32,         // 32..36
+    pub wins: u32,                 // 36..40
+    pub losses: u32,               // 40..44
+    /// Cumulative net P/L in lamports. Signed — can go negative.
+    pub profit_lamports: i64,      // 44..52
+    pub xp: u64,                   // 52..60
+    pub level: u16,                // 60..62
+    pub last_played_at: i64,       // 62..70
+    /// Free bot-handicap games remaining (decrements after each bot game).
+    pub bot_games_remaining: u8,   // 70..71
+    pub bump: u8,                  // 71..72
+
+    // ─── v2 (Part 10 Bundle 3) ─────────────────────────────────────────
+    /// Login-streak-style counter: bumps +1 when the player completes a
+    /// match on a new UTC day, resets to 0 after missing >1 day.
+    pub current_streak: u16,            // 72..74
+    pub best_streak: u16,               // 74..76
+    /// Unix sec of the last time we applied a streak bump. Day-bucketed
+    /// (floor(ts/DAY_SECONDS)) to decide if today already counted.
+    pub last_daily_claim_at: i64,       // 76..84
+    /// Bits 0..2 map to daily_challenge.challenges[0..2]. Bit flips on
+    /// completion. Zero'd implicitly when the day rolls over (handler
+    /// recomputes current_day and clears the mask if stale).
+    pub daily_challenges_bitmask: u32,  // 84..88
+    /// Wins accumulated in the current season. Stale check via season_id.
+    pub season_wins: u16,               // 88..90
+    /// Week-id (floor(ts/WEEK_SECONDS)) when season_wins was last valid.
+    /// Settle ix resets season_wins when this drifts from current season.
+    pub season_id: u64,                 // 90..98
+    pub _reserved: [u8; 14],            // 98..112 — future fields slot here
+}
+
+impl UserStats {
+    /// v2 layout — 112 bytes.
+    // 32 + 4 + 4 + 4 + 8 + 8 + 2 + 8 + 1 + 1 + 2 + 2 + 8 + 4 + 2 + 8 + 14 = 112
+    pub const SPACE: usize = 112;
+    /// v1 layout — kept so migrate_user_stats can guard against
+    /// running on already-migrated accounts and on fresh v2 accounts.
+    pub const SPACE_V1: usize = 72;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Part 10 Bundle 3 — DailyChallenge + Season PDAs
+// ═══════════════════════════════════════════════════════════════════════
+
+pub const DAILY_CHALLENGE_SEED: &[u8] = b"daily_challenge";
+pub const SEASON_SEED: &[u8] = b"season";
+
+pub const DAY_SECONDS: i64 = 86_400;
+pub const WEEK_SECONDS: i64 = 7 * DAY_SECONDS;
+
+pub const SEASON_SIZE: usize = 10;
+
+/// Season-end payout share of accumulated rake (20% in BPS).
+pub const SEASON_PRIZE_SHARE_BPS: u64 = 2_000;
+/// Podium split within the prize pool: 60/30/10.
+pub const SEASON_PRIZE_BPS: [u16; 3] = [6_000, 3_000, 1_000];
+
+/// Max XP reward per daily challenge. Prevents overflow + bogus configs.
+pub const DAILY_CHALLENGE_REWARD_CAP: u16 = 500;
+
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum ChallengeKind {
+    /// Complete this challenge by reaching `target` cumulative wins.
+    /// Approximated by checking `stats.wins % target == 0 && won`.
+    WinNMatches = 0,
+    /// Win a match on `time_window == target as u8` (0=1h / 1=1d / 2=3d / 3=7d).
+    WinOnTimeWindow = 1,
+    /// Win a match on `mode == target as u8` (0=1v1 / 1=4p / 2=8p / 3=BR10).
+    WinOnMode = 2,
+    /// First place in a multi-player pot: `required_players >= target as u8`.
+    FirstPlaceInPot = 3,
+    MaxChallenges, // bound check
+}
+
+impl ChallengeKind {
+    pub fn from_u8(b: u8) -> Option<Self> {
+        match b {
+            0 => Some(ChallengeKind::WinNMatches),
+            1 => Some(ChallengeKind::WinOnTimeWindow),
+            2 => Some(ChallengeKind::WinOnMode),
+            3 => Some(ChallengeKind::FirstPlaceInPot),
+            _ => None,
+        }
+    }
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
+pub struct Challenge {
+    pub kind: u8,
+    pub target: u32,
+    pub reward_xp: u16,
+}
+
+impl Challenge {
+    pub const SPACE: usize = 1 + 4 + 2; // 7
+}
+
+#[account]
+pub struct DailyChallenge {
+    /// floor(unix_sec / DAY_SECONDS). Unique per UTC day.
+    pub day_id: u64,
+    pub challenges: [Challenge; 3],
+    pub created_at: i64,
+    pub bump: u8,
+}
+
+impl DailyChallenge {
+    // 8 + (7 × 3) + 8 + 1 = 38
+    pub const SPACE: usize = 8 + (Challenge::SPACE * 3) + 8 + 1;
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default)]
+pub struct SeasonEntry {
+    pub player: Pubkey,  // 32
+    pub wins: u16,       // 2
+    /// Last-win timestamp (unix sec) — tiebreaker for equal wins.
+    pub at: i64,         // 8
+}
+
+impl SeasonEntry {
+    pub const SPACE: usize = 32 + 2 + 8; // 42
+}
+
+#[account]
+pub struct Season {
+    pub season_id: u64,                        // 8
+    pub entries: [SeasonEntry; SEASON_SIZE],   // 42 × 10 = 420
+    /// Rake accumulated across all matches in this season. Snapshotted
+    /// when pay_season runs; the payout = total × SEASON_PRIZE_SHARE_BPS / 10_000.
+    pub total_rake_accumulated: u64,           // 8
+    pub started_at: i64,                       // 8
+    pub paid_out: bool,                        // 1
+    pub bump: u8,                              // 1
+}
+
+impl Season {
+    // 8 + 420 + 8 + 8 + 1 + 1 = 446
+    pub const SPACE: usize = 8 + (SeasonEntry::SPACE * SEASON_SIZE) + 8 + 8 + 1 + 1;
+
+    /// Sort-insert `(player, wins, at)` into the top-10 entries ordered by
+    /// `wins` descending, tiebreak by latest `at`. If `player` already has
+    /// an entry, update its `wins` + `at` in place. No-op if the candidate
+    /// doesn't beat the tail. Returns the inserted/updated rank on success.
+    pub fn try_insert(&mut self, player: Pubkey, wins: u16, at: i64) -> Option<usize> {
+        if wins == 0 {
+            return None;
+        }
+
+        // If the player already has an entry, update it in place and re-sort.
+        for i in 0..SEASON_SIZE {
+            if self.entries[i].player == player {
+                self.entries[i].wins = wins;
+                self.entries[i].at = at;
+                self._sort();
+                // Find new rank.
+                for j in 0..SEASON_SIZE {
+                    if self.entries[j].player == player {
+                        return Some(j);
+                    }
+                }
+                return None;
+            }
+        }
+
+        // Otherwise insert if better than the tail.
+        let last = self.entries[SEASON_SIZE - 1];
+        let qualifies = last.wins == 0
+            || wins > last.wins
+            || (wins == last.wins && at < last.at);
+        if !qualifies {
+            return None;
+        }
+        self.entries[SEASON_SIZE - 1] = SeasonEntry { player, wins, at };
+        self._sort();
+        for j in 0..SEASON_SIZE {
+            if self.entries[j].player == player {
+                return Some(j);
+            }
+        }
+        None
+    }
+
+    fn _sort(&mut self) {
+        // Selection sort — SEASON_SIZE is 10, O(n²) is fine.
+        for i in 0..SEASON_SIZE {
+            let mut best = i;
+            for j in (i + 1)..SEASON_SIZE {
+                let a = self.entries[best];
+                let b = self.entries[j];
+                // wins desc, then earliest at first (whoever got there faster).
+                let a_better = if a.wins != b.wins { a.wins > b.wins } else { a.at < b.at };
+                if !a_better {
+                    best = j;
+                }
+            }
+            if best != i {
+                self.entries.swap(i, best);
+            }
+        }
+    }
+}
+
+#[account]
+pub struct Treasury {
+    pub total_received: u64,
+    pub bump: u8,
+}
+
+impl Treasury {
+    pub const SPACE: usize = 8 + 1;
+}
+
+#[account]
+pub struct MatchCounter {
+    pub seq: u64,
+    pub bump: u8,
+}
+
+impl MatchCounter {
+    pub const SPACE: usize = 8 + 1;
+}
+
+/// Compute 1v1 payout breakdown (kept for back-compat with Part 1 code paths).
+pub fn compute_1v1_payout(pot: u64, heights: [u32; 2]) -> (u8, u64, u64) {
+    let winner: u8 = if heights[0] >= heights[1] { 0 } else { 1 };
+    let rake = pot.saturating_mul(RAKE_BPS) / BPS_DENOM;
+    let to_winner = pot.saturating_sub(rake);
+    (winner, to_winner, rake)
+}
+
+/// Compute mode-agnostic payout. Returns `(rake, [(slot, lamports); K])`
+/// sorted by rank (1st place first). K = `mode.payout_table().len()`.
+///
+/// Part 13: rake is computed per-player from each participant's level. Total
+/// rake = sum(stake_per_player × rake_bps_for_level(level_i)). This lets a
+/// whale+grinder squad keep the grinder's discount on their half, rather
+/// than flattening everything to a single pot-level rate. All players
+/// contribute equal stake (matchmaking enforces this), so each contributes
+/// `pot / n` lamports.
+///
+/// Slots are indices into `heights[0..required_players]`, not absolute slots.
+/// Caller is expected to pre-project its own height into its slot before
+/// calling — the program uses final-settler-supplied heights verbatim.
+///
+/// Panics if `levels.len() < required_players` — callers must supply one
+/// level per participant (read from UserStats PDA at handler entry).
+pub fn compute_mode_payout(
+    mode: GameMode,
+    pot: u64,
+    heights: &[u32],
+    levels: &[u16],
+) -> (u64, Vec<(usize, u64)>) {
+    let n = mode.required_players() as usize;
+    let stake_per_player = if n > 0 { pot / n as u64 } else { 0 };
+    let total_rake: u64 = (0..n)
+        .map(|i| {
+            let bps = rake_bps_for_level(levels[i]);
+            stake_per_player.saturating_mul(bps) / BPS_DENOM
+        })
+        .sum();
+    let distributable = pot.saturating_sub(total_rake);
+
+    let mut indexed: Vec<(usize, u32)> = (0..n).map(|i| (i, heights[i])).collect();
+    indexed.sort_by(|a, b| b.1.cmp(&a.1)); // descending
+
+    let table = mode.payout_table();
+    let mut out: Vec<(usize, u64)> = Vec::with_capacity(table.len());
+    for (rank, &bps) in table.iter().enumerate() {
+        let (slot, _) = indexed[rank];
+        let lamports = distributable.saturating_mul(bps as u64) / BPS_DENOM;
+        out.push((slot, lamports));
+    }
+    (total_rake, out)
+}
+
+/// XP for a given placement. `rank` is 0-indexed (0 = 1st place).
+pub fn xp_for_placement(mode: GameMode, rank: usize) -> u64 {
+    let table = mode.xp_table();
+    if rank < table.len() { table[rank] } else { *table.last().unwrap_or(&0) }
+}
+
+// Back-compat aliases (Part 1 used these for 1v1).
+pub fn xp_for_win(mode: u8) -> u64 {
+    GameMode::from_u8(mode).map(|m| xp_for_placement(m, 0)).unwrap_or(0)
+}
+pub fn xp_for_loss(mode: u8) -> u64 {
+    GameMode::from_u8(mode)
+        .map(|m| xp_for_placement(m, (m.required_players() as usize).saturating_sub(1)))
+        .unwrap_or(0)
+}
+
+/// Pokémon-cubic curve: `xp_for_level(N) = N^3`. Returns highest N where N^3 ≤ xp.
+pub fn level_from_xp(xp: u64) -> u16 {
+    // Integer cube-root search — matches on u64 within u16 bounds (max level ≈ 65535).
+    let mut n: u16 = 0;
+    loop {
+        let next = (n as u64).saturating_add(1);
+        let cube = next.saturating_mul(next).saturating_mul(next);
+        if cube > xp {
+            return n;
+        }
+        if n == u16::MAX {
+            return n;
+        }
+        n = next as u16;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rake_bps_for_level_endpoints() {
+        assert_eq!(rake_bps_for_level(0), RAKE_BPS_MAX); // treat 0 as lvl 1
+        assert_eq!(rake_bps_for_level(1), RAKE_BPS_MAX);
+        assert_eq!(rake_bps_for_level(10), RAKE_BPS_MIN);
+        assert_eq!(rake_bps_for_level(50), RAKE_BPS_MIN); // clamps above 10
+    }
+
+    #[test]
+    fn rake_bps_for_level_interpolates() {
+        // Monotone decreasing across 1..=10.
+        let mut prev = rake_bps_for_level(1);
+        for lvl in 2..=10 {
+            let cur = rake_bps_for_level(lvl);
+            assert!(cur <= prev, "not monotone at lvl {}", lvl);
+            prev = cur;
+        }
+        // Mid-point: (500 - 300) / 2 = 100 discount ≈ 400 bps at lvl 5-6.
+        let mid = rake_bps_for_level(5);
+        assert!((400..=430).contains(&mid), "lvl 5 bps out of range: {}", mid);
+    }
+
+    #[test]
+    fn compute_mode_payout_uses_per_player_rake() {
+        // 2-player 1v1, pot 2 SOL (1 SOL each), both at lvl 10 → 3% each.
+        let levels = [10u16, 10u16];
+        let heights = [30u32, 20u32];
+        let (rake, _) = compute_mode_payout(
+            GameMode::OneVOne,
+            2_000_000_000,
+            &heights,
+            &levels,
+        );
+        // Expect ~3% of pot = 60_000_000 lamports total.
+        assert_eq!(rake, 60_000_000);
+
+        // Mixed lvl 1 + lvl 10. Per-player: 1 SOL × 500 bps + 1 SOL × 300 bps = 50M + 30M = 80M.
+        let (rake_mixed, _) = compute_mode_payout(
+            GameMode::OneVOne,
+            2_000_000_000,
+            &heights,
+            &[1u16, 10u16],
+        );
+        assert_eq!(rake_mixed, 80_000_000);
     }
 }

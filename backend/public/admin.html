@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Duel — Admin</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="logo">🏆</span>
+    <div>
+      <div class="name">Token Duel · Admin</div>
+      <div class="tag">Live receipt signer + cheat-resistance dashboard</div>
+    </div>
+  </div>
+  <div class="ctx">
+    <div class="ctx-row"><span class="k">Server pubkey</span><span class="v" id="serverPubkey">—</span></div>
+    <div class="ctx-row"><span class="k">Trophy tree</span><span class="v" id="treeAddress">—</span></div>
+    <div class="ctx-row"><span class="k">Uptime</span><span class="v" id="uptime">—</span></div>
+    <div class="ctx-row"><span class="k">Status</span><span class="v" id="streamStatus">connecting…</span></div>
+  </div>
+</header>
+
+<section class="cards">
+  <div class="card green">
+    <div class="card-label">Receipts signed</div>
+    <div class="card-value" id="receiptsSigned">0</div>
+    <div class="card-sub" id="receiptsSub">lifetime</div>
+  </div>
+  <div class="card red">
+    <div class="card-label">Cheat rejects</div>
+    <div class="card-value" id="cheatRejects">0</div>
+    <div class="card-sub" id="rejectsSub">lifetime</div>
+  </div>
+  <div class="card gold">
+    <div class="card-label">Live sessions</div>
+    <div class="card-value" id="sessionsAlive">0</div>
+    <div class="card-sub" id="sessionsSub">+ 0 spectators</div>
+  </div>
+  <div class="card blue">
+    <div class="card-label">Matches witnessed</div>
+    <div class="card-value" id="totalMatches">0</div>
+    <div class="card-sub" id="matchesSub">unique match PDAs</div>
+  </div>
+</section>
+
+<section class="cards cards-row2">
+  <div class="card purple">
+    <div class="card-label">Rake — today (UTC)</div>
+    <div class="card-value" id="rakeToday">0.0000</div>
+    <div class="card-sub">SOL accrued since 00:00</div>
+  </div>
+  <div class="card purple">
+    <div class="card-label">Rake — this week</div>
+    <div class="card-value" id="rakeWeek">0.0000</div>
+    <div class="card-sub">SOL · feeds weekly payouts</div>
+  </div>
+  <div class="card teal">
+    <div class="card-label">Rake — all-time</div>
+    <div class="card-value" id="rakeAllTime">0.0000</div>
+    <div class="card-sub">SOL since process start</div>
+  </div>
+  <div class="card teal">
+    <div class="card-label">Tokens tracked</div>
+    <div class="card-value" id="tokensTracked">0</div>
+    <div class="card-sub" id="tokensSub">this week</div>
+  </div>
+</section>
+
+<section class="cards cards-row2">
+  <div class="card gold">
+    <div class="card-label">⚔ Tournaments today</div>
+    <div class="card-value" id="tournamentsToday">0</div>
+    <div class="card-sub" id="tournamentsSub">seeded · 0 completed</div>
+  </div>
+  <div class="card gold">
+    <div class="card-label">Tournament host</div>
+    <div class="card-value host-pk" id="tournamentHost" style="font-size: 24px;">—</div>
+    <div class="card-sub">seeding BR10 matches</div>
+  </div>
+</section>
+
+<section class="logs">
+  <div class="log-col">
+    <h3 class="log-head green">Recent receipts ✓</h3>
+    <div id="recentReceipts" class="log-list"></div>
+  </div>
+  <div class="log-col">
+    <h3 class="log-head red">Recent rejects ✗</h3>
+    <div id="recentRejects" class="log-list"></div>
+  </div>
+  <div class="log-col">
+    <h3 class="log-head purple">Recent settlements 💰</h3>
+    <div id="recentSettlements" class="log-list"></div>
+  </div>
+</section>
+
+<section class="token-table">
+  <h3 class="log-head teal">Top tokens — winrate (this week)</h3>
+  <table id="tokenStatsTable">
+    <thead><tr><th>Mint</th><th>Matches</th><th>Wins</th><th>Winrate</th></tr></thead>
+    <tbody id="tokenStatsBody"><tr><td colspan="4" class="empty">no matches yet — play a few to populate</td></tr></tbody>
+  </table>
+</section>
+
+<footer>
+  <span>Token Duel · Stack-Jump on Solana · <a href="https://explorer.solana.com/address/14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd?cluster=devnet" target="_blank">program</a></span>
+</footer>
+
+<script src="admin.js"></script>
+</body>
+</html>

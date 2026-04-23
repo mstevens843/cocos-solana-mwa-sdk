@@ -9,12 +9,25 @@
     "smoke-tiers": "ts-node smoke-tiers.ts",
     "smoke-negatives": "ts-node smoke-negatives.ts",
     "init-leaderboard": "ts-node init-leaderboard.ts",
+    "init-leaderboards": "ts-node init-leaderboards.ts",
+    "init-treasury": "ts-node init-treasury.ts",
+    "init-match-counter": "ts-node init-match-counter.ts",
+    "init-user-stats": "ts-node init-user-stats.ts",
     "smoke-leaderboard": "ts-node smoke-leaderboard.ts",
-    "verify-scene": "ts-node verify-scene-bindings.ts"
+    "smoke-match": "ts-node smoke-match.ts",
+    "admin-withdraw": "ts-node admin-withdraw.ts",
+    "verify-scene": "ts-node verify-scene-bindings.ts",
+    "keygen-receipt-signer": "ts-node keygen-receipt-signer.ts",
+    "init-daily-challenge": "ts-node init-daily-challenge.ts",
+    "init-season": "ts-node init-season.ts",
+    "pay-season": "ts-node pay-season.ts",
+    "init-trophy-tree": "ts-node init-trophy-tree.ts",
+    "init-tournament-host": "ts-node init-tournament-host.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
-    "@solana/web3.js": "^1.98.0"
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

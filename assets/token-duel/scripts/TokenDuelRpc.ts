@@ -235,6 +235,114 @@ export class TokenDuelRpc {
         return out;
     }
 
+    // ─── Session D Part 3: generic RPC surface for MatchRpc + UserStatsRpc ───
+
+    /**
+     * Read a single account. Returns `{ dataBase64, owner, lamports }` or null.
+     * Used by MatchRpc.getMatch() and UserStatsRpc.getUserStats().
+     */
+    async getAccountInfo(pda: string): Promise<{ dataBase64: string; owner: string; lamports: number } | null> {
+        const result = await this._call<{ value: { data: [string, string]; owner: string; lamports: number } | null }>(
+            'getAccountInfo',
+            [pda, { encoding: 'base64', commitment: 'confirmed' }],
+        );
+        if (!result || !result.value) {
+            console.log(`${TAG} getAccountInfo | NULL pda=${pda}`);
+            return null;
+        }
+        return {
+            dataBase64: result.value.data[0],
+            owner: result.value.owner,
+            lamports: result.value.lamports,
+        };
+    }
+
+    /**
+     * Thin getProgramAccounts wrapper — accepts raw Solana filter objects
+     * (memcmp offsets in bytes, base58-encoded pattern bytes). Returns
+     * array of `{ pubkey, dataBase64, owner, lamports }`.
+     */
+    async getProgramAccounts(
+        programId: string,
+        filters: Array<{ memcmp: { offset: number; bytes: string } } | { dataSize: number }>,
+    ): Promise<Array<{ pubkey: string; dataBase64: string; owner: string; lamports: number }>> {
+        const result = await this._call<Array<{
+            pubkey: string;
+            account: { data: [string, string]; owner: string; lamports: number };
+        }>>('getProgramAccounts', [
+            programId,
+            {
+                encoding: 'base64',
+                commitment: 'confirmed',
+                filters,
+            },
+        ]);
+        if (!result) {
+            console.log(`${TAG} getProgramAccounts | NULL program=${programId} filters=${filters.length}`);
+            return [];
+        }
+        const out = result.map((r) => ({
+            pubkey: r.pubkey,
+            dataBase64: r.account.data[0],
+            owner: r.account.owner,
+            lamports: r.account.lamports,
+        }));
+        console.log(`${TAG} getProgramAccounts | DONE program=${programId} filters=${filters.length} found=${out.length}`);
+        return out;
+    }
+
+    /**
+     * Part 9: `getSignaturesForAddress` — paginated wrapper used by
+     * MatchHistoryRpc to walk back through a user's UserStats-PDA
+     * signature log. `before` is the cursor (last signature from prior
+     * page); `until` stops the walk at a known older signature.
+     */
+    async getSignaturesForAddress(
+        address: string,
+        opts: { limit?: number; before?: string; until?: string } = {},
+    ): Promise<Array<{ signature: string; slot: number; blockTime: number | null; err: unknown }>> {
+        const params: any[] = [address, {
+            limit: opts.limit ?? 100,
+            ...(opts.before ? { before: opts.before } : {}),
+            ...(opts.until ? { until: opts.until } : {}),
+            commitment: 'confirmed',
+        }];
+        const result = await this._call<Array<{ signature: string; slot: number; blockTime: number | null; err: unknown }>>(
+            'getSignaturesForAddress', params,
+        );
+        if (!result) {
+            console.log(`${TAG} getSignaturesForAddress | NULL address=${address.substring(0, 8)}... before=${opts.before ?? '-'}`);
+            return [];
+        }
+        console.log(`${TAG} getSignaturesForAddress | DONE address=${address.substring(0, 8)}... returned=${result.length} before=${opts.before ?? '-'}`);
+        return result;
+    }
+
+    /**
+     * Part 9: `getTransaction` — fetch a single tx (we use the log messages
+     * only). MatchHistoryRpc scans `meta.logMessages` for `Program data:`
+     * lines and decodes MatchSettled/MatchForceSettled events.
+     */
+    async getTransaction(signature: string): Promise<{
+        meta: { logMessages: string[] | null; err: unknown } | null;
+        blockTime: number | null;
+        slot: number;
+    } | null> {
+        const result = await this._call<{
+            meta: { logMessages: string[] | null; err: unknown } | null;
+            blockTime: number | null;
+            slot: number;
+        }>('getTransaction', [signature, {
+            maxSupportedTransactionVersion: 0,
+            commitment: 'confirmed',
+        }]);
+        if (!result) {
+            console.log(`${TAG} getTransaction | NULL sig=${signature.substring(0, 16)}...`);
+            return null;
+        }
+        return result;
+    }
+
     // ─── Internals ────────────────────────────────────────────────────────
 
     private _i64LE(bytes: Uint8Array, offset: number): bigint {
@@ -274,7 +382,7 @@ export class TokenDuelRpc {
                     console.log(`${TAG} _call | HTTP_ERROR method=${method} status=${response.status}`);
                     return { result: null, transient: response.status === 429 || response.status >= 500 };
                 }
-                const json: RpcResponse<T> = await response.json();
+                const json = await response.json() as RpcResponse<T>;
                 if (json.error) {
                     console.log(`${TAG} _call | RPC_ERROR method=${method} code=${json.error.code} message="${json.error.message}"`);
                     return { result: null, transient: false };

@@ -1,0 +1,19 @@
+{
+    "_comment": "14-day rotation of DailyChallenge presets. Mirrored by scripts/init-daily-challenge.ts ROTATION. Each entry is 3 challenges = { kind, target, rewardXp }. kind: 0=WinNMatches, 1=WinOnTimeWindow (target=0/1/2/3 → 1h/1d/3d/7d), 2=WinOnMode (target=0/1/2/3 → 1v1/4p/8p/BR10), 3=FirstPlaceInPot (target = min players).",
+    "rotation": [
+        [{ "kind": 0, "target": 3, "rewardXp": 100 }, { "kind": 1, "target": 1, "rewardXp": 150 }, { "kind": 2, "target": 1, "rewardXp": 200 }],
+        [{ "kind": 0, "target": 5, "rewardXp": 150 }, { "kind": 1, "target": 1, "rewardXp": 100 }, { "kind": 3, "target": 4, "rewardXp": 250 }],
+        [{ "kind": 0, "target": 1, "rewardXp": 50  }, { "kind": 2, "target": 1, "rewardXp": 100 }, { "kind": 1, "target": 3, "rewardXp": 200 }],
+        [{ "kind": 0, "target": 2, "rewardXp": 80  }, { "kind": 3, "target": 8, "rewardXp": 300 }, { "kind": 1, "target": 2, "rewardXp": 150 }],
+        [{ "kind": 0, "target": 4, "rewardXp": 120 }, { "kind": 2, "target": 2, "rewardXp": 250 }, { "kind": 1, "target": 1, "rewardXp": 100 }],
+        [{ "kind": 0, "target": 3, "rewardXp": 100 }, { "kind": 2, "target": 3, "rewardXp": 350 }, { "kind": 3, "target": 10, "rewardXp": 400 }],
+        [{ "kind": 0, "target": 7, "rewardXp": 200 }, { "kind": 1, "target": 3, "rewardXp": 180 }, { "kind": 2, "target": 1, "rewardXp": 150 }],
+        [{ "kind": 0, "target": 1, "rewardXp": 60  }, { "kind": 1, "target": 1, "rewardXp": 90  }, { "kind": 1, "target": 2, "rewardXp": 120 }],
+        [{ "kind": 0, "target": 5, "rewardXp": 150 }, { "kind": 2, "target": 1, "rewardXp": 80  }, { "kind": 3, "target": 4, "rewardXp": 250 }],
+        [{ "kind": 3, "target": 8, "rewardXp": 300 }, { "kind": 1, "target": 2, "rewardXp": 150 }, { "kind": 0, "target": 2, "rewardXp": 80  }],
+        [{ "kind": 0, "target": 10, "rewardXp": 300}, { "kind": 2, "target": 3, "rewardXp": 350 }, { "kind": 1, "target": 3, "rewardXp": 200 }],
+        [{ "kind": 0, "target": 3, "rewardXp": 100 }, { "kind": 1, "target": 1, "rewardXp": 150 }, { "kind": 3, "target": 10, "rewardXp": 400 }],
+        [{ "kind": 0, "target": 4, "rewardXp": 120 }, { "kind": 2, "target": 2, "rewardXp": 250 }, { "kind": 2, "target": 1, "rewardXp": 150 }],
+        [{ "kind": 0, "target": 6, "rewardXp": 180 }, { "kind": 1, "target": 3, "rewardXp": 180 }, { "kind": 3, "target": 4, "rewardXp": 250 }]
+    ]
+}

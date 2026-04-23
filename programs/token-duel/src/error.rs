@@ -17,4 +17,53 @@ pub enum GameError {
     PoolUnderfunded,
     #[msg("Caller is not the admin")]
     Unauthorized,
+    // Session D — match / stats
+    #[msg("Match is already full")]
+    MatchFull,
+    #[msg("Match is not in the expected status")]
+    MatchBadStatus,
+    #[msg("Caller is not a player in this match")]
+    NotInMatch,
+    #[msg("Player has already settled this match")]
+    AlreadySettledMatch,
+    #[msg("Match cannot be cancelled yet (timeout not elapsed)")]
+    MatchNotTimedOut,
+    #[msg("Invalid wager tier index")]
+    InvalidWagerTier,
+    #[msg("Invalid game mode")]
+    InvalidMode,
+    #[msg("Wager lamports do not match expected tier value")]
+    WagerMismatch,
+    #[msg("Nothing available to withdraw (balance at or below rent-exempt floor)")]
+    WithdrawUnavailable,
+    #[msg("Invalid time window index")]
+    InvalidTimeWindow,
+    #[msg("Match cannot be force-settled yet (Active timeout not elapsed)")]
+    MatchNotForcedYet,
+    // Part 10 Bundle 1 — server-signed receipt verification
+    #[msg("Ed25519 verification instruction missing at index 0")]
+    Ed25519IxMissing,
+    #[msg("Ed25519 verification instruction is malformed or unparseable")]
+    Ed25519IxMalformed,
+    #[msg("Receipt signer does not match expected server pubkey")]
+    InvalidReceiptSigner,
+    #[msg("Receipt is outside the freshness window")]
+    ReceiptExpired,
+    #[msg("Receipt message does not match tx arguments")]
+    ReceiptMessageMismatch,
+    // Part 10 Bundle 3 — retention
+    #[msg("UserStats account already at current layout")]
+    AlreadyMigrated,
+    #[msg("day_id mismatch with current Clock")]
+    BadDayId,
+    #[msg("season_id mismatch with current Clock")]
+    BadSeasonId,
+    #[msg("Challenge definition is invalid (kind/target/reward out of range)")]
+    InvalidChallenge,
+    #[msg("Season already paid out")]
+    SeasonAlreadyPaid,
+    #[msg("DailyChallenge is stale — cron did not initialize today's challenge yet")]
+    DailyChallengeStale,
+    #[msg("Season PDA is stale — cron did not initialize this week's season yet")]
+    SeasonStale,
 }
