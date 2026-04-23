@@ -1528,6 +1528,7 @@ export class AppUI extends Component {
         console.log(`${TAG} _showTokenDuel | switching to Token Duel panel`);
         this._setActivePanel('tokenDuel');
         this._resetStakeFlow();
+        this._hideLegacyBettingDuelNodes();
 
         // Phase III — kick off Birdeye feed fetch + balance chip refresh. Both
         // run async; the panel opens instantly and rows populate when ready.
@@ -1560,9 +1561,12 @@ export class AppUI extends Component {
         const hadSessionSeed = this._sessionSeed !== null;
         console.log(`${TAG} _resetStakeFlow | START had_committed_sig=${hadCommitted} had_hero=${hadHero} had_game=${hadGame} had_session_seed=${hadSessionSeed} last_height=${this._lastGameHeight}`);
         this._stakeCommitSig = null;
+        // betting-duel: legacy commit button stays hidden (solo-commit flow
+        // is dead on this branch). Previously this was `active = true` —
+        // that's what let the user hit Start Game from the old flow.
         if (this._stakeCommitButton) {
-            this._stakeCommitButton.node.active = true;
-            this._stakeCommitButton.interactable = true;
+            this._stakeCommitButton.node.active = false;
+            this._stakeCommitButton.interactable = false;
         }
         // Phase D: also reset game state / visuals.
         if (this._startGameButton) this._startGameButton.node.active = false;
@@ -2050,6 +2054,19 @@ export class AppUI extends Component {
         const windowDef = TIME_WINDOWS[this._pickerSelectedWindow] ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW];
         const windowMs = windowDef.durationMs;
 
+        // betting-duel bug bash: thread the squad's cached feed-row prices
+        // into PortfolioRace as fallback. Handles the case where Birdeye's
+        // multi_price endpoint doesn't index a mint (common for new pump.fun
+        // tokens) — race uses the trending-feed snapshot instead of aborting
+        // with NO_ENTRY_PRICES and instant-completing with 0% delta.
+        const fallbackEntryPrices: Record<string, number> = {};
+        for (const slot of this._squad.slots) {
+            if (slot && slot.address && Number.isFinite(slot.priceUsd) && slot.priceUsd > 0) {
+                fallbackEntryPrices[slot.address] = slot.priceUsd;
+            }
+        }
+        console.log(`${TAG} onStartGame | fallback_entry_prices count=${Object.keys(fallbackEntryPrices).length}`);
+
         // Instantiate and start the game.
         this._game = new TokenDuelGame({
             gameArea: this._gameArea,
@@ -2059,6 +2076,7 @@ export class AppUI extends Component {
             holdings: gameHoldings,
             priceFeed: this._priceFeed,
             windowMs,
+            fallbackEntryPrices,
             onBeforeFirstBlock: this._makeTutorialHook(),
             onBlockDrop: (ev) => this._receiptSession?.recordDrop(ev),
             onRaceTick: (snap) => this._onRaceTick(snap),
@@ -2072,20 +2090,20 @@ export class AppUI extends Component {
     private _onGameOver(height: number, deltas: Record<string, number>): void {
         console.log(`${TAG} onGameOver | height=${height} deltas=${JSON.stringify(deltas)}`);
         this._sessionDeltas = deltas;
-        const tier = this._tierFor(height);
-        if (this._gameOverLabel) {
-            this._gameOverLabel.string = `Game Over — Height: ${height}\n(Tier: ${tier})`;
-            this._gameOverLabel.node.active = true;
-        }
+        // betting-duel: the stack-jump legacy overlay (`GameOverLabel` with
+        // "Game Over — Height: …" + `ClaimPayoutButton` + "Tap Claim Payout"
+        // status) must NOT show on this branch. The match path is paper-bot
+        // or real-settle → PostMatchPanel, never legacy solo-settle-by-click.
+        if (this._gameOverLabel) this._gameOverLabel.node.active = false;
         if (this._gameArea) this._gameArea.active = false;
         this._hideRacePanel();
         this._lastGameHeight = height;
         if (this._claimButton) {
-            this._claimButton.node.active = true;
-            this._claimButton.interactable = true;
+            this._claimButton.node.active = false;
+            this._claimButton.interactable = false;
         }
         if (this._tokenDuelStatus) {
-            this._tokenDuelStatus.string = `Tap Claim Payout to settle (${tier})`;
+            this._tokenDuelStatus.string = '';
         }
 
         const tierKey = this._tierKey(height);
@@ -5341,12 +5359,42 @@ export class AppUI extends Component {
         const ids = ['StakeHeaderLabel', 'StakeValueLabel', 'StakeSlider',
                      'StakeChip_001', 'StakeChip_010', 'StakeChip_100',
                      'StakeCommitButton'];
+        // betting-duel: legacy solo-commit flow is dead code on this branch.
+        // The Run Squad → ModePicker → Start path is the only way to start a
+        // match. Force hidden regardless of caller intent so stale call sites
+        // (e.g. commit-then-start-game) can't resurrect the wrong UI.
+        const force = false;
         for (const name of ids) {
             const n = this._tokenDuelPanel?.getChildByName(name);
-            if (n) n.active = visible;
+            if (n) n.active = force;
         }
         this._squadLocked = visible;
-        console.log(`${TAG} _setStakeClusterVisible | visible=${visible} squad_locked=${visible}`);
+        console.log(`${TAG} _setStakeClusterVisible | requested=${visible} applied=${force} (betting-duel force-hidden) squad_locked=${visible}`);
+    }
+
+    /**
+     * betting-duel bug bash: hide every stack-jump-era scene node whose only
+     * purpose is the solo `commit → startGame → claimPayout` flow. These
+     * remain in the scene (to minimize diff + preserve node-name bindings)
+     * but must never be visible on this branch. Called from _showTokenDuel,
+     * _resetStakeFlow, and once during start() for belt-and-suspenders.
+     */
+    private _hideLegacyBettingDuelNodes(): void {
+        if (!this._tokenDuelPanel) return;
+        const ids = [
+            'StakeHeaderLabel', 'StakeValueLabel', 'StakeSlider',
+            'StakeChip_001', 'StakeChip_010', 'StakeChip_100',
+            'StakeCommitButton',
+            'StartGameButton',
+            'ClaimPayoutButton',
+            'GameOverLabel',
+        ];
+        let hidden = 0;
+        for (const name of ids) {
+            const n = this._tokenDuelPanel.getChildByName(name);
+            if (n && n.active) { n.active = false; hidden++; }
+        }
+        console.log(`${TAG} _hideLegacyBettingDuelNodes | DONE hidden=${hidden}/${ids.length}`);
     }
 
     /**
@@ -5381,7 +5429,7 @@ export class AppUI extends Component {
             const spr = this._squadDropButton.node.getComponent(Sprite);
             if (spr) spr.color = filled > 0 && !this._squadLocked ? new Color(40, 50, 68, 255) : new Color(26, 30, 42, 255);
         }
-        if (this._squadDropLabel) this._squadDropLabel.string = filled > 0 ? `Drop (${filled})` : 'Drop';
+        if (this._squadDropLabel) this._squadDropLabel.string = filled > 0 ? `Manage Squad (${filled})` : 'Manage Squad';
         // Run button
         if (this._squadRunButton) {
             const canRun = filled >= 1 && !this._squadPickMode && !this._squadLocked;

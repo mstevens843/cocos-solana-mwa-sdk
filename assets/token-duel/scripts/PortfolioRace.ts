@@ -25,6 +25,15 @@ export interface PortfolioRaceOptions {
     windowMs: number;
     /** Live price source. Must implement `getSpotPrices(mints) → { [mint]: priceUsd }`. */
     priceFeed: PriceFeed;
+    /**
+     * Optional entry-price overrides keyed by mint. Used when Birdeye's
+     * `/defi/multi_price` doesn't index a token (common for fresh pump.fun
+     * mints). AppUI threads the squad slots' cached `priceUsd` from the
+     * trending feed here so the race has entry prices even when the live
+     * fetch returns nothing. If a mint is in `fallbackEntryPrices` AND
+     * live fetch resolves it, live fetch wins.
+     */
+    fallbackEntryPrices?: Record<string, number>;
     /** Fired on each poll tick with the current race state. */
     onTick?: (snapshot: RaceSnapshot) => void;
     /** Fired exactly once when the window closes with the final portfolio delta %. */
@@ -74,18 +83,34 @@ export class PortfolioRace {
         this._mintKeys = this._collectMintKeys(this._opts.tokens);
         console.log(`${TAG} start | tokens=${this._opts.tokens.length} mints=${this._mintKeys.length} windowMs=${this._opts.windowMs}`);
 
-        // 1. Fetch entry prices. If a token has no price we proceed anyway —
-        // equal-weighted average ignores unresolved tokens (prevents a single
-        // unlisted mint from tanking the whole match with 0%).
+        // 1. Fetch entry prices from Birdeye, then merge in fallback prices
+        // for any mint Birdeye didn't index. Equal-weighted avg ignores
+        // unresolved tokens, so if BOTH sources miss a mint it just gets
+        // dropped from the portfolio (prevents a single unlisted mint from
+        // tanking the whole match with 0%).
+        let live: Record<string, number>;
         try {
-            this._entryPrices = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
+            live = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
         } catch (e: any) {
-            console.log(`${TAG} start | ENTRY_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — aborting, emitting 0% delta`);
-            this._completeOnce(0);
-            return;
+            console.log(`${TAG} start | ENTRY_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — proceeding with fallback only`);
+            live = {};
         }
+        const fallback = this._opts.fallbackEntryPrices ?? {};
+        const merged: Record<string, number> = {};
+        let liveHits = 0;
+        let fallbackHits = 0;
+        for (const mint of this._mintKeys) {
+            if (Number.isFinite(live[mint]) && live[mint] > 0) {
+                merged[mint] = live[mint];
+                liveHits++;
+            } else if (Number.isFinite(fallback[mint]) && fallback[mint] > 0) {
+                merged[mint] = fallback[mint];
+                fallbackHits++;
+            }
+        }
+        this._entryPrices = merged;
         const resolvedEntries = Object.keys(this._entryPrices).length;
-        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
+        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} (live=${liveHits} fallback=${fallbackHits}) sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
         if (resolvedEntries === 0) {
             console.log(`${TAG} start | NO_ENTRY_PRICES — aborting race, emitting 0% delta`);
             this._completeOnce(0);
@@ -217,7 +242,9 @@ export class PortfolioRace {
         const skips: Array<{ mint: string; reason: string }> = [];
         for (const mint of this._mintKeys) {
             const entry = this._entryPrices[mint];
-            const cur = current[mint] ?? entry;
+            // If live fetch didn't return this mint, reuse entry price (delta=0).
+            // Only skip if we have NO entry price at all.
+            const cur = (Number.isFinite(current[mint]) && current[mint] > 0) ? current[mint] : entry;
             if (!entry || entry <= 0) { skips.push({ mint, reason: 'no_entry' }); continue; }
             if (!Number.isFinite(cur) || cur <= 0) { skips.push({ mint, reason: 'no_current_or_invalid' }); continue; }
             const deltaPct = ((cur - entry) / entry) * 100;

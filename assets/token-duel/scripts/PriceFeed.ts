@@ -115,6 +115,29 @@ export class PriceFeed {
     }
 
     /**
+     * Spot-price fetch used by PortfolioRace for live window computation.
+     *
+     * Returns a mint-keyed record of USD prices at the moment Birdeye
+     * answered. Missing mints are omitted (caller must tolerate absence).
+     *
+     * Uses `/defi/multi_price` (broader token coverage than
+     * `/defi/price_volume/multi` — new pump.fun tokens that 404 on the
+     * latter resolve here). Delegates to BirdeyeClient.spotPriceMulti
+     * which swallows network errors and returns {} on failure.
+     */
+    async getSpotPrices(mints: string[]): Promise<Record<string, number>> {
+        console.log(`${TAG} getSpotPrices | START mints=${mints.length}`);
+        if (mints.length === 0) {
+            console.log(`${TAG} getSpotPrices | EMPTY_MINTS returning {}`);
+            return {};
+        }
+        const resolved = await this._client.spotPriceMulti(mints);
+        const missing = mints.length - Object.keys(resolved).length;
+        console.log(`${TAG} getSpotPrices | DONE mints=${mints.length} resolved=${Object.keys(resolved).length} missing=${missing}`);
+        return resolved;
+    }
+
+    /**
      * Begin a polling loop against Birdeye every `PRICE_FEED_POLL_MS` ms.
      * Calls `onTick` once immediately, then on each interval.
      *

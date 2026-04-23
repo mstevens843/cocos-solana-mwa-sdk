@@ -101,6 +101,28 @@ export function priceVolumeMultiUrl(mints: string[], timeframe: string = '24h'):
 }
 
 /**
+ * Lightweight spot-price fetch for up to 100 mints.
+ *   GET /defi/multi_price?list_address=<csv>&include_liquidity=true
+ *
+ * betting-duel branch: used by PortfolioRace to get entry/current spot
+ * prices during a race. Wider token coverage than `/defi/price_volume/multi`
+ * — in particular, new pump.fun tokens that 404 on price_volume/multi
+ * still resolve here because multi_price queries the raw pool oracles.
+ *
+ * Response shape:
+ *   { data: { "<mint>": { value: <usd>, updateUnixTime: <sec>,
+ *                         priceChange24h?: <pct>, liquidity?: <usd> } } }
+ * Note the price field is `value`, not `price` — differs from price_volume/multi.
+ */
+export function multiPriceUrl(mints: string[]): string {
+    const list = mints.slice(0, 100).join(',');
+    return `${BIRDEYE_BASE}/defi/multi_price${qs({
+        list_address: list,
+        include_liquidity: 'true',
+    })}`;
+}
+
+/**
  * Batch token metadata (name, symbol, logo, socials, description) — up to 50.
  *   GET /defi/v3/token/meta-data/multiple?list_address=<csv>
  * Response: `{ data: [...] }` OR `{ data: { <mint>: {...} } }` depending on

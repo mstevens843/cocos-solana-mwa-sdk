@@ -40,6 +40,12 @@ export interface TokenDuelGameOptions {
     priceFeed?: PriceFeed;
     /** Match duration in ms. If omitted, defaults to DEFAULT_WINDOW_MS. */
     windowMs?: number;
+    /**
+     * Optional pre-resolved entry prices keyed by mint. AppUI passes the
+     * squad's cached prices from the trending feed — so races can start
+     * even when Birdeye's multi_price endpoint doesn't index the mint.
+     */
+    fallbackEntryPrices?: Record<string, number>;
     onBeforeFirstBlock?: () => Promise<void>;
     /** Retained for contract parity — PortfolioRace has no block-drop stream. */
     onBlockDrop?: (ev: {
@@ -82,6 +88,7 @@ export class TokenDuelGame {
             tokens: this._opts.holdings,
             windowMs,
             priceFeed: this._opts.priceFeed,
+            fallbackEntryPrices: this._opts.fallbackEntryPrices,
             onBeforeStart: this._opts.onBeforeFirstBlock,
             onTick: (snap) => {
                 this._latestSnapshot = snap;

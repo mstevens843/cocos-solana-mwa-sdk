@@ -36,6 +36,7 @@ import {
     BIRDEYE_CHAIN,
     gainersUrl,
     metaDataMultipleUrl,
+    multiPriceUrl,
     newListingsUrl,
     ohlcvUrl,
     priceVolumeMultiUrl,
@@ -298,6 +299,53 @@ export class BirdeyeClient {
             }
         }
         console.log(`${TAG} priceMulti | DONE call_id=${callId} requested=${uniq.length} returned=${Object.keys(out).length} missing=${missingCount} nan=${nanCount} unexpected=${nullEntryCount}`);
+        return out;
+    }
+
+    /**
+     * betting-duel — lightweight spot-price batch.
+     *
+     * Uses `/defi/multi_price` which has broader token coverage than the
+     * `priceMulti` endpoint used for feed delta rendering. Returns a simple
+     * mint → priceUsd map (no volume, no % change). Missing mints are
+     * omitted from the output.
+     *
+     * Never throws — returns `{}` on any network / parse failure so the
+     * PortfolioRace can fall back to its squad-cached prices.
+     */
+    async spotPriceMulti(mints: string[]): Promise<Record<string, number>> {
+        const callId = this._nextCallId++;
+        const uniq = Array.from(new Set(mints.filter((m) => m && m.length > 0)));
+        console.log(`${TAG} spotPriceMulti | START call_id=${callId} requested=${mints.length} unique=${uniq.length}`);
+        if (uniq.length === 0) {
+            console.log(`${TAG} spotPriceMulti | EMPTY_LIST call_id=${callId}`);
+            return {};
+        }
+        const url = multiPriceUrl(uniq);
+        const raw = await this._getWithRetry<{ data?: Record<string, { value?: number }> }>(url, callId, `spotPriceMulti`);
+        if (raw === null) {
+            console.log(`${TAG} spotPriceMulti | NULL_RESPONSE call_id=${callId} mints=${uniq.length} — retry exhausted`);
+            return {};
+        }
+        if (!raw.data || typeof raw.data !== 'object') {
+            console.log(`${TAG} spotPriceMulti | MALFORMED_BODY call_id=${callId} has_data=${!!raw.data} raw_keys=${Object.keys(raw).join(',')}`);
+            return {};
+        }
+        const out: Record<string, number> = {};
+        let missingCount = 0;
+        let nanCount = 0;
+        for (const mint of uniq) {
+            const entry = raw.data[mint];
+            if (!entry) { missingCount++; continue; }
+            const price = Number(entry.value ?? 0);
+            if (!Number.isFinite(price) || price <= 0) {
+                nanCount++;
+                console.log(`${TAG} spotPriceMulti | BAD_VALUE call_id=${callId} mint=${mint} value=${entry.value}`);
+                continue;
+            }
+            out[mint] = price;
+        }
+        console.log(`${TAG} spotPriceMulti | DONE call_id=${callId} requested=${uniq.length} resolved=${Object.keys(out).length} missing=${missingCount} nan=${nanCount}`);
         return out;
     }
 
