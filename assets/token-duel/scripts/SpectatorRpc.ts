@@ -35,16 +35,37 @@ export interface SpectatorMatchOverEvent {
 
 export interface SpectatorReadyEvent {
     kind: 'spectate-ready';
-    sessionId: string;
+    sessionId: string | null;
     matchPda: string;
+    // betting-duel live opponent delta: snapshot of any squads already
+    // published when the subscriber attached. Lets late subscribers get
+    // both players' mints in one message.
+    squads?: Array<{ playerPubkey: string; mints: string[] }>;
 }
 
-export type SpectatorWsEvent = SpectatorDropEvent | SpectatorMatchOverEvent | SpectatorReadyEvent;
+/**
+ * betting-duel live opponent delta: fired each time a player publishes
+ * their squad. Clients filter by `playerPubkey !== myPubkey` to pick the
+ * opponent's mints.
+ */
+export interface SpectatorOpponentSquadEvent {
+    kind: 'opponent-squad';
+    playerPubkey: string;
+    mints: string[];
+}
+
+export type SpectatorWsEvent =
+    | SpectatorDropEvent
+    | SpectatorMatchOverEvent
+    | SpectatorReadyEvent
+    | SpectatorOpponentSquadEvent;
 
 export interface SpectatorCallbacks {
     onState: (state: MatchState | null) => void;
     onDrop?: (ev: SpectatorDropEvent) => void;
     onMatchOver?: (ev: SpectatorMatchOverEvent) => void;
+    onReady?: (ev: SpectatorReadyEvent) => void;
+    onOpponentSquad?: (ev: SpectatorOpponentSquadEvent) => void;
     onWsConnected?: () => void;
     onWsClosed?: (reason: string) => void;
 }
@@ -90,7 +111,14 @@ export function subscribeToMatch(
                 const data = JSON.parse(typeof evt.data === 'string' ? evt.data : '') as SpectatorWsEvent;
                 if (data.kind === 'drop-relay') cb.onDrop?.(data);
                 else if (data.kind === 'match-over') cb.onMatchOver?.(data);
-                else if (data.kind === 'spectate-ready') console.log(`${TAG} ws | ready session=${data.sessionId}`);
+                else if (data.kind === 'spectate-ready') {
+                    console.log(`${TAG} ws | ready session=${data.sessionId ?? 'null'} squads=${data.squads?.length ?? 0}`);
+                    cb.onReady?.(data);
+                }
+                else if (data.kind === 'opponent-squad') {
+                    console.log(`${TAG} ws | opponent-squad player=${data.playerPubkey.slice(0, 8)}... mints=${data.mints.length}`);
+                    cb.onOpponentSquad?.(data);
+                }
             } catch (e) {
                 console.log(`${TAG} ws | BAD_MSG ${e}`);
             }
@@ -111,4 +139,35 @@ export function subscribeToMatch(
         if (ws) try { ws.close(); } catch (_) { /* ignore */ }
         console.log(`${TAG} unsubscribe | match=${matchPda.slice(0, 8)}...`);
     };
+}
+
+/**
+ * betting-duel live opponent delta — POST this player's 3 squad mints to
+ * the backend after Real-match commit. Fire-and-forget; logs on failure
+ * but doesn't throw (a missing backend should not block the race). The
+ * backend's in-memory board expires entries after ~10 min.
+ */
+export async function publishSquadToBackend(
+    matchPda: string,
+    playerPubkey: string,
+    mints: string[],
+): Promise<boolean> {
+    try {
+        const url = `${RECEIPT_BACKEND_URL}/match/${matchPda}/publish-squad`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ playerPubkey, mints }),
+        });
+        if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            console.log(`${TAG} publishSquadToBackend | HTTP ${res.status} body="${txt.slice(0, 120)}"`);
+            return false;
+        }
+        console.log(`${TAG} publishSquadToBackend | OK match=${matchPda.slice(0, 8)}... player=${playerPubkey.slice(0, 8)}... mints=${mints.length}`);
+        return true;
+    } catch (e) {
+        console.log(`${TAG} publishSquadToBackend | NET_ERR match=${matchPda.slice(0, 8)}... error=${e}`);
+        return false;
+    }
 }

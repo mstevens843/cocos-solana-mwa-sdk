@@ -18,15 +18,17 @@ import { TokenDuelRpc } from './TokenDuelRpc';
 import { AnchorBackend } from './AnchorBackend';
 import { findOpenMatches, getMatch, getMatchCounter, MatchState } from './MatchRpc';
 import { computeModePayout, xpForPlacement } from './PayoutCalc';
+import { encodeDeltaPct } from './ScoreEncoding';
+import { sampleInstantBotOutcome, BotSquadEntry } from './SquadBot';
 
 const TAG = '[Matchmaker]';
 
 export interface MatchOutcome {
-    /** Player's own height. */
+    /** Player's own score (encoded u32 delta on betting-duel). */
     playerHeight: number;
-    /** Best opponent height (for display). */
+    /** Best opponent score (encoded delta). */
     opponentHeight: number;
-    /** All bot heights (N-1 long). Useful for PostMatchPanel display. */
+    /** All bot scores (N-1 long). Encoded deltas on betting-duel. */
     botHeights: number[];
     playerWon: boolean;
     /** 0-indexed placement (0 = 1st). */
@@ -37,15 +39,24 @@ export interface MatchOutcome {
     xpGained: number;
     track: 'paper' | 'real';
     isBot: boolean;
+    /** betting-duel: bot squads for PostMatchPanel reveal (optional — real matches won't populate). */
+    botSquads?: BotSquadEntry[][];
 }
 
 /**
  * Run a paper bot match immediately — no chain interaction.
  *
- * Phase 1 stub on the betting-duel branch: returns a deterministic
- * forfeit outcome (player loses, all bots at height 0). The real
- * implementation samples portfolio deltas for each bot squad in Phase 5
- * once SquadBot.ts lands.
+ * betting-duel: samples N-1 bot squads via SquadBot.sampleInstantBotOutcome,
+ * encodes each bot's portfolio delta, ranks player vs bots by delta, and
+ * computes placement + payout via the shared computeModePayout helper.
+ *
+ * `opts.playerHeight` is the player's **encoded** score (u32 delta) from
+ * PortfolioRace. Bot outputs are encoded identically so rank-by-height
+ * matches rank-by-delta. Higher score = higher delta = better rank.
+ *
+ * `opts.leaderboardHeights` and `botGamesRemaining` are legacy stack-jump
+ * params — unused on betting-duel (bot distribution isn't anchored to a
+ * per-player leaderboard), but kept in the signature for call-site stability.
  */
 export function runPaperBotMatch(opts: {
     mode: ModeId;
@@ -53,11 +64,24 @@ export function runPaperBotMatch(opts: {
     playerHeight: number;
     leaderboardHeights: number[];
     botGamesRemaining: number;
+    /** betting-duel: window from ModePicker, drives bot delta magnitude. */
+    windowMs?: number;
 }): MatchOutcome {
     const mode = MODES[opts.mode];
     const n = mode.requiredPlayers;
-    console.log(`${TAG} runPaperBotMatch | STUB mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_height=${opts.playerHeight} — betting-duel Phase 1 stub, returning forfeit`);
-    const botHeights: number[] = new Array(n - 1).fill(0);
+    const windowMs = opts.windowMs && opts.windowMs > 0 ? opts.windowMs : 30_000;
+    console.log(`${TAG} runPaperBotMatch | START mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_score=${opts.playerHeight} windowMs=${windowMs}`);
+
+    // Sample N-1 bot squads.
+    const botSquads: BotSquadEntry[][] = [];
+    const botHeights: number[] = [];
+    for (let i = 0; i < n - 1; i++) {
+        const outcome = sampleInstantBotOutcome(windowMs);
+        const encoded = encodeDeltaPct(outcome.portfolioDeltaPct);
+        botHeights.push(encoded);
+        botSquads.push(outcome.squad);
+    }
+
     const heights: number[] = [opts.playerHeight, ...botHeights];
     const pot = opts.wagerTierLamports * n;
     const breakdown = computeModePayout(opts.mode, pot, heights);
@@ -69,9 +93,15 @@ export function runPaperBotMatch(opts: {
     const pnl = payoutLamports - opts.wagerTierLamports;
     const playerWon = payoutLamports > 0;
     Stats.record('paper', playerWon, pnl);
+
+    // Best opponent = highest-scoring bot (not the sorted-slot neighbor —
+    // we want the strongest competitor for the reveal's BEST OPP card).
+    const bestOpp = botHeights.reduce((a, b) => (b > a ? b : a), 0);
+
+    console.log(`${TAG} runPaperBotMatch | DONE placement=${playerRankIdx + 1}/${n} player_score=${opts.playerHeight} bots=[${botHeights.join(',')}] best_opp=${bestOpp} won=${playerWon} payout=${payoutLamports} xp=${xp} pnl=${pnl}`);
     return {
         playerHeight: opts.playerHeight,
-        opponentHeight: 0,
+        opponentHeight: bestOpp,
         botHeights,
         playerWon,
         placement: playerRankIdx,
@@ -80,6 +110,7 @@ export function runPaperBotMatch(opts: {
         xpGained: xp,
         track: 'paper',
         isBot: true,
+        botSquads,
     };
 }
 

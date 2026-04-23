@@ -73,45 +73,14 @@ export class PriceFeed {
             return {};
         }
 
-        // Deterministic-seed override (pitch-video recording) previously
-        // routed through PriceFeedMock; on betting-duel we drop the mock
-        // and return an empty map — callers must tolerate missing keys.
-        const seed = (globalThis as any).TD_DEMO_SEED;
-        if (typeof seed === 'number') {
-            console.log(`${TAG} getSessionDeltas | DEMO_SEED_OVERRIDE seed=${seed} — mock removed on betting-duel, returning {}`);
-            return {};
-        }
-
-        let live: Record<string, { priceUsd: number; change24hPct: number; volume24hUsd: number }>;
-        try {
-            live = await this._client.priceMulti(mints, this._currentTimeframe);
-        } catch (e) {
-            console.log(`${TAG} getSessionDeltas | CLIENT_ERROR error=${e} — returning {} (no mock fallback on betting-duel)`);
-            return {};
-        }
-        const haveAny = Object.keys(live).length > 0;
-        if (!haveAny) {
-            console.log(`${TAG} getSessionDeltas | BIRDEYE_EMPTY mints=${mints.length} — returning {} (no mock fallback on betting-duel)`);
-            return {};
-        }
-
-        const out: Record<string, number> = {};
-        let missing = 0;
-        let nanGuarded = 0;
-        for (const m of mints) {
-            const entry = live[m];
-            if (!entry) { out[m] = 0; missing++; continue; }
-            const raw = entry.change24hPct;
-            if (!Number.isFinite(raw)) {
-                console.log(`${TAG} getSessionDeltas | NAN_CHANGE mint=${m} raw=${raw} — coercing to 0`);
-                out[m] = 0;
-                nanGuarded++;
-                continue;
-            }
-            out[m] = Math.round(raw * 10) / 10;
-        }
-        console.log(`${TAG} getSessionDeltas | DONE mints=${mints.length} live=${Object.keys(live).length} missing=${missing} nan_guarded=${nanGuarded} deltas=${JSON.stringify(out)}`);
-        return out;
+        // betting-duel: portfolio race drives its delta via spotPriceMulti
+        // (entry price vs. current price), not Birdeye's 24h-delta window.
+        // Skip the priceMulti round-trip so we don't log NULL_RESPONSE 404
+        // for newly-launched pump.fun mints every match. Callers tolerate
+        // an empty map (fallback entry prices come from the trending feed
+        // snapshot already cached on the squad).
+        console.log(`${TAG} getSessionDeltas | BETTING_DUEL_SKIP_24H_DELTA mints=${mints.length} — spotPriceMulti drives the race`);
+        return {};
     }
 
     /**

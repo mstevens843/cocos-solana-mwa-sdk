@@ -150,17 +150,19 @@ pub const MATCH_ESCROW_SEED: &[u8] = b"match_escrow";
 /// Seed for per-player UserStats PDA. Keyed by `[b"userstats", player_pubkey]`.
 pub const USER_STATS_SEED: &[u8] = b"userstats";
 
-/// Wager tiers (lamports). Indexed 0-5. Must match client `WAGER_TIERS_LAMPORTS`.
-/// Index 5 is the Part 11 "intro" tier (0.001 SOL) for brand-new players;
-/// appended at end so pre-existing Match PDAs with `wager_tier: 0..4` keep
-/// resolving to the same lamports value — no migration required.
-pub const WAGER_TIERS: [u64; 6] = [
-    10_000_000,    // 0.01 SOL
-    50_000_000,    // 0.05 SOL
-    100_000_000,   // 0.1  SOL
-    250_000_000,   // 0.25 SOL
-    500_000_000,   // 0.5  SOL
+/// Wager tiers (lamports). Must match client `WAGER_TIERS_LAMPORTS`.
+/// Append-only: pre-existing Match PDAs with `wager_tier: 0..5` still
+/// resolve correctly. Indices 6–7 added on betting-duel branch per user
+/// request for higher-stakes matches.
+pub const WAGER_TIERS: [u64; 8] = [
+    10_000_000,    // 0.01 SOL   — index 0
+    50_000_000,    // 0.05 SOL   — index 1
+    100_000_000,   // 0.1  SOL   — index 2
+    250_000_000,   // 0.25 SOL   — index 3
+    500_000_000,   // 0.5  SOL   — index 4
     1_000_000,     // 0.001 SOL — INTRO (Part 11). Append-only; do not reorder.
+    1_000_000_000, // 1 SOL      — index 6 (betting-duel)
+    5_000_000_000, // 5 SOL      — index 7 (betting-duel)
 ];
 
 /// Legacy flat-rake constant used by Part-1 solo settle.rs + compute_1v1_payout

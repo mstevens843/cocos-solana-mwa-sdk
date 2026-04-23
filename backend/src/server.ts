@@ -248,6 +248,34 @@ function parseMatchSummaryFromQuery(matchPda: string, q: any): MatchSummary | nu
     }
 }
 
+/**
+ * betting-duel live opponent delta — client POSTs its 3 squad mints after
+ * Real-match commit. Backend stores + fans out to any WS subscribers on
+ * this matchPda. Both clients then compute opponent live delta locally via
+ * the same Birdeye price feed they already poll for their own squad.
+ */
+app.post('/match/:matchPda/publish-squad', (req: Request, res: Response) => {
+    try {
+        const matchPda = req.params.matchPda;
+        const body = req.body as { playerPubkey?: string; mints?: string[] };
+        if (!matchPda || matchPda.length < 32 || matchPda.length > 44) {
+            return res.status(400).json({ error: 'invalid matchPda in path' });
+        }
+        if (!body || typeof body.playerPubkey !== 'string' || !Array.isArray(body.mints)) {
+            return res.status(400).json({ error: 'body must include playerPubkey + mints[]' });
+        }
+        try { new PublicKey(matchPda); new PublicKey(body.playerPubkey); for (const m of body.mints) new PublicKey(m); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+
+        const result = sessions.publishMatchSquad(matchPda, body.playerPubkey, body.mints);
+        if (!result.ok) return res.status(400).json({ error: result.reason });
+        return res.json({ ok: true });
+    } catch (e: any) {
+        console.error(`${TAG} /match/:pda/publish-squad ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
 app.post('/session/start', async (req: Request, res: Response) => {
     try {
         const body = req.body as StartSessionRequest;
@@ -318,16 +346,17 @@ httpServer.on('upgrade', (request, socket, head) => {
     }
 
     // Part 12 D: spectator stream (read-only): /match/:matchPda/spectate
+    // betting-duel: if no session-backed match, still accept subscriber for
+    // the squad-publication channel (live opponent delta).
     const specMatch = url.match(/^\/match\/([^/]+)\/spectate$/);
     if (specMatch) {
         const matchPda = specMatch[1];
         const sessionId = sessions.getSessionIdByMatchPda(matchPda);
-        if (!sessionId) {
-            socket.write('HTTP/1.1 404 Not Found\r\n\r\nmatch has no live backend session');
-            socket.destroy();
-            return;
+        if (sessionId) {
+            wss.handleUpgrade(request, socket, head, (ws) => attachSpectator(ws, sessionId, matchPda));
+        } else {
+            wss.handleUpgrade(request, socket, head, (ws) => attachMatchSpectator(ws, matchPda));
         }
-        wss.handleUpgrade(request, socket, head, (ws) => attachSpectator(ws, sessionId, matchPda));
         return;
     }
 
@@ -355,8 +384,31 @@ function attachSpectator(ws: WebSocket, sessionId: string, matchPda: string): vo
     ws.on('error', (e) => {
         console.warn(`${TAG} spectator ERROR session=${sessionId}`, e);
     });
-    // Welcome packet so client knows the subscription is live.
-    try { ws.send(JSON.stringify({ kind: 'spectate-ready', sessionId, matchPda })); } catch (_) { /* ignore */ }
+    // Welcome packet: include current squad snapshot so late subscribers get
+    // both squads in one message (betting-duel live opponent delta).
+    const squads = sessions.getMatchSquads(matchPda);
+    try { ws.send(JSON.stringify({ kind: 'spectate-ready', sessionId, matchPda, squads })); } catch (_) { /* ignore */ }
+}
+
+/**
+ * betting-duel live opponent delta — session-less spectator path. Registers
+ * a WS subscriber scoped to matchPda only (no physics session). Receives
+ * `spectate-ready` (with current squads) + subsequent `opponent-squad`
+ * broadcasts as each player publishes.
+ */
+function attachMatchSpectator(ws: WebSocket, matchPda: string): void {
+    sessions.addMatchSpectator(matchPda, ws);
+    console.log(`${TAG} match_spectator OPEN match=${matchPda.slice(0, 8)}...`);
+    ws.on('message', () => { /* read-only */ });
+    ws.on('close', () => {
+        sessions.removeMatchSpectator(matchPda, ws);
+        console.log(`${TAG} match_spectator CLOSE match=${matchPda.slice(0, 8)}...`);
+    });
+    ws.on('error', (e) => {
+        console.warn(`${TAG} match_spectator ERROR match=${matchPda.slice(0, 8)}...`, e);
+    });
+    const squads = sessions.getMatchSquads(matchPda);
+    try { ws.send(JSON.stringify({ kind: 'spectate-ready', sessionId: null, matchPda, squads })); } catch (_) { /* ignore */ }
 }
 
 function attachSession(ws: WebSocket, sessionId: string): void {

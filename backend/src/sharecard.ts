@@ -5,15 +5,27 @@
  * settled match. Used by the `/sharecard/:matchPda.png` route to produce
  * a shareable image X unfurls when a tweet embeds the URL.
  *
+ * betting-duel: `MatchSummary.height` is an **encoded portfolio delta
+ * score** (ScoreEncoding: `score = (deltaPct * 100) + 1_000_000`). This
+ * renderer decodes it to a % and draws a horizontal delta bar instead of
+ * the stack-jump tower. Positive delta = green bar growing right, negative
+ * = red bar growing left.
+ *
  * Layout (left to right):
- *   - Left half: stylized stacked-block tower (count = final height, color by squad)
- *   - Right half: placement trophy + payout amount (gold) + squad symbols + time-window badge
- *   - Footer: "Token Duel · Stack-Jump on Solana" + truncated match PDA
+ *   - Left half: horizontal portfolio-delta bar with % label + squad chips
+ *   - Right half: placement trophy + payout amount (gold) + mode/window badges
+ *   - Footer: "Token Duel · Portfolio Race on Solana" + truncated match PDA
  *
  * The file uses @napi-rs/canvas — native bindings, no headless Chromium.
- * Docker base image needs libc6-compat on alpine; the project's Dockerfile
- * inherits that.
  */
+
+/** Score encoding (mirrors client-side `ScoreEncoding.ts`). */
+const SCORE_BIAS = 1_000_000;
+const DELTA_SCALE = 100;
+function decodeScore(score: number): number {
+    if (!Number.isFinite(score)) return 0;
+    return (score - SCORE_BIAS) / DELTA_SCALE;
+}
 
 import { createCanvas, Canvas, SKRSContext2D as Ctx } from '@napi-rs/canvas';
 
@@ -68,37 +80,57 @@ function drawBackground(ctx: Ctx): void {
 }
 
 function drawTower(ctx: Ctx, m: MatchSummary): void {
-    // Left-half stylized tower. Block i uses squad[i % 3]'s color tint keyed
-    // to its 24h delta — green tints for pumps, red for dumps.
-    const maxBlocks = Math.min(m.height, 20); // cap visual density
-    const towerX = 180;
-    const towerBaseY = HEIGHT - 110;
-    const blockH = 20;
-    const baseWidth = 260;
+    // betting-duel: horizontal portfolio delta bar. Decode encoded score
+    // into a % and render a bar growing from center-zero toward the direction
+    // of the delta. Bar width scales with |delta| up to ±50% clamp.
+    const pct = decodeScore(m.height);
+    const panelCenterX = 280;
+    const panelCenterY = 260;
+    const panelW = 460;
+    const panelH = 140;
 
-    for (let i = 0; i < maxBlocks; i++) {
-        const tokenIdx = i % 3;
-        const delta = m.squadDeltas[tokenIdx];
-        const width = deltaToWidth(delta, baseWidth);
-        const y = towerBaseY - (i + 1) * (blockH + 2);
-        ctx.fillStyle = deltaToColor(delta);
-        ctx.fillRect(towerX - width / 2, y, width, blockH);
-        // subtle inner shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(towerX - width / 2, y + blockH - 4, width, 4);
+    // Panel background (subtle card).
+    ctx.fillStyle = 'rgba(22, 28, 42, 0.7)';
+    ctx.fillRect(panelCenterX - panelW / 2, panelCenterY - panelH / 2, panelW, panelH);
+
+    // Center zero tick.
+    ctx.strokeStyle = '#3a4258';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(panelCenterX, panelCenterY - panelH / 2 + 10);
+    ctx.lineTo(panelCenterX, panelCenterY - panelH / 2 + panelH - 56);
+    ctx.stroke();
+
+    // Delta bar. Width = |pct| / 50 * half-panel.
+    const clamped = Math.max(-50, Math.min(50, pct));
+    const barHalfMax = (panelW - 40) / 2;
+    const barW = (Math.abs(clamped) / 50) * barHalfMax;
+    const barH = 48;
+    const barY = panelCenterY - barH / 2 - 18;
+    ctx.fillStyle = pct >= 0 ? '#30cc97' : '#d65656';
+    if (pct >= 0) {
+        ctx.fillRect(panelCenterX, barY, barW, barH);
+    } else {
+        ctx.fillRect(panelCenterX - barW, barY, barW, barH);
     }
 
-    // "Height: NN" label under tower.
-    ctx.fillStyle = '#d0d5e0';
-    ctx.font = 'bold 28px system-ui, sans-serif';
+    // % label big, colored.
+    ctx.fillStyle = pct >= 0 ? '#30cc97' : '#d65656';
+    ctx.font = 'bold 52px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`Height: ${m.height}`, towerX, HEIGHT - 60);
+    const sign = pct >= 0 ? '+' : '';
+    ctx.fillText(`${sign}${pct.toFixed(2)}%`, panelCenterX, panelCenterY + 52);
 
-    // Squad symbols row.
+    // "Portfolio change" caption.
     ctx.font = '18px system-ui, sans-serif';
-    const symbolText = m.squadSymbols.map((s, i) => `${s} ${fmtPct(m.squadDeltas[i])}`).join('  ·  ');
     ctx.fillStyle = '#8892a6';
-    ctx.fillText(symbolText, towerX, HEIGHT - 30);
+    ctx.fillText('Portfolio change', panelCenterX, panelCenterY - 48);
+
+    // Squad row under the bar.
+    ctx.font = '20px system-ui, sans-serif';
+    ctx.fillStyle = '#b0b8c8';
+    const symbolText = m.squadSymbols.map((s, i) => `${s} ${fmtPct(m.squadDeltas[i])}`).join('  ·  ');
+    ctx.fillText(symbolText, panelCenterX, HEIGHT - 40);
 }
 
 function deltaToWidth(deltaPct: number, base: number): number {
@@ -159,7 +191,7 @@ function drawFooter(ctx: Ctx, m: MatchSummary): void {
     ctx.fillStyle = '#e0a020';
     ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Token Duel · Stack-Jump on Solana', WIDTH - 40, HEIGHT - 20);
+    ctx.fillText('Token Duel · Portfolio Race on Solana', WIDTH - 40, HEIGHT - 20);
 
     // Match PDA short hash.
     ctx.fillStyle = '#5a6478';

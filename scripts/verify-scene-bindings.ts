@@ -135,8 +135,20 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'TutorialBubbleIndex',    components: ['cc.Label'] },
     { name: 'TutorialHintLabel',      components: ['cc.Label'] },
 
-    // ── Part 11 D2 — 0.001 SOL intro tier (6th wager chip) ──
-    { name: 'Wager_0001',             components: ['cc.Button'] },
+    // ── betting-duel polish — wager chip row removed from ModePicker; replaced
+    //    by WagerControlRow on TokenDuelPanel + read-only readout in picker. ──
+    { name: 'PickerWagerReadout',     components: ['cc.Label'] },
+    { name: 'WagerValueButton',       components: ['cc.Button'] },
+    { name: 'WagerStartButton',       components: ['cc.Button'] },
+    { name: 'WagerHintLabel',         components: ['cc.Label'] },
+    { name: 'WagerDropdown',          components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WagerDropdownRow_0',     components: ['cc.Button'] },
+    { name: 'WagerDropdownRow_7',     components: ['cc.Button'] },
+    // ── betting-duel polish — squad slots now carry logo + delta children ──
+    { name: 'CheckmarkIcon',          components: ['cc.Label'] },
+    // ── betting-duel round-3 polish — HelpButton + Opponent squad symbols ──
+    { name: 'HelpButton',             components: ['cc.Button'] },
+    { name: 'OpponentSymbolsLabel',   components: ['cc.Label'] },
 
     // ── Part 11 D3 — WaitingPanel streak banner ──
     { name: 'WaitingStreakBanner',    components: ['cc.Label'] },
@@ -182,6 +194,13 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'TournamentPrizePoolLabel', components: ['cc.Label'] },
     { name: 'TournamentRoster',         components: ['cc.UITransform'] },
     { name: 'TournamentJoinButton',     components: ['cc.Button'] },
+
+    // ── betting-duel Phase 3: live portfolio race screen ──
+    { name: 'RacePanel',              components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'RaceCountdownLabel',     components: ['cc.Label'] },
+    { name: 'RaceHeroDeltaLabel',     components: ['cc.Label'] },
+    { name: 'RaceHeroSubtitleLabel',  components: ['cc.Label'] },
+    { name: 'RaceCancelButton',       components: ['cc.Button'] },
 ];
 
 /** Parametric rows: PresetRow_0..4, ChallengeRow_0..2 + labels, ChallengeDescriptionLabel_0..2, etc. */
@@ -196,6 +215,9 @@ const SPECTATOR_EVENT_ROW_COUNT = 10;
 
 /** Part 12 D — Spectator player-list row pool (10 players). */
 const SPECTATOR_PLAYER_ROW_COUNT = 10;
+
+/** betting-duel Phase 3 — RacePanel token card pool (5 slots). */
+const RACE_TOKEN_CARD_COUNT = 5;
 
 /** Feed rows are parametric: 20 pooled instances. Verify separately. */
 const FEED_ROW_COUNT = 20;
@@ -349,6 +371,25 @@ function main(): void {
             continue;
         }
         passed++;
+    }
+
+    // betting-duel Phase 3 — RacePanel token cards + per-card labels.
+    for (let i = 0; i < RACE_TOKEN_CARD_COUNT; i++) {
+        const names = [
+            `RaceTokenCard_${i}`,
+            `TokenSymbolLabel_${i}`,
+            `TokenEntryLabel_${i}`,
+            `TokenCurrentLabel_${i}`,
+            `TokenDeltaLabel_${i}`,
+        ];
+        for (const name of names) {
+            const indices = nameToIdx.get(name);
+            if (!indices || indices.length === 0) {
+                failures.push(`MISSING node="${name}"`);
+                continue;
+            }
+            passed++;
+        }
     }
 
     // Report.

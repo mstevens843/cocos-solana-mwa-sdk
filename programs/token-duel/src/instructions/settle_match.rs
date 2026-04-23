@@ -316,12 +316,16 @@ pub struct SettleMatch<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
 
+    // SBF stack fix: each `Account<'info, T>` is boxed to move its deserialized
+    // payload from stack to heap during `try_accounts`. Without boxing the four
+    // large PDAs below, `SettleMatch::try_accounts` overflowed the 4KB SBF
+    // frame by 40 bytes and crashed every Real settle at runtime.
     #[account(
         mut,
         seeds = [MATCH_SEED, &[match_account.mode], &[match_account.wager_tier], &match_account.seq.to_le_bytes()],
         bump = match_account.bump,
     )]
-    pub match_account: Account<'info, MatchAccount>,
+    pub match_account: Box<Account<'info, MatchAccount>>,
 
     #[account(
         mut,
@@ -334,7 +338,7 @@ pub struct SettleMatch<'info> {
     pub treasury: Account<'info, Treasury>,
 
     #[account(mut, seeds = [LEADERBOARD_SEED, &[match_account.mode]], bump)]
-    pub leaderboard: Account<'info, Leaderboard>,
+    pub leaderboard: Box<Account<'info, Leaderboard>>,
 
     pub system_program: Program<'info, System>,
 
@@ -347,14 +351,14 @@ pub struct SettleMatch<'info> {
         seeds = [DAILY_CHALLENGE_SEED, &daily_challenge.day_id.to_le_bytes()],
         bump = daily_challenge.bump,
     )]
-    pub daily_challenge: Account<'info, DailyChallenge>,
+    pub daily_challenge: Box<Account<'info, DailyChallenge>>,
 
     #[account(
         mut,
         seeds = [SEASON_SEED, &season.season_id.to_le_bytes()],
         bump = season.bump,
     )]
-    pub season: Account<'info, Season>,
+    pub season: Box<Account<'info, Season>>,
     // remaining_accounts:
     //   [stats_p0..stats_pN-1]   (mutable, owned by this program)
     //   [payout_recipient_1..K]  (mutable, system-owned)

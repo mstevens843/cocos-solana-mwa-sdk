@@ -53,6 +53,18 @@ export class SessionManager {
     // backend session appear here; legacy (unverified) matches aren't indexed.
     private sessionsByMatchPda = new Map<string, string>();
 
+    // betting-duel live opponent delta — squad publication board.
+    // Independent of the physics-session flow (which is dead on betting-duel).
+    // Clients POST their 3 squad mints at match-commit time; backend stores +
+    // broadcasts to anyone subscribed to that matchPda via WS.
+    //
+    // matchPda → Map(playerPubkey → {mints, publishedAt})
+    private matchSquads = new Map<string, Map<string, { mints: string[]; publishedAt: number }>>();
+    // matchPda → spectator WS set (separate from session-based spectators).
+    private matchSpectators = new Map<string, Set<WebSocket>>();
+    // 10-minute TTL on squad entries — 1h race max + buffer.
+    private static readonly SQUAD_TTL_MS = 10 * 60 * 1000;
+
     constructor(
         private readonly birdeyeApiKey: string,
         private readonly maxConcurrent: number,
@@ -232,6 +244,74 @@ export class SessionManager {
             try {
                 if (ws.readyState === WebSocket.OPEN) ws.send(payload);
             } catch (_) { /* ignore broken pipe; cleanup happens on close event */ }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // betting-duel live opponent delta — squad publication board
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Client publishes its 3 squad mints after Real-match commit. Stores in
+     * memory (TTL-bounded) and fans out an opponent-squad event to any WS
+     * subscribers on this matchPda.
+     */
+    publishMatchSquad(matchPda: string, playerPubkey: string, mints: string[]): { ok: true } | { ok: false; reason: string } {
+        if (mints.length !== 3) return { ok: false, reason: 'expected 3 mints' };
+        for (const m of mints) {
+            if (typeof m !== 'string' || m.length < 32 || m.length > 44) {
+                return { ok: false, reason: `malformed mint "${m}"` };
+            }
+        }
+        let board = this.matchSquads.get(matchPda);
+        if (!board) {
+            board = new Map();
+            this.matchSquads.set(matchPda, board);
+        }
+        board.set(playerPubkey, { mints: mints.slice(), publishedAt: Date.now() });
+        console.log(`${TAG} publishMatchSquad match=${matchPda.slice(0, 8)}... player=${playerPubkey.slice(0, 8)}... mints=[${mints.map(m => m.slice(0, 8)).join(',')}] board_size=${board.size}`);
+        this.broadcastMatchSquadEvent(matchPda, { kind: 'opponent-squad', playerPubkey, mints });
+        return { ok: true };
+    }
+
+    /** Return current squads published for a match (or empty map). */
+    getMatchSquads(matchPda: string): Array<{ playerPubkey: string; mints: string[] }> {
+        const board = this.matchSquads.get(matchPda);
+        if (!board) return [];
+        const out: Array<{ playerPubkey: string; mints: string[] }> = [];
+        const cutoff = Date.now() - SessionManager.SQUAD_TTL_MS;
+        for (const [playerPubkey, entry] of board) {
+            if (entry.publishedAt < cutoff) continue;
+            out.push({ playerPubkey, mints: entry.mints.slice() });
+        }
+        return out;
+    }
+
+    /** Register a read-only WS subscriber for a matchPda's squad events. */
+    addMatchSpectator(matchPda: string, ws: WebSocket): void {
+        let set = this.matchSpectators.get(matchPda);
+        if (!set) {
+            set = new Set();
+            this.matchSpectators.set(matchPda, set);
+        }
+        set.add(ws);
+    }
+
+    removeMatchSpectator(matchPda: string, ws: WebSocket): void {
+        const set = this.matchSpectators.get(matchPda);
+        if (!set) return;
+        set.delete(ws);
+        if (set.size === 0) this.matchSpectators.delete(matchPda);
+    }
+
+    private broadcastMatchSquadEvent(matchPda: string, msg: unknown): void {
+        const set = this.matchSpectators.get(matchPda);
+        if (!set || set.size === 0) return;
+        const payload = JSON.stringify(msg);
+        for (const ws of set) {
+            try {
+                if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+            } catch (_) { /* ignore broken pipe */ }
         }
     }
 

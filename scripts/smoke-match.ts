@@ -37,6 +37,7 @@ import { AnchorBackend } from '../assets/token-duel/scripts/AnchorBackend';
 import { PROGRAM_ID, RPC_URL, SEEDS } from '../assets/token-duel/scripts/constants';
 import { findProgramAddress } from '../assets/token-duel/scripts/PdaDeriver';
 import { base58Decode } from '../assets/solana-mwa/scripts/Base58';
+import { encodeDeltaPct } from '../assets/token-duel/scripts/ScoreEncoding';
 
 const TAG = '[smoke-match]';
 const WAGER_TIER_INDEX = 5;           // INTRO 0.001 SOL
@@ -286,9 +287,17 @@ async function main() {
     await assertEq(m.status, 1, `match.status=Active after ${n} joins`);
     await assertEq(m.playerCount, n, `match.playerCount=${n}`);
 
-    // Settle all N. Heights ramp so the last joiner wins.
+    // betting-duel: heights are now **encoded portfolio delta scores**.
+    // Simulate each player finishing at a different portfolio delta so the
+    // last joiner wins the rank-by-score check. P0=-2%, P1=+1%, ... Pn-1
+    // gets the highest delta. The program still ranks by u32, which matches
+    // ranking by delta since encoding is monotonic.
     const heights: number[] = [];
-    for (let i = 0; i < n; i++) heights.push(10 + i * 5); // P0=10, P1=15, ..., Pn-1 = 10+5(n-1)
+    for (let i = 0; i < n; i++) {
+        const simulatedDeltaPct = -2 + i * 1.5; // P0=-2%, P1=-0.5%, P2=+1%, ...
+        heights.push(encodeDeltaPct(simulatedDeltaPct));
+    }
+    console.log(`${TAG} simulated deltas → heights=[${heights.join(',')}]`);
 
     // All but last: partial settles.
     for (let i = 0; i < n - 1; i++) {

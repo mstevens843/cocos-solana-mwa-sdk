@@ -299,12 +299,13 @@ pub struct ForceSettle<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
 
+    // SBF stack fix: see settle_match.rs for rationale. Same four PDAs boxed.
     #[account(
         mut,
         seeds = [MATCH_SEED, &[match_account.mode], &[match_account.wager_tier], &match_account.seq.to_le_bytes()],
         bump = match_account.bump,
     )]
-    pub match_account: Account<'info, MatchAccount>,
+    pub match_account: Box<Account<'info, MatchAccount>>,
 
     #[account(
         mut,
@@ -317,7 +318,7 @@ pub struct ForceSettle<'info> {
     pub treasury: Account<'info, Treasury>,
 
     #[account(mut, seeds = [LEADERBOARD_SEED, &[match_account.mode]], bump)]
-    pub leaderboard: Account<'info, Leaderboard>,
+    pub leaderboard: Box<Account<'info, Leaderboard>>,
 
     pub system_program: Program<'info, System>,
 
@@ -329,14 +330,14 @@ pub struct ForceSettle<'info> {
         seeds = [DAILY_CHALLENGE_SEED, &daily_challenge.day_id.to_le_bytes()],
         bump = daily_challenge.bump,
     )]
-    pub daily_challenge: Account<'info, DailyChallenge>,
+    pub daily_challenge: Box<Account<'info, DailyChallenge>>,
 
     #[account(
         mut,
         seeds = [SEASON_SEED, &season.season_id.to_le_bytes()],
         bump = season.bump,
     )]
-    pub season: Account<'info, Season>,
+    pub season: Box<Account<'info, Season>>,
     // remaining_accounts:
     //   [stats_p0..stats_pN-1]   (mutable, owned by this program)
     //   [payout_recipient_1..K]  (mutable, system-owned)

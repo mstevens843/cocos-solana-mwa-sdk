@@ -89,9 +89,8 @@ export function modeFromU8(b: number): ModeDef {
     return MODES.oneVone;
 }
 
-/** Wager tier lamports, indexed 0-5. Mirrors WAGER_TIERS in state.rs.
- *  Index 5 is the Part 11 "intro" tier — appended at end so pre-Part-11
- *  Match PDAs with `wager_tier: 0..4` stay valid without migration. */
+/** Wager tier lamports, indexed 0-7. Mirrors WAGER_TIERS in state.rs.
+ *  Indices 6-7 added on betting-duel branch (1 SOL, 5 SOL high-stakes). */
 export const WAGER_TIERS_LAMPORTS: number[] = [
     10_000_000,    // 0.01 SOL
     50_000_000,    // 0.05 SOL
@@ -99,6 +98,8 @@ export const WAGER_TIERS_LAMPORTS: number[] = [
     250_000_000,   // 0.25 SOL
     500_000_000,   // 0.5 SOL
     1_000_000,     // 0.001 SOL — INTRO tier (Part 11)
+    1_000_000_000, // 1 SOL — betting-duel
+    5_000_000_000, // 5 SOL — betting-duel
 ];
 
 export const WAGER_TIERS_LABELS: string[] = [
@@ -108,6 +109,8 @@ export const WAGER_TIERS_LABELS: string[] = [
     '0.25 SOL',
     '0.5 SOL',
     '0.001 · INTRO',
+    '1 SOL',
+    '5 SOL',
 ];
 
 /** 3% rake (in basis points). Must match RAKE_BPS in state.rs. */
@@ -124,11 +127,22 @@ export const BOT_HANDICAP_GAMES = 5;
 export const BOT_HANDICAP_MULTIPLIER = 0.7;
 
 // ═══════════════════════════════════════════════════════════════════
-// Part 9 — Time-window axis (1h / 1d / 3d / 7d)
-// Mirrors `TimeWindow` enum in state.rs. The window is threaded through
-// join_match_create so all players in a match see the same price-delta
-// basis; it also gates matchmaking (you only meet players on the same
-// window) and picks which `type` param we send to Birdeye.
+// Part 9 — Time-window axis (originally 1h / 1d / 3d / 7d Birdeye delta)
+// REPURPOSED ON betting-duel BRANCH (Phase 5):
+//   The on-chain `time_window` u8 and the four TimeWindowId members
+//   remain unchanged for wire-compat, but the UI + durationMs values
+//   now represent **match duration** (how long the portfolio race
+//   runs) rather than a Birdeye-delta snapshot window. Label strings
+//   are what the user sees; the ID '1h' is now historical/internal.
+//
+//     ID '1h' → label '30s' → 30s race (u8=0, default)
+//     ID '1d' → label '1m'  → 60s race (u8=1)
+//     ID '3d' → label '5m'  → 5m race  (u8=2)
+//     ID '7d' → label '1h'  → 1h race  (u8=3)
+//
+//   `birdeyeTypeParam` is kept on the struct for legacy callers of
+//   PriceFeed.setTimeframe() but is unused by PortfolioRace
+//   (getSpotPrices consumes `priceUsd`, independent of delta window).
 // ═══════════════════════════════════════════════════════════════════
 
 export type TimeWindowId = '1h' | '1d' | '3d' | '7d';
@@ -137,21 +151,21 @@ export interface TimeWindowDef {
     id: TimeWindowId;
     windowU8: number;
     label: string;
-    /** Value passed as `type` to Birdeye's `/defi/price_volume/multi`. */
+    /** Value passed as `type` to Birdeye's `/defi/price_volume/multi`. Unused by PortfolioRace. */
     birdeyeTypeParam: string;
-    /** Approx window duration in ms — handy for future "session freshness" hints. */
+    /** Match duration in ms — how long the betting-duel race runs before settle. */
     durationMs: number;
 }
 
 export const TIME_WINDOWS: Record<TimeWindowId, TimeWindowDef> = {
-    '1h': { id: '1h', windowU8: 0, label: '1h',  birdeyeTypeParam: '1h',  durationMs: 3_600_000 },
-    '1d': { id: '1d', windowU8: 1, label: '24h', birdeyeTypeParam: '24h', durationMs: 86_400_000 },
-    '3d': { id: '3d', windowU8: 2, label: '3d',  birdeyeTypeParam: '3d',  durationMs: 259_200_000 },
-    '7d': { id: '7d', windowU8: 3, label: '7d',  birdeyeTypeParam: '7d',  durationMs: 604_800_000 },
+    '1h': { id: '1h', windowU8: 0, label: '30s', birdeyeTypeParam: '1h',  durationMs:    30_000 },
+    '1d': { id: '1d', windowU8: 1, label: '1m',  birdeyeTypeParam: '24h', durationMs:    60_000 },
+    '3d': { id: '3d', windowU8: 2, label: '5m',  birdeyeTypeParam: '3d',  durationMs:   300_000 },
+    '7d': { id: '7d', windowU8: 3, label: '1h',  birdeyeTypeParam: '7d',  durationMs: 3_600_000 },
 };
 
-/** Default to the pre-Part-9 behavior (24h delta). */
-export const DEFAULT_TIME_WINDOW: TimeWindowId = '1d';
+/** Default to the shortest race for rapid iteration during testing. */
+export const DEFAULT_TIME_WINDOW: TimeWindowId = '1h';
 
 /** Reverse lookup — resolve windowU8 byte → TimeWindowDef. */
 export function timeWindowFromU8(b: number): TimeWindowDef {

@@ -29,7 +29,8 @@ import { runPaperBotMatch, resolveRealMatchAction, waitForOpponent, waitForSettl
 import { WAGER_TIERS_LAMPORTS, WAGER_TIERS_LABELS, MODES, TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from '../../token-duel/scripts/ModeDefs';
 import { fetchMatchHistoryPage, MatchHistoryEntry } from '../../token-duel/scripts/MatchHistoryRpc';
 import { MatchState } from '../../token-duel/scripts/MatchRpc';
-import { ReceiptSession } from '../../token-duel/scripts/ReceiptSigner';
+// ReceiptSession / physics-backend flow removed on betting-duel.
+// (Previous `import { ReceiptSession } from '../../token-duel/scripts/ReceiptSigner';`)
 import { initSound, playSound, setVolume as setSoundVolume, getVolume as getSoundVolume, setEnabled as setSoundEnabled, isEnabled as isSoundEnabled } from '../../token-duel/scripts/Sound';
 import { Haptics, HapticType } from '../../token-duel/scripts/Haptics';
 import { RECEIPT_BACKEND_URL } from '../../token-duel/scripts/constants';
@@ -116,6 +117,29 @@ export class AppUI extends Component {
     private _raceActiveHoldings: Holding[] = [];
     private _raceTickBindingGapLogged = false;    // log TICK_BINDING_GAP at most once per race
     private _raceLatestSnapshot: RaceSnapshot | null = null; // for cancel-time introspection
+    // Block 2 — opponent card
+    private _raceOpponentCard: Node | null = null;
+    private _raceOpponentAvatar: Label | null = null;
+    private _raceOpponentName: Label | null = null;
+    private _raceOpponentSymbols: Label | null = null;
+    private _raceOpponentDelta: Label | null = null;
+    private _raceOpponentGap: Label | null = null;
+    private _liveSquadBot: import('../../token-duel/scripts/SquadBot').LiveSquadBot | null = null;
+    // betting-duel live opponent delta (Real track): opponent's squad mints
+    // arrive via backend WS; entry prices captured when mints land; delta
+    // recomputed on each race tick against opponent's entry prices.
+    private _opponentMints: string[] | null = null;
+    private _opponentEntryPrices: Record<string, number> | null = null;
+    private _opponentUnsubscribe: (() => void) | null = null;
+    private _opponentDeltaPct: number = 0;
+    // Block 3 — countdown overlay
+    private _countdownOverlay: Node | null = null;
+    private _countdownBigLabel: Label | null = null;
+    private _countdownSquadLabel: Label | null = null;
+    // Block 8 — signing overlay
+    private _signingOverlay: Node | null = null;
+    private _signingSpinnerLabel: Label | null = null;
+    private _signingStatusLabel: Label | null = null;
 
     // ── Phase III + Session 3: full Birdeye picker with native Cocos widgets ──
     private _squad: TokenSquad = new TokenSquad();
@@ -366,7 +390,7 @@ export class AppUI extends Component {
     private _spectatorEventLines: string[] = [];
 
     // Part 10 Bundle 1: receipt-signer session for cheat-resistant settles.
-    private _receiptSession: ReceiptSession | null = null;
+    // private _receiptSession removed on betting-duel.
     /** True when the current real match started a verified session successfully.
      *  If false at settle time, client falls back to legacy settle_match. */
     private _useVerifiedPath: boolean = false;
@@ -382,9 +406,18 @@ export class AppUI extends Component {
     private _pickerStartButton: Button | null = null;
     private _pickerCancelButton: Button | null = null;
     private _pickerStatusLabel: Label | null = null;
+    private _pickerWagerReadout: Label | null = null;
     private _pickerSelectedMode: string = 'oneVone';
     private _pickerSelectedWagerIndex: number = 1; // default 0.05 SOL
     private _pickerSelectedTrack: 'paper' | 'real' = 'paper';
+    // betting-duel polish — Wager control row on TokenDuelPanel.
+    private _wagerValueButton: Button | null = null;
+    private _wagerValueLabel: Label | null = null;
+    private _wagerStartButton: Button | null = null;
+    private _wagerStartLabel: Label | null = null;
+    private _wagerHintLabel: Label | null = null;
+    private _wagerDropdown: Node | null = null;
+    private _wagerDropdownRows: Button[] = [];
     // Part 9: TimeWindow axis — stored as TimeWindowId, mapped to u8 at tx-build time.
     private _pickerWindowButtons: Map<string, Button> = new Map();
     private _pickerSelectedWindow: TimeWindowId = DEFAULT_TIME_WINDOW;
@@ -424,6 +457,9 @@ export class AppUI extends Component {
     // Squad slot buttons (3) — label child shows symbol or "+"
     private _squadSlotButtons: Button[] = [];
     private _squadSlotLabels: Label[] = [];
+    private _squadSlotLogoSprites: Sprite[] = [];
+    private _squadSlotSymbolLabels: Label[] = [];
+    private _squadSlotDeltaLabels: Label[] = [];
     private _lastSquadDeltas: number[] = [0, 0, 0]; // for pulse diff detection
     // Stake controls — slider is primary; chips snap to presets.
     private _stakeSlider: Slider | null = null;
@@ -435,6 +471,9 @@ export class AppUI extends Component {
     // Logos in flight: sprite instance → url. Guards against races when a
     // row gets re-rendered before a pending fetch resolves.
     private _logoPending: WeakMap<Sprite, string> = new WeakMap();
+    // Known-failed URLs: .svg + 403s + decode errors. Skipped on future
+    // calls so we don't re-fetch 80+ times per poll.
+    private _logoFailedUrls: Set<string> = new Set();
     private _claimButton: Button = null!;
     private _lastGameHeight: number = 0;
     private _heroTileButtons: Button[] = [];
@@ -622,7 +661,16 @@ export class AppUI extends Component {
             }
             this._raceCancelButton = this._racePanel.getChildByName('RaceCancelButton')?.getComponent(Button) ?? null;
             this._raceCancelButton?.node.on(Button.EventType.CLICK, () => this._onRaceCancel(), this);
-            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton}`);
+            // Block 2 — opponent card
+            this._raceOpponentCard = this._racePanel.getChildByName('RaceOpponentCard') ?? null;
+            if (this._raceOpponentCard) {
+                this._raceOpponentAvatar  = this._raceOpponentCard.getChildByName('OpponentAvatarLabel')?.getComponent(Label) ?? null;
+                this._raceOpponentName    = this._raceOpponentCard.getChildByName('OpponentNameLabel')?.getComponent(Label) ?? null;
+                this._raceOpponentSymbols = this._raceOpponentCard.getChildByName('OpponentSymbolsLabel')?.getComponent(Label) ?? null;
+                this._raceOpponentDelta   = this._raceOpponentCard.getChildByName('OpponentDeltaLabel')?.getComponent(Label) ?? null;
+                this._raceOpponentGap     = this._raceOpponentCard.getChildByName('OpponentGapLabel')?.getComponent(Label) ?? null;
+            }
+            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard}`);
         }
 
         // Phase E: Claim Payout button (revealed on game-over).
@@ -965,6 +1013,9 @@ export class AppUI extends Component {
         presetsBtn?.node.on(Button.EventType.CLICK, () => this._onOpenSquadPresets(), this);
         const suggestBtn = this._tokenDuelPanel.getChildByName('SuggestSquadButton')?.getComponent(Button);
         suggestBtn?.node.on(Button.EventType.CLICK, () => this._onSuggestSquad(), this);
+        // betting-duel polish: `?` replays the first-run tutorial on demand.
+        const helpBtn = this._tokenDuelPanel.getChildByName('HelpButton')?.getComponent(Button);
+        helpBtn?.node.on(Button.EventType.CLICK, () => this._showTutorial(), this);
 
         this._leaderboardPanel = this.node.getChildByName('LeaderboardPanel') ?? null;
         if (this._leaderboardPanel) {
@@ -1193,8 +1244,10 @@ export class AppUI extends Component {
             // Part 11 D2: wagerKeys[0] is the INTRO tier which maps to on-chain
             // WAGER_TIERS index 5 (appended to preserve legacy Match PDA bytes).
             // The parallel sceneToTierIdx array translates scene-position → on-chain idx.
-            const wagerKeys = ['0001', '001', '005', '01', '025', '05'];
-            const sceneToTierIdx = [5, 0, 1, 2, 3, 4];
+            // betting-duel: 8 chips. Order: INTRO · 0.01 · 0.05 · 0.1 · 0.25 · 0.5 · 1 · 5 SOL.
+            // Maps to on-chain WAGER_TIERS indices [5, 0, 1, 2, 3, 4, 6, 7].
+            const wagerKeys = ['0001', '001', '005', '01', '025', '05', '1', '5'];
+            const sceneToTierIdx = [5, 0, 1, 2, 3, 4, 6, 7];
             for (let w = 0; w < wagerKeys.length; w++) {
                 const n = this._modePickerOverlay.getChildByName(`Wager_${wagerKeys[w]}`);
                 const b = n?.getComponent(Button);
@@ -1225,8 +1278,36 @@ export class AppUI extends Component {
             this._pickerCancelButton = this._modePickerOverlay.getChildByName('PickerCancelButton')?.getComponent(Button) ?? null;
             this._pickerCancelButton?.node.on(Button.EventType.CLICK, () => this._onPickerCancel(), this);
             this._pickerStatusLabel = this._modePickerOverlay.getChildByName('PickerStatusLabel')?.getComponent(Label) ?? null;
+            this._pickerWagerReadout = this._modePickerOverlay.getChildByName('PickerWagerReadout')?.getComponent(Label) ?? null;
         }
-        console.log(`${TAG} start | ModePickerOverlay wired=${!!this._modePickerOverlay} modes=${this._pickerModeButtons.size} wagers=${this._pickerWagerButtons.size} toggles=${!!this._pickerPaperToggle}/${!!this._pickerRealToggle} cta=${!!this._pickerStartButton}`);
+        console.log(`${TAG} start | ModePickerOverlay wired=${!!this._modePickerOverlay} modes=${this._pickerModeButtons.size} wagers=${this._pickerWagerButtons.size} toggles=${!!this._pickerPaperToggle}/${!!this._pickerRealToggle} cta=${!!this._pickerStartButton} wager_readout=${!!this._pickerWagerReadout}`);
+
+        // betting-duel polish — Wager control row bindings (TokenDuelPanel).
+        this._wagerValueButton = this._tokenDuelPanel.getChildByName('WagerValueButton')?.getComponent(Button) ?? null;
+        if (this._wagerValueButton) {
+            this._wagerValueLabel = this._wagerValueButton.node.getChildByName('Label')?.getComponent(Label) ?? null;
+            this._wagerValueButton.node.on(Button.EventType.CLICK, () => this._onWagerValueTap(), this);
+        }
+        this._wagerStartButton = this._tokenDuelPanel.getChildByName('WagerStartButton')?.getComponent(Button) ?? null;
+        if (this._wagerStartButton) {
+            this._wagerStartLabel = this._wagerStartButton.node.getChildByName('Label')?.getComponent(Label) ?? null;
+            this._wagerStartButton.node.on(Button.EventType.CLICK, () => this._onWagerStartTap(), this);
+        }
+        this._wagerHintLabel = this._tokenDuelPanel.getChildByName('WagerHintLabel')?.getComponent(Label) ?? null;
+        this._wagerDropdown = this._tokenDuelPanel.getChildByName('WagerDropdown') ?? null;
+        if (this._wagerDropdown) {
+            for (let i = 0; i < 8; i++) {
+                const rowN = this._wagerDropdown.getChildByName(`WagerDropdownRow_${i}`);
+                const b = rowN?.getComponent(Button);
+                if (b) {
+                    const idx = i;
+                    this._wagerDropdownRows.push(b);
+                    b.node.on(Button.EventType.CLICK, () => this._onWagerRowTap(idx), this);
+                }
+            }
+        }
+        console.log(`${TAG} start | WagerControlRow value_btn=${!!this._wagerValueButton} start_btn=${!!this._wagerStartButton} dropdown=${!!this._wagerDropdown} rows=${this._wagerDropdownRows.length}/8`);
+        this._refreshWagerControlRow();
 
         // Session D Part 3: WaitingPanel + PostMatchPanel bindings.
         this._waitingPanel = this.node.getChildByName('WaitingPanel') ?? null;
@@ -1259,6 +1340,9 @@ export class AppUI extends Component {
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
             this._postMatchBackButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchBack(), this);
             this._postMatchAgainButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchAgain(), this);
+            // Block 6 — Same Squad shortcut
+            const sameSquadBtn = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button);
+            sameSquadBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchSameSquad(), this);
             // Part 11 A: share-to-X button.
             const shareBtn = this._postMatchPanel.getChildByName('PostMatchShareButton')?.getComponent(Button);
             shareBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchShare(), this);
@@ -1300,6 +1384,19 @@ export class AppUI extends Component {
         }
 
         // Part 14 C: TournamentPanel bindings.
+        // Block 3 + 8 — countdown & signing overlays
+        this._countdownOverlay = this.node.getChildByName('CountdownOverlay') ?? null;
+        if (this._countdownOverlay) {
+            this._countdownBigLabel    = this._countdownOverlay.getChildByName('CountdownBigLabel')?.getComponent(Label) ?? null;
+            this._countdownSquadLabel  = this._countdownOverlay.getChildByName('CountdownSquadPreviewLabel')?.getComponent(Label) ?? null;
+        }
+        this._signingOverlay = this.node.getChildByName('SigningOverlay') ?? null;
+        if (this._signingOverlay) {
+            this._signingSpinnerLabel = this._signingOverlay.getChildByName('SigningSpinnerLabel')?.getComponent(Label) ?? null;
+            this._signingStatusLabel  = this._signingOverlay.getChildByName('SigningStatusLabel')?.getComponent(Label) ?? null;
+        }
+        console.log(`${TAG} start | overlays countdown=${!!this._countdownOverlay} signing=${!!this._signingOverlay}`);
+
         this._tournamentPanel = this.node.getChildByName('TournamentPanel') ?? null;
         if (this._tournamentPanel) {
             this._tournamentTitleLabel  = this._tournamentPanel.getChildByName('TournamentTitleLabel')?.getComponent(Label) ?? null;
@@ -1372,10 +1469,19 @@ export class AppUI extends Component {
         for (let i = 0; i < 3; i++) {
             const node = this._tokenDuelPanel.getChildByName(`SquadSlot_${i}`);
             const btn = node?.getComponent(Button);
+            // Back-compat: older scene has symbol in a child `Label`; new scene
+            // uses `SymbolLabel` + `LogoSprite` + `DeltaLabel`. Prefer the
+            // composite path when present.
             const lbl = node?.getChildByName('Label')?.getComponent(Label);
-            if (btn && lbl) {
+            const symLbl = node?.getChildByName('SymbolLabel')?.getComponent(Label) ?? lbl;
+            const logoSpr = node?.getChildByName('LogoSprite')?.getComponent(Sprite) ?? null;
+            const dltLbl = node?.getChildByName('DeltaLabel')?.getComponent(Label) ?? null;
+            if (btn && symLbl) {
                 this._squadSlotButtons.push(btn);
-                this._squadSlotLabels.push(lbl);
+                this._squadSlotLabels.push(symLbl);
+                this._squadSlotSymbolLabels.push(symLbl);
+                this._squadSlotLogoSprites.push(logoSpr!);
+                this._squadSlotDeltaLabels.push(dltLbl!);
                 const idx = i;
                 btn.node.on(Button.EventType.CLICK, () => this._onSquadSlotTap(idx), this);
             }
@@ -1413,6 +1519,7 @@ export class AppUI extends Component {
             this._renderSquad();
             this._refreshWatchlistStarTint();
             this._refreshSquadActionButtons();
+            this._refreshWagerControlRow();
         });
 
         console.log(`${TAG} start | TokenDuel Phase III — balance_chip=${!!this._balanceChipLabel} feed_tabs=${feedTabsWired}/6 feed_rows=${this._feedRowNodes.length}/${FEED_ROW_LIMIT} squad_slots=${this._squadSlotButtons.length}/3 stake_chips=${stakeChipsWired}/3 filter_chips=${this._filterChipButtons.size}/7 watchlist_cached=${Watchlist.size()}`);
@@ -1529,6 +1636,13 @@ export class AppUI extends Component {
         this._setActivePanel('tokenDuel');
         this._resetStakeFlow();
         this._hideLegacyBettingDuelNodes();
+        // betting-duel polish: fire the first-run tutorial now, BEFORE the user
+        // interacts. Previously fired via onBeforeFirstBlock during the race,
+        // which surprised users mid-match. Also always-dismissible via the
+        // top-right `?` HelpButton.
+        if (!this._tutorialHasBeenSeen()) {
+            this._showTutorial();
+        }
 
         // Phase III — kick off Birdeye feed fetch + balance chip refresh. Both
         // run async; the panel opens instantly and rows populate when ready.
@@ -1706,6 +1820,32 @@ export class AppUI extends Component {
         // Part 14: stop tournament countdown when leaving Home.
         if (which !== 'home') this._stopTournamentCountdown();
         console.log(`${TAG} _setActivePanel | DONE which=${which} landing=${this._landingPanel.active} home=${this._homePanel.active} tokenDuel=${this._tokenDuelPanel.active}`);
+    }
+
+    /**
+     * betting-duel polish: force-hide every top-level panel except the named
+     * one. Prevents stale panel content (e.g. TokenDuelPanel's "Token Duel"
+     * title) from bleeding behind sibling panels like Leaderboard / Portfolio.
+     * _setActivePanel only toggles landing/home/tokenDuel; this covers the
+     * full sibling set including Leaderboard/Portfolio/Settings/Daily/Spec.
+     */
+    private _hideAllTopLevelPanelsExcept(keep: 'leaderboard' | 'portfolio' | 'settings'): void {
+        const candidateNames = ['LandingPanel', 'HomePanel', 'TokenDuelPanel', 'TokenDetailPanel',
+            'LeaderboardPanel', 'PortfolioPanel', 'SettingsPanel', 'DailyChallengePanel',
+            'SpectatorPanel', 'TournamentPanel', 'PostMatchPanel', 'WaitingPanel'];
+        const keepMap: Record<string, string> = {
+            leaderboard: 'LeaderboardPanel',
+            portfolio:   'PortfolioPanel',
+            settings:    'SettingsPanel',
+        };
+        const keepName = keepMap[keep];
+        let hidden = 0;
+        for (const name of candidateNames) {
+            if (name === keepName) continue;
+            const n = this.node.getChildByName(name);
+            if (n && n.active) { n.active = false; hidden++; }
+        }
+        console.log(`${TAG} _hideAllTopLevelPanelsExcept | keep=${keep} hidden=${hidden}`);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2005,46 +2145,12 @@ export class AppUI extends Component {
         // directly; paper matches use whatever's currently selected.
         this._priceFeed.setTimeframe(this._pickerSelectedWindow);
 
-        // Part 10 Bundle 1: kick off a ReceiptSession for Real matches so
-        // the backend can observe gameplay and sign a verified receipt on
-        // finalize. Paper matches skip the network hop entirely.
-        this._receiptSession?.close();
-        this._receiptSession = null;
+        // betting-duel Block 9: ReceiptSession / physics-backend flow is dead
+        // code on this branch (races are price-deterministic; no gameplay
+        // physics to validate). Settles always use the legacy `settle_match`
+        // path with the client-computed encoded delta as the score.
         this._useVerifiedPath = false;
         this._lastMatchUnverifiedReason = null;
-        if (this._pendingRealMatch && this._activeRealMatchPda) {
-            const mwa = MWAManager.instance;
-            const pubkey = mwa?.connectedPubkey ?? '';
-            if (pubkey) {
-                const session = new ReceiptSession();
-                this._receiptSession = session;
-                const squadMints: [string, string, string] = [
-                    gameHoldings[0]?.mint || gameHoldings[0]?.symbol || '',
-                    gameHoldings[1]?.mint || gameHoldings[1]?.symbol || '',
-                    gameHoldings[2]?.mint || gameHoldings[2]?.symbol || '',
-                ];
-                session.start({
-                    matchPda: this._activeRealMatchPda,
-                    playerPubkey: pubkey,
-                    squadMints,
-                    timeWindow: this._pickerSelectedWindow,
-                }).then((resp) => {
-                    if (resp) {
-                        this._useVerifiedPath = true;
-                        console.log(`${TAG} onStartGame | receipt session OK id=${resp.sessionId.slice(0, 8)}... server_pk=${resp.serverPubkey}`);
-                    } else {
-                        this._useVerifiedPath = false;
-                        this._lastMatchUnverifiedReason = session.lastReason ?? 'backend unreachable';
-                        console.log(`${TAG} onStartGame | receipt session FAILED — unverified path. reason="${this._lastMatchUnverifiedReason}"`);
-                        showToast('Verification backend down — match will settle unverified');
-                    }
-                }).catch((e) => {
-                    this._useVerifiedPath = false;
-                    this._lastMatchUnverifiedReason = `session start error (${e})`;
-                    console.log(`${TAG} onStartGame | receipt session ERROR ${e}`);
-                });
-            }
-        }
 
         // betting-duel Phase 3: show RacePanel before the race starts so entry
         // state renders at t=0 instead of popping in after the first tick.
@@ -2077,14 +2183,22 @@ export class AppUI extends Component {
             priceFeed: this._priceFeed,
             windowMs,
             fallbackEntryPrices,
-            onBeforeFirstBlock: this._makeTutorialHook(),
-            onBlockDrop: (ev) => this._receiptSession?.recordDrop(ev),
+            // betting-duel polish: tutorial no longer fires during race; it
+            // runs on first TokenDuelPanel open and via the `?` HelpButton.
+            // ReceiptSession removed on betting-duel — no block-drop events.
             onRaceTick: (snap) => this._onRaceTick(snap),
             onGameOver: (h, d) => this._onGameOver(h, d),
         });
-        // `start()` is now async (awaits Birdeye). Fire-and-forget; taps
-        // before deltas resolve are ignored by the game's `_running` guard.
-        this._game.start().catch((e) => console.log(`${TAG} onStartGame | START_ERROR error=${e}`));
+        // Block 3: 3-2-1-GO countdown before race starts. Race is shown
+        // (via _showRacePanel above) so the user sees entry state in the
+        // background; countdown is the top-of-stack attention grabber.
+        const squadSyms = gameHoldings.map((h) => h?.symbol || '?').filter((s) => s !== '?');
+        this._showCountdown(squadSyms, () => {
+            // `start()` is async (awaits Birdeye). Fire-and-forget; any tap
+            // events before entry prices resolve are gated by the PortfolioRace
+            // `_running` flag.
+            this._game?.start().catch((e) => console.log(`${TAG} onStartGame | START_ERROR error=${e}`));
+        });
     }
 
     private _onGameOver(height: number, deltas: Record<string, number>): void {
@@ -2179,6 +2293,7 @@ export class AppUI extends Component {
                 playerHeight: height,
                 leaderboardHeights: lbHeights,
                 botGamesRemaining,
+                windowMs: TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs,
             });
             this._lastMatchOutcome = {
                 won: outcome.playerWon,
@@ -2204,7 +2319,9 @@ export class AppUI extends Component {
                 totalPlayers: outcome.totalPlayers,
                 modeLabel: modeDef.label,
             });
-            console.log(`${TAG} onGameOver | PAPER_BOT_SETTLED mode=${modeId} placement=${outcome.placement + 1}/${outcome.totalPlayers} won=${outcome.playerWon} xp=${outcome.xpGained} prev_level=${previousLevel} new_level=${newLevel}`);
+            const placementDisplay = (outcome.placement ?? 0) + 1;
+            const totalDisplay = outcome.totalPlayers ?? '?';
+            console.log(`${TAG} onGameOver | PAPER_BOT_SETTLED mode=${modeId} placement=${placementDisplay}/${totalDisplay} won=${outcome.playerWon} xp=${outcome.xpGained} prev_level=${previousLevel} new_level=${newLevel}`);
             return;
         }
 
@@ -2250,6 +2367,45 @@ export class AppUI extends Component {
         this._raceTickBindingGapLogged = false;
         this._raceLatestSnapshot = null;
 
+        // Block 2: opponent card — Paper gets a LiveSquadBot, Real hides
+        // the card (no WS broadcast path yet; opponent revealed at end).
+        const isPaper = this._pickerSelectedTrack === 'paper';
+        if (this._raceOpponentCard) {
+            this._raceOpponentCard.active = isPaper;
+        }
+        if (isPaper) {
+            const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
+            // Lazy import to avoid circular ref from AppUI top-level.
+            if (this._raceOpponentName) this._raceOpponentName.string = 'Bot';
+            if (this._raceOpponentAvatar) this._raceOpponentAvatar.string = '🤖';
+            if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'picking squad…';
+            import('../../token-duel/scripts/SquadBot').then(({ LiveSquadBot }) => {
+                const bot = new LiveSquadBot(windowMs);
+                this._liveSquadBot = bot;
+                if (this._priceFeed) {
+                    bot.start(this._priceFeed).then(() => {
+                        const squad = bot.getSquad();
+                        const syms = squad.map((s) => s.symbol).filter(Boolean);
+                        if (this._raceOpponentSymbols) {
+                            this._raceOpponentSymbols.string = syms.length > 0 ? syms.join(' · ') : '— · — · —';
+                        }
+                        console.log(`${TAG} _showRacePanel | live_bot ready squad=[${syms.join(',')}]`);
+                    }).catch((e) => console.log(`${TAG} _showRacePanel | live_bot_start_error ${e}`));
+                }
+            }).catch((e) => console.log(`${TAG} _showRacePanel | squadbot_import_error ${e}`));
+        } else {
+            this._liveSquadBot = null;
+            if (this._raceOpponentName) this._raceOpponentName.string = 'Opponent';
+            if (this._raceOpponentAvatar) this._raceOpponentAvatar.string = '👤';
+            if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'waiting for squad…';
+            if (this._raceOpponentDelta) this._raceOpponentDelta.string = '—';
+            if (this._raceOpponentGap) this._raceOpponentGap.string = '';
+            // Opponent card should be visible on Real now that backend WS
+            // can deliver their squad mints for client-side delta compute.
+            if (this._raceOpponentCard) this._raceOpponentCard.active = true;
+            this._subscribeOpponentSquad();
+        }
+
         // Populate + activate N cards; hide the rest.
         const n = Math.min(holdings.length, this._raceTokenCards.length);
         for (let i = 0; i < this._raceTokenCards.length; i++) {
@@ -2279,6 +2435,110 @@ export class AppUI extends Component {
         console.log(`${TAG} _showRacePanel | SHOW tokens=${n} cards_available=${this._raceTokenCards.length} symbols=[${symbols}]`);
     }
 
+    /**
+     * betting-duel live opponent delta — subscribe to the match's squad
+     * board via backend WS. When opponent's mints arrive, snapshot their
+     * entry prices so `_updateOpponentDeltaTick` can compute deltas on
+     * each race tick.
+     */
+    private _subscribeOpponentSquad(): void {
+        if (!this._activeRealMatchPda) {
+            console.log(`${TAG} _subscribeOpponentSquad | NO_MATCH_PDA — skipping`);
+            return;
+        }
+        const matchPda = this._activeRealMatchPda;
+        const myPubkey = MWAManager.instance?.connectedPubkey ?? '';
+        this._opponentMints = null;
+        this._opponentEntryPrices = null;
+        this._opponentDeltaPct = 0;
+        if (this._opponentUnsubscribe) { try { this._opponentUnsubscribe(); } catch (_) {} this._opponentUnsubscribe = null; }
+
+        void import('../../token-duel/scripts/SpectatorRpc').then(({ subscribeToMatch }) => {
+            if (!this._activeRealMatchPda || this._activeRealMatchPda !== matchPda) {
+                // Match changed while we were loading; bail.
+                console.log(`${TAG} _subscribeOpponentSquad | STALE match=${matchPda.slice(0, 8)}... active=${this._activeRealMatchPda ?? 'null'}`);
+                return;
+            }
+            const pickOpponent = (squads: Array<{ playerPubkey: string; mints: string[] }> | undefined): string[] | null => {
+                if (!squads) return null;
+                const opp = squads.find((s) => s.playerPubkey !== myPubkey);
+                return opp ? opp.mints.slice() : null;
+            };
+            const onOpponentMints = (mints: string[]) => {
+                if (this._opponentMints) return; // already captured
+                this._opponentMints = mints;
+                if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'loading prices…';
+                console.log(`${TAG} _subscribeOpponentSquad | OPPONENT_MINTS mints=[${mints.map((m) => m.slice(0, 8)).join(',')}]`);
+                // One-shot: capture opponent entry prices at the moment we learn them.
+                void this._priceFeed?.getSpotPrices(mints).then((prices) => {
+                    this._opponentEntryPrices = prices;
+                    const tags = mints.map((m) => (prices[m] ? m.slice(0, 4) : '?')).join(',');
+                    console.log(`${TAG} _subscribeOpponentSquad | OPPONENT_ENTRY resolved=${Object.keys(prices).length}/${mints.length} [${tags}]`);
+                    if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = mints.map((m) => m.slice(0, 4)).join(' · ');
+                });
+            };
+            this._opponentUnsubscribe = subscribeToMatch(this._tdRpc, matchPda, {
+                onState: () => { /* unused for opponent delta */ },
+                onReady: (ev) => {
+                    const mints = pickOpponent(ev.squads);
+                    if (mints) onOpponentMints(mints);
+                    else console.log(`${TAG} _subscribeOpponentSquad | WS_READY no opponent squad yet (squads=${ev.squads?.length ?? 0})`);
+                },
+                onOpponentSquad: (ev) => {
+                    if (ev.playerPubkey === myPubkey) return;
+                    onOpponentMints(ev.mints.slice());
+                },
+            });
+            console.log(`${TAG} _subscribeOpponentSquad | SUBSCRIBED match=${matchPda.slice(0, 8)}... my=${myPubkey.slice(0, 8)}...`);
+        }).catch((e) => console.log(`${TAG} _subscribeOpponentSquad | IMPORT_ERR ${e}`));
+    }
+
+    /**
+     * Called from `_onRaceTick`. If opponent mints + entry prices are
+     * captured, fetch current prices and update the opponent card.
+     */
+    private _updateOpponentDeltaTick(playerDeltaPct: number): void {
+        if (!this._opponentMints || !this._opponentEntryPrices || !this._priceFeed) return;
+        const mints = this._opponentMints;
+        const entry = this._opponentEntryPrices;
+        // Fire-and-forget; multiple in-flight is fine — later ones overwrite.
+        void this._priceFeed.getSpotPrices(mints).then((current) => {
+            let sum = 0;
+            let count = 0;
+            for (const m of mints) {
+                const e = entry[m];
+                const c = current[m];
+                if (!Number.isFinite(e) || !Number.isFinite(c) || e <= 0) continue;
+                sum += ((c - e) / e) * 100;
+                count++;
+            }
+            if (count === 0) return;
+            const oppDelta = sum / count;
+            this._opponentDeltaPct = oppDelta;
+            const green = new Color(120, 220, 120, 255);
+            const red   = new Color(240, 110, 110, 255);
+            if (this._raceOpponentDelta) {
+                const s = oppDelta >= 0 ? '+' : '';
+                this._raceOpponentDelta.string = `${s}${oppDelta.toFixed(2)}%`;
+                this._raceOpponentDelta.color = oppDelta >= 0 ? green : red;
+            }
+            if (this._raceOpponentGap) {
+                const gap = playerDeltaPct - oppDelta;
+                const absGap = Math.abs(gap).toFixed(2);
+                if (gap > 0.01) {
+                    this._raceOpponentGap.string = `you +${absGap} pp ahead`;
+                    this._raceOpponentGap.color = green;
+                } else if (gap < -0.01) {
+                    this._raceOpponentGap.string = `${absGap} pp behind`;
+                    this._raceOpponentGap.color = red;
+                } else {
+                    this._raceOpponentGap.string = 'neck and neck';
+                    this._raceOpponentGap.color = new Color(180, 185, 200, 255);
+                }
+            }
+        }).catch(() => { /* transient fetch errors OK; next tick retries */ });
+    }
+
     private _hideRacePanel(): void {
         if (!this._racePanel) {
             console.log(`${TAG} _hideRacePanel | NO_PANEL_REF — nothing to hide`);
@@ -2288,6 +2548,10 @@ export class AppUI extends Component {
             console.log(`${TAG} _hideRacePanel | ALREADY_HIDDEN`);
             return;
         }
+        // Tear down opponent WS subscription if live.
+        if (this._opponentUnsubscribe) { try { this._opponentUnsubscribe(); } catch (_) {} this._opponentUnsubscribe = null; }
+        this._opponentMints = null;
+        this._opponentEntryPrices = null;
         this._racePanel.active = false;
         console.log(`${TAG} _hideRacePanel | HIDDEN last_snapshot_portfolio=${this._raceLatestSnapshot?.portfolioDeltaPct?.toFixed(2) ?? 'null'}%`);
     }
@@ -2344,6 +2608,38 @@ export class AppUI extends Component {
             try { playSound(curSign > 0 ? 'stack' : 'miss'); } catch (_) { /* asset may be missing */ }
         }
         if (curSign !== 0) this._raceLastDeltaSign = curSign;
+
+        // Block 2: opponent card (Paper only — live bot delta).
+        if (this._liveSquadBot && this._pickerSelectedTrack === 'paper' && this._raceOpponentCard?.active) {
+            const botSnap = this._liveSquadBot.deltaAt(snap.elapsedMs);
+            if (this._raceOpponentDelta) {
+                const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
+                this._raceOpponentDelta.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
+                this._raceOpponentDelta.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
+            }
+            if (this._raceOpponentGap) {
+                const gap = deltaPct - botSnap.portfolioDeltaPct;
+                const absGap = Math.abs(gap).toFixed(2);
+                if (gap > 0.05) {
+                    this._raceOpponentGap.string = `you +${absGap} pp ahead`;
+                    this._raceOpponentGap.color = green;
+                } else if (gap < -0.05) {
+                    this._raceOpponentGap.string = `${absGap} pp behind`;
+                    this._raceOpponentGap.color = red;
+                } else {
+                    this._raceOpponentGap.string = 'neck and neck';
+                    this._raceOpponentGap.color = new Color(200, 200, 210);
+                }
+            }
+        }
+
+        // betting-duel live opponent delta (Real track). Opponent mints + entry
+        // prices are captured via WS once both players have published their
+        // squads; this tick updates their current delta from the same Birdeye
+        // spot-price feed that drives the player's own portfolio race.
+        if (this._pickerSelectedTrack === 'real' && this._raceOpponentCard?.active) {
+            this._updateOpponentDeltaTick(deltaPct);
+        }
     }
 
     private _fmtPrice(p: number): string {
@@ -2351,6 +2647,76 @@ export class AppUI extends Component {
         if (p >= 1)       return `$${p.toFixed(3)}`;
         if (p >= 0.001)   return `$${p.toFixed(5)}`;
         return `$${p.toPrecision(3)}`;
+    }
+
+    /**
+     * Block 8: show the signing overlay. Safe to call repeatedly — replaces
+     * status text. `hide()` is the companion. Spinner just rotates via a
+     * looping tween.
+     */
+    private _showSigningOverlay(status: string): void {
+        if (!this._signingOverlay) return;
+        this._signingOverlay.active = true;
+        if (this._signingStatusLabel) this._signingStatusLabel.string = status;
+        if (this._signingSpinnerLabel) {
+            const node = this._signingSpinnerLabel.node;
+            Tween.stopAllByTarget(node);
+            node.angle = 0;
+            tween(node).by(1.0, { angle: -360 }).repeatForever().start();
+        }
+        console.log(`${TAG} _showSigningOverlay | SHOW status="${status}"`);
+    }
+
+    private _hideSigningOverlay(): void {
+        if (!this._signingOverlay) return;
+        this._signingOverlay.active = false;
+        if (this._signingSpinnerLabel) Tween.stopAllByTarget(this._signingSpinnerLabel.node);
+        console.log(`${TAG} _hideSigningOverlay | HIDE`);
+    }
+
+    /**
+     * Block 3: 3-2-1-GO pre-race countdown. Shows for ~2.4s with scale tween
+     * and haptic pulse per digit. Invokes `onDone` after GO! disappears.
+     */
+    private _showCountdown(squadSymbols: string[], onDone: () => void): void {
+        if (!this._countdownOverlay || !this._countdownBigLabel) {
+            console.log(`${TAG} _showCountdown | NO_OVERLAY — skipping to race start`);
+            onDone();
+            return;
+        }
+        this._countdownOverlay.active = true;
+        if (this._countdownSquadLabel) {
+            this._countdownSquadLabel.string = squadSymbols.length > 0 ? squadSymbols.join(' · ') : 'Your squad';
+        }
+        const steps: Array<{ text: string; color: Color; haptic: HapticType }> = [
+            { text: '3', color: new Color(218, 165, 32), haptic: HapticType.SOFT },
+            { text: '2', color: new Color(218, 165, 32), haptic: HapticType.SOFT },
+            { text: '1', color: new Color(236, 88, 122), haptic: HapticType.MEDIUM },
+            { text: 'GO!', color: new Color(48, 198, 155), haptic: HapticType.HEAVY },
+        ];
+        let i = 0;
+        const tick = () => {
+            if (i >= steps.length) {
+                if (this._countdownOverlay) this._countdownOverlay.active = false;
+                console.log(`${TAG} _showCountdown | DONE`);
+                onDone();
+                return;
+            }
+            const step = steps[i++];
+            if (this._countdownBigLabel) {
+                this._countdownBigLabel.string = step.text;
+                this._countdownBigLabel.color = step.color;
+                const node = this._countdownBigLabel.node;
+                node.scale = new Vec3(0.6, 0.6, 1);
+                tween(node).to(0.35, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
+                    .to(0.15, { scale: new Vec3(1, 1, 1) })
+                    .start();
+            }
+            try { Haptics.fire(step.haptic); } catch (_) { /* editor no-op */ }
+            try { playSound(step.text === 'GO!' ? 'stack' : 'tap'); } catch (_) { /* missing asset */ }
+            setTimeout(tick, step.text === 'GO!' ? 450 : 550);
+        };
+        tick();
     }
 
     private _onRaceCancel(): void {
@@ -3017,8 +3383,11 @@ export class AppUI extends Component {
                     : elapsedSec < 3600
                         ? `${Math.floor(elapsedSec / 60)}m ago`
                         : `${Math.floor(elapsedSec / 3600)}h ago`;
-                dltL.string = `H${entry.height} · ${elapsedStr}`;
-                dltL.color = new Color(218, 165, 32, 255);
+                // Block 5: decode encoded score → portfolio delta %.
+                const pct = decodeScore(entry.height);
+                const sign = pct >= 0 ? '+' : '';
+                dltL.string = `${sign}${pct.toFixed(2)}% · ${elapsedStr}`;
+                dltL.color = pct >= 0 ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
             }
             if (spr) {
                 // Rank tint: gold → silver → bronze → flat.
@@ -3060,6 +3429,8 @@ export class AppUI extends Component {
                     ? this._squadPickChecked.has(row.address)
                     : this._watchlistChecked.has(row.address);
                 chkSpr.color = checked ? new Color(48, 198, 155, 255) : new Color(45, 52, 70, 255);
+                const iconN = chkSpr.node.getChildByName('CheckmarkIcon');
+                if (iconN) iconN.active = checked;
             }
             // Session 14 A2: shift logo right when any check mode is active
             // so the checkbox gets its own column and doesn't overlap the logo.
@@ -3284,27 +3655,42 @@ export class AppUI extends Component {
 
     private _renderSquad(): void {
         const slots = this._squad.slots;
-        for (let i = 0; i < this._squadSlotLabels.length; i++) {
-            const lbl = this._squadSlotLabels[i];
+        for (let i = 0; i < this._squadSlotSymbolLabels.length; i++) {
+            const symLbl = this._squadSlotSymbolLabels[i];
+            const dltLbl = this._squadSlotDeltaLabels[i];
+            const logo = this._squadSlotLogoSprites[i];
+            const btn = this._squadSlotButtons[i];
             const slot = slots[i];
             if (!slot) {
-                lbl.string = '+';
-                lbl.color = new Color(200, 200, 200, 255);
+                symLbl.string = '+';
+                symLbl.color = new Color(200, 200, 200, 255);
+                if (dltLbl) { dltLbl.string = ''; dltLbl.node.active = false; }
+                if (logo) { logo.spriteFrame = null; logo.node.active = false; }
+                if (btn) btn.node.active = false;
             } else {
                 const d = slot.change24hPct;
                 const sign = d > 0 ? '+' : '';
-                // Session 13 A4: single-line to avoid the "strikethrough" optical
-                // illusion that multi-line rendering produced at cramped heights.
-                const pctStr = Number.isFinite(d) && d !== 0 ? `  ${sign}${d.toFixed(1)}%` : '';
-                lbl.string = `${slot.symbol}${pctStr}`;
-                lbl.color = d > 0
-                    ? new Color(120, 220, 120, 255)
-                    : d < 0
-                        ? new Color(240, 110, 110, 255)
-                        : new Color(255, 255, 255, 255);
+                const pctStr = Number.isFinite(d) && d !== 0 ? `${sign}${d.toFixed(1)}%` : '—';
+                symLbl.string = slot.symbol ?? '?';
+                symLbl.color = new Color(240, 242, 250, 255);
+                if (dltLbl) {
+                    dltLbl.string = pctStr;
+                    dltLbl.color = d > 0
+                        ? new Color(120, 220, 120, 255)
+                        : d < 0
+                            ? new Color(240, 110, 110, 255)
+                            : new Color(180, 185, 200, 255);
+                    dltLbl.node.active = true;
+                }
+                if (logo) {
+                    logo.node.active = true;
+                    if (slot.logoUri) this._loadLogoInto(logo, slot.logoUri);
+                    else { logo.spriteFrame = null; logo.color = new Color(60, 72, 96, 255); }
+                }
+                if (btn) btn.node.active = true;
             }
         }
-        console.log(`${TAG} _renderSquad | DONE filled=${this._squad.filled}/${slots.length} labels_updated=${this._squadSlotLabels.length}`);
+        console.log(`${TAG} _renderSquad | DONE filled=${this._squad.filled}/${slots.length} slots_rendered=${this._squadSlotSymbolLabels.length}`);
         // Pulse any slots whose 24h % has drifted since the last render (A6).
         this._maybePulseSquadOnDeltas();
         // Session 4 B1: if the squad just crossed empty → populated (or vice versa)
@@ -3538,11 +3924,28 @@ export class AppUI extends Component {
             console.log(`${TAG} _loadLogoInto | EMPTY_URL resetting sprite`);
             return;
         }
+        // betting-duel polish: known-failed URL cache. Without this, every
+        // 15s poll + every squad render re-hits _loadLogoInto for the same
+        // .svg / 403-Forbidden URLs and floods logcat with 80+ lines per
+        // poll. Once a URL fails, never retry.
+        if (this._logoFailedUrls.has(url)) {
+            sprite.spriteFrame = null;
+            sprite.color = new Color(60, 72, 96, 255);
+            return;
+        }
+        // Cocos 3.8 `loadRemote({ext:'.png'})` can't decode SVG. Blacklist
+        // up-front so we never even try.
+        if (url.toLowerCase().endsWith('.svg')) {
+            this._logoFailedUrls.add(url);
+            sprite.spriteFrame = null;
+            sprite.color = new Color(60, 72, 96, 255);
+            console.log(`${TAG} _loadLogoInto | SKIP_SVG url_suffix="${url.substring(url.length - 24)}" failed_count=${this._logoFailedUrls.size}`);
+            return;
+        }
         const cached = this._logoCache.get(url);
         if (cached) {
             sprite.spriteFrame = cached;
             sprite.color = new Color(255, 255, 255, 255);
-            console.log(`${TAG} _loadLogoInto | CACHE_HIT url_suffix="${url.substring(url.length - 24)}" cache_size=${this._logoCache.size}`);
             return;
         }
         this._logoPending.set(sprite, url);
@@ -3564,15 +3967,30 @@ export class AppUI extends Component {
      * Used when `assetManager.loadRemote` rejects the response (webp, redirect).
      */
     private _loadLogoFallback(sprite: Sprite, url: string): void {
+        // Android WebView + Cocos JSB sometimes return a non-standard Response
+        // shape without .blob(). Bail cleanly in that case rather than noisy-
+        // logging every logo fetch — the primary loadRemote path already got
+        // its crack; fallback simply can't run.
+        if (typeof (globalThis as any).fetch !== 'function') {
+            this._logoFailedUrls.add(url);
+            return;
+        }
         fetch(url).then(async (resp) => {
+            if (!resp || typeof (resp as any).blob !== 'function') {
+                this._logoFailedUrls.add(url);
+                console.log(`${TAG} _loadLogoInto | FALLBACK_UNSUPPORTED url_suffix="${url.substring(url.length - 24)}" failed_count=${this._logoFailedUrls.size}`);
+                return;
+            }
             if (!resp.ok) {
-                console.log(`${TAG} _loadLogoInto | FALLBACK_FETCH_ERR url_suffix="${url.substring(url.length - 24)}" status=${resp.status}`);
+                this._logoFailedUrls.add(url);
+                console.log(`${TAG} _loadLogoInto | FALLBACK_FETCH_ERR url_suffix="${url.substring(url.length - 24)}" status=${resp.status} failed_count=${this._logoFailedUrls.size}`);
                 return;
             }
             let blob: Blob;
             try {
                 blob = await resp.blob();
             } catch (e) {
+                this._logoFailedUrls.add(url);
                 console.log(`${TAG} _loadLogoInto | FALLBACK_BLOB_ERR url_suffix="${url.substring(url.length - 24)}" error=${e}`);
                 return;
             }
@@ -3895,6 +4313,14 @@ export class AppUI extends Component {
     private _onStatus(message: string): void {
         if (this._landingPanel.active && this._landingStatus) this._landingStatus.string = message;
         if (this._homePanel.active && this._homeStatus) this._homeStatus.string = message;
+        // Block 8 — show signing overlay on any MWA sign-path status. Auto-hides
+        // when we see a done-ish signal.
+        const lower = message.toLowerCase();
+        if (lower.startsWith('signing') || lower.startsWith('signing and sending')) {
+            this._showSigningOverlay(message);
+        } else if (lower.startsWith('sent!') || lower.startsWith('transaction signed') || lower.includes('sign failed') || lower.includes('disconnect')) {
+            this._hideSigningOverlay();
+        }
     }
 
     private _setLandingEnabled(enabled: boolean): void {
@@ -4293,13 +4719,7 @@ export class AppUI extends Component {
         if (this._waitingPanel) this._waitingPanel.active = false;
         this._tokenDuelPanel.active = true;
         this._stopForceSettleWatch();
-        // Part 10 Bundle 1: close receipt session on any path that leaves
-        // the waiting state. If we cancel/refund or fall out to paper, the
-        // backend session is no longer useful.
-        if (this._receiptSession && !this._useVerifiedPath) {
-            this._receiptSession.close();
-            this._receiptSession = null;
-        }
+        // ReceiptSession cleanup removed — no session to close on betting-duel.
         console.log(`${TAG} _hideWaitingPanel | DONE`);
     }
 
@@ -4661,10 +5081,12 @@ export class AppUI extends Component {
 
         if (placement === 0) {
             // 1st place: full celebration — scale-from-0 + bounce + 360° spin.
+            // Peak scale dropped 1.4 → 1.15 so the trophy stays inside its
+            // 200×100 box and doesn't overshoot into neighboring cards.
             tween(trophyN)
-                .to(0.3, { scale: new Vec3(1.4, 1.4, 1) }, { easing: 'backOut' })
+                .to(0.3, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'backOut' })
                 .to(0.2, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'cubicIn' })
-                .to(0.1, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'cubicOut' })
+                .to(0.1, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'cubicOut' })
                 .to(0.1, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'cubicIn' })
                 .start();
             tween(trophyN)
@@ -4778,6 +5200,20 @@ export class AppUI extends Component {
         console.log(`${TAG} _onPostMatchAgain | RE_OPEN_PICKER`);
     }
 
+    /**
+     * betting-duel Block 6: Play Again with the same squad + same picker
+     * settings. Bypasses ModePicker → goes straight to countdown → race.
+     */
+    private _onPostMatchSameSquad(): void {
+        if (this._postMatchPanel) this._postMatchPanel.active = false;
+        this._tokenDuelPanel.active = true;
+        // Reuse existing picker state — wager, mode, window, track are all
+        // still set from the last run. Just kick onStartGame directly.
+        console.log(`${TAG} _onPostMatchSameSquad | SKIP_PICKER mode=${this._pickerSelectedMode} wager_idx=${this._pickerSelectedWagerIndex} window=${this._pickerSelectedWindow} track=${this._pickerSelectedTrack}`);
+        // Defer by one frame so the panel-hide tween completes cleanly.
+        setTimeout(() => this._onStartGame(), 50);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  SESSION D PART 2 — Mode picker handlers
     // ═══════════════════════════════════════════════════════════════
@@ -4859,6 +5295,17 @@ export class AppUI extends Component {
                     return;
                 }
                 this._activeRealMatchPda = joinResult.matchPda;
+                // betting-duel live opponent delta: publish this player's
+                // 3 squad mints to the backend so the other client can
+                // subscribe + compute our live delta during the race.
+                // Fire-and-forget — a missing backend shouldn't block join.
+                const squadMints = this._squad.slots
+                    .map((s) => s?.address ?? '')
+                    .filter((m) => m.length >= 32);
+                if (squadMints.length === 3 && MWAManager.instance?.connectedPubkey) {
+                    const { publishSquadToBackend } = await import('../../token-duel/scripts/SpectatorRpc');
+                    void publishSquadToBackend(joinResult.matchPda, MWAManager.instance.connectedPubkey, squadMints);
+                }
                 const required = (MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone).requiredPlayers;
                 if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Match ${joinResult.matchPda.substring(0, 8)}… · waiting for opponents`;
                 if (this._waitingProgressLabel) this._waitingProgressLabel.string = `1/${required} players · 0:00 / 2:00`;
@@ -4885,7 +5332,11 @@ export class AppUI extends Component {
             return;
         }
 
-        // Paper: close picker → flash WaitingPanel briefly → reveal stake cluster.
+        // Paper: close picker → flash WaitingPanel briefly → launch race directly.
+        // betting-duel: no more legacy stake-cluster commit UI. The match is
+        // fully determined by squad + wager + mode + window + track and starts
+        // as soon as the picker closes. `_onStartGame` handles countdown →
+        // PortfolioRace → settlement.
         if (this._modePickerOverlay) this._modePickerOverlay.active = false;
         this._selectedStakeLamports = BigInt(wager);
         const solVal = wager / 1_000_000_000;
@@ -4899,13 +5350,10 @@ export class AppUI extends Component {
             status: `Paper match · ${modePaperDef.requiredPlayers - 1} bot opponent${modePaperDef.requiredPlayers > 2 ? 's' : ''}`,
             requiredPlayers: modePaperDef.requiredPlayers,
         });
-        // Auto-advance to stake cluster after a short pause so the waiting
-        // panel is visible (UX feedback that something happened).
         setTimeout(() => {
             this._hideWaitingPanel();
-            this._setStakeClusterVisible(true);
-            this._refreshSquadActionButtons();
-            showToast(`Paper 1v1 · ${solVal.toFixed(3)} SOL — tap Commit to start`);
+            console.log(`${TAG} _onPickerStart | PAPER_LAUNCH squad_filled=${this._squad.filled} wager=${solVal}`);
+            this._onStartGame();
         }, 600);
     }
 
@@ -5101,21 +5549,7 @@ export class AppUI extends Component {
             return false;
         }
 
-        // Part 10 Bundle 1: attempt verified path first.
-        if (this._useVerifiedPath && this._receiptSession) {
-            const receipt = await this._receiptSession.finalize(height);
-            if (receipt) {
-                const okVerified = await this._submitSettleMatchVerified(matchState, height, receipt, mwa);
-                if (okVerified) return true;
-                console.log(`${TAG} _submitSettleMatch | verified path submit FAILED — falling back to legacy`);
-                this._lastMatchUnverifiedReason = 'verified tx rejected on-chain';
-            } else {
-                console.log(`${TAG} _submitSettleMatch | finalize() returned null — falling back to legacy. reason="${this._receiptSession.lastReason}"`);
-                this._lastMatchUnverifiedReason = this._receiptSession.lastReason ?? 'receipt timeout';
-            }
-        }
-
-        // Legacy path (Part 9 fallback).
+        // betting-duel: verified path is dead code. Always legacy `settle_match`.
         const bh = await this._rpc.getLatestBlockhash('confirmed');
         if (!bh) { console.log(`${TAG} _submitSettleMatch | NO_BLOCKHASH`); return false; }
         const tx = buildSettleMatchTxFor({
@@ -5289,10 +5723,9 @@ export class AppUI extends Component {
                     : new Color(28, 34, 48, 255);
             }
         }
-        // Wager tint. Part 11 D2: 6 chips, scene order ≠ on-chain tier index.
-        // wagerKeys[i] corresponds to tier sceneToTierIdx[i].
-        const wagerKeys = ['0001', '001', '005', '01', '025', '05'];
-        const sceneToTierIdx = [5, 0, 1, 2, 3, 4];
+        // Wager tint. betting-duel: 8 chips. wagerKeys[i] → tier sceneToTierIdx[i].
+        const wagerKeys = ['0001', '001', '005', '01', '025', '05', '1', '5'];
+        const sceneToTierIdx = [5, 0, 1, 2, 3, 4, 6, 7];
         for (let w = 0; w < wagerKeys.length; w++) {
             const btn = this._pickerWagerButtons.get(wagerKeys[w]);
             if (!btn) continue;
@@ -5318,6 +5751,71 @@ export class AppUI extends Component {
             const label = `${modeLabel} · ${WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex]} · ${windowLabel} · ${this._pickerSelectedTrack === 'paper' ? 'Paper' : 'Real'}`;
             this._pickerStatusLabel.string = label;
         }
+        if (this._pickerWagerReadout) {
+            this._pickerWagerReadout.string = `Wager: ${WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex]} · tap Start to confirm`;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  betting-duel polish — Wager control row (TokenDuelPanel bottom)
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Refresh the wager value button label + start button enabled state. */
+    private _refreshWagerControlRow(): void {
+        const label = WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex] ?? '0.05 SOL';
+        if (this._wagerValueLabel) this._wagerValueLabel.string = `💰 ${label}  ▾`;
+        const filled = this._squad.filled;
+        const ready = filled === 3;
+        if (this._wagerStartButton) {
+            this._wagerStartButton.interactable = ready;
+            if (this._wagerStartLabel) {
+                this._wagerStartLabel.string = ready ? '▶ Start Match' : `Pick ${3 - filled} more`;
+            }
+        }
+        if (this._wagerHintLabel) {
+            this._wagerHintLabel.string = ready
+                ? `Ready · ${label} · tap Start to launch`
+                : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
+        }
+    }
+
+    /** Open/close the upward wager tier dropdown. */
+    private _onWagerValueTap(): void {
+        if (!this._wagerDropdown) return;
+        const open = !this._wagerDropdown.active;
+        this._wagerDropdown.active = open;
+        console.log(`${TAG} _onWagerValueTap | open=${open} selected_idx=${this._pickerSelectedWagerIndex}`);
+        this._syncBackdrop();
+    }
+
+    /** User picked a tier from the dropdown. */
+    private _onWagerRowTap(dropdownIdx: number): void {
+        // Dropdown displays tiers in WAGER_TIERS_LABELS order (same as on-chain WAGER_TIERS_LAMPORTS indices 0..7).
+        const idx = dropdownIdx;
+        if (idx < 0 || idx >= WAGER_TIERS_LAMPORTS.length) return;
+        this._pickerSelectedWagerIndex = idx;
+        console.log(`${TAG} _onWagerRowTap | idx=${idx} lamports=${WAGER_TIERS_LAMPORTS[idx]} label=${WAGER_TIERS_LABELS[idx]}`);
+        if (this._wagerDropdown) this._wagerDropdown.active = false;
+        this._refreshWagerControlRow();
+        this._refreshModePickerUi();
+        this._syncBackdrop();
+    }
+
+    /** User tapped the Start Match button — open ModePicker for mode/window/track confirmation. */
+    private _onWagerStartTap(): void {
+        const filled = this._squad.filled;
+        if (filled !== 3) {
+            showToast(`Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`);
+            console.log(`${TAG} _onWagerStartTap | NOT_READY filled=${filled}/3`);
+            return;
+        }
+        if (this._wagerDropdown) this._wagerDropdown.active = false;
+        this._syncBackdrop();
+        console.log(`${TAG} _onWagerStartTap | OPEN_PICKER wager_idx=${this._pickerSelectedWagerIndex}`);
+        if (this._modePickerOverlay) {
+            this._modePickerOverlay.active = true;
+            this._refreshModePickerUi();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -5330,7 +5828,8 @@ export class AppUI extends Component {
             (this._feedTabDropdownPopover && this._feedTabDropdownPopover.active) ||
             (this._minLiqPopoverNode && this._minLiqPopoverNode.active) ||
             (this._columnsPopoverNode && this._columnsPopoverNode.active) ||
-            (this._searchPopoverNode && this._searchPopoverNode.active)
+            (this._searchPopoverNode && this._searchPopoverNode.active) ||
+            (this._wagerDropdown && this._wagerDropdown.active)
         );
     }
 
@@ -5347,6 +5846,7 @@ export class AppUI extends Component {
         if (this._minLiqPopoverNode) this._minLiqPopoverNode.active = false;
         if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
         if (this._searchPopoverNode) this._searchPopoverNode.active = false;
+        if (this._wagerDropdown) this._wagerDropdown.active = false;
         this._syncBackdrop();
     }
 
@@ -5388,13 +5888,21 @@ export class AppUI extends Component {
             'StartGameButton',
             'ClaimPayoutButton',
             'GameOverLabel',
+            // betting-duel polish: Holding1/2/3Label live at x=0 y=-400 on top
+            // of the center squad slot. Legacy `_renderHoldings` repopulates
+            // strings ("SOL,---,---") and flips them visible, bleeding
+            // through the squad UI. Force-hide + stop the renderer (below).
+            'Holding1Label', 'Holding2Label', 'Holding3Label',
         ];
         let hidden = 0;
         for (const name of ids) {
             const n = this._tokenDuelPanel.getChildByName(name);
             if (n && n.active) { n.active = false; hidden++; }
         }
-        console.log(`${TAG} _hideLegacyBettingDuelNodes | DONE hidden=${hidden}/${ids.length}`);
+        // Empty the binding array so `_renderHoldings` becomes a no-op on
+        // this branch without losing back-compat with stack-jump master.
+        this._holdingLabels = [];
+        console.log(`${TAG} _hideLegacyBettingDuelNodes | DONE hidden=${hidden}/${ids.length} holding_labels_cleared=true`);
     }
 
     /**
@@ -5542,7 +6050,11 @@ export class AppUI extends Component {
     private async _onOpenLeaderboardClick(): Promise<void> {
         if (!this._leaderboardPanel) return;
         console.log(`${TAG} _onOpenLeaderboardClick | OPEN mode=${this._lbFilterMode}`);
-        this._tokenDuelPanel.active = false;
+        // betting-duel polish: force-hide every other top-level panel so no
+        // stale text (e.g. "Token Duel" title) bleeds behind the leaderboard
+        // rows on device. `_setActivePanel` only knows about landing/home/
+        // tokenDuel; this covers the full set.
+        this._hideAllTopLevelPanelsExcept('leaderboard');
         this._leaderboardPanel.active = true;
         this._refreshLeaderboardTabTints();
         if (this._lbFilterMode === 4) {
@@ -6620,6 +7132,15 @@ export class AppUI extends Component {
     private async _fetchTournamentHostOnce(): Promise<void> {
         if (this._tournamentHostFetched) return;
         this._tournamentHostFetched = true;
+        // betting-duel polish: the default RECEIPT_BACKEND_URL is
+        // `http://10.0.2.2:3000` which only resolves inside the Android
+        // emulator. On real devices the fetch throws and spams logs every
+        // Home load. Gate the fetch so real-device users see one clean
+        // "skipping tournament host fetch" line and nothing more.
+        if (!RECEIPT_BACKEND_URL || RECEIPT_BACKEND_URL.includes('10.0.2.2')) {
+            console.log(`${TAG} _fetchTournamentHostOnce | SKIP url=${RECEIPT_BACKEND_URL || '(unset)'} — set globalThis.TD_RECEIPT_URL to enable tournaments`);
+            return;
+        }
         try {
             const url = `${RECEIPT_BACKEND_URL}/tournaments/host`;
             const res = await fetch(url, { headers: { accept: 'application/json' } });
@@ -6726,6 +7247,13 @@ export class AppUI extends Component {
      * a top-level navigation target.
      */
     private _onOpenSpectator(matchPda: string): void {
+        // betting-duel Block 9: spectator panel was designed around stack-jump
+        // block-drop events. On betting-duel, races are deterministic from
+        // entry prices — there's nothing interesting to watch mid-race.
+        // Defer a proper delta-based spectator view to a later phase.
+        showToast('Spectator view coming soon');
+        console.log(`${TAG} _onOpenSpectator | GATED (betting-duel) match=${matchPda.slice(0, 8)}`);
+        return;
         if (!this._spectatorPanel) {
             showToast('Spectator not available — regenerate scene');
             return;
@@ -7074,15 +7602,6 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════
     //  Part 9 — First-run tutorial overlay
     // ═══════════════════════════════════════════════════════════════
-
-    /** Returns the onBeforeFirstBlock hook passed to TokenDuelGame. */
-    private _makeTutorialHook(): (() => Promise<void>) | undefined {
-        if (this._tutorialHasBeenSeen()) return undefined;
-        return () => new Promise<void>((resolve) => {
-            this._tutorialDismissed = resolve;
-            this._showTutorial();
-        });
-    }
 
     private _tutorialHasBeenSeen(): boolean {
         try {
