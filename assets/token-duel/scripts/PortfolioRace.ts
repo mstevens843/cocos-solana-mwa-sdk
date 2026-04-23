@@ -83,34 +83,39 @@ export class PortfolioRace {
         this._mintKeys = this._collectMintKeys(this._opts.tokens);
         console.log(`${TAG} start | tokens=${this._opts.tokens.length} mints=${this._mintKeys.length} windowMs=${this._opts.windowMs}`);
 
-        // 1. Fetch entry prices from Birdeye, then merge in fallback prices
-        // for any mint Birdeye didn't index. Equal-weighted avg ignores
-        // unresolved tokens, so if BOTH sources miss a mint it just gets
-        // dropped from the portfolio (prevents a single unlisted mint from
-        // tanking the whole match with 0%).
-        let live: Record<string, number>;
-        try {
-            live = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
-        } catch (e: any) {
-            console.log(`${TAG} start | ENTRY_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — proceeding with fallback only`);
-            live = {};
-        }
-        const fallback = this._opts.fallbackEntryPrices ?? {};
-        const merged: Record<string, number> = {};
-        let liveHits = 0;
-        let fallbackHits = 0;
-        for (const mint of this._mintKeys) {
-            if (Number.isFinite(live[mint]) && live[mint] > 0) {
-                merged[mint] = live[mint];
-                liveHits++;
-            } else if (Number.isFinite(fallback[mint]) && fallback[mint] > 0) {
-                merged[mint] = fallback[mint];
-                fallbackHits++;
+        // 1. Fetch entry prices at RACE START — NOT at squad-pick time.
+        // Fairness invariant: entry = spot price in the moment the race begins,
+        // never the cached feed price from when the token was added to the
+        // squad. If Birdeye's /defi/multi_price returns partial data (common
+        // for just-launched tokens), retry up to 3x with 500ms backoff.
+        // After retries, any still-missing mint is DROPPED — it contributes
+        // weight 0 to the equal-weighted portfolio delta. Never re-use the
+        // squad's `slot.priceUsd` as entry; doing so would lock in pre-race
+        // gains (the +10000% bug). `fallbackEntryPrices` option is kept on
+        // the interface for back-compat but is intentionally unread here.
+        const live: Record<string, number> = {};
+        let missing: string[] = this._mintKeys.slice();
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 0; attempt < MAX_ATTEMPTS && missing.length > 0; attempt++) {
+            if (attempt > 0) await new Promise((r) => setTimeout(r, 500));
+            try {
+                const res = await this._opts.priceFeed.getSpotPrices(missing);
+                for (const m of missing) {
+                    const v = res[m];
+                    if (Number.isFinite(v) && v > 0) live[m] = v;
+                }
+            } catch (e: any) {
+                console.log(`${TAG} start | entry_fetch attempt=${attempt + 1} ERROR error=${e?.message ?? e}`);
             }
+            missing = this._mintKeys.filter((m) => !(m in live));
+            console.log(`${TAG} start | entry_fetch attempt=${attempt + 1} resolved=${Object.keys(live).length}/${this._mintKeys.length} missing=[${missing.map((m) => m.slice(0, 4)).join(',')}]`);
         }
-        this._entryPrices = merged;
+        this._entryPrices = live;
         const resolvedEntries = Object.keys(this._entryPrices).length;
-        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} (live=${liveHits} fallback=${fallbackHits}) sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
+        if (missing.length > 0) {
+            console.log(`${TAG} start | ENTRY_PRICES_DROPPED count=${missing.length} mints=[${missing.map((m) => m.slice(0, 4)).join(',')}] — racing with ${resolvedEntries}/${this._mintKeys.length} tokens (stale-fallback path removed, see plan)`);
+        }
+        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
         if (resolvedEntries === 0) {
             console.log(`${TAG} start | NO_ENTRY_PRICES — aborting race, emitting 0% delta`);
             this._completeOnce(0);

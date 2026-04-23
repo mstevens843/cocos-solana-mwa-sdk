@@ -113,6 +113,16 @@ export const WAGER_TIERS_LABELS: string[] = [
     '5 SOL',
 ];
 
+/**
+ * WagerDropdownRow_N display index → on-chain tier index.
+ * The dropdown renders tiers in ascending $$ order with INTRO pinned to the
+ * bottom (user preference), while the on-chain tier index for INTRO remains
+ * 5 for wire-compat. `AppUI._onWagerRowTap` uses this lookup.
+ * Display order:  0.01 / 0.05 / 0.1 / 0.25 / 0.5 / 1 / 5 / INTRO
+ * On-chain idx :    0  /   1  /  2  /  3   /  4  / 6 / 7 /   5
+ */
+export const WAGER_DISPLAY_TO_TIER: readonly number[] = [0, 1, 2, 3, 4, 6, 7, 5];
+
 /** 3% rake (in basis points). Must match RAKE_BPS in state.rs. */
 export const RAKE_BPS = 300;
 export const BPS_DENOM = 10_000;

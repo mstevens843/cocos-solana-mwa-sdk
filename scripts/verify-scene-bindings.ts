@@ -149,6 +149,10 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     // ── betting-duel round-3 polish — HelpButton + Opponent squad symbols ──
     { name: 'HelpButton',             components: ['cc.Button'] },
     { name: 'OpponentSymbolsLabel',   components: ['cc.Label'] },
+    // ── betting-duel round-4 — Paper N-bot leaderboard strip (4p / 8p) ──
+    { name: 'RaceOpponentStrip',      components: ['cc.UITransform'] },
+    { name: 'RaceOpponentRow_0',      components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'RaceOpponentRow_6',      components: ['cc.UITransform', 'cc.Sprite'] },
 
     // ── Part 11 D3 — WaitingPanel streak banner ──
     { name: 'WaitingStreakBanner',    components: ['cc.Label'] },

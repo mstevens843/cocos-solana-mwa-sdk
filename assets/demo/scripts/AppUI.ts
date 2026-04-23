@@ -26,7 +26,7 @@ import { Watchlist } from '../../token-duel/scripts/Watchlist';
 import { renderCandles, lookbackFor } from '../../token-duel/scripts/CandlestickChart';
 import { Stats } from '../../token-duel/scripts/Stats';
 import { runPaperBotMatch, resolveRealMatchAction, waitForOpponent, waitForSettlement, buildSettleMatchTxFor, buildForceSettleTxFor, joinOrCreateWithRetry } from '../../token-duel/scripts/Matchmaker';
-import { WAGER_TIERS_LAMPORTS, WAGER_TIERS_LABELS, MODES, TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from '../../token-duel/scripts/ModeDefs';
+import { WAGER_TIERS_LAMPORTS, WAGER_TIERS_LABELS, WAGER_DISPLAY_TO_TIER, MODES, TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from '../../token-duel/scripts/ModeDefs';
 import { fetchMatchHistoryPage, MatchHistoryEntry } from '../../token-duel/scripts/MatchHistoryRpc';
 import { MatchState } from '../../token-duel/scripts/MatchRpc';
 // ReceiptSession / physics-backend flow removed on betting-duel.
@@ -125,6 +125,15 @@ export class AppUI extends Component {
     private _raceOpponentDelta: Label | null = null;
     private _raceOpponentGap: Label | null = null;
     private _liveSquadBot: import('../../token-duel/scripts/SquadBot').LiveSquadBot | null = null;
+    // 4p / 8p Paper mode — N-1 bots rendered on a compact leaderboard strip.
+    // 1v1 stays on the big `_raceOpponentCard`; this array stays empty then.
+    private _liveSquadBots: import('../../token-duel/scripts/SquadBot').LiveSquadBot[] = [];
+    private _raceOpponentStrip: Node | null = null;
+    private _raceOpponentRows: Node[] = [];
+    private _raceOpponentRowNames: Label[] = [];
+    private _raceOpponentRowSymbols: Label[] = [];
+    private _raceOpponentRowDeltas: Label[] = [];
+    private _raceOpponentRowGaps: Label[] = [];
     // betting-duel live opponent delta (Real track): opponent's squad mints
     // arrive via backend WS; entry prices captured when mints land; delta
     // recomputed on each race tick against opponent's entry prices.
@@ -132,6 +141,10 @@ export class AppUI extends Component {
     private _opponentEntryPrices: Record<string, number> | null = null;
     private _opponentUnsubscribe: (() => void) | null = null;
     private _opponentDeltaPct: number = 0;
+    // One-shot toast flag: if PortfolioRace drops any mint for missing
+    // entry price, we tell the user once per race that their portfolio
+    // shrank. Reset in `_showRacePanel`.
+    private _raceEntryNoticeShown: boolean = false;
     // Block 3 — countdown overlay
     private _countdownOverlay: Node | null = null;
     private _countdownBigLabel: Label | null = null;
@@ -661,7 +674,7 @@ export class AppUI extends Component {
             }
             this._raceCancelButton = this._racePanel.getChildByName('RaceCancelButton')?.getComponent(Button) ?? null;
             this._raceCancelButton?.node.on(Button.EventType.CLICK, () => this._onRaceCancel(), this);
-            // Block 2 — opponent card
+            // Block 2 — opponent card (1v1 big card)
             this._raceOpponentCard = this._racePanel.getChildByName('RaceOpponentCard') ?? null;
             if (this._raceOpponentCard) {
                 this._raceOpponentAvatar  = this._raceOpponentCard.getChildByName('OpponentAvatarLabel')?.getComponent(Label) ?? null;
@@ -670,7 +683,20 @@ export class AppUI extends Component {
                 this._raceOpponentDelta   = this._raceOpponentCard.getChildByName('OpponentDeltaLabel')?.getComponent(Label) ?? null;
                 this._raceOpponentGap     = this._raceOpponentCard.getChildByName('OpponentGapLabel')?.getComponent(Label) ?? null;
             }
-            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard}`);
+            // 4p / 8p Paper — N-bot leaderboard strip (7 rows pre-allocated).
+            this._raceOpponentStrip = this._racePanel.getChildByName('RaceOpponentStrip') ?? null;
+            if (this._raceOpponentStrip) {
+                for (let i = 0; i < 7; i++) {
+                    const row = this._raceOpponentStrip.getChildByName(`RaceOpponentRow_${i}`);
+                    if (!row) continue;
+                    this._raceOpponentRows.push(row);
+                    this._raceOpponentRowNames.push(row.getChildByName('NameLabel')?.getComponent(Label) as Label);
+                    this._raceOpponentRowSymbols.push(row.getChildByName('SymbolsLabel')?.getComponent(Label) as Label);
+                    this._raceOpponentRowDeltas.push(row.getChildByName('DeltaLabel')?.getComponent(Label) as Label);
+                    this._raceOpponentRowGaps.push(row.getChildByName('GapLabel')?.getComponent(Label) as Label);
+                }
+            }
+            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard} opp_strip=${!!this._raceOpponentStrip} opp_rows=${this._raceOpponentRows.length}/7`);
         }
 
         // Phase E: Claim Payout button (revealed on game-over).
@@ -1636,13 +1662,9 @@ export class AppUI extends Component {
         this._setActivePanel('tokenDuel');
         this._resetStakeFlow();
         this._hideLegacyBettingDuelNodes();
-        // betting-duel polish: fire the first-run tutorial now, BEFORE the user
-        // interacts. Previously fired via onBeforeFirstBlock during the race,
-        // which surprised users mid-match. Also always-dismissible via the
-        // top-right `?` HelpButton.
-        if (!this._tutorialHasBeenSeen()) {
-            this._showTutorial();
-        }
+        // betting-duel round-4: tutorial NO LONGER auto-fires — it dulled the
+        // screen every panel open and users found it annoying. Still reachable
+        // on-demand via the top-right `?` HelpButton.
 
         // Phase III — kick off Birdeye feed fetch + balance chip refresh. Both
         // run async; the panel opens instantly and rows populate when ready.
@@ -2366,22 +2388,34 @@ export class AppUI extends Component {
         this._raceLastDeltaSign = 0;
         this._raceTickBindingGapLogged = false;
         this._raceLatestSnapshot = null;
+        this._raceEntryNoticeShown = false;
 
         // Block 2: opponent card — Paper gets a LiveSquadBot, Real hides
         // the card (no WS broadcast path yet; opponent revealed at end).
+        // Round 4: Paper now dispatches on mode.requiredPlayers — 1v1 uses
+        // the big card; 4p/8p use the 7-row leaderboard strip.
         const isPaper = this._pickerSelectedTrack === 'paper';
-        if (this._raceOpponentCard) {
-            this._raceOpponentCard.active = isPaper;
-        }
-        if (isPaper) {
+        const modeDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
+        const botCount = Math.max(0, modeDef.requiredPlayers - 1);
+
+        // Clear prior bot state on every race start.
+        this._liveSquadBot = null;
+        this._liveSquadBots = [];
+        if (this._raceOpponentCard) this._raceOpponentCard.active = false;
+        if (this._raceOpponentStrip) this._raceOpponentStrip.active = false;
+        for (const row of this._raceOpponentRows) row.active = false;
+
+        if (isPaper && botCount === 1) {
+            // 1v1 — big opponent card (unchanged from round 3).
+            if (this._raceOpponentCard) this._raceOpponentCard.active = true;
             const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
-            // Lazy import to avoid circular ref from AppUI top-level.
             if (this._raceOpponentName) this._raceOpponentName.string = 'Bot';
             if (this._raceOpponentAvatar) this._raceOpponentAvatar.string = '🤖';
             if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'picking squad…';
             import('../../token-duel/scripts/SquadBot').then(({ LiveSquadBot }) => {
                 const bot = new LiveSquadBot(windowMs);
                 this._liveSquadBot = bot;
+                this._liveSquadBots = [bot];
                 if (this._priceFeed) {
                     bot.start(this._priceFeed).then(() => {
                         const squad = bot.getSquad();
@@ -2391,6 +2425,35 @@ export class AppUI extends Component {
                         }
                         console.log(`${TAG} _showRacePanel | live_bot ready squad=[${syms.join(',')}]`);
                     }).catch((e) => console.log(`${TAG} _showRacePanel | live_bot_start_error ${e}`));
+                }
+            }).catch((e) => console.log(`${TAG} _showRacePanel | squadbot_import_error ${e}`));
+        } else if (isPaper && botCount > 1) {
+            // 4p / 8p — leaderboard strip with N-1 bots.
+            if (this._raceOpponentStrip) this._raceOpponentStrip.active = true;
+            const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
+            const visibleRows = Math.min(botCount, this._raceOpponentRows.length);
+            for (let i = 0; i < visibleRows; i++) {
+                const row = this._raceOpponentRows[i];
+                if (row) row.active = true;
+                if (this._raceOpponentRowNames[i]) this._raceOpponentRowNames[i].string = `Bot ${i + 1}`;
+                if (this._raceOpponentRowSymbols[i]) this._raceOpponentRowSymbols[i].string = 'picking squad…';
+                if (this._raceOpponentRowDeltas[i]) this._raceOpponentRowDeltas[i].string = '0.00%';
+                if (this._raceOpponentRowGaps[i]) this._raceOpponentRowGaps[i].string = '';
+            }
+            console.log(`${TAG} _showRacePanel | STRIP_MODE mode=${this._pickerSelectedMode} bots=${visibleRows}/${botCount} (truncated=${botCount > visibleRows})`);
+            import('../../token-duel/scripts/SquadBot').then(({ LiveSquadBot }) => {
+                for (let i = 0; i < visibleRows; i++) {
+                    const bot = new LiveSquadBot(windowMs);
+                    this._liveSquadBots.push(bot);
+                    if (!this._priceFeed) continue;
+                    const slot = i; // capture for closure
+                    bot.start(this._priceFeed).then(() => {
+                        const syms = bot.getSquad().map((s) => s.symbol).filter(Boolean);
+                        if (this._raceOpponentRowSymbols[slot]) {
+                            this._raceOpponentRowSymbols[slot].string = syms.length > 0 ? syms.slice(0, 3).join(' · ') : '— · — · —';
+                        }
+                        console.log(`${TAG} _showRacePanel | live_bot[${slot}] ready squad=[${syms.join(',')}]`);
+                    }).catch((e) => console.log(`${TAG} _showRacePanel | live_bot[${slot}]_start_error ${e}`));
                 }
             }).catch((e) => console.log(`${TAG} _showRacePanel | squadbot_import_error ${e}`));
         } else {
@@ -2552,6 +2615,11 @@ export class AppUI extends Component {
         if (this._opponentUnsubscribe) { try { this._opponentUnsubscribe(); } catch (_) {} this._opponentUnsubscribe = null; }
         this._opponentMints = null;
         this._opponentEntryPrices = null;
+        // Round 4: clear Paper N-bot state.
+        this._liveSquadBot = null;
+        this._liveSquadBots = [];
+        if (this._raceOpponentStrip) this._raceOpponentStrip.active = false;
+        for (const row of this._raceOpponentRows) row.active = false;
         this._racePanel.active = false;
         console.log(`${TAG} _hideRacePanel | HIDDEN last_snapshot_portfolio=${this._raceLatestSnapshot?.portfolioDeltaPct?.toFixed(2) ?? 'null'}%`);
     }
@@ -2561,6 +2629,15 @@ export class AppUI extends Component {
         if (!this._raceTickBindingGapLogged && (!this._raceCountdownLabel || !this._raceHeroDeltaLabel)) {
             this._raceTickBindingGapLogged = true;
             console.log(`${TAG} _onRaceTick | TICK_BINDING_GAP countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} hero_sub=${!!this._raceHeroSubtitleLabel} cards=${this._raceTokenCards.length}`);
+        }
+        // One-shot notice: PortfolioRace dropped any mint whose entry price
+        // couldn't be resolved at race start (after 3 retries). Equal-weight
+        // delta silently ignores the dropped mint; tell the user once.
+        if (!this._raceEntryNoticeShown && snap.resolvedCount > 0 && snap.resolvedCount < this._raceActiveHoldings.length) {
+            const dropped = this._raceActiveHoldings.length - snap.resolvedCount;
+            showToast(`${dropped} token${dropped > 1 ? 's' : ''} not indexed — racing with ${snap.resolvedCount}/${this._raceActiveHoldings.length}`);
+            this._raceEntryNoticeShown = true;
+            console.log(`${TAG} _onRaceTick | ENTRY_DROP_NOTICE dropped=${dropped} resolved=${snap.resolvedCount}/${this._raceActiveHoldings.length}`);
         }
         // Countdown
         if (this._raceCountdownLabel) {
@@ -2610,7 +2687,10 @@ export class AppUI extends Component {
         if (curSign !== 0) this._raceLastDeltaSign = curSign;
 
         // Block 2: opponent card (Paper only — live bot delta).
-        if (this._liveSquadBot && this._pickerSelectedTrack === 'paper' && this._raceOpponentCard?.active) {
+        // Round 4: dispatch on big-card vs strip — big card for 1v1, strip
+        // for 4p/8p with N-1 bots iterated.
+        if (this._pickerSelectedTrack === 'paper' && this._raceOpponentCard?.active && this._liveSquadBot) {
+            // 1v1 big card (unchanged).
             const botSnap = this._liveSquadBot.deltaAt(snap.elapsedMs);
             if (this._raceOpponentDelta) {
                 const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
@@ -2629,6 +2709,33 @@ export class AppUI extends Component {
                 } else {
                     this._raceOpponentGap.string = 'neck and neck';
                     this._raceOpponentGap.color = new Color(200, 200, 210);
+                }
+            }
+        } else if (this._pickerSelectedTrack === 'paper' && this._raceOpponentStrip?.active && this._liveSquadBots.length > 1) {
+            // 4p / 8p leaderboard strip — update each row from its LiveSquadBot.
+            const neutral = new Color(140, 150, 170);
+            for (let i = 0; i < this._liveSquadBots.length && i < this._raceOpponentRows.length; i++) {
+                const botSnap = this._liveSquadBots[i].deltaAt(snap.elapsedMs);
+                const deltaLbl = this._raceOpponentRowDeltas[i];
+                const gapLbl = this._raceOpponentRowGaps[i];
+                if (deltaLbl) {
+                    const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
+                    deltaLbl.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
+                    deltaLbl.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
+                }
+                if (gapLbl) {
+                    const gap = deltaPct - botSnap.portfolioDeltaPct;
+                    const abs = Math.abs(gap).toFixed(2);
+                    if (gap > 0.05) {
+                        gapLbl.string = `+${abs}pp`;
+                        gapLbl.color = green;
+                    } else if (gap < -0.05) {
+                        gapLbl.string = `-${abs}pp`;
+                        gapLbl.color = red;
+                    } else {
+                        gapLbl.string = '≈';
+                        gapLbl.color = neutral;
+                    }
                 }
             }
         }
@@ -5790,11 +5897,12 @@ export class AppUI extends Component {
 
     /** User picked a tier from the dropdown. */
     private _onWagerRowTap(dropdownIdx: number): void {
-        // Dropdown displays tiers in WAGER_TIERS_LABELS order (same as on-chain WAGER_TIERS_LAMPORTS indices 0..7).
-        const idx = dropdownIdx;
+        // Dropdown row order is UX-driven (ascending $$ then INTRO last);
+        // on-chain tier index is separate. Map via WAGER_DISPLAY_TO_TIER.
+        const idx = WAGER_DISPLAY_TO_TIER[dropdownIdx] ?? dropdownIdx;
         if (idx < 0 || idx >= WAGER_TIERS_LAMPORTS.length) return;
         this._pickerSelectedWagerIndex = idx;
-        console.log(`${TAG} _onWagerRowTap | idx=${idx} lamports=${WAGER_TIERS_LAMPORTS[idx]} label=${WAGER_TIERS_LABELS[idx]}`);
+        console.log(`${TAG} _onWagerRowTap | row=${dropdownIdx} tier_idx=${idx} lamports=${WAGER_TIERS_LAMPORTS[idx]} label=${WAGER_TIERS_LABELS[idx]}`);
         if (this._wagerDropdown) this._wagerDropdown.active = false;
         this._refreshWagerControlRow();
         this._refreshModePickerUi();

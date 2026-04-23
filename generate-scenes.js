@@ -468,13 +468,18 @@ function generate() {
     // ─────────────────────────────────────────────────────────────────
 
     // Back link — tiny top-left, replaces the big y=-380 slab.
-    const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18, 618, 110, 28, 160, 170, 190);
-    sb.e[tdBackLink]._lpos = v3(-280, 618, 0);
+    // betting-duel round-4 polish: FIXED_WIDTH viewport spread for
+    // TokenDuelPanel. Device reports visible_h=1602 but content was packed
+    // into 1280. Y range widened from [-625,+618] → [-740,+720] so the top
+    // chrome and bottom status stretch edge-to-edge on device, killing the
+    // "shadow frame" bands the user kept seeing.
+    const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18, 720, 110, 28, 160, 170, 190);
+    sb.e[tdBackLink]._lpos = v3(-280, 720, 0);
     const tdBackLinkL = sb.e[tdBackLink]._components[1].__id__;
     sb.e[tdBackLinkL]._horizontalAlign = 0; // left-aligned
     // Invisible hit-area Button covers the label region so taps still fire the back handler.
     const tdBackBtn = sb.e.length;
-    sb.node('BackButton', tdN, [], [], v3(-280, 618, 0));
+    sb.node('BackButton', tdN, [], [], v3(-280, 720, 0));
     const tdBackBtnUT = sb.ut(tdBackBtn, 140, 36);
     const tdBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -487,33 +492,30 @@ function generate() {
     sb.e[tdBackBtn]._components = [rf(tdBackBtnUT), rf(tdBackBtnBtn)];
 
     // Title — gold, center top. Slightly smaller than old 44pt for better balance.
-    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32, 608, 280, 44, 218, 165, 32);
+    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32, 700, 280, 44, 218, 165, 32);
 
     // Session 14 C: Leaderboard + Portfolio entry buttons.
     // Compact icons in the top bar between back link and title area.
-    const tdLeaderboardBtn = mkBtnXY(sb, 'OpenLeaderboardButton', tdN, '🏆', -180, 608, 48, 40, 28, 34, 48);
-    const tdPortfolioBtn   = mkBtnXY(sb, 'OpenPortfolioButton',   tdN, '👤', -128, 608, 48, 40, 28, 34, 48);
-    // Session D Part 8: Settings gear — same icon row.
-    const tdSettingsBtn    = mkBtnXY(sb, 'OpenSettingsButton',    tdN, '⚙', -76,  608, 48, 40, 28, 34, 48);
-    // Part 10 Bundle 2: Presets (📚) + Suggest (💡) icon buttons on the top bar.
-    const tdPresetsBtn     = mkBtnXY(sb, 'OpenSquadPresetsButton', tdN, '📚', -24,  608, 48, 40, 28, 34, 48);
-    const tdSuggestBtn     = mkBtnXY(sb, 'SuggestSquadButton',     tdN, '💡',  28,  608, 48, 40, 28, 34, 48);
-    // betting-duel polish: `?` replays the first-run tutorial on demand.
-    const tdHelpBtn        = mkBtnXY(sb, 'HelpButton',              tdN, '?',   80,  608, 48, 40, 28, 34, 48);
+    const tdLeaderboardBtn = mkBtnXY(sb, 'OpenLeaderboardButton', tdN, '🏆', -180, 700, 48, 40, 28, 34, 48);
+    const tdPortfolioBtn   = mkBtnXY(sb, 'OpenPortfolioButton',   tdN, '👤', -128, 700, 48, 40, 28, 34, 48);
+    const tdSettingsBtn    = mkBtnXY(sb, 'OpenSettingsButton',    tdN, '⚙', -76,  700, 48, 40, 28, 34, 48);
+    const tdPresetsBtn     = mkBtnXY(sb, 'OpenSquadPresetsButton', tdN, '📚', -24,  700, 48, 40, 28, 34, 48);
+    const tdSuggestBtn     = mkBtnXY(sb, 'SuggestSquadButton',     tdN, '💡',  28,  700, 48, 40, 28, 34, 48);
+    const tdHelpBtn        = mkBtnXY(sb, 'HelpButton',              tdN, '?',   80,  700, 48, 40, 28, 34, 48);
 
     // Balance chip — muted emerald, top-right.
-    const tdBalance = mkLabel(sb, 'BalanceChipLabel', tdN, '◼ 0.0000 SOL', 17, 608, 180, 32, 140, 220, 180);
-    sb.e[tdBalance]._lpos = v3(230, 608, 0);
+    const tdBalance = mkLabel(sb, 'BalanceChipLabel', tdN, '◼ 0.0000 SOL', 17, 700, 180, 32, 140, 220, 180);
+    sb.e[tdBalance]._lpos = v3(230, 700, 0);
     const tdBalanceL = sb.e[tdBalance]._components[1].__id__;
     sb.e[tdBalanceL]._horizontalAlign = 2; // right-aligned
 
     // Search input — flat chrome bg, no clear button (we'll restyle it as a subtle × inside).
-    const tdSearch = mkEditBox(sb, 'SearchEditBox', tdN, 'Search token by symbol or mint…', 0, 550, 620, 46, 17);
-    const tdSearchClear = mkBtnXY(sb, 'SearchClearButton', tdN, '×', 285, 550, 40, 40, 45, 55, 72);
+    const tdSearch = mkEditBox(sb, 'SearchEditBox', tdN, 'Search token by symbol or mint…', 0, 640, 620, 46, 17);
+    const tdSearchClear = mkBtnXY(sb, 'SearchClearButton', tdN, '×', 285, 640, 40, 40, 45, 55, 72);
     sb.e[tdSearchClear]._active = false;
 
     // Header-chrome row: dropdown · watchlist star · live indicator — single horizontal band.
-    const tabY = 496;
+    const tabY = 590;
     const tdTabDropdown = mkBtnXY(sb, 'FeedTabDropdownButton', tdN, '⚡ New Pairs  ▾', -200, tabY, 240, 40, 28, 34, 48);
     // Session 14 A3: widened from 140→170 so "+ N to Watchlist" never truncates.
     const tdWatchStar   = mkBtnXY(sb, 'WatchlistStarButton',   tdN, '☆ Watchlist',    10, tabY, 170, 38, 28, 34, 48);
@@ -541,7 +543,7 @@ function generate() {
 
     // Session 14 A1: widened chips + gaps + MinLiq dropdown inset so nothing
     // crowds. Columns button pulled in from x=285 → x=250 away from the edge.
-    const chipY = 452;
+    const chipY = 550;
     const chipH = 28;
     const chipGap = 8;
     const sortChipNames  = ['newest',   'liq_desc', 'liq_asc'];
@@ -601,7 +603,7 @@ function generate() {
 
     // Session 12: Column headers row — sticky, directly above the feed.
     // Matches row column x-positions exactly so numbers align under labels.
-    const headerY = 413;
+    const headerY = 505;
     const headerGroupN = sb.e.length;
     sb.node('FeedColumnHeaders', tdN, [], [], v3(0, headerY, 0));
     sb.ut(headerGroupN, 700, 24);
@@ -633,8 +635,8 @@ function generate() {
     const rowGap = 4;
     const rowStride = rowHeight + rowGap;
     const rowW = 680;
-    const feedWinH = 660;
-    const { root: tdFeedSV, content: tdFeedContent, contentUT: tdFeedContentUT } = mkScrollView(sb, 'FeedScrollView', tdN, 0, 70, 700, feedWinH);
+    const feedWinH = 820;
+    const { root: tdFeedSV, content: tdFeedContent, contentUT: tdFeedContentUT } = mkScrollView(sb, 'FeedScrollView', tdN, 0, 30, 700, feedWinH);
     // Size content to fit the full 20-row pool so the ScrollView can scroll.
     sb.e[tdFeedContentUT]._contentSize = sz(rowW, FEED_ROW_LIMIT * rowStride);
 
@@ -791,15 +793,15 @@ function generate() {
 
     // Session 14 B1: Action-button row replaces hero-tile / squad-slot chaos.
     // 3 buttons at y=-295: + Pick | Drop | ▶ Run Squad
-    const actionRowY = -295;
+    const actionRowY = -440;
     const tdSquadPick = mkBtnXY(sb, 'SquadPickButton', tdN, '+ Pick',          -220, actionRowY, 200, 48, 48, 198, 155);
     const tdSquadDrop = mkBtnXY(sb, 'SquadDropButton', tdN, 'Manage Squad',      0, actionRowY, 200, 48, 28, 34, 48);
     const tdSquadRun  = mkBtnXY(sb, 'SquadRunButton',  tdN, '▶ Run Squad',     220, actionRowY, 200, 48, 56, 148, 252);
 
     // Session 14 B1: compact squad chips — small pills below the action row
     // showing current picks. Replace the bulky 200×64 SquadSlot buttons.
-    const squadHeaderY = -360;
-    const squadY = -400;
+    const squadHeaderY = -510;
+    const squadY = -550;
     const tdSquadHeader = mkLabel(sb, 'SquadHeaderLabel', tdN, 'YOUR SQUAD', 11, squadHeaderY, 420, 18, 100, 110, 130);
     const tdSquadHeaderL = sb.e[tdSquadHeader]._components[1].__id__;
     sb.e[tdSquadHeaderL]._spacingX = 1;
@@ -882,7 +884,7 @@ function generate() {
     // Two buttons: tier selector (left, opens dropdown upward) + start match
     // (right). Replaces the force-hidden StakeCommitButton. Legacy stake UI
     // stays in the scene but is force-hidden by AppUI._hideLegacyBettingDuelNodes.
-    const wagerRowY = -475;
+    const wagerRowY = -640;
     const tdWagerValueBtn = mkBtnXY(sb, 'WagerValueButton', tdN, '💰 0.05 SOL  ▾', -180, wagerRowY, 300, 56, 34, 44, 68);
     const tdWagerStartBtn = mkBtnXY(sb, 'WagerStartButton', tdN, '▶ Start Match',   180, wagerRowY, 320, 56, 56, 148, 252);
     // Tiny hint under the row.
@@ -906,7 +908,10 @@ function generate() {
     const dropdownSpr = sb.spr(tdWagerDropdown, 18, 22, 32);
     sb.e[tdWagerDropdown]._components = [rf(dropdownUT), rf(dropdownSpr)];
     sb.e[tdWagerDropdown]._active = false;
-    const wagerLabels = ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL', '0.5 SOL', '0.001 · INTRO', '1 SOL', '5 SOL'];
+    // Display order: ascending $$ then INTRO last (user preference).
+    // AppUI._onWagerRowTap translates dropdown row → on-chain tier index via
+    // WAGER_DISPLAY_TO_TIER in ModeDefs.ts ([0,1,2,3,4,6,7,5]).
+    const wagerLabels = ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL', '0.5 SOL', '1 SOL', '5 SOL', '0.001 · INTRO'];
     const wagerDropdownRows = [];
     for (let i = 0; i < dropdownRowCount; i++) {
         // Row y: top of dropdown content is dropdownH - padding (since anchor bottom).
@@ -1060,6 +1065,55 @@ function generate() {
     sb.lbl(raceOppGapN, '—', 14, 140, 150, 170);
     sb.e[raceOppCard]._children = [rf(raceOppAvatarN), rf(raceOppNameN), rf(raceOppSymsN), rf(raceOppDeltaN), rf(raceOppGapN)];
 
+    // 4p/8p multi-bot leaderboard strip. Used in place of the big opponent
+    // card when mode.requiredPlayers > 2. Pre-allocates 7 compact rows
+    // (4p → rows 0/1/2 active; 8p → 0-6 active). BR10 truncates to top-7.
+    const raceOppStripN = sb.e.length;
+    sb.node('RaceOpponentStrip', racePanelN, [], [raceOppStripN + 1], v3(0, -406, 0));
+    sb.ut(raceOppStripN, 640, 260);
+    sb.e[raceOppStripN]._active = false;
+    const raceOppRowIndices = [];
+    const OPP_ROW_COUNT = 7;
+    const OPP_ROW_STRIDE = 34;
+    const OPP_ROW_TOP_Y = 102; // relative to strip center → first row at strip.y + 102 = -304
+    for (let i = 0; i < OPP_ROW_COUNT; i++) {
+        const ry = OPP_ROW_TOP_Y - i * OPP_ROW_STRIDE;
+        const rowN = sb.e.length;
+        sb.node(`RaceOpponentRow_${i}`, raceOppStripN, [], [rowN + 1, rowN + 2], v3(0, ry, 0));
+        sb.ut(rowN, 640, 30);
+        sb.spr(rowN, 26, 32, 46);
+        // Avatar — bot emoji, small.
+        const avN = sb.e.length;
+        sb.node('AvatarLabel', rowN, [], [avN + 1, avN + 2], v3(-280, 0, 0));
+        sb.ut(avN, 28, 24);
+        sb.lbl(avN, '🤖', 18, 255, 255, 255);
+        // Name — "Bot N".
+        const nmN = sb.e.length;
+        sb.node('NameLabel', rowN, [], [nmN + 1, nmN + 2], v3(-215, 0, 0));
+        sb.ut(nmN, 70, 22);
+        const nmL = sb.lbl(nmN, `Bot ${i + 1}`, 13, 220, 225, 240);
+        sb.e[nmL]._isBold = true;
+        // Symbols — bot's 3 picks.
+        const smN = sb.e.length;
+        sb.node('SymbolsLabel', rowN, [], [smN + 1, smN + 2], v3(-70, 0, 0));
+        sb.ut(smN, 240, 22);
+        sb.lbl(smN, '— · — · —', 12, 160, 170, 190);
+        // Delta — big, colored live.
+        const dtN = sb.e.length;
+        sb.node('DeltaLabel', rowN, [], [dtN + 1, dtN + 2], v3(170, 0, 0));
+        sb.ut(dtN, 100, 26);
+        const dtL = sb.lbl(dtN, '0.00%', 17, 210, 210, 220);
+        sb.e[dtL]._isBold = true;
+        // Gap pp — tiny subtitle.
+        const gpN = sb.e.length;
+        sb.node('GapLabel', rowN, [], [gpN + 1, gpN + 2], v3(265, 0, 0));
+        sb.ut(gpN, 90, 20);
+        sb.lbl(gpN, '', 11, 140, 150, 170);
+        sb.e[rowN]._children = [rf(avN), rf(nmN), rf(smN), rf(dtN), rf(gpN)];
+        raceOppRowIndices.push(rowN);
+    }
+    sb.e[raceOppStripN]._children = raceOppRowIndices.map(rf);
+
     // Forfeit / early-exit button (bottom). Moved up from -615 to give room.
     const raceCancelN = mkBtnXY(sb, 'RaceCancelButton', racePanelN, 'Forfeit', 0, -560, 200, 48, 55, 30, 30);
 
@@ -1067,13 +1121,14 @@ function generate() {
         rf(raceCountdownN), rf(raceHeroN), rf(raceHeroSubN),
         ...raceCardIndices.map(rf),
         rf(raceOppCard),
+        rf(raceOppStripN),
         rf(raceCancelN),
     ];
 
     // Session 12: StatusLabel — muted strip at the very bottom.
     // BackButton moved to top-left as a link (tdBackBtn above); nothing else
     // needs a full-width back slab.
-    const tdStatus = mkLabel(sb, 'StatusLabel', tdN, '', 15, -625, 660, 22, 140, 150, 170);
+    const tdStatus = mkLabel(sb, 'StatusLabel', tdN, '', 15, -740, 660, 22, 140, 150, 170);
 
     // ═══════════════════════════════════════════════════════════════
     // Session D Part 2 — ModePickerOverlay (shown on Run Squad tap)
