@@ -5,7 +5,14 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, tween, Vec3, Tween, Graphics } from 'cc';
+import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources } from 'cc';
+// UX overhaul: Phase 1+2 helpers — central theme, procedural icons, panel
+// transitions, mascot. All runtime-only; no asset deps.
+import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
+import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransitions';
+import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
+import { Palette, themeColor } from '../../token-duel/scripts/Theme';
+import { enhancePrimaryCTA } from '../../token-duel/scripts/ButtonFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -67,6 +74,15 @@ export class AppUI extends Component {
     private _landingPanel: Node = null!;
     private _homePanel: Node = null!;
     private _tokenDuelPanel: Node = null!;
+
+    // UX overhaul Phase 2: procedural mascot on HomePanel.
+    // Bound in start() via addComponent (the component is added at runtime
+    // because the .ts file's UUID isn't known until the editor mints one).
+    private _mascot: MascotController | null = null;
+
+    // UX overhaul Phase 2b: second mascot on PostMatchPanel so celebrate/lose
+    // is visible on the panel the user is looking at. Home mascot keeps idle/think.
+    private _postMatchMascot: MascotController | null = null;
 
     // Landing elements
     private _connectButton: Button = null!;
@@ -145,6 +161,26 @@ export class AppUI extends Component {
     // entry price, we tell the user once per race that their portfolio
     // shrank. Reset in `_showRacePanel`.
     private _raceEntryNoticeShown: boolean = false;
+    // Confetti — pre-bound Graphics refs so match-end doesn't add/remove 12
+    // cc.Graphics components in one frame. See `_bindPostMatchConfetti`.
+    private _confettiBound: boolean = false;
+    private _confettiShapes: IconName[] = [];
+    private _confettiTints: string[] = [];
+    // Stage 4K — streak flame on Home.
+    private _streakFlameContainer: Node | null = null;
+    private _streakFlameIconNode: Node | null = null;
+    private _streakCountLabel: Label | null = null;
+    private _streakRenderedValue: number = -1;  // last rendered streak; -1 = never rendered
+    // Stage 1 game-feel: radial timer ring + vignette + tension helpers.
+    private _raceTimerRing: Graphics | null = null;
+    private _raceTimerPulseNode: Node | null = null;
+    private _raceTimerPulseGraphics: Graphics | null = null;
+    private _screenVignetteNode: Node | null = null;
+    private _screenVignetteGraphics: Graphics | null = null;
+    private _vignetteBaseAlpha: number = 0;
+    private _lastRenderedDeltaPct: number = 0;       // Stage 1B hero-delta tween source
+    private _lastFiveActivated: boolean = false;     // Stage 1F last-5s one-shot
+    private _lastOvertakeSign: number = 0;           // Stage 1E sign(player - bestOpp)
     // Block 3 — countdown overlay
     private _countdownOverlay: Node | null = null;
     private _countdownBigLabel: Label | null = null;
@@ -572,6 +608,43 @@ export class AppUI extends Component {
         this._pubkeyLabel = this._homePanel.getChildByName('PubkeyLabel')?.getComponent(Label)!;
         this._homeStatus = this._homePanel.getChildByName('HomeStatusLabel')?.getComponent(Label)!;
 
+        // Stage 4K — streak flame. Container hidden until UserStats loads and
+        // reports currentStreak > 0. `_updateStreakFlame` is idempotent.
+        this._streakFlameContainer = this._homePanel.getChildByName('StreakFlameContainer') ?? null;
+        if (this._streakFlameContainer) {
+            const iconN = this._streakFlameContainer.getChildByName('StreakFlameIcon');
+            if (iconN) IconLibrary.attach(iconN, 'flame', { size: 28 });
+            this._streakFlameIconNode = iconN ?? null;
+            this._streakCountLabel = this._streakFlameContainer.getChildByName('StreakCountLabel')?.getComponent(Label) ?? null;
+        }
+
+        // UX overhaul Phase 2: bind the procedural mascot. Add the controller
+        // at runtime since the .ts file's UUID isn't baked into the scene.
+        const mascotN = this._homePanel.getChildByName('MascotContainer');
+        if (mascotN) {
+            this._mascot = mascotN.getComponent(MascotController) ?? mascotN.addComponent(MascotController);
+            console.log(`${TAG} start | mascot bound state=idle`);
+        } else {
+            console.log(`${TAG} start | MascotContainer not found — Phase 2 mascot disabled`);
+        }
+
+        // UX overhaul Phase 2b: attach IconBadges to every emoji-stripped scene
+        // label/button. Called after panel bindings so descendants exist.
+        // Badges render as procedural cc.Graphics shapes at first; the Phase 3
+        // load below swaps them for real PNGs once resources finish loading.
+        this._attachStaticIconBadges();
+
+        // UX overhaul Phase 3: load real PNG icons + mascot from
+        // assets/demo/resources/{icons,mascot}/ and re-attach badges so they
+        // render as cc.Sprite instead of procedural Graphics. Async — icons
+        // show procedural for ~100ms until loads complete, then pop to PNG.
+        void this._loadPhase3Art();
+
+        // UX overhaul Phase 2d: tactile polish on the 4 primary CTAs — idle
+        // pulse + press pop + stronger zoomScale. Applied AFTER panels are
+        // bound so nodes exist.
+        this._enhancePrimaryCTAs();
+
         // Belt-and-suspenders: hide stale ReconnectHomeButton if the scene
         // JSON wasn't regenerated after generate-scenes.js removed it.
         const staleReconnect = this._homePanel.getChildByName('ReconnectHomeButton');
@@ -674,6 +747,13 @@ export class AppUI extends Component {
             }
             this._raceCancelButton = this._racePanel.getChildByName('RaceCancelButton')?.getComponent(Button) ?? null;
             this._raceCancelButton?.node.on(Button.EventType.CLICK, () => this._onRaceCancel(), this);
+            // Stage 1A/C — radial timer ring + screen vignette (Graphics nodes).
+            const ringNode = this._racePanel.getChildByName('RaceTimerRing');
+            this._raceTimerRing = ringNode?.getComponent(Graphics) ?? null;
+            this._raceTimerPulseNode = ringNode?.getChildByName('RaceTimerPulse') ?? null;
+            this._raceTimerPulseGraphics = this._raceTimerPulseNode?.getComponent(Graphics) ?? null;
+            this._screenVignetteNode = this._racePanel.getChildByName('ScreenVignette') ?? null;
+            this._screenVignetteGraphics = this._screenVignetteNode?.getComponent(Graphics) ?? null;
             // Block 2 — opponent card (1v1 big card)
             this._raceOpponentCard = this._racePanel.getChildByName('RaceOpponentCard') ?? null;
             if (this._raceOpponentCard) {
@@ -1377,6 +1457,15 @@ export class AppUI extends Component {
                 const vL = cN?.getChildByName('Value')?.getComponent(Label) ?? null;
                 if (vL) this._postMatchCardValues.set(key, vL);
             }
+            // UX Phase 2b: bind second mascot on PostMatchPanel.
+            const pmMascotN = this._postMatchPanel.getChildByName('PostMatchMascotContainer');
+            if (pmMascotN) {
+                this._postMatchMascot = pmMascotN.getComponent(MascotController) ?? pmMascotN.addComponent(MascotController);
+                console.log(`${TAG} start | postMatchMascot bound`);
+            }
+            // Pre-allocate confetti Graphics once (fixes native render-thread
+            // crash on Seeker/Android from spawning 12 cc.Graphics in one frame).
+            this._bindPostMatchConfetti();
         }
         console.log(`${TAG} start | Phase D panels waiting=${!!this._waitingPanel} postmatch=${!!this._postMatchPanel} post_cards=${this._postMatchCardValues.size}/4`);
 
@@ -1618,6 +1707,8 @@ export class AppUI extends Component {
     private _showHome(): void {
         console.log(`${TAG} _showHome | switching to home panel`);
         this._setActivePanel('home');
+        // UX overhaul Phase 2: mascot greets on Home arrival.
+        this._setMascotState('idle');
         const mwa = MWAManager.instance;
         const pubkey = mwa?.connectedPubkey ?? '';
         if (this._pubkeyLabel) {
@@ -1834,14 +1925,237 @@ export class AppUI extends Component {
     }
 
     private _setActivePanel(which: 'landing' | 'home' | 'tokenDuel'): void {
-        this._landingPanel.active = which === 'landing';
-        this._homePanel.active = which === 'home';
-        this._tokenDuelPanel.active = which === 'tokenDuel';
+        // UX overhaul Phase 1F: smooth fade+scale swap instead of instant
+        // active-toggle. swapPanel handles UIOpacity setup + tween cleanup.
+        const target = which === 'landing' ? this._landingPanel
+                     : which === 'home'    ? this._homePanel
+                                           : this._tokenDuelPanel;
+        const others = [this._landingPanel, this._homePanel, this._tokenDuelPanel].filter((p) => p !== target);
+        const wasActive = others.find((p) => p.active) ?? null;
+        // Hide siblings instantly (no double-fade), then transition target in.
+        for (const p of others) if (p !== wasActive) p.active = false;
+        swapPanel(wasActive, target, 'forward');
         // Part 12 C: stop ticker timers when Home is not the active panel.
         if (which !== 'home') this._stopMatchTicker();
         // Part 14: stop tournament countdown when leaving Home.
         if (which !== 'home') this._stopTournamentCountdown();
-        console.log(`${TAG} _setActivePanel | DONE which=${which} landing=${this._landingPanel.active} home=${this._homePanel.active} tokenDuel=${this._tokenDuelPanel.active}`);
+        console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
+    }
+
+    /* ── UX overhaul Phase 1: helpers ───────────────────────────────── */
+
+    /**
+     * Find or create an IconBadge sibling node on `parentNode` and attach the
+     * named procedural icon. Used to replace emoji prefixes on persistent UI
+     * labels (Daily Streak, Tournament Badge, Wager value, etc.). Idempotent.
+     */
+    private _ensureIconBadge(parentNode: Node | null, iconName: IconName, opts: { size?: number; offsetX?: number; offsetY?: number } = {}): Node | null {
+        if (!parentNode) return null;
+        const size = opts.size ?? 22;
+        let badge = parentNode.getChildByName('IconBadge');
+        if (!badge) {
+            badge = new Node('IconBadge');
+            badge.parent = parentNode;
+        }
+        badge.setPosition(opts.offsetX ?? 0, opts.offsetY ?? 0, 0);
+        IconLibrary.attach(badge, iconName, { size });
+        return badge;
+    }
+
+    /**
+     * UX Phase 2b: comprehensive bind-time icon attachment for every panel-
+     * level label/button whose scene-baked emoji has been stripped. Idempotent
+     * (safe to call multiple times). Table-driven so we don't re-list paths.
+     *
+     * Solo-emoji chrome buttons use offsetX=0 (centered); prefix-emoji labels
+     * use a negative offsetX (icon sits left of the text).
+     */
+    private _attachStaticIconBadges(): void {
+        type Def = { panel: Node | null; name: string; icon: IconName; size?: number; offsetX?: number };
+        const root = this.node;
+        const defs: Def[] = [
+            // Home chrome
+            { panel: this._homePanel, name: 'DailyStreakStrip',       icon: 'flame',  size: 22, offsetX: -320 },
+            { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 20, offsetX: -320 },
+            { panel: this._homePanel, name: 'QuickPlayButton',        icon: 'bolt',   size: 28, offsetX: -310 },
+            { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 30, offsetX: 0 },  // home top-right gear, 64×64
+
+            // TokenDuel top-bar (5 solo-icon buttons, 48×40 cells)
+            { panel: this._tokenDuelPanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 24, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenPortfolioButton',    icon: 'user',   size: 24, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 24, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenSquadPresetsButton', icon: 'book',   size: 24, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'SuggestSquadButton',     icon: 'bulb',   size: 24, offsetX: 0 },
+            // HelpButton stays '?' text glyph — no IconBadge.
+
+            // Feed chrome
+            { panel: this._tokenDuelPanel, name: 'ColumnsButton',          icon: 'cog',    size: 14, offsetX: -38 },
+            // FeedTabDropdownButton + WatchlistStarButton icons are state-driven; see _refreshFeedTabDropdown / _refreshWatchlistStarLabel.
+
+            // Wager
+            { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 22, offsetX: -120 },
+
+            // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
+            { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 28, offsetX: -150 },
+            { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
+            { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 28, offsetX: -110 },
+            { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
+            { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 26, offsetX: -110 },
+            { panel: root, name: 'SpectatorTitleLabel',         icon: 'eye',    size: 26, offsetX: -130 },
+            { panel: root, name: 'TournamentTitleLabel',        icon: 'sword',  size: 26, offsetX: -130 },
+            { panel: root, name: 'TournamentJoinButton',        icon: 'sword',  size: 22, offsetX: -150 },
+
+            // Waiting panel
+            { panel: root, name: 'WaitingForceSettleButton',    icon: 'bolt',   size: 22, offsetX: -130 },
+            { panel: root, name: 'WaitingStreakBanner',         icon: 'flame',  size: 20, offsetX: -270 },
+
+            // Settings card buttons
+            { panel: root, name: 'FeesLinkButton',              icon: 'chart',  size: 22, offsetX: -110 },
+            // SoundToggleButton / HapticsToggleButton icons are state-driven.
+
+            // Presets overlay
+            { panel: root, name: 'PresetSaveButton',            icon: 'save',   size: 22, offsetX: -170 },
+
+            // Personal rank header (inside leaderboard)
+            { panel: root, name: 'HeaderLabel',                 icon: 'user',   size: 14, offsetX: -36 },
+            // Note: 'HeaderLabel' name collides across panels — findByName depth-first will hit
+            // the first one (Leaderboard PersonalRankCard). Section headers on other panels
+            // share the name but their emoji has already been stripped; icon attachment to
+            // their first node only is acceptable visual polish. If more precision needed
+            // later, add per-panel section scoping.
+        ];
+
+        for (const d of defs) {
+            if (!d.panel) continue;
+            const node = this._findDescendantByName(d.panel, d.name);
+            if (!node) continue;
+            this._ensureIconBadge(node, d.icon, { size: d.size ?? 22, offsetX: d.offsetX ?? 0 });
+        }
+
+        // PresetDeleteButton_0..4 — pooled, each gets a trash icon.
+        const presetsOv = this.node.getChildByName('SquadPresetsOverlay');
+        if (presetsOv) {
+            for (let i = 0; i < 5; i++) {
+                const delBtn = this._findDescendantByName(presetsOv, `PresetDeleteButton_${i}`);
+                if (delBtn) this._ensureIconBadge(delBtn, 'trash', { size: 20, offsetX: 0 });
+            }
+        }
+
+        // Feed tab dropdown rows (6 rows) — per-row icons.
+        const tabIcon: Record<string, IconName> = {
+            new: 'bolt', trending: 'flame', gainers: 'chart',
+            volume: 'chart', smart: 'brain', watchlist: 'star',
+        };
+        for (const key of Object.keys(tabIcon)) {
+            const optN = this._tokenDuelPanel?.getChildByName(`FeedTabOption_${key}`);
+            if (optN) this._ensureIconBadge(optN, tabIcon[key], { size: 16, offsetX: -90 });
+        }
+
+        console.log(`${TAG} _attachStaticIconBadges | bound ${defs.length} + preset 5 + feed_tab 6`);
+    }
+
+    /** Depth-first search for a named descendant; returns first match. */
+    private _findDescendantByName(root: Node, name: string): Node | null {
+        if (root.name === name) return root;
+        for (const c of root.children) {
+            const hit = this._findDescendantByName(c, name);
+            if (hit) return hit;
+        }
+        return null;
+    }
+
+    /** Mascot state helper — silent no-op when mascot binding failed. */
+    private _setMascotState(s: MascotState): void {
+        this._mascot?.setState(s);
+    }
+
+    /**
+     * UX Phase 2d: apply idle-pulse + press-pop + stronger zoomScale to the
+     * primary CTA buttons. Idle-pulse draws the eye to the action; press-pop
+     * gives a satisfying tap response (layered on top of cc.Button's native
+     * zoomScale). Silent no-op for any button that isn't found in the scene.
+     */
+    private _enhancePrimaryCTAs(): void {
+        enhancePrimaryCTA(this._homePanel?.getChildByName('QuickPlayButton') ?? null);
+        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('WagerStartButton') ?? null);
+        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StartGameButton') ?? null);
+        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StakeCommitButton') ?? null);
+        // PickerStartButton (inside the ModePicker modal) — find via Canvas lookup
+        // since ModePicker can be deeply nested.
+        enhancePrimaryCTA(this._findDescendantByName(this.node, 'PickerStartButton'));
+    }
+
+    /**
+     * UX overhaul Phase 3: load all 26 icon PNGs + mascot reference image
+     * from assets/demo/resources/{icons,mascot}/, register each SpriteFrame
+     * in IconLibrary, then re-attach badges so they render as cc.Sprite
+     * instead of procedural cc.Graphics.
+     *
+     * resources.load auto-discovers the spriteFrame sub-asset under each
+     * PNG via the `/spriteFrame` suffix. No UUID pasting per icon needed.
+     *
+     * Loads run in parallel; total time is bounded by the slowest single load
+     * (~100-200ms on a warm APK). Icons render procedurally in the meantime
+     * and pop to PNG once loaded — one-shot refresh.
+     */
+    private async _loadPhase3Art(): Promise<void> {
+        const iconNames: IconName[] = [
+            'trophy', 'medalGold', 'medalSilver', 'medalBronze',
+            'cog', 'user', 'book', 'bulb', 'robot',
+            'trash', 'save', 'speaker', 'speakerMuted',
+            'vibration', 'hand', 'flame', 'bolt', 'sword',
+            'coin', 'chart', 'brain', 'star', 'starOutline',
+            'sparkle', 'starBurst', 'flag',
+        ];
+
+        let loaded = 0;
+        let failed = 0;
+        const loadOne = (name: IconName): Promise<void> => new Promise((resolve) => {
+            resources.load<SpriteFrame>(`icons/${name}/spriteFrame`, SpriteFrame, (err, frame) => {
+                if (err || !frame) {
+                    failed++;
+                    console.log(`${TAG} phase3 | icon_load_fail name=${name} err=${err?.message ?? err}`);
+                } else {
+                    IconLibrary.register(name, frame);
+                    loaded++;
+                }
+                resolve();
+            });
+        });
+
+        let mascotFrame: SpriteFrame | null = null;
+        const loadMascot = (): Promise<void> => new Promise((resolve) => {
+            resources.load<SpriteFrame>('mascot/mascot-ref/spriteFrame', SpriteFrame, (err, frame) => {
+                if (err || !frame) {
+                    console.log(`${TAG} phase3 | mascot_load_fail err=${err?.message ?? err}`);
+                } else {
+                    mascotFrame = frame;
+                }
+                resolve();
+            });
+        });
+
+        await Promise.all([...iconNames.map(loadOne), loadMascot()]);
+        console.log(`${TAG} phase3 | DONE icons_loaded=${loaded}/${iconNames.length} failed=${failed} mascot=${!!mascotFrame}`);
+
+        // Re-attach all bind-time IconBadges now that sprite frames are registered.
+        // IconLibrary.attach checks the registry first — registered icons get
+        // cc.Sprite path, unregistered fall back to procedural.
+        this._attachStaticIconBadges();
+        // Refresh state-driven icons (audio toggles, watchlist star, feed tab).
+        this._refreshAudioCard();
+        this._refreshWatchlistStarTint();
+        // Feed tab icon refreshes the next time the user switches tabs; force one now.
+        if (this._feedTabDropdownLabel) {
+            this._updateFeedTabDropdownLabel(this._currentFeedTab as any);
+        }
+
+        // Mascot: single-frame static sprite. Tween-driven motion still works.
+        if (mascotFrame) {
+            this._mascot?.setSpriteSheet([mascotFrame]);
+            this._postMatchMascot?.setSpriteSheet([mascotFrame]);
+            console.log(`${TAG} phase3 | mascot swapped to PNG`);
+        }
     }
 
     /**
@@ -2216,10 +2530,15 @@ export class AppUI extends Component {
         // background; countdown is the top-of-stack attention grabber.
         const squadSyms = gameHoldings.map((h) => h?.symbol || '?').filter((s) => s !== '?');
         this._showCountdown(squadSyms, () => {
+            // Stage 2G — fly-in cinematic (~800ms) before PortfolioRace.start().
+            this._playRaceStartCinematic();
             // `start()` is async (awaits Birdeye). Fire-and-forget; any tap
             // events before entry prices resolve are gated by the PortfolioRace
-            // `_running` flag.
-            this._game?.start().catch((e) => console.log(`${TAG} onStartGame | START_ERROR error=${e}`));
+            // `_running` flag. Defer start by the cinematic duration so the
+            // race doesn't tick during the reveal.
+            setTimeout(() => {
+                this._game?.start().catch((e) => console.log(`${TAG} onStartGame | START_ERROR error=${e}`));
+            }, 800);
         });
     }
 
@@ -2384,11 +2703,30 @@ export class AppUI extends Component {
             console.log(`${TAG} _showRacePanel | ABORT_NO_PANEL tokens=${holdings.length} — scene binding missing, race screen will not render`);
             return;
         }
+        // UX overhaul Phase 2: mascot starts thinking when race begins.
+        this._setMascotState('think');
         this._raceActiveHoldings = holdings.slice();
         this._raceLastDeltaSign = 0;
         this._raceTickBindingGapLogged = false;
         this._raceLatestSnapshot = null;
         this._raceEntryNoticeShown = false;
+        // Stage 1 game-feel — reset ring / vignette / overtake / last-5s state.
+        this._lastRenderedDeltaPct = 0;
+        this._lastFiveActivated = false;
+        this._lastOvertakeSign = 0;
+        this._vignetteBaseAlpha = 0;
+        if (this._raceTimerRing) this._raceTimerRing.clear();
+        if (this._raceTimerPulseGraphics) this._raceTimerPulseGraphics.clear();
+        if (this._raceTimerPulseNode) {
+            Tween.stopAllByTarget(this._raceTimerPulseNode);
+            this._raceTimerPulseNode.active = false;
+            this._raceTimerPulseNode.setScale(new Vec3(1, 1, 1));
+        }
+        if (this._screenVignetteGraphics) this._screenVignetteGraphics.clear();
+        if (this._raceHeroDeltaLabel) {
+            Tween.stopAllByTarget(this._raceHeroDeltaLabel.node);
+            this._raceHeroDeltaLabel.node.setScale(new Vec3(1, 1, 1));
+        }
 
         // Block 2: opponent card — Paper gets a LiveSquadBot, Real hides
         // the card (no WS broadcast path yet; opponent revealed at end).
@@ -2410,7 +2748,11 @@ export class AppUI extends Component {
             if (this._raceOpponentCard) this._raceOpponentCard.active = true;
             const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
             if (this._raceOpponentName) this._raceOpponentName.string = 'Bot';
-            if (this._raceOpponentAvatar) this._raceOpponentAvatar.string = '🤖';
+            // UX Phase 2b: procedural robot icon on the avatar node (replaces emoji label).
+            if (this._raceOpponentAvatar) {
+                this._raceOpponentAvatar.string = '';
+                IconLibrary.attach(this._raceOpponentAvatar.node, 'robot', { size: 44 });
+            }
             if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'picking squad…';
             import('../../token-duel/scripts/SquadBot').then(({ LiveSquadBot }) => {
                 const bot = new LiveSquadBot(windowMs);
@@ -2436,6 +2778,9 @@ export class AppUI extends Component {
                 const row = this._raceOpponentRows[i];
                 if (row) row.active = true;
                 if (this._raceOpponentRowNames[i]) this._raceOpponentRowNames[i].string = `Bot ${i + 1}`;
+                // UX Phase 2b: procedural robot icon on each bot row's avatar.
+                const avN = row?.getChildByName('AvatarLabel');
+                if (avN) IconLibrary.attach(avN, 'robot', { size: 20 });
                 if (this._raceOpponentRowSymbols[i]) this._raceOpponentRowSymbols[i].string = 'picking squad…';
                 if (this._raceOpponentRowDeltas[i]) this._raceOpponentRowDeltas[i].string = '0.00%';
                 if (this._raceOpponentRowGaps[i]) this._raceOpponentRowGaps[i].string = '';
@@ -2459,7 +2804,11 @@ export class AppUI extends Component {
         } else {
             this._liveSquadBot = null;
             if (this._raceOpponentName) this._raceOpponentName.string = 'Opponent';
-            if (this._raceOpponentAvatar) this._raceOpponentAvatar.string = '👤';
+            // UX Phase 2b: procedural user icon for real-opponent avatar.
+            if (this._raceOpponentAvatar) {
+                this._raceOpponentAvatar.string = '';
+                IconLibrary.attach(this._raceOpponentAvatar.node, 'user', { size: 44 });
+            }
             if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'waiting for squad…';
             if (this._raceOpponentDelta) this._raceOpponentDelta.string = '—';
             if (this._raceOpponentGap) this._raceOpponentGap.string = '';
@@ -2620,6 +2969,18 @@ export class AppUI extends Component {
         this._liveSquadBots = [];
         if (this._raceOpponentStrip) this._raceOpponentStrip.active = false;
         for (const row of this._raceOpponentRows) row.active = false;
+        // Stage 1 game-feel — stop loops + reset node transforms before hide.
+        if (this._raceTimerPulseNode) {
+            Tween.stopAllByTarget(this._raceTimerPulseNode);
+            this._raceTimerPulseNode.active = false;
+            this._raceTimerPulseNode.setScale(new Vec3(1, 1, 1));
+        }
+        if (this._raceHeroDeltaLabel) {
+            Tween.stopAllByTarget(this._raceHeroDeltaLabel.node);
+            this._raceHeroDeltaLabel.node.setScale(new Vec3(1, 1, 1));
+        }
+        if (this._raceTimerRing) this._raceTimerRing.clear();
+        if (this._screenVignetteGraphics) this._screenVignetteGraphics.clear();
         this._racePanel.active = false;
         console.log(`${TAG} _hideRacePanel | HIDDEN last_snapshot_portfolio=${this._raceLatestSnapshot?.portfolioDeltaPct?.toFixed(2) ?? 'null'}%`);
     }
@@ -2639,24 +3000,30 @@ export class AppUI extends Component {
             this._raceEntryNoticeShown = true;
             console.log(`${TAG} _onRaceTick | ENTRY_DROP_NOTICE dropped=${dropped} resolved=${snap.resolvedCount}/${this._raceActiveHoldings.length}`);
         }
-        // Countdown
+        // Countdown + Stage 1A radial ring progress.
+        const windowMs = Math.max(1, snap.elapsedMs + snap.remainingMs);
+        const progress = Math.max(0, Math.min(1, snap.elapsedMs / windowMs));
         if (this._raceCountdownLabel) {
             const s = Math.max(0, Math.ceil(snap.remainingMs / 1000));
             const mm = Math.floor(s / 60).toString();
             const ss = (s % 60).toString().padStart(2, '0');
             this._raceCountdownLabel.string = `${mm}:${ss}`;
         }
+        this._drawTimerRing(progress);
 
-        // Hero delta
+        // Hero delta — Block B rolls the number when the change is > 0.3pp.
         const deltaPct = snap.portfolioDeltaPct;
-        const sign = deltaPct >= 0 ? '+' : '';
         const green = new Color(51, 204, 85);
         const red = new Color(255, 85, 85);
         const neutral = new Color(255, 255, 255);
-        if (this._raceHeroDeltaLabel) {
-            this._raceHeroDeltaLabel.string = `${sign}${deltaPct.toFixed(2)}%`;
-            this._raceHeroDeltaLabel.color = snap.resolvedCount === 0 ? neutral : (deltaPct >= 0 ? green : red);
-        }
+        const heroColor = snap.resolvedCount === 0 ? neutral : (deltaPct >= 0 ? green : red);
+        this._tweenHeroDelta(deltaPct, heroColor);
+
+        // Block C — ambient screen-edge vignette reacts to |delta|.
+        this._updateVignette(snap);
+
+        // Block F — enter last-5-seconds drama mode (one-shot).
+        this._enterLastFiveMode(snap.remainingMs);
         if (this._raceHeroSubtitleLabel) {
             this._raceHeroSubtitleLabel.string = snap.resolvedCount === 0
                 ? 'Waiting for price feed…'
@@ -2678,11 +3045,12 @@ export class AppUI extends Component {
             }
         }
 
-        // Haptic + sound on zero-cross (ignore first tick to avoid false-trigger at t=0).
+        // Haptic + sound + Block D screen flash on zero-cross (ignore first tick to avoid false-trigger at t=0).
         const curSign: 1 | -1 | 0 = deltaPct > 0 ? 1 : (deltaPct < 0 ? -1 : 0);
         if (this._raceLastDeltaSign !== 0 && curSign !== 0 && curSign !== this._raceLastDeltaSign) {
             try { Haptics.fire(HapticType.MEDIUM); } catch (_) { /* editor no-op */ }
             try { playSound(curSign > 0 ? 'stack' : 'miss'); } catch (_) { /* asset may be missing */ }
+            this._flashZeroCross(curSign);
         }
         if (curSign !== 0) this._raceLastDeltaSign = curSign;
 
@@ -2747,6 +3115,332 @@ export class AppUI extends Component {
         if (this._pickerSelectedTrack === 'real' && this._raceOpponentCard?.active) {
             this._updateOpponentDeltaTick(deltaPct);
         }
+
+        // Block E — detect player↔best-opponent overtake (Paper track only).
+        this._detectOvertake(snap);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Stage 1 game-feel helpers (radial timer, vignette, overtake, last-5s).
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Lerp color across the emerald → amber → coral timer-ring gradient. */
+    private _timerRingColor(progress: number): Color {
+        const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+        const emerald = { r: 48, g: 198, b: 155 };
+        const amber   = { r: 232, g: 176, b: 70 };
+        const coral   = { r: 236, g: 88, b: 122 };
+        if (progress <= 0.5) {
+            const t = progress / 0.5;
+            return new Color(lerp(emerald.r, amber.r, t), lerp(emerald.g, amber.g, t), lerp(emerald.b, amber.b, t), 255);
+        }
+        if (progress <= 0.8) {
+            const t = (progress - 0.5) / 0.3;
+            return new Color(lerp(amber.r, coral.r, t), lerp(amber.g, coral.g, t), lerp(amber.b, coral.b, t), 255);
+        }
+        return new Color(coral.r, coral.g, coral.b, 255);
+    }
+
+    /** Block A — draw the radial timer ring draining as `progress` goes 0→1. */
+    private _drawTimerRing(progress: number): void {
+        const g = this._raceTimerRing;
+        if (!g) return;
+        const p = Math.max(0, Math.min(1, progress));
+        const col = this._timerRingColor(p);
+        g.clear();
+        // Faint background track (full circle).
+        g.lineWidth = 8;
+        g.strokeColor = new Color(col.r, col.g, col.b, 40);
+        g.circle(0, 0, 60);
+        g.stroke();
+        // Remaining portion of the ring (drains clockwise from top).
+        const remain = 1 - p;
+        if (remain > 0) {
+            g.lineWidth = 8;
+            g.strokeColor = col;
+            const start = -Math.PI / 2;
+            const end   = start + remain * Math.PI * 2;
+            g.arc(0, 0, 60, start, end, false);
+            g.stroke();
+        }
+    }
+
+    /** Block C — ambient screen-edge vignette driven by |portfolioDeltaPct|. */
+    private _updateVignette(snap: RaceSnapshot): void {
+        const g = this._screenVignetteGraphics;
+        if (!g) return;
+        const delta = snap.portfolioDeltaPct;
+        const mag = Math.min(0.35, Math.abs(delta) * 0.025);
+        this._vignetteBaseAlpha = mag;
+        let r = 255, gc = 255, b = 255;
+        if (delta > 0.05)       { r = 48;  gc = 198; b = 155; }
+        else if (delta < -0.05) { r = 236; gc = 88;  b = 122; }
+        const a = Math.round(mag * 255);
+        g.clear();
+        g.lineWidth = 140;
+        g.strokeColor = new Color(r, gc, b, a);
+        // Stroke a large circle; the 140px band lies along the screen edges.
+        g.circle(0, 0, 420);
+        g.stroke();
+    }
+
+    /** Block D — brief full-screen flash when delta crosses 0. */
+    private _flashZeroCross(direction: 1 | -1): void {
+        const g = this._screenVignetteGraphics;
+        if (!g) return;
+        const base = direction > 0 ? { r: 48, g: 198, b: 155 } : { r: 236, g: 88, b: 122 };
+        const carrier = { boost: 1 };
+        Tween.stopAllByTarget(carrier);
+        tween(carrier)
+            .to(0.4, { boost: 0 }, {
+                easing: 'quadOut',
+                onUpdate: () => {
+                    const delta = this._raceLatestSnapshot?.portfolioDeltaPct ?? 0;
+                    const baseMag = Math.min(0.35, Math.abs(delta) * 0.025);
+                    const mag = Math.max(baseMag, 0.45 * carrier.boost);
+                    g.clear();
+                    g.lineWidth = 140;
+                    g.strokeColor = new Color(base.r, base.g, base.b, Math.round(mag * 255));
+                    g.circle(0, 0, 420);
+                    g.stroke();
+                },
+            })
+            .call(() => { if (this._raceLatestSnapshot) this._updateVignette(this._raceLatestSnapshot); })
+            .start();
+    }
+
+    /** Block B — roll hero-delta number when change > 0.3pp; scale bump on zero-cross. */
+    private _tweenHeroDelta(newDelta: number, color: Color): void {
+        const lbl = this._raceHeroDeltaLabel;
+        if (!lbl) return;
+        const prev = this._lastRenderedDeltaPct;
+        const diff = Math.abs(newDelta - prev);
+        const signOf = (v: number) => (v >= 0 ? '+' : '');
+        if (diff <= 0.3) {
+            lbl.string = `${signOf(newDelta)}${newDelta.toFixed(2)}%`;
+            lbl.color = color;
+            this._lastRenderedDeltaPct = newDelta;
+            return;
+        }
+        const carrier = { v: prev };
+        Tween.stopAllByTarget(carrier);
+        tween(carrier)
+            .to(0.4, { v: newDelta }, {
+                easing: 'quartOut',
+                onUpdate: () => {
+                    lbl.string = `${signOf(carrier.v)}${carrier.v.toFixed(2)}%`;
+                    lbl.color = color;
+                },
+            })
+            .call(() => { this._lastRenderedDeltaPct = newDelta; })
+            .start();
+        // Zero-cross scale bump — multiplies against last-5s steady scale if active.
+        if ((prev < 0 && newDelta > 0) || (prev > 0 && newDelta < 0)) {
+            const node = lbl.node;
+            Tween.stopAllByTarget(node);
+            const baseScale = this._lastFiveActivated ? 1.15 : 1;
+            const peak = baseScale * 1.12;
+            tween(node)
+                .to(0.06, { scale: new Vec3(peak, peak, 1) })
+                .to(0.06, { scale: new Vec3(baseScale, baseScale, 1) })
+                .start();
+        }
+    }
+
+    /** Block E — detect player↔best-opponent overtake (Paper track). */
+    private _detectOvertake(snap: RaceSnapshot): void {
+        if (snap.elapsedMs < 1000 || snap.resolvedCount < 1) return;
+        if (this._pickerSelectedTrack !== 'paper' || this._liveSquadBots.length === 0) return;
+        let bestOpp = -Infinity;
+        for (const bot of this._liveSquadBots) {
+            const bs = bot.deltaAt(snap.elapsedMs);
+            if (bs.portfolioDeltaPct > bestOpp) bestOpp = bs.portfolioDeltaPct;
+        }
+        if (!Number.isFinite(bestOpp)) return;
+        const curSign = Math.sign(snap.portfolioDeltaPct - bestOpp);
+        if (this._lastOvertakeSign === 0) {
+            this._lastOvertakeSign = curSign;
+            return;
+        }
+        if (curSign === 0 || curSign === this._lastOvertakeSign) return;
+        this._lastOvertakeSign = curSign;
+        try { Haptics.fire(HapticType.MEDIUM); } catch (_) { /* editor no-op */ }
+        try { playSound('stack'); } catch (_) { /* asset may be missing */ }
+        const oppNode: Node | null = this._raceOpponentCard?.active
+            ? this._raceOpponentCard
+            : (this._raceOpponentStrip?.active ? this._raceOpponentStrip : null);
+        if (oppNode) {
+            Tween.stopAllByTarget(oppNode);
+            tween(oppNode)
+                .to(0.125, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'cubicOut' })
+                .to(0.125, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                .start();
+        }
+        if (this._raceHeroDeltaLabel) shake(this._raceHeroDeltaLabel.node, 8);
+        console.log(`${TAG} _onRaceTick | OVERTAKE sign=${curSign} player=${snap.portfolioDeltaPct.toFixed(2)}% bestOpp=${bestOpp.toFixed(2)}%`);
+    }
+
+    /** Block F — one-shot activation of last-5-seconds tension cues. */
+    private _enterLastFiveMode(remainingMs: number): void {
+        if (this._lastFiveActivated) return;
+        if (remainingMs > 5000 || remainingMs <= 0) return;
+        this._lastFiveActivated = true;
+        // Scale hero delta up and leave it scaled until race end.
+        if (this._raceHeroDeltaLabel) {
+            const node = this._raceHeroDeltaLabel.node;
+            Tween.stopAllByTarget(node);
+            tween(node)
+                .to(0.3, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'cubicOut' })
+                .start();
+        }
+        // Activate + pulse the inner ring at 2Hz.
+        if (this._raceTimerPulseNode && this._raceTimerPulseGraphics) {
+            this._raceTimerPulseNode.active = true;
+            this._raceTimerPulseNode.setScale(new Vec3(1, 1, 1));
+            const pg = this._raceTimerPulseGraphics;
+            pg.clear();
+            pg.lineWidth = 4;
+            pg.strokeColor = new Color(236, 88, 122, 180);
+            pg.circle(0, 0, 55);
+            pg.stroke();
+            Tween.stopAllByTarget(this._raceTimerPulseNode);
+            tween(this._raceTimerPulseNode)
+                .to(0.25, { scale: new Vec3(1.08, 1.08, 1) })
+                .to(0.25, { scale: new Vec3(1, 1, 1) })
+                .union()
+                .repeatForever()
+                .start();
+        }
+        // Schedule countdown tick sounds 5..1 (gated on racePanel still active).
+        const scheduleTick = (remaining: number) => {
+            if (remaining <= 0) return;
+            setTimeout(() => {
+                if (!this._racePanel?.active) return;
+                try { playSound('tap'); } catch (_) { /* asset may be missing */ }
+                try { Haptics.fire(HapticType.SOFT); } catch (_) { /* editor no-op */ }
+                scheduleTick(remaining - 1000);
+            }, 1000);
+        };
+        scheduleTick(Math.floor(remainingMs));
+        console.log(`${TAG} _onRaceTick | LAST_FIVE_ACTIVATED remaining=${Math.round(remainingMs)}ms`);
+    }
+
+    /** Ensure a node has a UIOpacity component; return it. */
+    private _ensureOpacity(node: Node): UIOpacity {
+        return node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+    }
+
+    /**
+     * Stage 4K — update the home-screen streak flame.
+     * Hidden when streak = 0. ≥ 1 shows flame + count. ≥ 3 adds pulse.
+     * ≥ 5 switches to rare-state gold tint.
+     */
+    private _updateStreakFlame(streak: number): void {
+        const container = this._streakFlameContainer;
+        if (!container) return;
+        if (streak === this._streakRenderedValue) return;
+        this._streakRenderedValue = streak;
+        if (streak <= 0) {
+            Tween.stopAllByTarget(container);
+            container.active = false;
+            container.setScale(new Vec3(1, 1, 1));
+            return;
+        }
+        container.active = true;
+        if (this._streakCountLabel) this._streakCountLabel.string = `${streak}×`;
+        // Color tier: gold for ≥5, warm orange for 1-4.
+        const col = streak >= 5 ? new Color(255, 210, 74, 255) : new Color(255, 160, 70, 255);
+        if (this._streakCountLabel) this._streakCountLabel.color = col;
+        if (this._streakFlameIconNode) {
+            const iconLbl = this._streakFlameIconNode.getComponent(Label);
+            if (iconLbl) iconLbl.color = col;
+        }
+        // Pulse when streak ≥ 3 — subtle 0.9Hz scale breathe to cue the rare state.
+        Tween.stopAllByTarget(container);
+        container.setScale(new Vec3(1, 1, 1));
+        if (streak >= 3) {
+            tween(container)
+                .to(0.55, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'sineInOut' })
+                .to(0.55, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+                .union()
+                .repeatForever()
+                .start();
+        }
+        console.log(`${TAG} _updateStreakFlame | SHOW streak=${streak} tier=${streak >= 5 ? 'gold' : 'warm'} pulse=${streak >= 3}`);
+    }
+
+    /**
+     * Stage 2G — race-start fly-in cinematic (~800ms).
+     * Token cards rise from below with staggered stagger; opponent card/strip
+     * drops from above; hero delta label pops from scale=0.3, opacity=0.
+     * Called after the "GO!" countdown finishes; race.start() is deferred
+     * so the tick doesn't fire during the reveal.
+     */
+    private _playRaceStartCinematic(): void {
+        if (!this._racePanel) return;
+        // Token cards (3 or 5): y_base - 80, opacity 0 → original, staggered 80ms.
+        for (let i = 0; i < this._raceTokenCards.length; i++) {
+            const card = this._raceTokenCards[i];
+            if (!card || !card.active) continue;
+            const op = this._ensureOpacity(card);
+            const target = card.position.clone();
+            Tween.stopAllByTarget(card);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            card.setPosition(new Vec3(target.x, target.y - 80, target.z));
+            const delay = i * 0.08;
+            tween(card)
+                .delay(delay)
+                .to(0.4, { position: target }, { easing: 'quartOut' })
+                .start();
+            tween(op)
+                .delay(delay)
+                .to(0.4, { opacity: 255 })
+                .start();
+        }
+        // Opponent card / strip: y_base + 80, opacity 0 → original (300ms delay).
+        const oppNodes: Node[] = [];
+        if (this._raceOpponentCard?.active) oppNodes.push(this._raceOpponentCard);
+        if (this._raceOpponentStrip?.active) oppNodes.push(this._raceOpponentStrip);
+        for (const n of oppNodes) {
+            const op = this._ensureOpacity(n);
+            const target = n.position.clone();
+            Tween.stopAllByTarget(n);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            n.setPosition(new Vec3(target.x, target.y + 80, target.z));
+            tween(n)
+                .delay(0.3)
+                .to(0.3, { position: target }, { easing: 'quartOut' })
+                .start();
+            tween(op)
+                .delay(0.3)
+                .to(0.3, { opacity: 255 })
+                .start();
+        }
+        // Hero delta: scale 0.3 + opacity 0 → 1 + 255 over 500ms (backOut).
+        if (this._raceHeroDeltaLabel) {
+            const node = this._raceHeroDeltaLabel.node;
+            const op = this._ensureOpacity(node);
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(op);
+            node.setScale(new Vec3(0.3, 0.3, 1));
+            op.opacity = 0;
+            tween(node)
+                .to(0.5, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .start();
+            tween(op)
+                .to(0.5, { opacity: 255 })
+                .start();
+        }
+        // Vignette fades in its baseline over 500ms (driven by next tick anyway).
+        if (this._screenVignetteNode) {
+            const op = this._ensureOpacity(this._screenVignetteNode);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).to(0.5, { opacity: 255 }).start();
+        }
+        console.log(`${TAG} _playRaceStartCinematic | FLY_IN tokens=${this._raceTokenCards.filter((c) => c?.active).length} opp_nodes=${oppNodes.length}`);
     }
 
     private _fmtPrice(p: number): string {
@@ -2795,11 +3489,13 @@ export class AppUI extends Component {
         if (this._countdownSquadLabel) {
             this._countdownSquadLabel.string = squadSymbols.length > 0 ? squadSymbols.join(' · ') : 'Your squad';
         }
+        // Stage 2H — color ramp coral → amber → lime → emerald, with a 100ms
+        // white flash on each transition so each digit "pops" before settling.
         const steps: Array<{ text: string; color: Color; haptic: HapticType }> = [
-            { text: '3', color: new Color(218, 165, 32), haptic: HapticType.SOFT },
-            { text: '2', color: new Color(218, 165, 32), haptic: HapticType.SOFT },
-            { text: '1', color: new Color(236, 88, 122), haptic: HapticType.MEDIUM },
-            { text: 'GO!', color: new Color(48, 198, 155), haptic: HapticType.HEAVY },
+            { text: '3',   color: new Color(236, 88, 122),  haptic: HapticType.SOFT   },
+            { text: '2',   color: new Color(232, 176, 70),  haptic: HapticType.SOFT   },
+            { text: '1',   color: new Color(166, 232, 70),  haptic: HapticType.MEDIUM },
+            { text: 'GO!', color: new Color(48, 198, 155),  haptic: HapticType.HEAVY  },
         ];
         let i = 0;
         const tick = () => {
@@ -2811,12 +3507,28 @@ export class AppUI extends Component {
             }
             const step = steps[i++];
             if (this._countdownBigLabel) {
-                this._countdownBigLabel.string = step.text;
-                this._countdownBigLabel.color = step.color;
-                const node = this._countdownBigLabel.node;
+                const lbl = this._countdownBigLabel;
+                lbl.string = step.text;
+                lbl.color = new Color(255, 255, 255);
+                const node = lbl.node;
                 node.scale = new Vec3(0.6, 0.6, 1);
                 tween(node).to(0.35, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
                     .to(0.15, { scale: new Vec3(1, 1, 1) })
+                    .start();
+                // 100ms white flash, then lerp to target color over 150ms.
+                const colorCarrier = { r: 255, g: 255, b: 255 };
+                Tween.stopAllByTarget(colorCarrier);
+                tween(colorCarrier)
+                    .delay(0.1)
+                    .to(0.15, { r: step.color.r, g: step.color.g, b: step.color.b }, {
+                        onUpdate: () => {
+                            lbl.color = new Color(
+                                Math.round(colorCarrier.r),
+                                Math.round(colorCarrier.g),
+                                Math.round(colorCarrier.b),
+                            );
+                        },
+                    })
                     .start();
             }
             try { Haptics.fire(step.haptic); } catch (_) { /* editor no-op */ }
@@ -3080,15 +3792,26 @@ export class AppUI extends Component {
 
     private _updateFeedTabDropdownLabel(tab: FeedTabOrVirtual): void {
         if (!this._feedTabDropdownLabel) return;
+        // UX Phase 2b: emoji-free labels + IconBadge re-attach per tab.
         const map: Record<FeedTabOrVirtual, string> = {
-            'new':         '⚡ New Pairs  ▾',
-            'trending':    '🔥 Trending  ▾',
-            'gainers':     '📈 Top Gainers  ▾',
-            'smart_money': '🧠 Smart Money  ▾',
-            'watchlist':   '★ Watchlist  ▾',
-            'top10':       '🏆 Top 10  ▾',
+            'new':         'New Pairs  ▾',
+            'trending':    'Trending  ▾',
+            'gainers':     'Top Gainers  ▾',
+            'smart_money': 'Smart Money  ▾',
+            'watchlist':   'Watchlist  ▾',
+            'top10':       'Top 10  ▾',
+        };
+        const iconMap: Record<FeedTabOrVirtual, IconName> = {
+            'new':         'bolt',
+            'trending':    'flame',
+            'gainers':     'chart',
+            'smart_money': 'brain',
+            'watchlist':   'star',
+            'top10':       'trophy',
         };
         this._feedTabDropdownLabel.string = map[tab] ?? '▾';
+        const btn = this._tokenDuelPanel?.getChildByName('FeedTabDropdownButton');
+        if (btn) this._ensureIconBadge(btn, iconMap[tab] ?? 'bolt', { size: 16, offsetX: -90 });
     }
 
     private _highlightActiveFeedTabOption(active: FeedTabOrVirtual): void {
@@ -3222,8 +3945,11 @@ export class AppUI extends Component {
         const anyIn = Watchlist.size() > 0;
         if (spr) spr.color = anyIn ? new Color(70, 52, 14, 255) : new Color(28, 34, 48, 255);
         if (this._watchlistStarLabel) {
-            this._watchlistStarLabel.string = anyIn ? '★ Watchlist' : '☆ Watchlist';
+            // UX Phase 2b: emoji-free label + IconBadge swap star ↔ starOutline.
+            this._watchlistStarLabel.string = 'Watchlist';
             this._watchlistStarLabel.color = anyIn ? new Color(218, 165, 32, 255) : new Color(180, 190, 210, 255);
+            const btn = this._tokenDuelPanel?.getChildByName('WatchlistStarButton');
+            if (btn) this._ensureIconBadge(btn, anyIn ? 'star' : 'starOutline', { size: 18, offsetX: -60 });
         }
     }
 
@@ -4567,7 +5293,8 @@ export class AppUI extends Component {
         // Hydrate header + stats + pick/unpick state.
         if (this._detailSymbolLabel) this._detailSymbolLabel.string = row.symbol ? `$${row.symbol}` : '$—';
         if (this._detailNameLabel) this._detailNameLabel.string = row.name ?? '';
-        if (this._detailMintChipLabel) this._detailMintChipLabel.string = this._fmtMintShort(row.address) + ' 📋';
+        // UX Phase 2b: clipboard emoji stripped; the chip button itself cues copy.
+        if (this._detailMintChipLabel) this._detailMintChipLabel.string = this._fmtMintShort(row.address);
         this._refreshDetailPickUnpickButton();
         this._refreshDetailStats(row);
         this._refreshSafetyChips();
@@ -4810,12 +5537,16 @@ export class AppUI extends Component {
         try {
             const stats = await getUserStats(this._tdRpc, pubkey);
             if (stats && stats.currentStreak >= 3) {
-                label.string = `🔥 Day ${stats.currentStreak} streak — keep the fire going`;
+                // UX overhaul Phase 1: emoji moved to IconBadge sibling on
+                // DailyStreakStrip (see _attachHomeIconBadges).
+                label.string = `Day ${stats.currentStreak} streak — keep the fire going`;
                 banner.active = true;
                 console.log(`${TAG} _hydrateStreakBanner | SHOW streak=${stats.currentStreak}`);
             } else {
                 banner.active = false;
             }
+            // Stage 4K — refresh the home flame whenever we re-fetch streak here.
+            this._updateStreakFlame(stats?.currentStreak ?? 0);
         } catch (e) {
             console.log(`${TAG} _hydrateStreakBanner | ERROR ${e}`);
             banner.active = false;
@@ -4972,6 +5703,9 @@ export class AppUI extends Component {
         if (!this._postMatchPanel) return;
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
+        // UX Phase 2b: route celebrate/lose to the PostMatchMascot (visible on
+        // this panel). Home mascot stays idle for when user returns home.
+        this._postMatchMascot?.setState(outcome.won ? 'celebrate' : 'lose');
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
@@ -5075,22 +5809,26 @@ export class AppUI extends Component {
         if (youLbl) youLbl.color = playerDeltaPct > 0 ? green : (playerDeltaPct < 0 ? red : neutral);
         if (oppLbl) oppLbl.color = opponentDeltaPct > 0 ? green : (opponentDeltaPct < 0 ? red : neutral);
 
-        // Tint LEVEL card when leveled up.
+        // Tint LEVEL card when leveled up — Stage 5O: rare-state gold instead of teal.
         const lvlLabel = this._postMatchCardValues.get('lvl');
         if (lvlLabel) {
-            lvlLabel.color = leveledUp ? new Color(48, 198, 155, 255) : new Color(255, 255, 255, 255);
+            lvlLabel.color = leveledUp ? new Color(255, 210, 74, 255) : new Color(255, 255, 255, 255);
         }
 
         console.log(`${TAG} _showPostMatchPanel | won=${outcome.won} player=${outcome.playerHeight} opp=${outcome.opponentHeight} xp=${outcome.xpGained} total_xp=${outcome.totalXp ?? '?'} level_was=${previousLevel} level_now=${outcome.newLevel} level_up=${leveledUp} payout_sol=${(outcome.payoutLamports / 1e9).toFixed(4)} track=${outcome.track}`);
 
         // Part 11 C: PostMatch audio — victory fanfare on 1st, level-up chime
         // layered on top if the XP gain pushed into a new level.
+        // Stage 4L audit: silence on loss is intentional — no fanfare plays when
+        // !won. The natural thud of victory absence is the punishment.
         if (outcome.won && outcome.placement === 0) {
             playSound('victory');
         }
         if (leveledUp) {
-            // Slight delay so the two clips don't collide when both fire.
-            setTimeout(() => playSound('level_up'), 400);
+            // Stage 3J: delay level-up chime so it lands AFTER the payout ticker
+            // finishes (1.2s), making it a second reward beat rather than a
+            // collision during the payout animation.
+            setTimeout(() => playSound('level_up'), 1400);
         }
 
         // Part 11 A: stash share-summary + toggle share button visibility.
@@ -5161,18 +5899,69 @@ export class AppUI extends Component {
         //   placement=2 → 🥉 (static fade-in)
         //   placement≥3 → hidden
         this._animatePostMatchTrophy(outcome.placement ?? (outcome.won ? 0 : 99));
+
+        // Stage 3I — staggered reveal cascade. Values are already set (above);
+        // hide the 4 stat cards immediately, then fade+pop them back in over
+        // ~800ms in a deliberate order: opp → you → xp → lvl. Pure overlay on
+        // top of existing logic — no value reshuffling.
+        this._revealPostMatchStaggered(outcome.won);
+    }
+
+    /**
+     * Stage 3I — stagger the 4 PostMatch stat cards in after the panel shows.
+     * Each card fades in from opacity=0 + scale=0.7 with a backOut pop,
+     * 180ms stagger. Order: opp (suspense first), you (reveal), xp, lvl.
+     */
+    private _revealPostMatchStaggered(won: boolean): void {
+        if (!this._postMatchPanel) return;
+        const order: string[] = ['opp', 'you', 'xp', 'lvl'];
+        const stagger = 0.18;
+        const baseDelay = 0.1;
+        for (let i = 0; i < order.length; i++) {
+            const key = order[i];
+            const card = this._postMatchPanel.getChildByName(`PMCard_${key}`);
+            if (!card) continue;
+            const op = this._ensureOpacity(card);
+            Tween.stopAllByTarget(card);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            card.setScale(new Vec3(0.7, 0.7, 1));
+            const delay = baseDelay + i * stagger;
+            tween(card)
+                .delay(delay)
+                .to(0.28, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .start();
+            tween(op)
+                .delay(delay)
+                .to(0.28, { opacity: 255 })
+                .start();
+        }
+        // Player card gets a flourish bump after its reveal — scale 1 → 1.25 → 1
+        // with color flash on win. Lands ~(0.1 + 1 * 0.18 + 0.28) = 560ms in.
+        const youCard = this._postMatchPanel.getChildByName('PMCard_you');
+        if (youCard) {
+            setTimeout(() => {
+                Tween.stopAllByTarget(youCard);
+                tween(youCard)
+                    .to(0.15, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'cubicOut' })
+                    .to(0.15, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                    .start();
+            }, Math.round((baseDelay + 1 * stagger + 0.28) * 1000));
+        }
+        console.log(`${TAG} _revealPostMatchStaggered | CASCADE order=[${order.join(',')}] won=${won}`);
     }
 
     /**
      * Show/hide + tween the TrophyLabel on PostMatchPanel based on placement.
      * Placement is 0-indexed (0 = 1st place). Idempotent per panel show.
+     *
+     * UX Phase 2b: trophy is now an IconLibrary-rendered Graphics icon (trophy
+     * for 1st, medalSilver / medalBronze for 2nd / 3rd) rather than an emoji.
      */
     private _animatePostMatchTrophy(placement: number): void {
         if (!this._postMatchPanel) return;
         const trophyN = this._postMatchPanel.getChildByName('TrophyLabel');
         if (!trophyN) return;
-        const trophyL = trophyN.getComponent(Label);
-        if (!trophyL) return;
 
         Tween.stopAllByTarget(trophyN);
         trophyN.active = placement <= 2;
@@ -5181,8 +5970,10 @@ export class AppUI extends Component {
             return;
         }
 
-        const emoji = placement === 0 ? '🏆' : placement === 1 ? '🥈' : '🥉';
-        trophyL.string = emoji;
+        // Re-attach a procedural trophy/medal on the node (replaces any prior draw).
+        // Placement → rank: 0-indexed internal → 1-indexed IconLibrary rank.
+        const iconName = placement === 0 ? 'trophy' : placement === 1 ? 'medalSilver' : 'medalBronze';
+        IconLibrary.attach(trophyN, iconName, { size: 120 });
         trophyN.setScale(0.01, 0.01, 1);
         trophyN.angle = 0;
 
@@ -5208,44 +5999,95 @@ export class AppUI extends Component {
                 .to(0.25, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'cubicOut' })
                 .start();
             this._hideConfetti(trophyN);
-            console.log(`${TAG} _animatePostMatchTrophy | RUNNER_UP placement=${placement} emoji=${emoji}`);
+            console.log(`${TAG} _animatePostMatchTrophy | RUNNER_UP placement=${placement} icon=${iconName}`);
         }
     }
 
     /**
-     * Session D Part 8: spawn 12 confetti emoji labels from the trophy center
-     * and fan them outward with randomized angle + distance + rotation.
-     * Confetti nodes are pre-built in the scene as children of TrophyLabel
-     * (`Confetti_0..11`). We reset each one's transform, then tween.
+     * Pre-allocate the 12 confetti Graphics components once — called from
+     * `start()` after the PostMatchPanel bindings. Before this existed,
+     * `_animateConfetti` added 12 cc.Graphics components in a single JS tick
+     * on every match-end, which SIGSEGV'd Cocos 3.8's Android native renderer
+     * when the XP/LEVEL card tweens + trophy spin + payout ticker were also
+     * firing in the same frame (Seeker, observed 2026-04-23).
+     *
+     * The shape/tint per slot is picked here once and cached on
+     * `_confettiShapes` / `_confettiTints` so `_animateConfetti` can restart
+     * the burst without re-attaching anything.
      */
-    private _animateConfetti(trophyN: Node): void {
+    private _bindPostMatchConfetti(): void {
+        if (this._confettiBound || !this._postMatchPanel) return;
+        const trophyN = this._postMatchPanel.getChildByName('TrophyLabel');
+        if (!trophyN) {
+            console.log(`${TAG} _bindPostMatchConfetti | ABORT_NO_TROPHY`);
+            return;
+        }
+        const shapes: IconName[] = ['sparkle', 'star', 'starBurst', 'circle', 'triangle'];
+        const tints = [Palette.accent.violet, Palette.accent.teal, Palette.accent.amber, Palette.accent.rose, Palette.rank.gold];
+        this._confettiShapes = [];
+        this._confettiTints = [];
+        let attached = 0;
         for (let i = 0; i < 12; i++) {
             const confN = trophyN.getChildByName(`Confetti_${i}`);
             if (!confN) continue;
-            Tween.stopAllByTarget(confN);
-            confN.active = true;
-            confN.setPosition(0, 0, 0);
-            confN.setScale(0.01, 0.01, 1);
-            confN.angle = 0;
-            // Radial layout: 12 slots around a circle, ±20° jitter, radius 180-260.
-            const baseAngle = (i / 12) * Math.PI * 2;
-            const jitter = (Math.random() - 0.5) * (Math.PI / 9);
-            const theta = baseAngle + jitter;
-            const radius = 180 + Math.random() * 80;
-            const tx = Math.cos(theta) * radius;
-            const ty = Math.sin(theta) * radius;
-            const spin = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 180);
-            tween(confN)
-                .to(0.9, {
-                    position: new Vec3(tx, ty, 0),
-                    scale: new Vec3(1.0, 1.0, 1),
-                }, { easing: 'cubicOut' })
-                .call(() => { confN.active = false; })
-                .start();
-            tween(confN)
-                .by(0.9, { angle: spin }, { easing: 'cubicOut' })
-                .start();
+            const shape = shapes[i % shapes.length];
+            const tint = tints[i % tints.length];
+            this._confettiShapes.push(shape);
+            this._confettiTints.push(tint);
+            try {
+                IconLibrary.attach(confN, shape, { size: 40, tintHex: tint });
+                confN.active = false;
+                attached++;
+            } catch (e) {
+                console.log(`${TAG} _bindPostMatchConfetti | ATTACH_FAIL slot=${i} err=${e}`);
+            }
         }
+        this._confettiBound = true;
+        console.log(`${TAG} _bindPostMatchConfetti | DONE attached=${attached}/12`);
+    }
+
+    /**
+     * Session D Part 8 / UX Phase 2b: spawn 12 confetti particles from the
+     * trophy center and fan them outward. Confetti nodes are pre-built in
+     * the scene as children of TrophyLabel (`Confetti_0..11`); their
+     * Graphics components are pre-bound in `_bindPostMatchConfetti` so this
+     * hot path only resets transform state + starts tweens.
+     */
+    private _animateConfetti(trophyN: Node): void {
+        let started = 0;
+        for (let i = 0; i < 12; i++) {
+            const confN = trophyN.getChildByName(`Confetti_${i}`);
+            if (!confN) continue;
+            try {
+                Tween.stopAllByTarget(confN);
+                confN.active = true;
+                confN.setPosition(0, 0, 0);
+                confN.setScale(0.01, 0.01, 1);
+                confN.angle = 0;
+                // Radial layout: 12 slots around a circle, ±20° jitter, radius 180-260.
+                const baseAngle = (i / 12) * Math.PI * 2;
+                const jitter = (Math.random() - 0.5) * (Math.PI / 9);
+                const theta = baseAngle + jitter;
+                const radius = 180 + Math.random() * 80;
+                const tx = Math.cos(theta) * radius;
+                const ty = Math.sin(theta) * radius;
+                const spin = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 180);
+                tween(confN)
+                    .to(0.9, {
+                        position: new Vec3(tx, ty, 0),
+                        scale: new Vec3(1.0, 1.0, 1),
+                    }, { easing: 'cubicOut' })
+                    .call(() => { confN.active = false; })
+                    .start();
+                tween(confN)
+                    .by(0.9, { angle: spin }, { easing: 'cubicOut' })
+                    .start();
+                started++;
+            } catch (e) {
+                console.log(`${TAG} _animateConfetti | PARTICLE_FAIL slot=${i} err=${e}`);
+            }
+        }
+        console.log(`${TAG} _animateConfetti | CONFETTI_DONE started=${started}/12 bound=${this._confettiBound}`);
     }
 
     /** Hide all confetti emoji children (2nd/3rd-place or non-trophy placements). */
@@ -5870,7 +6712,7 @@ export class AppUI extends Component {
     /** Refresh the wager value button label + start button enabled state. */
     private _refreshWagerControlRow(): void {
         const label = WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex] ?? '0.05 SOL';
-        if (this._wagerValueLabel) this._wagerValueLabel.string = `💰 ${label}  ▾`;
+        if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
         const filled = this._squad.filled;
         const ready = filled === 3;
         if (this._wagerStartButton) {
@@ -6260,7 +7102,8 @@ export class AppUI extends Component {
         const titleL = this._leaderboardPanel?.getChildByName('LeaderboardTitleLabel')?.getComponent(Label);
         if (titleL) {
             const label = modeFromU8(this._lbFilterMode).label;
-            titleL.string = `🏆 Leaderboard · ${label}`;
+            // UX Phase 2b: emoji stripped; IconBadge trophy attached at bind time.
+            titleL.string = `Leaderboard · ${label}`;
         }
         let entries: ModeLeaderboardEntry[] = [];
         try {
@@ -6317,7 +7160,7 @@ export class AppUI extends Component {
      */
     private async _refreshSeasonTab(): Promise<void> {
         const titleL = this._leaderboardPanel?.getChildByName('LeaderboardTitleLabel')?.getComponent(Label);
-        if (titleL) titleL.string = '🏆 Leaderboard · This Week';
+        if (titleL) titleL.string = 'Leaderboard · This Week';
         let season: SeasonState | null = null;
         try {
             season = await getCurrentSeason(this._tdRpc);
@@ -6370,7 +7213,8 @@ export class AppUI extends Component {
         if (!label) return;
         const pubkey = MWAManager.instance?.connectedPubkey ?? null;
         if (!pubkey) {
-            label.string = '🔥 Connect wallet to start your streak';
+            // UX overhaul Phase 1: emoji is rendered via IconBadge sibling.
+            label.string = 'Connect wallet to start your streak';
             return;
         }
         try {
@@ -6383,10 +7227,11 @@ export class AppUI extends Component {
             const bitsDone = stats ? countCompleted(stats.dailyChallengesBitmask) : 0;
             const total = dc?.challenges.length ?? 3;
             const rank = seasonRank ? `#${seasonRank.rank}` : '—';
-            label.string = `🔥 Day ${streak} · ${bitsDone}/${total} challenges · Season ${rank}`;
+            label.string = `Day ${streak} · ${bitsDone}/${total} challenges · Season ${rank}`;
+            this._updateStreakFlame(streak);
         } catch (e) {
             console.log(`${TAG} _hydrateDailyChallengeWidget | ERROR ${e}`);
-            label.string = '🔥 Day 1 · Play a match to start your streak';
+            label.string = 'Day 1 · Play a match to start your streak';
         }
     }
 
@@ -6859,7 +7704,7 @@ export class AppUI extends Component {
             for (const tile of this._pfTrophyTiles) tile.active = false;
             return;
         }
-        const { getPlayerTrophies, rankEmoji } = await import('../../token-duel/scripts/TrophyRpc');
+        const { getPlayerTrophies, rankIcon } = await import('../../token-duel/scripts/TrophyRpc');
         const trophies = await getPlayerTrophies(pubkey);
         this._pfTrophyEntries = trophies;
         console.log(`${TAG} _refreshTrophies | DONE count=${trophies.length}`);
@@ -6869,10 +7714,11 @@ export class AppUI extends Component {
             const t = trophies[i];
             if (!t) { tile.active = false; continue; }
             tile.active = true;
-            const emojiLbl = tile.getChildByName('Emoji')?.getComponent(Label);
+            // UX Phase 2b: procedural medal/trophy on the 'Emoji' node instead of glyph.
+            const emojiN = tile.getChildByName('Emoji');
             const titleLbl = tile.getChildByName('Title')?.getComponent(Label);
             const winsLbl = tile.getChildByName('Wins')?.getComponent(Label);
-            if (emojiLbl) emojiLbl.string = rankEmoji(t.rank);
+            if (emojiN) IconLibrary.attach(emojiN, rankIcon(t.rank), { size: 64 });
             if (titleLbl) titleLbl.string = `Week #${t.weekId}`;
             if (winsLbl) winsLbl.string = t.wins > 0 ? `${t.wins} wins` : '';
         }
@@ -7092,7 +7938,8 @@ export class AppUI extends Component {
         this._homePanel.active = false;
         this._tournamentPanel.active = true;
 
-        if (this._tournamentTitleLabel) this._tournamentTitleLabel.string = '⚔ Tournament';
+        // UX Phase 2b: emoji stripped; IconBadge sword attached at bind time.
+        if (this._tournamentTitleLabel) this._tournamentTitleLabel.string = 'Tournament';
         if (this._tournamentMatchLabel) this._tournamentMatchLabel.string = `match ${matchPda.slice(0, 4)}…${matchPda.slice(-4)}`;
         if (this._tournamentStatusLabel) this._tournamentStatusLabel.string = 'Connecting…';
         if (this._tournamentPrizeLabel) this._tournamentPrizeLabel.string = 'Prize pool: — · top-3 payout';
@@ -7200,11 +8047,12 @@ export class AppUI extends Component {
             sortedByHeight.push({ slot: i, height: m.heights[i] === 0xffffffff ? -1 : m.heights[i], pk: m.players[i] });
         }
         if (m.status === 2) sortedByHeight.sort((a, b) => b.height - a.height);
-        const medalBySlot = new Map<number, string>();
+        // UX Phase 2b: medals by IconLibrary name (not emoji).
+        const medalBySlot = new Map<number, IconName>();
         if (m.status === 2) {
-            if (sortedByHeight[0]) medalBySlot.set(sortedByHeight[0].slot, '🥇');
-            if (sortedByHeight[1]) medalBySlot.set(sortedByHeight[1].slot, '🥈');
-            if (sortedByHeight[2]) medalBySlot.set(sortedByHeight[2].slot, '🥉');
+            if (sortedByHeight[0]) medalBySlot.set(sortedByHeight[0].slot, 'medalGold');
+            if (sortedByHeight[1]) medalBySlot.set(sortedByHeight[1].slot, 'medalSilver');
+            if (sortedByHeight[2]) medalBySlot.set(sortedByHeight[2].slot, 'medalBronze');
         }
 
         // Render 10 slots. Empty slots are inactive; filled ones show pk+height.
@@ -7217,10 +8065,23 @@ export class AppUI extends Component {
             if (!hasPlayer) continue;
             const pkLabel = slot.getChildByName('Pubkey')?.getComponent(Label);
             const hLabel = slot.getChildByName('Height')?.getComponent(Label);
-            const medalLabel = slot.getChildByName('Medal')?.getComponent(Label);
+            const medalNode = slot.getChildByName('Medal');
             if (pkLabel) pkLabel.string = `P${i + 1}  ${pk.slice(0, 4)}…${pk.slice(-4)}`;
             if (hLabel) hLabel.string = h === 0xffffffff ? 'H:—' : `H:${h}`;
-            if (medalLabel) medalLabel.string = medalBySlot.get(i) ?? '';
+            // UX Phase 2b: medal rendered via IconLibrary (clears label + draws icon).
+            if (medalNode) {
+                const medalIcon = medalBySlot.get(i);
+                if (medalIcon) {
+                    IconLibrary.attach(medalNode, medalIcon, { size: 28 });
+                    medalNode.active = true;
+                } else {
+                    // Clear to empty — remove Graphics so no leftover medal shows.
+                    const g = medalNode.getComponent(Graphics);
+                    if (g) medalNode.removeComponent(g);
+                    const medalLabel = medalNode.getComponent(Label);
+                    if (medalLabel) medalLabel.string = '';
+                }
+            }
         }
 
         // Join button: Waiting + free slot + player not already in + not the host.
@@ -7327,7 +8188,8 @@ export class AppUI extends Component {
         const label = labelNode?.getComponent(Label);
         if (!label) return;
         if (this._nextTournamentIsActive) {
-            label.string = '⚔ TOURNAMENT LIVE — tap to spectate';
+            // UX overhaul Phase 1: emoji rendered via IconBadge sibling.
+            label.string = 'TOURNAMENT LIVE — tap to spectate';
             return;
         }
         // Countdown = (createdAt + cadenceSec) - nowSec. But tournaments fill
@@ -7338,7 +8200,7 @@ export class AppUI extends Component {
         const elapsedSec = Math.max(0, nowSec - this._nextTournamentCreatedAt);
         const mm = Math.floor(elapsedSec / 60);
         const ss = elapsedSec % 60;
-        label.string = `⚔ Tournament · waiting ${mm}:${ss.toString().padStart(2, '0')} · tap to join`;
+        label.string = `Tournament · waiting ${mm}:${ss.toString().padStart(2, '0')} · tap to join`;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -7384,7 +8246,8 @@ export class AppUI extends Component {
         this._spectatorPanel.active = true;
 
         // Reset UI to "connecting" state.
-        if (this._spectatorTitleLabel) this._spectatorTitleLabel.string = '👁 Spectating';
+        // UX Phase 2b: emoji stripped; IconBadge eye attached at bind time.
+        if (this._spectatorTitleLabel) this._spectatorTitleLabel.string = 'Spectating';
         if (this._spectatorMatchLabel) this._spectatorMatchLabel.string = `match ${matchPda.slice(0, 4)}…${matchPda.slice(-4)}`;
         if (this._spectatorStatusLabel) this._spectatorStatusLabel.string = 'Connecting…';
         for (const row of this._spectatorPlayerRows) row.active = false;
@@ -7568,7 +8431,8 @@ export class AppUI extends Component {
             const sym = ev.outcome === 'ok' ? '✓' : '✗';
             line = `${hhmmss} ${sym} drop #${ev.blockIdx + 1} x=${ev.xPos.toFixed(2)}`;
         } else {
-            line = `${hhmmss} 🏁 match over · final height ${ev.finalHeight}`;
+            // UX Phase 2b: emoji replaced with bullet glyph that renders clean everywhere.
+            line = `${hhmmss} ▶ match over · final height ${ev.finalHeight}`;
         }
         this._spectatorEventLines.unshift(line);
         if (this._spectatorEventLines.length > this._spectatorEventRows.length) {
@@ -7699,8 +8563,11 @@ export class AppUI extends Component {
         const hapOn = Haptics.isEnabled();
         const soundLabel = soundBtn?.getChildByName('Label')?.getComponent(Label);
         const hapLabel = hapBtn?.getChildByName('Label')?.getComponent(Label);
-        if (soundLabel) soundLabel.string = soundOn ? '🔊 Sound: ON' : '🔈 Sound: OFF';
-        if (hapLabel) hapLabel.string = hapOn ? '📳 Haptics: ON' : '✋ Haptics: OFF';
+        // UX Phase 2b: emoji-free labels + state-driven IconBadge swap.
+        if (soundLabel) soundLabel.string = soundOn ? 'Sound: ON' : 'Sound: OFF';
+        if (hapLabel) hapLabel.string = hapOn ? 'Haptics: ON' : 'Haptics: OFF';
+        if (soundBtn) this._ensureIconBadge(soundBtn, soundOn ? 'speaker' : 'speakerMuted', { size: 18, offsetX: -105 });
+        if (hapBtn)   this._ensureIconBadge(hapBtn,   hapOn   ? 'vibration' : 'hand',        { size: 18, offsetX: -105 });
         const soundSpr = soundBtn?.getComponent(Sprite);
         const hapSpr = hapBtn?.getComponent(Sprite);
         if (soundSpr) soundSpr.color = soundOn ? new Color(48, 198, 155, 255) : new Color(60, 70, 90, 255);

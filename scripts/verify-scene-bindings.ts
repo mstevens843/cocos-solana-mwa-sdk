@@ -51,6 +51,9 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'DisconnectButton',    components: ['cc.Button'] },
     { name: 'DeleteButton',        components: ['cc.Button'] },
     { name: 'PubkeyLabel',         components: ['cc.Label'] },
+    { name: 'StreakFlameContainer', components: ['cc.UITransform'] },
+    { name: 'StreakFlameIcon',      components: ['cc.Label'] },
+    { name: 'StreakCountLabel',     components: ['cc.Label'] },
     { name: 'HomeStatusLabel',     components: ['cc.Label'] },
 
     // ── TokenDuelPanel — core game ──
@@ -205,6 +208,15 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'RaceHeroDeltaLabel',     components: ['cc.Label'] },
     { name: 'RaceHeroSubtitleLabel',  components: ['cc.Label'] },
     { name: 'RaceCancelButton',       components: ['cc.Button'] },
+
+    // ── UX overhaul Phase 2: procedural mascot on HomePanel ──
+    // The MascotController component (custom UUID) builds its own graphics
+    // children at onLoad — verifier only checks the container node + UITransform.
+    { name: 'MascotContainer',        components: ['cc.UITransform'] },
+
+    // ── UX overhaul Phase 2b: second mascot on PostMatchPanel so celebrate
+    // plays on the panel the user is looking at. ──
+    { name: 'PostMatchMascotContainer', components: ['cc.UITransform'] },
 ];
 
 /** Parametric rows: PresetRow_0..4, ChallengeRow_0..2 + labels, ChallengeDescriptionLabel_0..2, etc. */

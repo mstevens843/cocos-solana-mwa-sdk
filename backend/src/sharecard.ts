@@ -28,6 +28,7 @@ function decodeScore(score: number): number {
 }
 
 import { createCanvas, Canvas, SKRSContext2D as Ctx } from '@napi-rs/canvas';
+import { drawRankIcon, drawCheck } from './iconDraw';
 
 const TAG = '[sharecard]';
 
@@ -153,12 +154,16 @@ function drawResultPanel(ctx: Ctx, m: MatchSummary): void {
     const panelX = 640;
     const panelY = 80;
 
-    // Trophy emoji by placement.
-    const trophy = m.placement === 0 ? '🏆' : m.placement === 1 ? '🥈' : m.placement === 2 ? '🥉' : '·';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '130px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(trophy, panelX, panelY + 130);
+    // UX Phase 2c: procedural rank icon (drawn) replaces the emoji glyph so
+    // the card renders identically across all platforms (no emoji-font drift).
+    if (m.placement <= 2) {
+        drawRankIcon(ctx, panelX + 65, panelY + 90, 130, m.placement);
+    } else {
+        ctx.fillStyle = '#5a6478';
+        ctx.font = '110px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('·', panelX, panelY + 130);
+    }
 
     // Placement text.
     ctx.fillStyle = '#e0a020';
@@ -178,11 +183,13 @@ function drawResultPanel(ctx: Ctx, m: MatchSummary): void {
     ctx.fillStyle = '#b0b8c8';
     ctx.fillText(`${m.modeLabel} · ${m.timeWindowLabel} · ${m.track === 'real' ? 'Real' : 'Paper'}`, panelX + 150, panelY + 220);
 
-    // Verified badge if applicable.
+    // Verified badge if applicable. UX Phase 2c: procedural check glyph.
     if (m.verified) {
+        drawCheck(ctx, panelX + 160, panelY + 244, 16, '#7ac4ff');
         ctx.fillStyle = '#7ac4ff';
         ctx.font = '20px system-ui, sans-serif';
-        ctx.fillText('✓ Verified on-chain', panelX + 150, panelY + 252);
+        ctx.textAlign = 'left';
+        ctx.fillText('Verified on-chain', panelX + 176, panelY + 252);
     }
 }
 

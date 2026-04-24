@@ -95,9 +95,16 @@ export async function fetchRecentMatches(
     }
 }
 
-/** Format one ticker line for display.
+/** UX overhaul: IconLibrary key for the ticker row's status badge. */
+export type TickerIconName = 'sword' | 'clock' | 'bolt';
+export function tickerStatusIcon(entry: MatchTickerEntry): TickerIconName {
+    if (entry.isTournament) return 'sword';
+    return entry.status === 0 ? 'clock' : 'bolt';
+}
+
+/** Format one ticker line for display (text-only — caller pairs with tickerStatusIcon).
  *  Example: "4p Pot · 2/4 joined · 0.05 SOL · 1h · 42s ago"
- *  Tournament variant (Part 14): "⚔ TOURNAMENT · 4/10 joined · 0.001 SOL · 24h · 42s ago"
+ *  Tournament variant (Part 14): "TOURNAMENT · 4/10 joined · 0.001 SOL · 24h · 42s ago"
  */
 export function formatTickerLine(entry: MatchTickerEntry, nowSec: number): string {
     const modeKey = (['oneVone', 'fourPlayer', 'eightPlayer', 'battleRoyale'][entry.mode] ?? 'oneVone') as keyof typeof MODES;
@@ -109,8 +116,7 @@ export function formatTickerLine(entry: MatchTickerEntry, nowSec: number): strin
         : elapsedSec < 3600
             ? `${Math.floor(elapsedSec / 60)}m ago`
             : `${Math.floor(elapsedSec / 3600)}h ago`;
-    const statusIcon = entry.isTournament ? '⚔' : (entry.status === 0 ? '🕒' : '⚡');
-    return `${statusIcon} ${modeLabel} · ${entry.playerCount}/${entry.requiredPlayers} joined · ${entry.wagerSol.toFixed(3)} SOL · ${windowLabel} · ${ago}`;
+    return `${modeLabel} · ${entry.playerCount}/${entry.requiredPlayers} joined · ${entry.wagerSol.toFixed(3)} SOL · ${windowLabel} · ${ago}`;
 }
 
 /**

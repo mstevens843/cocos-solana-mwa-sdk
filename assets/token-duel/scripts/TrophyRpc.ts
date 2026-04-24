@@ -106,10 +106,19 @@ function parseTrophy(a: DasAsset): Trophy | null {
     return { mint: a.id, weekId, rank, wins, name, imageUri, mintedAt };
 }
 
-/** Pretty rank emoji for tile display. */
+/** Pretty rank emoji for tile display. Retained for back-compat / share-card / log lines. */
 export function rankEmoji(rank: number): string {
     if (rank === 1) return '🥇';
     if (rank === 2) return '🥈';
     if (rank === 3) return '🥉';
     return '🏆';
+}
+
+/** UX overhaul: IconLibrary key for rank → procedural medal/trophy icon. */
+export type RankIconName = 'medalGold' | 'medalSilver' | 'medalBronze' | 'trophy';
+export function rankIcon(rank: number): RankIconName {
+    if (rank === 1) return 'medalGold';
+    if (rank === 2) return 'medalSilver';
+    if (rank === 3) return 'medalBronze';
+    return 'trophy';
 }

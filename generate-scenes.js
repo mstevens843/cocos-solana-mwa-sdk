@@ -6,6 +6,13 @@
 const fs = require('fs');
 const path = require('path');
 
+// UX overhaul: shared theme constants (see assets/token-duel/scripts/Theme.cjs).
+// Mirror file lives at assets/token-duel/scripts/Theme.ts for runtime use.
+const Theme = require('./assets/token-duel/scripts/Theme.cjs');
+const { Palette: P, ButtonVariants: BV } = Theme;
+// rgb-tuple helpers — pull from a Theme variant.
+const VAR = (name) => BV[name]?.normal ?? BV.primary.normal;
+
 const UUIDS = {
     MWAManager: '409dciqDmlP9rvNGXKC80Rx',
     DemoAppConfig: '97371AjclpDVa7mBnZTheRu',
@@ -27,7 +34,7 @@ class SB {
     add(o){const i=this.e.length;this.e.push(o);return i;}
     node(name,parent,children,comps,pos=v3()){return this.add({__type__:'cc.Node',_name:name,_objFlags:0,__editorExtras__:{},_parent:parent!==null?rf(parent):null,_children:children.map(rf),_active:true,_components:comps.map(rf),_prefab:null,_lpos:pos,_lrot:qt(),_lscale:v3(1,1,1),_mobility:0,_layer:33554432,_euler:v3(),_id:gid()});}
     ut(n,w,h){return this.add({__type__:'cc.UITransform',_name:'',_objFlags:0,__editorExtras__:{},node:rf(n),_enabled:true,__prefab:null,_contentSize:sz(w,h),_anchorPoint:v2(0.5,0.5),_id:gid()});}
-    lbl(n,t,fs=30,r=255,g=255,b=255){return this.add({__type__:'cc.Label',_name:'',_objFlags:0,__editorExtras__:{},node:rf(n),_enabled:true,__prefab:null,_string:t,_horizontalAlign:1,_verticalAlign:1,_actualFontSize:fs,_fontSize:fs,_fontFamily:'Arial',_lineHeight:fs+10,_overflow:0,_enableWrapText:true,_font:null,_isSystemFontUsed:true,_spacingX:0,_isItalic:false,_isBold:false,_isUnderline:false,_underlineHeight:2,_cacheMode:0,_color:cl(r,g,b),_isBatchable:false,_id:gid()});}
+    lbl(n,t,fs=30,r=255,g=255,b=255){return this.add({__type__:'cc.Label',_name:'',_objFlags:0,__editorExtras__:{},node:rf(n),_enabled:true,__prefab:null,_string:t,_horizontalAlign:1,_verticalAlign:1,_actualFontSize:fs,_fontSize:fs,_fontFamily:'Arial',_lineHeight:fs+10,_overflow:0,_enableWrapText:true,_font:{__uuid__:'e35e48c9-4afd-4ca0-98ac-860f2e2c8f85'},_isSystemFontUsed:false,_spacingX:0,_isItalic:false,_isBold:false,_isUnderline:false,_underlineHeight:2,_cacheMode:0,_color:cl(r,g,b),_isBatchable:false,_id:gid()});}
     btn(n,r=60,g=120,b=200){return this.add({__type__:'cc.Button',_name:'',_objFlags:0,__editorExtras__:{},node:rf(n),_enabled:true,__prefab:null,_interactable:true,_transition:2,_normalColor:cl(r,g,b),_hoverColor:cl(Math.min(255,r+20),Math.min(255,g+20),Math.min(255,b+20)),_pressedColor:cl(Math.max(0,r-20),Math.max(0,g-20),Math.max(0,b-20)),_disabledColor:cl(100,100,100,180),_duration:0.1,_zoomScale:1.05,_target:rf(n),_id:gid()});}
     spr(n,r=60,g=120,b=200,sf='20835ba4-6145-4fbc-a58a-051ce700aa3e@f9941',type=1){return this.add({__type__:'cc.Sprite',_name:'',_objFlags:0,__editorExtras__:{},node:rf(n),_enabled:true,__prefab:null,_customMaterial:null,_srcBlendFactor:2,_dstBlendFactor:4,_color:cl(r,g,b),_type:type,_fillType:0,_sizeMode:0,_fillCenter:v2(0,0),_fillStart:0,_fillRange:0,_isTrimmedMode:true,_useGrayscale:false,_atlas:null,_spriteFrame:{__uuid__:sf},_id:gid()});}
     // Session 5: orthoHeight = half of the design-resolution height. 720×1280
@@ -48,23 +55,93 @@ function mkLabel(sb, name, parent, text, fs, y, w=800, h=50, r=255, g=255, b=255
     return n;
 }
 
+/**
+ * UX Phase 2c: tweak a Label's style (bold / letter-spacing / color / font-size)
+ * after it's been created. Finds the cc.Label component on the node itself or
+ * its first child (handles both mkLabel and mkBtn patterns).
+ */
+function style(sb, nodeIdx, opts = {}) {
+    if (nodeIdx == null || !sb.e[nodeIdx]) return;
+    let labelIdx = null;
+    // Check components on the node itself first (mkLabel pattern).
+    const cs = sb.e[nodeIdx]._components ?? [];
+    for (const c of cs) {
+        if (sb.e[c.__id__]?.__type__ === 'cc.Label') { labelIdx = c.__id__; break; }
+    }
+    // Otherwise search every child (mkBtn pattern — the label may not be child[0]
+    // now that buttons have a Highlight sibling inserted before the Label).
+    if (labelIdx === null) {
+        const children = sb.e[nodeIdx]._children ?? [];
+        for (const childRef of children) {
+            const child = sb.e[childRef.__id__];
+            if (!child) continue;
+            if (child._name && child._name !== 'Label') continue; // prefer the 'Label' child
+            const ccs = child._components ?? [];
+            for (const c of ccs) {
+                if (sb.e[c.__id__]?.__type__ === 'cc.Label') { labelIdx = c.__id__; break; }
+            }
+            if (labelIdx !== null) break;
+        }
+    }
+    if (labelIdx === null) return;
+    const l = sb.e[labelIdx];
+    // UX Phase 2c: bold=true swaps the font to Sora-Bold instead of setting
+    // _isBold (which would synthetic-bold Inter on top of a font that isn't
+    // designed for it — muddier rendering). Sora-Bold is already bold by weight.
+    if (opts.bold === true) {
+        l._font = { __uuid__: 'b93c2245-b7ae-4e03-b74e-9f3dd1015941' };
+        l._isBold = false;
+    } else if (opts.bold === false) {
+        l._font = { __uuid__: 'e35e48c9-4afd-4ca0-98ac-860f2e2c8f85' };
+        l._isBold = false;
+    }
+    if (opts.spacing !== undefined) l._spacingX = opts.spacing;
+    if (opts.color) l._color = opts.color;
+    if (opts.fontSize !== undefined) {
+        l._actualFontSize = opts.fontSize;
+        l._fontSize = opts.fontSize;
+        l._lineHeight = opts.fontSize + 10;
+    }
+    // Stage 5N — switch to system monospace (Menlo on iOS / monospace on Android)
+    // so number columns don't dance during roll-tweens. No bundled JetBrains.
+    if (opts.mono === true) {
+        l._fontFamily = 'Menlo';
+        l._isSystemFontUsed = true;
+        l._font = null;
+    }
+}
+
+// UX Phase 2c palette shortcuts for typography pass.
+const GOLD = () => cl(255, 210, 74, 255);    // Palette.rank.gold
+const TEXT_HI = () => cl(244, 245, 249, 255); // Palette.text.hi
+
+// UX Phase 2c: every button gets a Highlight child — a white sprite at ~14%
+// alpha covering the top 45% of the button. Creates a subtle gloss/gradient
+// feel without new assets. Children order [Highlight, Label] ensures the
+// highlight renders ABOVE the base (parent sprite) but BELOW the text.
 function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200) {
-    const bn=sb.e.length, ln=bn+1, bu=bn+2, sp=bn+3, bt=bn+4, lu=bn+5, ll=bn+6;
+    const bn=sb.e.length, hN=bn+1, ln=bn+2, bu=bn+3, sp=bn+4, bt=bn+5, hUt=bn+6, hSp=bn+7, lUt=bn+8, ll=bn+9;
     const fontSize = Math.max(26, Math.round(h*0.34));
-    sb.node(name, parent, [ln], [bu,sp,bt], v3(0,y,0));
-    sb.node('Label', bn, [], [lu,ll], v3(0,0,0));
-    sb.ut(bn,w,h); sb.spr(bn,br,bg,bb); sb.btn(bn,br,bg,bb);
-    sb.ut(ln,w,h); sb.lbl(ln,text,fontSize,255,255,255);
+    sb.node(name, parent, [hN, ln], [bu, sp, bt], v3(0, y, 0));
+    sb.node('Highlight', bn, [], [hUt, hSp], v3(0, h * 0.275, 0));
+    sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
+    sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
+    sb.ut(hN, w - 4, h * 0.45); sb.spr(hN, 255, 255, 255);
+    sb.e[hSp]._color = cl(255, 255, 255, 36); // ~14% alpha gloss
+    sb.ut(ln, w, h); sb.lbl(ln, text, fontSize, 255, 255, 255);
     return bn;
 }
 
 function mkBtnXY(sb, name, parent, text, x, y, w=500, h=75, br=60, bg=120, bb=200) {
-    const bn=sb.e.length, ln=bn+1, bu=bn+2, sp=bn+3, bt=bn+4, lu=bn+5, ll=bn+6;
+    const bn=sb.e.length, hN=bn+1, ln=bn+2, bu=bn+3, sp=bn+4, bt=bn+5, hUt=bn+6, hSp=bn+7, lUt=bn+8, ll=bn+9;
     const fontSize = Math.max(22, Math.round(h*0.34));
-    sb.node(name, parent, [ln], [bu,sp,bt], v3(x,y,0));
-    sb.node('Label', bn, [], [lu,ll], v3(0,0,0));
-    sb.ut(bn,w,h); sb.spr(bn,br,bg,bb); sb.btn(bn,br,bg,bb);
-    sb.ut(ln,w,h); sb.lbl(ln,text,fontSize,255,255,255);
+    sb.node(name, parent, [hN, ln], [bu, sp, bt], v3(x, y, 0));
+    sb.node('Highlight', bn, [], [hUt, hSp], v3(0, h * 0.275, 0));
+    sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
+    sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
+    sb.ut(hN, w - 4, h * 0.45); sb.spr(hN, 255, 255, 255);
+    sb.e[hSp]._color = cl(255, 255, 255, 36); // ~14% alpha gloss
+    sb.ut(ln, w, h); sb.lbl(ln, text, fontSize, 255, 255, 255);
     return bn;
 }
 
@@ -78,6 +155,12 @@ const UUID_EDITBOX_BG     = 'bd1bcaba-bd7d-4a71-b143-997c882383e4@f9941';
 const UUID_SLIDER_RAIL    = '28765e2f-040a-4c65-8e8c-f9d0bb79d863@f9941';
 const UUID_SLIDER_HANDLE  = 'f12a23c4-b924-4322-a260-3d982428f1e8@f9941';
 const UUID_BUILTIN_SPRITE_MAT = 'fda095cb-831d-4601-ad94-846013963de8';
+
+// UX Phase 2c: custom fonts bundled at assets/demo/resources/fonts/.
+// Inter-Regular = body/default, Sora-Bold = display (applied via style({bold:true})).
+// UUIDs are minted by Cocos editor on first import.
+const UUID_FONT_INTER = 'e35e48c9-4afd-4ca0-98ac-860f2e2c8f85';
+const UUID_FONT_SORA  = 'b93c2245-b7ae-4e03-b74e-9f3dd1015941';
 
 /**
  * EditBox — Cocos 3.8 cc.EditBox mirrors the default prefab layout:
@@ -362,15 +445,18 @@ function generate() {
     sb.node('LandingPanel', canvas, [], [lpN+1], v3(0,0,0));
     sb.ut(lpN, 720, 1280);
 
-    // Title + Subtitle
-    const title = mkLabel(sb, 'TitleLabel', lpN, 'MWA Example App', 56, 420, 680, 90);
-    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Solana Mobile Wallet Adapter Demo', 30, 340, 680, 60, 204, 204, 204);
+    // Title + Subtitle — UX Phase 2c: bold + gold title.
+    const title = mkLabel(sb, 'TitleLabel', lpN, 'Token Duel', 56, 420, 680, 90);
+    style(sb, title, { bold: true, color: GOLD() });
+    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Portfolio Race on Solana', 30, 340, 680, 60, 204, 204, 204);
 
     // Connect Wallet — opens OS picker (no targetPackage)
-    const connectBtn = mkBtn(sb, 'ConnectButton', lpN, 'Connect Wallet', 120, 680, 100, 51, 153, 255);
+    // UX overhaul: Solana-violet primary CTA (was cobalt blue).
+    const connectBtn = mkBtn(sb, 'ConnectButton', lpN, 'Connect Wallet', 120, 680, 100, VAR('primary').r, VAR('primary').g, VAR('primary').b);
+    style(sb, connectBtn, { bold: true });
 
     // Reconnect (hidden by default — shown when cached auth exists)
-    const reconnBtn = mkBtn(sb, 'ReconnectButton', lpN, 'Reconnect (Cached)', 10, 680, 100, 77, 179, 102);
+    const reconnBtn = mkBtn(sb, 'ReconnectButton', lpN, 'Reconnect (Cached)', 10, 680, 100, VAR('success').r, VAR('success').g, VAR('success').b);
     sb.e[reconnBtn]._active = false;
 
     // Status label
@@ -395,6 +481,26 @@ function generate() {
     // button column widens gaps (was 90px stride → now 100px).
     const pubkey = mkLabel(sb, 'PubkeyLabel', hpN, 'Not connected', 26, 700, 680, 40, 128, 204, 255);
 
+    // Stage 4K — streak flame on Home. Container sits top-right of PubkeyLabel
+    // with a procedural flame icon + Nx count. AppUI._updateStreakFlame toggles
+    // visibility based on UserStats.currentStreak (0 = hidden, ≥3 = pulse,
+    // ≥5 = gold tint).
+    const streakFlameN = sb.e.length;
+    sb.node('StreakFlameContainer', hpN, [], [streakFlameN + 1], v3(280, 748, 0));
+    sb.ut(streakFlameN, 100, 36);
+    sb.e[streakFlameN]._active = false;
+    const streakIconN = sb.e.length;
+    sb.node('StreakFlameIcon', streakFlameN, [], [streakIconN + 1, streakIconN + 2], v3(-28, 0, 0));
+    sb.ut(streakIconN, 28, 28);
+    sb.lbl(streakIconN, '', 22, 255, 160, 70); // empty label; AppUI attaches IconLibrary.flame at runtime
+    const streakCountN = sb.e.length;
+    sb.node('StreakCountLabel', streakFlameN, [], [streakCountN + 1, streakCountN + 2], v3(22, 0, 0));
+    sb.ut(streakCountN, 60, 30);
+    const streakCountL = sb.lbl(streakCountN, '0×', 20, 255, 160, 70);
+    sb.e[streakCountL]._isBold = true;
+    style(sb, streakCountN, { mono: true });
+    sb.e[streakFlameN]._children = [rf(streakIconN), rf(streakCountN)];
+
     // Part 13: rake tier chip. Hidden until wallet connects; AppUI refreshes
     // after UserStats load so the user sees their current fee tier up-front.
     const homeRakeChip = mkLabel(sb, 'HomeRakeChip', hpN, 'Your rake: —', 14, 744, 700, 22, 180, 190, 210);
@@ -404,34 +510,52 @@ function generate() {
     const matchTicker = mkBtnXY(sb, 'HomeMatchTicker', hpN, '…', 0, 660, 700, 36, 22, 28, 44);
     sb.e[matchTicker]._active = false;
 
-    const homeTournamentBadge = mkBtnXY(sb, 'HomeTournamentBadge', hpN, '⚔ Tournament in —', 0, 660, 700, 36, 140, 80, 180);
+    // UX Phase 2b: emoji → IconBadge (attached at runtime by AppUI).
+    const homeTournamentBadge = mkBtnXY(sb, 'HomeTournamentBadge', hpN, 'Tournament in —', 0, 660, 700, 36, 140, 80, 180);
     sb.e[homeTournamentBadge]._active = false;
 
     // Daily streak strip. Clickable — opens DailyChallengePanel.
-    const streakStrip = mkBtnXY(sb, 'DailyStreakStrip', hpN, '🔥 Day 1 · 0/3 challenges · Season —', 0, 600, 700, 48, 34, 38, 56);
+    const streakStrip = mkBtnXY(sb, 'DailyStreakStrip', hpN, 'Day 1 · 0/3 challenges · Season —', 0, 600, 700, 48, 34, 38, 56);
 
-    // Quick Play — dominant gold CTA.
-    const quickPlay = mkBtn(sb, 'QuickPlayButton', hpN, '⚡ Quick Play · paper match in one tap', 500, 680, 108, 230, 175, 40);
+    // Quick Play — dominant amber CTA. UX overhaul: Theme.accent.amber + bold.
+    const quickPlay = mkBtn(sb, 'QuickPlayButton', hpN, 'Quick Play · paper match in one tap', 500, 680, 108, VAR('warn').r, VAR('warn').g, VAR('warn').b);
+    style(sb, quickPlay, { bold: true });
 
     // Button column spread: stride 100px (was 90) so 7 buttons breathe in the
     // expanded viewport. Y span now 380 → -380.
-    const playDuel = mkBtn(sb, 'PlayTokenDuelButton', hpN, 'Play Token Duel',  380, 680, 86, 218, 165, 32);
-    const signMsg  = mkBtn(sb, 'SignMessageButton',    hpN, 'Sign Message',     270, 680, 86, 51, 153, 255);
-    const signTx   = mkBtn(sb, 'SignTxButton',         hpN, 'Sign Transaction', 160, 680, 86, 51, 153, 255);
-    const signSend = mkBtn(sb, 'SignSendButton',       hpN, 'Sign & Send',       50, 680, 86, 51, 153, 255);
-    const caps     = mkBtn(sb, 'CapabilitiesButton',   hpN, 'Get Capabilities', -60, 680, 86, 102, 128, 179);
+    // UX overhaul: tier-1 (Play/Sign*) use Solana violet, secondary (Caps) uses ghost,
+    // destructive (Disconnect/Delete) keep their orange/red but routed through Theme.
+    const playDuel = mkBtn(sb, 'PlayTokenDuelButton', hpN, 'Play Token Duel',  380, 680, 86, VAR('primary').r, VAR('primary').g, VAR('primary').b);
+    style(sb, playDuel, { bold: true });
+    const signMsg  = mkBtn(sb, 'SignMessageButton',    hpN, 'Sign Message',     270, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
+    const signTx   = mkBtn(sb, 'SignTxButton',         hpN, 'Sign Transaction', 160, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
+    const signSend = mkBtn(sb, 'SignSendButton',       hpN, 'Sign & Send',       50, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
+    const caps     = mkBtn(sb, 'CapabilitiesButton',   hpN, 'Get Capabilities', -60, 680, 86, VAR('ghost').r, VAR('ghost').g, VAR('ghost').b);
     const disconn  = mkBtn(sb, 'DisconnectButton',     hpN, 'Disconnect',      -170, 680, 86, 204, 102, 51);
-    const del      = mkBtn(sb, 'DeleteButton',         hpN, 'Delete Account',  -280, 680, 86, 204, 51, 51);
-    const homeStatus = mkLabel(sb, 'HomeStatusLabel',  hpN, 'Connected — choose an action', 18, -700, 680, 32, 204, 204, 204);
+    const del      = mkBtn(sb, 'DeleteButton',         hpN, 'Delete Account',  -280, 680, 86, VAR('danger').r, VAR('danger').g, VAR('danger').b);
+    const homeStatus = mkLabel(sb, 'HomeStatusLabel',  hpN, 'Connected — choose an action', 18, -700, 680, 32, 168, 174, 201);
 
-    // Gear icon → SettingsPanel (top-right).
-    const homeSettingsBtn = mkBtnXY(sb, 'OpenSettingsButton', hpN, '⚙', 300, 700, 64, 64, 38, 44, 64);
+    // Gear icon → SettingsPanel (top-right). UX Phase 2b: label cleared, AppUI attaches IconBadge cog.
+    const homeSettingsBtn = mkBtnXY(sb, 'OpenSettingsButton', hpN, '', 300, 700, 64, 64, 38, 44, 64);
+
+    // ── Mascot container (Phase 2A) ─────────────────────────────────────
+    // Empty Node — the MascotController component is added at runtime by
+    // AppUI.start() (so we don't need an editor-minted UUID for the .ts file
+    // to be referenced from this node-side scene generator). The controller
+    // builds its own Graphics children (body / wand / eyes / sparkles) at
+    // onLoad. Sits below the bottom button row, above HomeStatusLabel.
+    const mascotN = sb.e.length;
+    // UX Phase 2b: shrunk to 160×200 and nudged up to y=-440 so small-viewport
+    // devices don't clip into HomeStatusLabel (y=-700).
+    sb.node('MascotContainer', hpN, [], [], v3(0, -440, 0));
+    const mascotUT = sb.ut(mascotN, 160, 200);
+    sb.e[mascotN]._components = [rf(mascotUT)];
 
     sb.e[hpN]._children = [
         rf(pubkey), rf(homeRakeChip), rf(matchTicker), rf(homeTournamentBadge),
         rf(streakStrip), rf(quickPlay), rf(playDuel),
         rf(signMsg), rf(signTx), rf(signSend), rf(caps), rf(disconn), rf(del),
-        rf(homeStatus), rf(homeSettingsBtn),
+        rf(mascotN), rf(homeStatus), rf(homeSettingsBtn),
     ];
 
     // ═══════════════════════════════════════════════════════════════
@@ -491,23 +615,28 @@ function generate() {
     });
     sb.e[tdBackBtn]._components = [rf(tdBackBtnUT), rf(tdBackBtnBtn)];
 
-    // Title — gold, center top. Slightly smaller than old 44pt for better balance.
+    // Title — UX Phase 2c: bold.
     const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32, 700, 280, 44, 218, 165, 32);
+    style(sb, tdTitle, { bold: true });
 
     // Session 14 C: Leaderboard + Portfolio entry buttons.
     // Compact icons in the top bar between back link and title area.
-    const tdLeaderboardBtn = mkBtnXY(sb, 'OpenLeaderboardButton', tdN, '🏆', -180, 700, 48, 40, 28, 34, 48);
-    const tdPortfolioBtn   = mkBtnXY(sb, 'OpenPortfolioButton',   tdN, '👤', -128, 700, 48, 40, 28, 34, 48);
-    const tdSettingsBtn    = mkBtnXY(sb, 'OpenSettingsButton',    tdN, '⚙', -76,  700, 48, 40, 28, 34, 48);
-    const tdPresetsBtn     = mkBtnXY(sb, 'OpenSquadPresetsButton', tdN, '📚', -24,  700, 48, 40, 28, 34, 48);
-    const tdSuggestBtn     = mkBtnXY(sb, 'SuggestSquadButton',     tdN, '💡',  28,  700, 48, 40, 28, 34, 48);
-    const tdHelpBtn        = mkBtnXY(sb, 'HelpButton',              tdN, '?',   80,  700, 48, 40, 28, 34, 48);
+    // UX Phase 2b: solo-emoji chrome buttons cleared; AppUI attaches IconBadges.
+    // UX Phase 2d: row moved up to y=735 so it doesn't overlap TitleLabel at y=700.
+    const tdLeaderboardBtn = mkBtnXY(sb, 'OpenLeaderboardButton', tdN, '', -180, 735, 48, 40, 28, 34, 48);
+    const tdPortfolioBtn   = mkBtnXY(sb, 'OpenPortfolioButton',   tdN, '', -128, 735, 48, 40, 28, 34, 48);
+    const tdSettingsBtn    = mkBtnXY(sb, 'OpenSettingsButton',    tdN, '', -76,  735, 48, 40, 28, 34, 48);
+    const tdPresetsBtn     = mkBtnXY(sb, 'OpenSquadPresetsButton', tdN, '', -24,  735, 48, 40, 28, 34, 48);
+    const tdSuggestBtn     = mkBtnXY(sb, 'SuggestSquadButton',     tdN, '',  28,  735, 48, 40, 28, 34, 48);
+    const tdHelpBtn        = mkBtnXY(sb, 'HelpButton',              tdN, '?',   80,  735, 48, 40, 28, 34, 48);
 
     // Balance chip — muted emerald, top-right.
     const tdBalance = mkLabel(sb, 'BalanceChipLabel', tdN, '◼ 0.0000 SOL', 17, 700, 180, 32, 140, 220, 180);
     sb.e[tdBalance]._lpos = v3(230, 700, 0);
     const tdBalanceL = sb.e[tdBalance]._components[1].__id__;
     sb.e[tdBalanceL]._horizontalAlign = 2; // right-aligned
+    // Stage 5N — mono the balance chip so the SOL value stays stable when it updates.
+    style(sb, tdBalance, { mono: true });
 
     // Search input — flat chrome bg, no clear button (we'll restyle it as a subtle × inside).
     const tdSearch = mkEditBox(sb, 'SearchEditBox', tdN, 'Search token by symbol or mint…', 0, 640, 620, 46, 17);
@@ -516,9 +645,11 @@ function generate() {
 
     // Header-chrome row: dropdown · watchlist star · live indicator — single horizontal band.
     const tabY = 590;
-    const tdTabDropdown = mkBtnXY(sb, 'FeedTabDropdownButton', tdN, '⚡ New Pairs  ▾', -200, tabY, 240, 40, 28, 34, 48);
+    // UX Phase 2b: emoji stripped, AppUI dynamically attaches tab-specific IconBadge.
+    const tdTabDropdown = mkBtnXY(sb, 'FeedTabDropdownButton', tdN, 'New Pairs  ▾', -200, tabY, 240, 40, 28, 34, 48);
     // Session 14 A3: widened from 140→170 so "+ N to Watchlist" never truncates.
-    const tdWatchStar   = mkBtnXY(sb, 'WatchlistStarButton',   tdN, '☆ Watchlist',    10, tabY, 170, 38, 28, 34, 48);
+    // UX Phase 2b: AppUI toggles IconBadge star/starOutline per watchlist state.
+    const tdWatchStar   = mkBtnXY(sb, 'WatchlistStarButton',   tdN, 'Watchlist',    10, tabY, 170, 38, 28, 34, 48);
     const tdWatchCancel = mkBtnXY(sb, 'CancelWatchlistButton', tdN, '✕', 115, tabY, 36, 36, 55, 30, 30);
     sb.e[tdWatchCancel]._active = false;
     const tdLiveLbl     = mkLabel(sb, 'LiveIndicatorLabel', tdN, '●  LIVE', 14, tabY, 110, 40, 48, 198, 155);
@@ -530,7 +661,8 @@ function generate() {
     const popUT = sb.ut(popN, 240, 304);
     const popSpr = sb.spr(popN, 18, 24, 36);
     const popOptionNames = ['new', 'trending', 'gainers', 'volume', 'smart', 'watchlist'];
-    const popOptionLabels = ['⚡ New Pairs', '🔥 Trending', '📈 Top Gainers', '📊 Top Volume', '🧠 Smart Money', '★ Watchlist'];
+    // UX Phase 2b: emoji stripped; AppUI attaches per-row IconBadges (bolt/flame/chart/chart/brain/star).
+    const popOptionLabels = ['New Pairs', 'Trending', 'Top Gainers', 'Top Volume', 'Smart Money', 'Watchlist'];
     const popOptYs = [126, 76, 26, -24, -74, -124];
     const popOptIndices = [];
     for (let p = 0; p < 6; p++) {
@@ -558,7 +690,8 @@ function generate() {
     }
     // MinLiq dropdown — wider at 110w so "$10K+ ▾" fits comfortably.
     const tdMinLiqBtn = mkBtnXY(sb, 'MinLiqDropdownButton', tdN, 'All  ▾', -35, chipY, 110, chipH, 28, 34, 48);
-    const tdColumnsBtn = mkBtnXY(sb, 'ColumnsButton', tdN, '⚙ Columns', 250, chipY, 110, chipH, 28, 34, 48);
+    // UX Phase 2b: IconBadge cog attached by AppUI.
+    const tdColumnsBtn = mkBtnXY(sb, 'ColumnsButton', tdN, 'Columns', 250, chipY, 110, chipH, 28, 34, 48);
 
     // MinLiq popover — 4 options stacked. Opens DOWN-LEFT of MinLiqDropdownButton.
     // Hidden by default.
@@ -795,8 +928,10 @@ function generate() {
     // 3 buttons at y=-295: + Pick | Drop | ▶ Run Squad
     const actionRowY = -440;
     const tdSquadPick = mkBtnXY(sb, 'SquadPickButton', tdN, '+ Pick',          -220, actionRowY, 200, 48, 48, 198, 155);
+    style(sb, tdSquadPick, { bold: true });
     const tdSquadDrop = mkBtnXY(sb, 'SquadDropButton', tdN, 'Manage Squad',      0, actionRowY, 200, 48, 28, 34, 48);
     const tdSquadRun  = mkBtnXY(sb, 'SquadRunButton',  tdN, '▶ Run Squad',     220, actionRowY, 200, 48, 56, 148, 252);
+    style(sb, tdSquadRun, { bold: true });
 
     // Session 14 B1: compact squad chips — small pills below the action row
     // showing current picks. Replace the bulky 200×64 SquadSlot buttons.
@@ -873,11 +1008,14 @@ function generate() {
     // Commit button — prominent blue CTA, bottom-aligned within the button cluster.
     const commitBtnY = -580;
     const tdCommit = mkBtn(sb, 'StakeCommitButton', tdN, 'Stake + Commit', commitBtnY, 620, 56, 56, 148, 252);
+    style(sb, tdCommit, { bold: true });
 
     // Start Game (revealed after commit) and Claim Payout (revealed on game-over) share the same slot.
     const tdStartGame = mkBtn(sb, 'StartGameButton', tdN, 'Start Game', commitBtnY, 620, 56, 218, 165, 32);
+    style(sb, tdStartGame, { bold: true });
     sb.e[tdStartGame]._active = false;
     const tdClaim = mkBtn(sb, 'ClaimPayoutButton', tdN, 'Claim Payout', commitBtnY, 620, 56, 150, 85, 210);
+    style(sb, tdClaim, { bold: true });
     sb.e[tdClaim]._active = false;
 
     // betting-duel polish — WagerControlRow sits under the squad slots.
@@ -885,8 +1023,11 @@ function generate() {
     // (right). Replaces the force-hidden StakeCommitButton. Legacy stake UI
     // stays in the scene but is force-hidden by AppUI._hideLegacyBettingDuelNodes.
     const wagerRowY = -640;
-    const tdWagerValueBtn = mkBtnXY(sb, 'WagerValueButton', tdN, '💰 0.05 SOL  ▾', -180, wagerRowY, 300, 56, 34, 44, 68);
+    // UX Phase 2b: AppUI attaches IconBadge coin. Phase 2c: bold for emphasis.
+    const tdWagerValueBtn = mkBtnXY(sb, 'WagerValueButton', tdN, '0.05 SOL  ▾', -180, wagerRowY, 300, 56, 34, 44, 68);
+    style(sb, tdWagerValueBtn, { bold: true });
     const tdWagerStartBtn = mkBtnXY(sb, 'WagerStartButton', tdN, '▶ Start Match',   180, wagerRowY, 320, 56, 56, 148, 252);
+    style(sb, tdWagerStartBtn, { bold: true });
     // Tiny hint under the row.
     const tdWagerHint = mkLabel(sb, 'WagerHintLabel', tdN, 'Pick 3 tokens, then tap Start', 11, wagerRowY - 44, 600, 16, 120, 130, 150);
     sb.e[sb.e[tdWagerHint]._components[1].__id__]._spacingX = 1;
@@ -919,6 +1060,25 @@ function generate() {
         const rowLocalY = dropdownH - dropdownPadding - (i + 0.5) * dropdownRowH;
         const rowN = mkBtnXY(sb, `WagerDropdownRow_${i}`, tdWagerDropdown, wagerLabels[i], 0, rowLocalY, dropdownW - 20, dropdownRowH - 4, 28, 34, 48);
         wagerDropdownRows.push(rowN);
+    }
+    // Stage 5O — INTRO chip gets the rare-state gold tint + label accent so
+    // the free-practice tier reads as a bonus item, not a leftover option.
+    const introRowN = wagerDropdownRows[wagerDropdownRows.length - 1];
+    if (introRowN != null) {
+        // Tint the row's sprite + button to a muted gold.
+        const introComps = sb.e[introRowN]._components ?? [];
+        for (const c of introComps) {
+            const comp = sb.e[c.__id__];
+            if (!comp) continue;
+            if (comp.__type__ === 'cc.Sprite')  comp._color = cl(64, 52, 20, 255);
+            if (comp.__type__ === 'cc.Button') {
+                comp._normalColor   = cl(64,  52,  20, 255);
+                comp._hoverColor    = cl(92,  76,  32, 255);
+                comp._pressedColor  = cl(46,  36,  14, 255);
+            }
+        }
+        // Gold label text.
+        style(sb, introRowN, { color: GOLD() });
     }
     sb.e[tdWagerDropdown]._children = wagerDropdownRows.map(rf);
 
@@ -982,14 +1142,52 @@ function generate() {
     // current squad size (1, 3, or 5 — Phase 5 wires the selector).
     // ═══════════════════════════════════════════════════════════════
     const racePanelN = sb.e.length;
+    // UX Phase 2d: RacePanel oversize to 720×1800 so it fully covers the device
+    // viewport on FIXED_WIDTH (up to ~1700 tall on modern Androids). Previously
+    // 720×1280 showed TokenDuelPanel chrome at top/bottom of the race screen
+    // because device viewport exceeds design height by ~320px.
+    // Children stay centered on panel origin; only the background sprite +
+    // UITransform grow.
     sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], v3(0, 0, 0));
-    sb.ut(racePanelN, 720, 1280);
+    sb.ut(racePanelN, 720, 1800);
     sb.spr(racePanelN, 8, 12, 20);                // near-black scrim — covers feed/HUD below
     sb.e[racePanelN]._active = false;
 
-    const raceCountdownN = mkLabel(sb, 'RaceCountdownLabel',  racePanelN, '0:30',              64, 480, 600, 80, 218, 165, 32);
+    // Stage-1A polish: radial timer ring (draining arc). Graphics node drawn
+    // by AppUI._drawTimerRing on each tick. Digital mm:ss sits centered inside.
+    const raceTimerRingN = sb.e.length;
+    sb.node('RaceTimerRing', racePanelN, [], [raceTimerRingN + 1, raceTimerRingN + 2], v3(0, 480, 0));
+    sb.ut(raceTimerRingN, 140, 140);
+    sb.add({
+        __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(raceTimerRingN), _enabled: true, __prefab: null,
+        _lineWidth: 8, _miterLimit: 10,
+        _strokeColor: cl(48, 198, 155, 255),
+        _fillColor: cl(255, 255, 255, 0),
+        _id: gid(),
+    });
+    // Inner last-5s pulse ring (hidden until remainingMs<=5000).
+    const raceTimerPulseN = sb.e.length;
+    sb.node('RaceTimerPulse', raceTimerRingN, [], [raceTimerPulseN + 1, raceTimerPulseN + 2], v3(0, 0, 0));
+    sb.ut(raceTimerPulseN, 110, 110);
+    sb.add({
+        __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(raceTimerPulseN), _enabled: true, __prefab: null,
+        _lineWidth: 3, _miterLimit: 10,
+        _strokeColor: cl(240, 110, 110, 180),
+        _fillColor: cl(255, 255, 255, 0),
+        _id: gid(),
+    });
+    sb.e[raceTimerPulseN]._active = false;
+    sb.e[raceTimerRingN]._children = [rf(raceTimerPulseN)];
+
+    // Countdown digits — shrunk to fit inside the ring.
+    const raceCountdownN = mkLabel(sb, 'RaceCountdownLabel',  racePanelN, '0:30',              26, 480, 110, 36, 240, 245, 255);
     const raceHeroN      = mkLabel(sb, 'RaceHeroDeltaLabel',  racePanelN, '+0.00%',            96, 340, 680, 140, 255, 255, 255);
     const raceHeroSubN   = mkLabel(sb, 'RaceHeroSubtitleLabel', racePanelN, 'Portfolio change', 24, 250, 600, 40, 140, 150, 170);
+    // Stage 5N — monospace the number columns so roll-tweens don't "dance".
+    style(sb, raceCountdownN, { mono: true });
+    style(sb, raceHeroN, { mono: true });
 
     // Token cards — 5 slots, layout from y=50 down. AppUI toggles _active per slot.
     const raceCardIndices = [];
@@ -1025,6 +1223,11 @@ function generate() {
         sb.ut(deltaN, 180, 60);
         sb.lbl(deltaN, '0.00%', 34, 200, 200, 210);
 
+        // Stage 5N — monospace the number columns.
+        style(sb, entryN, { mono: true });
+        style(sb, curN, { mono: true });
+        style(sb, deltaN, { mono: true });
+
         sb.e[cardN]._children = [rf(symN), rf(entryN), rf(curN), rf(deltaN)];
         raceCardIndices.push(cardN);
     }
@@ -1037,11 +1240,11 @@ function generate() {
     sb.ut(raceOppCard, 640, 110);
     sb.spr(raceOppCard, 38, 28, 46);
     sb.e[raceOppCard]._active = false;
-    // Avatar — bot emoji on the far left.
+    // Avatar — UX Phase 2b: empty label; AppUI attaches IconLibrary robot at runtime.
     const raceOppAvatarN = sb.e.length;
     sb.node('OpponentAvatarLabel', raceOppCard, [], [raceOppAvatarN+1, raceOppAvatarN+2], v3(-280, 0, 0));
     sb.ut(raceOppAvatarN, 60, 60);
-    sb.lbl(raceOppAvatarN, '🤖', 40, 255, 255, 255);
+    sb.lbl(raceOppAvatarN, '', 40, 255, 255, 255);
     // Name — "Bot" label under/next to avatar.
     const raceOppNameN = sb.e.length;
     sb.node('OpponentNameLabel', raceOppCard, [], [raceOppNameN+1, raceOppNameN+2], v3(-180, 20, 0));
@@ -1063,6 +1266,9 @@ function generate() {
     sb.node('OpponentGapLabel', raceOppCard, [], [raceOppGapN+1, raceOppGapN+2], v3(220, -22, 0));
     sb.ut(raceOppGapN, 200, 22);
     sb.lbl(raceOppGapN, '—', 14, 140, 150, 170);
+    // Stage 5N — monospace the opponent number columns.
+    style(sb, raceOppDeltaN, { mono: true });
+    style(sb, raceOppGapN, { mono: true });
     sb.e[raceOppCard]._children = [rf(raceOppAvatarN), rf(raceOppNameN), rf(raceOppSymsN), rf(raceOppDeltaN), rf(raceOppGapN)];
 
     // 4p/8p multi-bot leaderboard strip. Used in place of the big opponent
@@ -1082,11 +1288,11 @@ function generate() {
         sb.node(`RaceOpponentRow_${i}`, raceOppStripN, [], [rowN + 1, rowN + 2], v3(0, ry, 0));
         sb.ut(rowN, 640, 30);
         sb.spr(rowN, 26, 32, 46);
-        // Avatar — bot emoji, small.
+        // Avatar — UX Phase 2b: empty label; AppUI attaches small IconLibrary robot.
         const avN = sb.e.length;
         sb.node('AvatarLabel', rowN, [], [avN + 1, avN + 2], v3(-280, 0, 0));
         sb.ut(avN, 28, 24);
-        sb.lbl(avN, '🤖', 18, 255, 255, 255);
+        sb.lbl(avN, '', 18, 255, 255, 255);
         // Name — "Bot N".
         const nmN = sb.e.length;
         sb.node('NameLabel', rowN, [], [nmN + 1, nmN + 2], v3(-215, 0, 0));
@@ -1109,6 +1315,9 @@ function generate() {
         sb.node('GapLabel', rowN, [], [gpN + 1, gpN + 2], v3(265, 0, 0));
         sb.ut(gpN, 90, 20);
         sb.lbl(gpN, '', 11, 140, 150, 170);
+        // Stage 5N — monospace the strip's number columns.
+        style(sb, dtN, { mono: true });
+        style(sb, gpN, { mono: true });
         sb.e[rowN]._children = [rf(avN), rf(nmN), rf(smN), rf(dtN), rf(gpN)];
         raceOppRowIndices.push(rowN);
     }
@@ -1117,8 +1326,26 @@ function generate() {
     // Forfeit / early-exit button (bottom). Moved up from -615 to give room.
     const raceCancelN = mkBtnXY(sb, 'RaceCancelButton', racePanelN, 'Forfeit', 0, -560, 200, 48, 55, 30, 30);
 
+    // Stage-1C polish: screen-edge vignette. Full-screen Graphics overlay
+    // that AppUI._updateVignette tints emerald (profit) / coral (loss) with
+    // alpha driven by |portfolio delta|. Also used by Stage-1D zero-cross
+    // flash (alpha spike) and Stage-1F last-5s dim (alpha intensify).
+    const raceVignetteN = sb.e.length;
+    sb.node('ScreenVignette', racePanelN, [], [raceVignetteN + 1, raceVignetteN + 2], v3(0, 0, 0));
+    const raceVignetteUT = sb.ut(raceVignetteN, 720, 1280);
+    sb.e[raceVignetteUT]._anchorPoint = v2(0.5, 0.5);
+    sb.add({
+        __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(raceVignetteN), _enabled: true, __prefab: null,
+        _lineWidth: 140, _miterLimit: 10,
+        _strokeColor: cl(48, 198, 155, 0),
+        _fillColor: cl(255, 255, 255, 0),
+        _id: gid(),
+    });
+
     sb.e[racePanelN]._children = [
-        rf(raceCountdownN), rf(raceHeroN), rf(raceHeroSubN),
+        rf(raceVignetteN),
+        rf(raceTimerRingN), rf(raceCountdownN), rf(raceHeroN), rf(raceHeroSubN),
         ...raceCardIndices.map(rf),
         rf(raceOppCard),
         rf(raceOppStripN),
@@ -1141,7 +1368,9 @@ function generate() {
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(modePickerN), _enabled: true, __prefab: null,
         _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(0, 0, 0, 210),
+        // UX Phase 2d: fully opaque modal bg (was alpha=210 → saw bleed).
+        // Color = Palette.bg.primary so the modal blends with the app UI.
+        _color: cl(11, 14, 26, 255),
         _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
         _type: 1, _fillType: 0, _sizeMode: 0,
         _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
@@ -1263,7 +1492,9 @@ function generate() {
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(presetsOvN), _enabled: true, __prefab: null,
         _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(0, 0, 0, 180),
+        // UX Phase 2d: fully opaque modal bg (was alpha=180 → content bled through).
+        // Color = Palette.bg.primary so the modal blends with the app UI.
+        _color: cl(11, 14, 26, 255),
         _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
         _type: 1, _fillType: 0, _sizeMode: 0,
         _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
@@ -1276,7 +1507,8 @@ function generate() {
     // Zero-alpha button bg so the scrim sprite color stays dominant.
     sb.e[sb.e[presetsScrimBtn]._components[1].__id__]._color = cl(0, 0, 0, 0);
     const presetsTitle = mkLabel(sb, 'PresetsTitleLabel', presetsOvN, 'SQUAD PRESETS', 24, 460, 500, 34, 218, 165, 32);
-    const presetsHint = mkLabel(sb, 'PresetsHintLabel', presetsOvN, 'Tap a preset to load · tap 🗑️ to delete', 11, 425, 520, 18, 140, 150, 170);
+    // UX Phase 2b: prose rewritten without emoji.
+    const presetsHint = mkLabel(sb, 'PresetsHintLabel', presetsOvN, 'Tap a preset to load · swipe or tap delete to remove', 11, 425, 520, 18, 140, 150, 170);
 
     // 5 preset rows — each 600×56 dark card with name + symbols + delete button.
     const presetRowYs = [360, 290, 220, 150, 80];
@@ -1300,14 +1532,17 @@ function generate() {
         const symbolsL = mkLabel(sb, `PresetSymbolsLabel_${i}`, rN, '', 13, 0, 360, 20, 140, 150, 170);
         sb.e[symbolsL]._lpos = v3(-270, -12, 0);
         sb.e[sb.e[symbolsL]._components[1].__id__]._horizontalAlign = 0;
-        const delBtn = mkBtnXY(sb, `PresetDeleteButton_${i}`, rN, '🗑️', 260, 0, 48, 44, 55, 30, 30);
+        // UX Phase 2b: empty label; AppUI attaches IconBadge trash.
+        const delBtn = mkBtnXY(sb, `PresetDeleteButton_${i}`, rN, '', 260, 0, 48, 44, 55, 30, 30);
         sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
         sb.e[rN]._children = [rf(nameL), rf(symbolsL), rf(delBtn)];
         sb.e[rN]._active = false; // AppUI enables when render finds saved preset
         presetRowIndices.push(rN);
     }
     // Save button — opens the PresetNameModal. Disabled (grayed) when squad not full.
-    const presetsSaveBtn = mkBtn(sb, 'PresetSaveButton', presetsOvN, '💾 Save current squad', -100, 420, 56, 218, 165, 32);
+    // UX Phase 2b: IconBadge save attached by AppUI. Phase 2c: bold.
+    const presetsSaveBtn = mkBtn(sb, 'PresetSaveButton', presetsOvN, 'Save current squad', -100, 420, 56, 218, 165, 32);
+    style(sb, presetsSaveBtn, { bold: true });
     const presetsEmptyL = mkLabel(sb, 'PresetsEmptyLabel', presetsOvN, 'No saved presets yet — pick 3 tokens and tap Save', 13, -20, 600, 22, 130, 140, 160);
     sb.e[presetsEmptyL]._active = false;
 
@@ -1644,13 +1879,15 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(lbBackBtn), _id: gid(),
     });
     sb.e[lbBackBtn]._components = [rf(lbBackBtnUT), rf(lbBackBtnBtn)];
-    const lbTitle = mkLabel(sb, 'LeaderboardTitleLabel', lbN, '🏆 Leaderboard', 30, 680, 400, 44, 218, 165, 32);
+    // UX Phase 2b: IconBadge trophy on LeaderboardTitleLabel attached by AppUI. Phase 2c: bold.
+    const lbTitle = mkLabel(sb, 'LeaderboardTitleLabel', lbN, 'Leaderboard', 30, 680, 400, 44, 218, 165, 32);
+    style(sb, lbTitle, { bold: true });
     const lbTabDefs = [
         { key: '1v1',    label: '1v1',          x: -292 },
         { key: '4p',     label: '4p',           x: -146 },
         { key: '8p',     label: '8p',           x:    0 },
         { key: 'br10',   label: 'BR10',         x:  146 },
-        { key: 'season', label: '🏆 This Week', x:  292 },
+        { key: 'season', label: 'This Week', x:  292 },
     ];
     const lbTabIndices = [];
     for (const t of lbTabDefs) {
@@ -1696,7 +1933,8 @@ function generate() {
     sb.node('PersonalRankCard', lbN, [], [], v3(0, prcY, 0));
     const prcUT = sb.ut(prcN, 660, 100);
     const prcSpr = sb.spr(prcN, 28, 36, 52);
-    const prcHeader = mkLabel(sb, 'HeaderLabel', prcN, '👤 YOU', 13, 32, 120, 18, 140, 220, 180);
+    // UX Phase 2b: IconBadge user attached by AppUI.
+    const prcHeader = mkLabel(sb, 'HeaderLabel', prcN, 'YOU', 13, 32, 120, 18, 140, 220, 180);
     sb.e[prcHeader]._lpos = v3(-290, 32, 0);
     sb.e[sb.e[prcHeader]._components[1].__id__]._horizontalAlign = 0;
     const prcRank = mkLabel(sb, 'RankLabel', prcN, 'Not ranked yet', 16, 6, 600, 24, 220, 230, 240);
@@ -1734,7 +1972,9 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(dcBackBtn), _id: gid(),
     });
     sb.e[dcBackBtn]._components = [rf(dcBackBtnUT), rf(dcBackBtnBtn)];
-    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "🔥 Today's Challenges", 26, 600, 600, 40, 218, 165, 32);
+    // UX Phase 2b: IconBadge flame attached by AppUI. Phase 2c: bold.
+    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "Today's Challenges", 26, 600, 600, 40, 218, 165, 32);
+    style(sb, dcTitle, { bold: true });
 
     // Streak card (y=440, 600×100).
     const streakCardN = sb.e.length;
@@ -1831,12 +2071,15 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(pfBackBtn), _id: gid(),
     });
     sb.e[pfBackBtn]._components = [rf(pfBackBtnUT), rf(pfBackBtnBtn)];
-    const pfTitle = mkLabel(sb, 'PortfolioTitleLabel', pfN, '👤 Portfolio', 30, 680, 400, 44, 255, 255, 255);
+    // UX Phase 2b: IconBadge user attached by AppUI. Phase 2c: bold + gold.
+    const pfTitle = mkLabel(sb, 'PortfolioTitleLabel', pfN, 'Portfolio', 30, 680, 400, 44, 255, 255, 255);
+    style(sb, pfTitle, { bold: true, color: GOLD() });
     const pfPubkeyLabel = mkLabel(sb, 'PortfolioPubkeyLabel', pfN, 'not connected', 16, 630, 460, 24, 140, 220, 180);
     // Stats / History / Trophies switch.
     const pfStatsTab    = mkBtnXY(sb, 'PortfolioStatsTab',    pfN, 'Stats',     -180, 580, 170, 44, 48, 198, 155);
     const pfHistoryTab  = mkBtnXY(sb, 'PortfolioHistoryTab',  pfN, 'History',      0, 580, 170, 44, 28, 34, 48);
-    const pfTrophiesTab = mkBtnXY(sb, 'PortfolioTrophiesTab', pfN, '🏆 Trophies',180, 580, 170, 44, 28, 34, 48);
+    // UX Phase 2b: IconBadge trophy attached by AppUI.
+    const pfTrophiesTab = mkBtnXY(sb, 'PortfolioTrophiesTab', pfN, 'Trophies',180, 580, 170, 44, 28, 34, 48);
     // Paper / Real sub-tabs (for the Stats view).
     const pfPaperTab = mkBtnXY(sb, 'PortfolioPaperTab', pfN, 'Paper',  -90, 520, 170, 44, 48, 198, 155);
     const pfRealTab  = mkBtnXY(sb, 'PortfolioRealTab',  pfN, 'Real',    90, 520, 170, 44, 28, 34, 48);
@@ -1937,7 +2180,8 @@ function generate() {
             sb.node(`TrophyTile_${i}`, pfTrophiesViewN, [], [], v3(tx, ty, 0));
             const tUT = sb.ut(tN, tileW, tileH);
             const tSpr = sb.spr(tN, 22, 28, 44);
-            const emojiLbl = mkLabel(sb, 'Emoji', tN, '🏆', 56, 50, tileW, 70, 255, 255, 255);
+            // UX Phase 2b: empty label; AppUI attaches IconLibrary via rankIcon per tile.
+            const emojiLbl = mkLabel(sb, 'Emoji', tN, '', 56, 50, tileW, 70, 255, 255, 255);
             const titleLbl = mkLabel(sb, 'Title', tN, 'Week #0', 14, -10, tileW, 20, 220, 200, 140);
             const winsLbl = mkLabel(sb, 'Wins', tN, '0 wins', 12, -40, tileW, 18, 140, 150, 170);
             sb.e[tN]._components = [rf(tUT), rf(tSpr)];
@@ -1981,11 +2225,14 @@ function generate() {
     // Part 9: Force-settle button — only revealed after the match has been
     // Active for 5+ minutes with fewer than required_players submissions.
     // Any signer can call force_settle on-chain; AFK players forfeit to 0.
-    const wpForceBtn = mkBtn(sb, 'WaitingForceSettleButton', wpN, '⚡ Force Settle (AFK)', -260, 420, 56, 202, 140, 60);
+    // UX Phase 2b: IconBadge bolt attached by AppUI. Phase 2c: bold.
+    const wpForceBtn = mkBtn(sb, 'WaitingForceSettleButton', wpN, 'Force Settle (AFK)', -260, 420, 56, 202, 140, 60);
+    style(sb, wpForceBtn, { bold: true });
     sb.e[wpForceBtn]._active = false;
     // Part 11 D3: streak bonus banner. Hidden unless stats.current_streak ≥ 3.
     // Display-only (no payout multiplier yet — that's Part 12).
-    const wpStreakBanner = mkLabel(sb, 'WaitingStreakBanner', wpN, '🔥 Day 3 streak — keep the fire going', 16, 480, 620, 36, 218, 165, 32);
+    // UX Phase 2b: IconBadge flame attached by AppUI.
+    const wpStreakBanner = mkLabel(sb, 'WaitingStreakBanner', wpN, 'Day 3 streak — keep the fire going', 16, 480, 620, 36, 218, 165, 32);
     sb.e[wpStreakBanner]._active = false;
     const wpStatus = mkLabel(sb, 'WaitingStatusLabel', wpN, '', 12, -600, 640, 20, 140, 150, 170);
 
@@ -2005,11 +2252,15 @@ function generate() {
     const pmBackBtn = mkBtn(sb, 'PostMatchBackButton', pmN, '← Back', 700, 160, 44, 55, 65, 85);
     sb.e[pmBackBtn]._lpos = v3(-260, 700, 0);
     const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'Match Result', 34, 620, 620, 52, 255, 255, 255);
+    style(sb, pmTitle, { bold: true, color: GOLD() });
     const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 14, 560, 600, 22, 140, 150, 170);
     // Payout — moved up so trophy no longer sits on top of it.
     const pmPayout = mkLabel(sb, 'PostMatchPayoutLabel', pmN, '', 44, 470, 620, 64, 48, 198, 155);
     const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 14, 400, 600, 22, 180, 190, 210);
     const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 12, 376, 600, 20, 150, 160, 180);
+    // Stage 5N — mono payout + rake for aligned digits through the ticker roll.
+    style(sb, pmPayout, { mono: true });
+    style(sb, pmRake, { mono: true });
 
     // 4 stat cards 2×2: YOUR · OPP · XP · LEVEL — shifted down to give trophy
     // its own slot above (y=-80) and CTA buttons more room below.
@@ -2036,6 +2287,8 @@ function generate() {
         const valUT = sb.ut(valN, 280, 36);
         const valL = sb.lbl(valN, '—', 26, 255, 255, 255);
         sb.e[valL]._isBold = true;
+        // Stage 5N — mono PMCard values so numbers stay column-aligned.
+        style(sb, valN, { mono: true });
         sb.e[valN]._components = [rf(valUT), rf(valL)];
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
         sb.e[cardN]._children = [rf(lblN), rf(valN)];
@@ -2044,7 +2297,9 @@ function generate() {
 
     // CTAs at y=-260 (was -180). Dropped with the stat grid spread.
     const pmSameSquadBtn = mkBtnXY(sb, 'PostMatchSameSquadButton', pmN, '▶ Same Squad', -170, -260, 320, 60, 48, 198, 155);
+    style(sb, pmSameSquadBtn, { bold: true });
     const pmAgainBtn = mkBtnXY(sb, 'PostMatchAgainButton', pmN, 'Pick New Squad', 170, -260, 320, 60, 56, 148, 252);
+    style(sb, pmAgainBtn, { bold: true });
 
     // Share-to-X button — top-left, away from the Payout/Trophy cluster.
     const pmShareBtn = mkBtn(sb, 'PostMatchShareButton', pmN, 'Share · 𝕏', -350, 520, 56, 29, 161, 242);
@@ -2054,27 +2309,33 @@ function generate() {
 
     // Trophy — moved to y=-80 (between stat cards at y=100 and CTAs at y=-260)
     // so it no longer overlaps the Payout label at y=470.
-    const pmTrophy = mkLabel(sb, 'TrophyLabel', pmN, '🏆', 72, -80, 200, 100, 255, 255, 255);
+    // UX Phase 2b: empty label; AppUI attaches procedural trophy/medal via rankIcon at show time.
+    const pmTrophy = mkLabel(sb, 'TrophyLabel', pmN, '', 72, -80, 200, 100, 255, 255, 255);
     sb.e[pmTrophy]._active = false;
 
     // Session D Part 8: confetti particles around the trophy on 1st-place.
-    // 12 emoji labels, hidden by default, AppUI animates them outward.
-    const confettiEmojis = ['🎉', '🎊', '⭐', '✨', '💫'];
+    // UX Phase 2b: 12 empty Node shells (no Label); AppUI attaches IconLibrary shapes
+    // per-slot (sparkle/star/starBurst/circle/triangle) with palette-accent tints.
     const pmConfettiIndices = [];
     for (let c = 0; c < 12; c++) {
-        const emoji = confettiEmojis[c % confettiEmojis.length];
         const confN = sb.e.length;
         sb.node(`Confetti_${c}`, pmTrophy, [], [], v3(0, 0, 0));
         const confUT = sb.ut(confN, 60, 60);
-        const confL = sb.lbl(confN, emoji, 32, 255, 255, 255);
-        sb.e[confN]._components = [rf(confUT), rf(confL)];
+        sb.e[confN]._components = [rf(confUT)];
         sb.e[confN]._active = false;
         pmConfettiIndices.push(confN);
     }
     // Confetti children hang off TrophyLabel so they share its transform origin.
     sb.e[pmTrophy]._children = pmConfettiIndices.map(rf);
 
-    sb.e[pmN]._children = [rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmPayout), rf(pmSubtitle), rf(pmRake), rf(pmTrophy), ...pmCardIndices.map(rf), rf(pmSameSquadBtn), rf(pmAgainBtn), rf(pmShareBtn), rf(pmStatus)];
+    // UX Phase 2b: PostMatchMascotContainer — second MascotController lives here so
+    // the celebrate/lose animation fires on the panel the user is looking at.
+    const pmMascotN = sb.e.length;
+    sb.node('PostMatchMascotContainer', pmN, [], [], v3(250, 180, 0));
+    const pmMascotUT = sb.ut(pmMascotN, 140, 180);
+    sb.e[pmMascotN]._components = [rf(pmMascotUT)];
+
+    sb.e[pmN]._children = [rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmPayout), rf(pmSubtitle), rf(pmRake), rf(pmTrophy), ...pmCardIndices.map(rf), rf(pmSameSquadBtn), rf(pmAgainBtn), rf(pmShareBtn), rf(pmStatus), rf(pmMascotN)];
     sb.e[pmN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
@@ -2102,7 +2363,9 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(stBackBtn), _id: gid(),
     });
     sb.e[stBackBtn]._components = [rf(stBackBtnUT), rf(stBackBtnBtn)];
-    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, '⚙ Settings', 28, 600, 400, 40, 218, 165, 32);
+    // UX Phase 2b: IconBadge cog attached by AppUI. Phase 2c: bold.
+    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, 'Settings', 28, 600, 400, 40, 218, 165, 32);
+    style(sb, stTitle, { bold: true });
 
     // WALLET section card (y=440, 660×130).
     const stWalletCard = sb.e.length;
@@ -2192,14 +2455,16 @@ function generate() {
     const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'AUDIO + HAPTICS', 11, 20, 400, 16, 140, 150, 170);
     sb.e[stAudioHeader]._lpos = v3(-290, 20, 0);
     sb.e[sb.e[stAudioHeader]._components[1].__id__]._horizontalAlign = 0;
-    const stSoundToggle   = mkBtnXY(sb, 'SoundToggleButton',   stAudioCardN, '🔊 Sound: ON',   -150, -10, 260, 38, 48, 198, 155);
-    const stHapticsToggle = mkBtnXY(sb, 'HapticsToggleButton', stAudioCardN, '📳 Haptics: ON',  150, -10, 260, 38, 48, 198, 155);
+    // UX Phase 2b: state-driven IconBadges (speaker/speakerMuted, vibration/hand) attached by AppUI.
+    const stSoundToggle   = mkBtnXY(sb, 'SoundToggleButton',   stAudioCardN, 'Sound: ON',   -150, -10, 260, 38, 48, 198, 155);
+    const stHapticsToggle = mkBtnXY(sb, 'HapticsToggleButton', stAudioCardN, 'Haptics: ON',  150, -10, 260, 38, 48, 198, 155);
     sb.e[stAudioCardN]._components = [rf(stAudioUT), rf(stAudioSpr)];
     sb.e[stAudioCardN]._children = [rf(stAudioHeader), rf(stSoundToggle), rf(stHapticsToggle)];
 
     // Part 13 D: public fee-schedule link. Opens `/fees` page on backend
     // in external browser so judges can see the level-tiered rake breakdown.
-    const stFeesBtn = mkBtn(sb, 'FeesLinkButton', stN, '📊 Fee schedule', -360, 560, 52, 48, 108, 180);
+    // UX Phase 2b: IconBadge chart attached by AppUI.
+    const stFeesBtn = mkBtn(sb, 'FeesLinkButton', stN, 'Fee schedule', -360, 560, 52, 48, 108, 180);
 
     // ACTIONS section — shifted further down to make room for the QP card
     // above + FeesLinkButton. (Pre-pt2: y=120 / y=40 / y=-40.)
@@ -2294,7 +2559,9 @@ function generate() {
 
     const specBackBtn = mkBtn(sb, 'SpectatorBackButton', specN, '← Back', 600, 160, 44, 55, 65, 85);
     sb.e[specBackBtn]._lpos = v3(-260, 600, 0);
-    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, '👁 Spectating', 28, 600, 460, 40, 255, 255, 255);
+    // UX Phase 2b: IconBadge eye attached by AppUI. Phase 2c: bold.
+    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 28, 600, 460, 40, 255, 255, 255);
+    style(sb, specTitle, { bold: true });
     const specMatchLabel = mkLabel(sb, 'SpectatorMatchLabel', specN, 'match —', 13, 558, 500, 20, 140, 150, 170);
     const specStatusLabel = mkLabel(sb, 'SpectatorStatusLabel', specN, 'Connecting…', 14, 520, 500, 22, 140, 220, 180);
 
@@ -2343,6 +2610,7 @@ function generate() {
 
     // Join button — shown by AppUI only when match.status == Waiting + free slot.
     const specJoinBtn = mkBtn(sb, 'SpectatorJoinButton', specN, '▶ Join this match', -440, 620, 56, 48, 198, 155);
+    style(sb, specJoinBtn, { bold: true });
     sb.e[specJoinBtn]._active = false;
 
     sb.e[specN]._children = [
@@ -2364,7 +2632,9 @@ function generate() {
 
     const tourBackBtn = mkBtn(sb, 'TournamentBackButton', tourN, '← Back', 600, 160, 44, 55, 65, 85);
     sb.e[tourBackBtn]._lpos = v3(-260, 600, 0);
-    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, '⚔ Tournament', 28, 600, 460, 40, 230, 210, 255);
+    // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
+    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 28, 600, 460, 40, 230, 210, 255);
+    style(sb, tourTitle, { bold: true });
     const tourMatchLabel = mkLabel(sb, 'TournamentMatchLabel', tourN, 'match —', 13, 558, 500, 20, 160, 150, 200);
     const tourStatusLabel = mkLabel(sb, 'TournamentStatusLabel', tourN, 'Connecting…', 14, 520, 500, 22, 220, 200, 240);
     const tourPrizeLabel = mkLabel(sb, 'TournamentPrizePoolLabel', tourN, 'Prize pool: — · top-3 payout', 14, 485, 600, 22, 140, 220, 180);
@@ -2394,7 +2664,9 @@ function generate() {
     sb.e[tourRosterN]._children = tourSlotIdx.map(rf);
 
     // Join button — shown only when status=Waiting AND a slot is free AND player not already in.
-    const tourJoinBtn = mkBtn(sb, 'TournamentJoinButton', tourN, '⚔ Join tournament', -460, 620, 58, 140, 80, 200);
+    // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
+    const tourJoinBtn = mkBtn(sb, 'TournamentJoinButton', tourN, 'Join tournament', -460, 620, 58, 140, 80, 200);
+    style(sb, tourJoinBtn, { bold: true });
     sb.e[tourJoinBtn]._active = false;
 
     sb.e[tourN]._children = [
