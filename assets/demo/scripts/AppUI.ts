@@ -5,7 +5,7 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources } from 'cc';
+import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director } from 'cc';
 // UX overhaul: Phase 1+2 helpers — central theme, procedural icons, panel
 // transitions, mascot. All runtime-only; no asset deps.
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
@@ -70,6 +70,22 @@ import { showToast } from './AndroidToast';
 
 const { ccclass } = _decorator;
 const TAG = '[AppUI]';
+
+// ─── DIAGNOSTIC: SIGSEGV @0x28 Thread-2 triangulation ─────────────────────
+// Captures uncaught JS exceptions that the normal log flow would miss.
+// Apr 25 2026 — same crash repro after WS kill-switch ruled WS out; this
+// catches anything that throws on the JS thread post-`start | DONE`.
+const _origOnErr = (globalThis as any).onerror;
+(globalThis as any).onerror = (msg: any, src: any, line: any, col: any, err: any) => {
+    try { console.log(`[ONERROR] msg=${msg} line=${line}:${col} stack=${err?.stack ?? '(no stack)'}`); } catch (_) { /* ignore */ }
+    return _origOnErr ? _origOnErr(msg, src, line, col, err) : false;
+};
+const _origUnhandled = (globalThis as any).onunhandledrejection;
+(globalThis as any).onunhandledrejection = (evt: any) => {
+    try { console.log(`[UNHANDLED_PROMISE] reason=${evt?.reason?.message ?? evt?.reason} stack=${evt?.reason?.stack ?? '(no stack)'}`); } catch (_) { /* ignore */ }
+    return _origUnhandled ? _origUnhandled(evt) : undefined;
+};
+// ──────────────────────────────────────────────────────────────────────────
 
 @ccclass('AppUI')
 export class AppUI extends Component {
@@ -621,7 +637,26 @@ export class AppUI extends Component {
     private _rpc!: SolanaRpc;
 
     start(): void {
+        console.log(`${TAG} BUILD_STAMP v=2026-04-25-T0900-diag — full deterministic logging build`);
         console.log(`${TAG} start | START`);
+        console.log(`${TAG} start | CHK1 — entered start()`);
+        // Frame heartbeat: log director update + draw ticks so we can see
+        // whether the JS thread runs ANY frame after start() returns and
+        // which engine phase the SIGSEGV occurs in.
+        try {
+            let beforeUpdN = 0, afterUpdN = 0, beforeDrawN = 0, afterDrawN = 0;
+            const onBeforeUpd = () => { beforeUpdN++; if (beforeUpdN <= 6) console.log(`${TAG} DIR_BEFORE_UPDATE n=${beforeUpdN}`); };
+            const onAfterUpd  = () => { afterUpdN++;  if (afterUpdN  <= 6) console.log(`${TAG} DIR_AFTER_UPDATE  n=${afterUpdN}`); };
+            const onBeforeDraw = () => { beforeDrawN++; if (beforeDrawN <= 6) console.log(`${TAG} DIR_BEFORE_DRAW   n=${beforeDrawN}`); };
+            const onAfterDraw  = () => { afterDrawN++;  if (afterDrawN  <= 6) console.log(`${TAG} DIR_AFTER_DRAW    n=${afterDrawN}`); };
+            director.on(Director.EVENT_BEFORE_UPDATE, onBeforeUpd);
+            director.on(Director.EVENT_AFTER_UPDATE, onAfterUpd);
+            director.on(Director.EVENT_BEFORE_DRAW, onBeforeDraw);
+            director.on(Director.EVENT_AFTER_DRAW, onAfterDraw);
+            console.log(`${TAG} start | DIRECTOR hooks installed (before/after update + draw)`);
+        } catch (e: any) {
+            console.log(`${TAG} start | DIRECTOR hook EXCEPTION ${e?.message ?? e}`);
+        }
 
         // Phase F8 — match-stuck recovery. If a prior session crashed mid-
         // match, the active match PDA is in localStorage. Restore the field
@@ -1915,6 +1950,33 @@ export class AppUI extends Component {
         }
 
         console.log(`${TAG} start | DONE`);
+        // POST-START PULSE — fires at each interval after start completes.
+        // Last printed pulse before silence pinpoints WHEN the crash happens.
+        // If no pulse prints: crash is on the very first render frame.
+        // If pulses print up to N ms then stop: crash is at ~N ms post-start.
+        const startedAt = Date.now();
+        const pulseAt = (delayMs: number) => setTimeout(() => {
+            console.log(`${TAG} pulse | t=+${Date.now() - startedAt}ms (target=${delayMs}ms) — alive`);
+        }, delayMs);
+        for (const ms of [0, 8, 16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048]) {
+            pulseAt(ms);
+        }
+        // FRAME-LEVEL PROBE — schedule via cc.director's frame loop.
+        // Will only fire if the render thread is alive. Last frame log before
+        // silence = the frame on which the engine native-crashed.
+        try {
+            const { director, Director } = require('cc');
+            let frameNum = 0;
+            const frameHandler = () => {
+                frameNum++;
+                if (frameNum <= 5 || frameNum % 30 === 0) {
+                    console.log(`${TAG} frame | n=${frameNum} t=+${Date.now() - startedAt}ms — render alive`);
+                }
+            };
+            director.on(Director.EVENT_AFTER_DRAW, frameHandler);
+        } catch (e) {
+            console.log(`${TAG} frame | probe install ERROR ${e}`);
+        }
     }
 
     /**
@@ -1927,23 +1989,28 @@ export class AppUI extends Component {
      * if they want to retry manually.
      */
     private async _attemptAutoSignIn(): Promise<void> {
+        console.log(`${TAG} _attemptAutoSignIn | ENTRY`);
         const mwa = MWAManager.instance;
         if (!mwa) {
+            console.log(`${TAG} _attemptAutoSignIn | NO_MWA — showing Landing`);
             this._showLanding();
             return;
         }
         try {
+            console.log(`${TAG} _attemptAutoSignIn | BEFORE_AWAIT_REAUTHORIZE`);
             const result = await mwa.reauthorize();
+            console.log(`${TAG} _attemptAutoSignIn | AFTER_AWAIT_REAUTHORIZE hasResult=${!!result} pubkey=${result?.pubkey?.slice(0, 8) ?? '(none)'}`);
             if (result) {
                 console.log(`${TAG} _attemptAutoSignIn | SUCCESS pubkey=${result.pubkey} — showing Home`);
                 showToast('Extensible auth cache — session restored', true);
                 this._showHome();
+                console.log(`${TAG} _attemptAutoSignIn | AFTER_SHOW_HOME`);
             } else {
                 console.log(`${TAG} _attemptAutoSignIn | FAIL reauthorize returned null — showing Landing`);
                 this._showLanding();
             }
         } catch (e: any) {
-            console.log(`${TAG} _attemptAutoSignIn | EXCEPTION err=${e?.message || e} — showing Landing`);
+            console.log(`${TAG} _attemptAutoSignIn | EXCEPTION err=${e?.message || e} stack=${e?.stack ?? '(no stack)'} — showing Landing`);
             this._showLanding();
         }
     }
@@ -1967,10 +2034,13 @@ export class AppUI extends Component {
     }
 
     private _showHome(): void {
+        console.log(`${TAG} _showHome | ENTRY`);
         console.log(`${TAG} _showHome | switching to home panel`);
         this._setActivePanel('home');
+        console.log(`${TAG} _showHome | AFTER_setActivePanel`);
         // UX overhaul Phase 2: mascot greets on Home arrival.
         this._setMascotState('idle');
+        console.log(`${TAG} _showHome | AFTER_setMascotState`);
         const mwa = MWAManager.instance;
         const pubkey = mwa?.connectedPubkey ?? '';
         if (this._pubkeyLabel) {
@@ -2301,8 +2371,15 @@ export class AppUI extends Component {
         for (const d of defs) {
             if (!d.panel) continue;
             const node = this._findDescendantByName(d.panel, d.name);
+            console.log(`${TAG} _attachStaticIconBadges | bind name=${d.name} icon=${d.icon} found=${!!node}`);
             if (!node) continue;
-            this._ensureIconBadge(node, d.icon, { size: d.size ?? 22, offsetX: d.offsetX ?? 0 });
+            try {
+                this._ensureIconBadge(node, d.icon, { size: d.size ?? 22, offsetX: d.offsetX ?? 0 });
+                console.log(`${TAG} _attachStaticIconBadges | bind DONE name=${d.name} icon=${d.icon}`);
+            } catch (e: any) {
+                console.log(`${TAG} _attachStaticIconBadges | bind THREW name=${d.name} icon=${d.icon} err=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`);
+                throw e;
+            }
         }
 
         // PresetDeleteButton_0..4 — pooled, each gets a trash icon.
@@ -2372,6 +2449,7 @@ export class AppUI extends Component {
      * and pop to PNG once loaded — one-shot refresh.
      */
     private async _loadPhase3Art(): Promise<void> {
+        console.log(`${TAG} phase3 | ENTRY — starting asset load`);
         const iconNames: IconName[] = [
             'trophy', 'medalGold', 'medalSilver', 'medalBronze',
             'cog', 'user', 'book', 'bulb', 'robot',
@@ -2381,46 +2459,97 @@ export class AppUI extends Component {
             'sparkle', 'starBurst', 'flag',
         ];
 
+        // Kill switches — flip a flag to bypass each loader path. Default ALL
+        // off except mascot frames (currently confirmed-or-suspect culprit).
+        // The LAST `phase3 | loading=...` log without a paired `loaded=...`
+        // is the exact asset whose native load crashed the engine.
+        const skipIconsLoad = (globalThis as any).TD_DISABLE_ICON_LOAD === true;
+        const skipMascotRefLoad = (globalThis as any).TD_DISABLE_MASCOT_REF === true;
+
         let loaded = 0;
         let failed = 0;
-        const loadOne = (name: IconName): Promise<void> => new Promise((resolve) => {
-            resources.load<SpriteFrame>(`icons/${name}/spriteFrame`, SpriteFrame, (err, frame) => {
-                if (err || !frame) {
-                    failed++;
-                    console.log(`${TAG} phase3 | icon_load_fail name=${name} err=${err?.message ?? err}`);
-                } else {
-                    IconLibrary.register(name, frame);
-                    loaded++;
-                }
-                resolve();
+        // Serialize the icon loads — parallel hides which one crashes.
+        const loadOneSerial = async (name: IconName): Promise<void> => {
+            console.log(`${TAG} phase3 | icon LOADING name=${name}`);
+            await new Promise<void>((resolve) => {
+                resources.load<SpriteFrame>(`icons/${name}/spriteFrame`, SpriteFrame, (err, frame) => {
+                    const tex: any = (frame as any)?.texture;
+                    console.log(`${TAG} phase3 | icon CB_ENTER name=${name} hasErr=${!!err} hasFrame=${!!frame} frame.name=${frame?.name ?? '(none)'} hasTexture=${!!tex} texW=${tex?.width ?? -1} texH=${tex?.height ?? -1} packable=${(frame as any)?.packable ?? '(?)'}`);
+                    if (err || !frame) {
+                        failed++;
+                        console.log(`${TAG} phase3 | icon LOAD_FAIL name=${name} err=${err?.message ?? err}`);
+                    } else {
+                        const hasTex = !!tex;
+                        if (!hasTex) {
+                            failed++;
+                            console.log(`${TAG} phase3 | icon LOAD_FAIL name=${name} reason=no_texture`);
+                        } else {
+                            console.log(`${TAG} phase3 | icon CALL_REGISTER name=${name}`);
+                            try {
+                                IconLibrary.register(name, frame);
+                                console.log(`${TAG} phase3 | icon DID_REGISTER name=${name}`);
+                            } catch (regErr: any) {
+                                console.log(`${TAG} phase3 | icon REGISTER_THREW name=${name} err=${regErr?.message ?? regErr} stack=${regErr?.stack ?? '(no stack)'}`);
+                            }
+                            loaded++;
+                            console.log(`${TAG} phase3 | icon LOADED name=${name} loaded=${loaded}/${iconNames.length}`);
+                        }
+                    }
+                    resolve();
+                });
             });
-        });
+        };
 
         let mascotFrame: SpriteFrame | null = null;
-        const loadMascot = (): Promise<void> => new Promise((resolve) => {
-            resources.load<SpriteFrame>('mascot/mascot-ref/spriteFrame', SpriteFrame, (err, frame) => {
-                if (err || !frame) {
-                    console.log(`${TAG} phase3 | mascot_load_fail err=${err?.message ?? err}`);
-                } else {
-                    mascotFrame = frame;
-                }
-                resolve();
+        const loadMascot = async (): Promise<void> => {
+            if (skipMascotRefLoad) {
+                console.log(`${TAG} phase3 | mascot_ref LOAD_SKIPPED (TD_DISABLE_MASCOT_REF=true)`);
+                return;
+            }
+            console.log(`${TAG} phase3 | mascot_ref LOADING`);
+            await new Promise<void>((resolve) => {
+                resources.load<SpriteFrame>('mascot/mascot-ref/spriteFrame', SpriteFrame, (err, frame) => {
+                    if (err || !frame) {
+                        console.log(`${TAG} phase3 | mascot_ref LOAD_FAIL err=${err?.message ?? err}`);
+                    } else {
+                        const hasTex = !!(frame as any).texture;
+                        if (!hasTex) {
+                            console.log(`${TAG} phase3 | mascot_ref LOAD_FAIL reason=no_texture`);
+                        } else {
+                            mascotFrame = frame;
+                            console.log(`${TAG} phase3 | mascot_ref LOADED`);
+                        }
+                    }
+                    resolve();
+                });
             });
-        });
+        };
 
         // Per-state Seedance frame sequences from assets/demo/resources/mascot/frames/
         // Filenames are <state>_NNN.png — group by state prefix, sort by name
         // (zero-padded → lex sort = numeric sort).
         let mascotFramesByState: Partial<Record<MascotState, SpriteFrame[]>> = {};
+        const skipFramesLoad = (globalThis as any).TD_DISABLE_MASCOT_FRAMES === true;
         const loadMascotFrames = (): Promise<void> => new Promise((resolve) => {
+            if (skipFramesLoad) {
+                console.log(`${TAG} phase3 | mascot_frames LOAD_DIR_SKIPPED (TD_DISABLE_MASCOT_FRAMES=true)`);
+                resolve();
+                return;
+            }
+            console.log(`${TAG} phase3 | mascot_frames LOAD_DIR_START`);
             resources.loadDir<SpriteFrame>('mascot/frames', SpriteFrame, (err, frames) => {
                 if (err || !frames?.length) {
-                    console.log(`${TAG} phase3 | mascot_frames_load_fail err=${err?.message ?? err}`);
+                    console.log(`${TAG} phase3 | mascot_frames_load_fail err=${err?.message ?? err} got=${frames?.length ?? 0}`);
                     resolve();
                     return;
                 }
+                console.log(`${TAG} phase3 | mascot_frames LOAD_DIR_RAW count=${frames.length}`);
                 const groups: Partial<Record<MascotState, SpriteFrame[]>> = {};
+                let nullCount = 0;
+                let noTexCount = 0;
                 for (const f of frames) {
+                    if (!f) { nullCount++; continue; }
+                    if (!(f as any).texture) { noTexCount++; continue; }
                     const m = f.name.match(/^(idle|celebrate|think|lose)_/);
                     if (!m) continue;
                     const state = m[1] as MascotState;
@@ -2430,38 +2559,66 @@ export class AppUI extends Component {
                     groups[state]!.sort((a, b) => a.name.localeCompare(b.name));
                 }
                 mascotFramesByState = groups;
-                console.log(`${TAG} phase3 | mascot_frames idle=${groups.idle?.length ?? 0} celebrate=${groups.celebrate?.length ?? 0} think=${groups.think?.length ?? 0} lose=${groups.lose?.length ?? 0}`);
+                console.log(`${TAG} phase3 | mascot_frames groups idle=${groups.idle?.length ?? 0} celebrate=${groups.celebrate?.length ?? 0} think=${groups.think?.length ?? 0} lose=${groups.lose?.length ?? 0} null=${nullCount} no_tex=${noTexCount}`);
                 resolve();
             });
         });
 
-        await Promise.all([...iconNames.map(loadOne), loadMascot(), loadMascotFrames()]);
+        // SERIAL load — parallel obscures the crashing asset. Run icons one at a
+        // time so the LAST `LOADING` log without a matching `LOADED` reveals
+        // exactly which asset's native decode/upload triggers the SIGSEGV.
+        console.log(`${TAG} phase3 | SERIAL_START icons=${iconNames.length} skipIcons=${skipIconsLoad} skipMascotRef=${skipMascotRefLoad} skipFrames=${skipFramesLoad}`);
+        if (!skipIconsLoad) {
+            for (const name of iconNames) {
+                await loadOneSerial(name);
+            }
+        } else {
+            console.log(`${TAG} phase3 | icons SKIPPED (TD_DISABLE_ICON_LOAD=true)`);
+        }
+        console.log(`${TAG} phase3 | icons DONE loaded=${loaded} failed=${failed}`);
+        await loadMascot();
+        console.log(`${TAG} phase3 | mascot_ref DONE`);
+        await loadMascotFrames();
+        console.log(`${TAG} phase3 | mascot_frames DONE`);
         console.log(`${TAG} phase3 | DONE icons_loaded=${loaded}/${iconNames.length} failed=${failed} mascot=${!!mascotFrame}`);
 
         // Re-attach all bind-time IconBadges now that sprite frames are registered.
         // IconLibrary.attach checks the registry first — registered icons get
         // cc.Sprite path, unregistered fall back to procedural.
+        console.log(`${TAG} phase3 | step=_attachStaticIconBadges`);
         this._attachStaticIconBadges();
         // Refresh state-driven icons (audio toggles, watchlist star, feed tab).
+        console.log(`${TAG} phase3 | step=_refreshAudioCard`);
         this._refreshAudioCard();
+        console.log(`${TAG} phase3 | step=_refreshWatchlistStarTint`);
         this._refreshWatchlistStarTint();
         // Feed tab icon refreshes the next time the user switches tabs; force one now.
         if (this._feedTabDropdownLabel) {
+            console.log(`${TAG} phase3 | step=_updateFeedTabDropdownLabel`);
             this._updateFeedTabDropdownLabel(this._currentFeedTab as any);
         }
 
         // Mascot: prefer per-state frame sequences (Seedance clips), fall back
         // to single static PNG if the frames/ folder is empty.
         const hasFrames = Object.values(mascotFramesByState).some(arr => (arr?.length ?? 0) > 0);
-        if (hasFrames) {
+        console.log(`${TAG} phase3 | mascot_apply hasFrames=${hasFrames} mascotFrame=${!!mascotFrame}`);
+        // Phase N debug — kill switch. Set globalThis.TD_DISABLE_MASCOT_FRAMES=true
+        // to skip this entirely as a smoke test for native crashes.
+        const killMascot = (globalThis as any).TD_DISABLE_MASCOT_FRAMES === true;
+        if (killMascot) {
+            console.log(`${TAG} phase3 | mascot SKIPPED (TD_DISABLE_MASCOT_FRAMES=true)`);
+        } else if (hasFrames) {
+            console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (per-state)`);
             this._mascot?.setSpriteSheet(mascotFramesByState);
             this._postMatchMascot?.setSpriteSheet(mascotFramesByState);
             console.log(`${TAG} phase3 | mascot swapped to per-state frame sequences`);
         } else if (mascotFrame) {
+            console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (static)`);
             this._mascot?.setSpriteSheet({ idle: [mascotFrame] });
             this._postMatchMascot?.setSpriteSheet({ idle: [mascotFrame] });
             console.log(`${TAG} phase3 | mascot swapped to static PNG`);
         }
+        console.log(`${TAG} phase3 | EXIT — all assets applied`);
     }
 
     /**

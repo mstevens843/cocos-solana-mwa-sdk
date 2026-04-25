@@ -63,8 +63,11 @@ export class MascotController extends Component {
     };
 
     onLoad(): void {
+        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'}`);
         this._buildMascot();
+        console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
         this.setState('idle');
+        console.log(`${TAG} onLoad | DONE`);
     }
 
     onDestroy(): void {
@@ -72,6 +75,11 @@ export class MascotController extends Component {
     }
 
     update(dt: number): void {
+        // PROBE: confirm MascotController.update is reached after start.
+        const TAG_LOCAL = '[Mascot:update]';
+        if (((this as any)._frameNum = (((this as any)._frameNum ?? 0) + 1)) <= 3) {
+            console.log(`${TAG_LOCAL} n=${(this as any)._frameNum} state=${this._state} useSheet=${this._useSpriteSheet}`);
+        }
         if (this._useSpriteSheet) {
             this._cycleFrames(dt);
             return;
@@ -99,9 +107,16 @@ export class MascotController extends Component {
                 this._currentFrame = isLoop ? 0 : frames.length - 1;
             }
         }
+        // Defensive null-guard — a partial import (some PNGs missing .meta) can
+        // leave undefined slots in the array; assigning null to spriteFrame is a
+        // SIGSEGV in libcocos.so at offset 0x28. Skip the slot if missing.
+        const next = frames[this._currentFrame];
+        if (!next) return;
         const spr = this.node.getComponent(Sprite);
-        if (spr && spr.spriteFrame !== frames[this._currentFrame]) {
-            spr.spriteFrame = frames[this._currentFrame];
+        if (spr && spr.spriteFrame !== next) {
+            const tex: any = (next as any).texture;
+            console.log(`${TAG} _cycleFrames | ASSIGN state=${this._state} idx=${this._currentFrame}/${frames.length} hasTex=${!!tex} texW=${tex?.width ?? -1} texH=${tex?.height ?? -1} name=${next.name}`);
+            spr.spriteFrame = next;
         }
     }
 
@@ -138,9 +153,31 @@ export class MascotController extends Component {
      * compose on top of the per-frame sprite swap.
      */
     setSpriteSheet(framesByState: Partial<Record<MascotState, SpriteFrame[]>>): void {
-        this._framesByState = framesByState;
-        const totalFrames = Object.values(framesByState).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
+        console.log(`${TAG} setSpriteSheet | ENTRY node=${this.node?.name ?? '?'}`);
+        // Filter null/undefined entries AND any frame missing a backing texture —
+        // the latter is the libcocos.so SIGSEGV at offset 0x28 vector.
+        const cleaned: Partial<Record<MascotState, SpriteFrame[]>> = {};
+        let droppedNulls = 0;
+        let droppedNoTex = 0;
+        for (const state of Object.keys(framesByState) as MascotState[]) {
+            const arr = framesByState[state];
+            if (!arr) continue;
+            const valid: SpriteFrame[] = [];
+            for (const f of arr) {
+                if (!f) { droppedNulls++; continue; }
+                if (!(f as any).texture) { droppedNoTex++; continue; }
+                valid.push(f);
+            }
+            if (valid.length > 0) cleaned[state] = valid;
+        }
+        if (droppedNulls > 0 || droppedNoTex > 0) {
+            console.log(`${TAG} setSpriteSheet | DROPPED null=${droppedNulls} no_tex=${droppedNoTex}`);
+        }
+        this._framesByState = cleaned;
+        const totalFrames = Object.values(cleaned).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
         this._useSpriteSheet = totalFrames > 0;
+        framesByState = cleaned;
+        console.log(`${TAG} setSpriteSheet | clean total=${totalFrames}`);
         const counts = (['idle', 'celebrate', 'think', 'lose'] as MascotState[])
             .map(s => `${s}=${framesByState[s]?.length ?? 0}`).join(' ');
         console.log(`${TAG} setSpriteSheet | ${counts} total=${totalFrames}`);

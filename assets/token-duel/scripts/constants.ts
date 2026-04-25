@@ -118,6 +118,7 @@ export const WATCHLIST_LS_KEY = 'tokenduel:watchlist';
  */
 export const RECEIPT_BACKEND_URL: string =
     (globalThis as any).TD_RECEIPT_URL ?? 'http://10.0.2.2:3000';
+console.log(`[constants] BOOT RECEIPT_BACKEND_URL=${RECEIPT_BACKEND_URL}`);
 
 /** Solana Ed25519 native program address — required when building the
  *  precompile instruction that precedes `settle_match_verified`. */
