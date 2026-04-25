@@ -58,6 +58,11 @@ export interface TokenDuelGameOptions {
     /** Fires on each PortfolioRace poll; drives the live RacePanel UI. */
     onRaceTick?: (snap: RaceSnapshot) => void;
     onGameOver: (height: number, deltas: Record<string, number>) => void;
+    /** Phase F5/F6 — forwarded from PortfolioRace. */
+    onPriceFallback?: (mint: string, fallbackEntry: number) => void;
+    onStalePrice?: (mint: string, missingTicks: number) => void;
+    onPriceRecovered?: (mint: string) => void;
+    onConnectionState?: (state: 'ok' | 'degraded' | 'lost') => void;
 }
 
 export class TokenDuelGame {
@@ -90,6 +95,10 @@ export class TokenDuelGame {
             priceFeed: this._opts.priceFeed,
             fallbackEntryPrices: this._opts.fallbackEntryPrices,
             onBeforeStart: this._opts.onBeforeFirstBlock,
+            onPriceFallback: this._opts.onPriceFallback,
+            onStalePrice: this._opts.onStalePrice,
+            onPriceRecovered: this._opts.onPriceRecovered,
+            onConnectionState: this._opts.onConnectionState,
             onTick: (snap) => {
                 this._latestSnapshot = snap;
                 if (this._opts.heightLabel) {

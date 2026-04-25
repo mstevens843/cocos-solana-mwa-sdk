@@ -127,14 +127,52 @@ export const WAGER_DISPLAY_TO_TIER: readonly number[] = [0, 1, 2, 3, 4, 6, 7, 5]
 export const RAKE_BPS = 300;
 export const BPS_DENOM = 10_000;
 
-/** Match waiting timeout before anyone can cancel + refund. Mirrors state.rs. */
-export const MATCH_WAIT_TIMEOUT_MS = 120_000;
+/** Match waiting timeout before anyone can cancel + refund. Mirrors state.rs.
+ *  Phase D bumped 120_000 → 86_400_000 (24h). The Anchor program enforces
+ *  the same constant — early cancel by the lone creator is allowed via the
+ *  `cancel_match` Branch B path even before this timeout elapses. */
+export const MATCH_WAIT_TIMEOUT_MS = 86_400_000;
 
 /** Starting bot-handicap games for a new player. Mirrors BOT_HANDICAP_GAMES. */
 export const BOT_HANDICAP_GAMES = 5;
 
 /** Bot handicap height multiplier — bot height = raw × 0.7 during first N games. */
 export const BOT_HANDICAP_MULTIPLIER = 0.7;
+
+/** Phase E — per-difficulty height multiplier applied to bot delta in
+ *  paper matches. Stacks with BOT_HANDICAP_MULTIPLIER for new players. */
+export const BOT_DIFFICULTY_MULTIPLIERS: Record<'easy' | 'medium' | 'hard', number> = {
+    easy: 0.7,
+    medium: 1.0,
+    hard: 1.15,
+};
+
+/**
+ * Phase J1 — streak-based XP bonus tiers (client display only on first
+ * deploy). When the player's `currentStreak` matches or exceeds a tier,
+ * multiplier applies to xpForPlacement to surface the bonus on PostMatch.
+ *
+ * Onchain XP is awarded by the program WITHOUT this multiplier today; the
+ * UI shows what XP would-be-with-streak-bonus alongside the actual award.
+ * Phase K will move enforcement onchain via a state.rs constant.
+ */
+export interface StreakBonusTier {
+    minStreak: number;
+    multiplier: number;
+}
+export const STREAK_BONUS_TABLE: StreakBonusTier[] = [
+    { minStreak: 10, multiplier: 1.35 },
+    { minStreak: 6,  multiplier: 1.20 },
+    { minStreak: 3,  multiplier: 1.10 },
+];
+
+/** Returns the multiplier for a given streak count. Defaults to 1.0. */
+export function streakBonusFor(currentStreak: number): number {
+    for (const tier of STREAK_BONUS_TABLE) {
+        if (currentStreak >= tier.minStreak) return tier.multiplier;
+    }
+    return 1.0;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Part 9 — Time-window axis (originally 1h / 1d / 3d / 7d Birdeye delta)

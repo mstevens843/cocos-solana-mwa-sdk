@@ -26,9 +26,12 @@
  */
 
 import { PriceFeed } from './PriceFeed';
-import { VETTED_MINTS, VettedMint, randomVettedTrio } from './VettedMints';
+import { VETTED_MINTS, VettedMint, randomVettedTrio, randomTrioForDifficulty, BotDifficulty } from './VettedMints';
+import { BOT_DIFFICULTY_MULTIPLIERS } from './ModeDefs';
 
 const TAG = '[SquadBot]';
+
+export type { BotDifficulty } from './VettedMints';
 
 export interface BotSquadEntry {
     mint: string;
@@ -61,9 +64,13 @@ export class LiveSquadBot {
     private _startedAt = 0;
     /** Each token's final delta at t=windowMs, pre-computed once at start. */
     private _finalDeltas: Map<string, number> = new Map();
+    private _difficulty: BotDifficulty = 'medium';
+    private _gainersSnapshot: VettedMint[] = [];
 
-    constructor(windowMs: number) {
+    constructor(windowMs: number, difficulty: BotDifficulty = 'medium', gainersSnapshot: VettedMint[] = []) {
         this._windowMs = Math.max(1, windowMs);
+        this._difficulty = difficulty;
+        this._gainersSnapshot = gainersSnapshot;
     }
 
     /**
@@ -73,7 +80,7 @@ export class LiveSquadBot {
      * Called at race start; AppUI gets a usable `deltaAt(0) == 0` immediately.
      */
     async start(priceFeed: PriceFeed): Promise<void> {
-        const picks = randomVettedTrio();
+        const picks = randomTrioForDifficulty(this._difficulty, this._gainersSnapshot);
         this._squad = picks.map((p) => ({
             mint: p.mint,
             symbol: p.symbol,
@@ -87,6 +94,7 @@ export class LiveSquadBot {
         // existing priceMulti (which returns change24hPct alongside price).
         const mints = this._squad.map((s) => s.mint);
         const live = await priceFeed.getSessionDeltas(mints); // {} on Birdeye failure; handled below
+        const diffMul = BOT_DIFFICULTY_MULTIPLIERS[this._difficulty] ?? 1.0;
         for (const s of this._squad) {
             const delta24h = Number.isFinite(live[s.mint]) ? live[s.mint] : 0;
             s.seedVolatility = delta24h;
@@ -97,11 +105,11 @@ export class LiveSquadBot {
             const prng = this._mulberry32(seed);
             const baseMagnitude = Math.min(10, Math.abs(delta24h) * 0.15 + 0.5);
             const direction = prng() > 0.5 ? 1 : -1;
-            this._finalDeltas.set(s.mint, direction * baseMagnitude * prng());
+            this._finalDeltas.set(s.mint, direction * baseMagnitude * prng() * diffMul);
         }
 
         this._startedAt = Date.now();
-        console.log(`${TAG} start | squad=[${this._squad.map((s) => `${s.symbol}(${s.seedVolatility.toFixed(1)}%→${(this._finalDeltas.get(s.mint) ?? 0).toFixed(2)}%)`).join(',')}] windowMs=${this._windowMs}`);
+        console.log(`${TAG} start | difficulty=${this._difficulty} mul=${diffMul.toFixed(2)} squad=[${this._squad.map((s) => `${s.symbol}(${s.seedVolatility.toFixed(1)}%→${(this._finalDeltas.get(s.mint) ?? 0).toFixed(2)}%)`).join(',')}] windowMs=${this._windowMs}`);
     }
 
     /**
@@ -171,10 +179,19 @@ export class LiveSquadBot {
  * Instant synthetic outcome for the paper-bot-match post-race ranking.
  * Does NOT fetch prices or wait — seeded purely by current time bucket so
  * two paper matches in quick succession feel different.
+ *
+ * Phase E: difficulty drives both the token universe and a height
+ * multiplier. Easy → stables/bluechips × 0.7. Medium → vetted × 1.0.
+ * Hard → live Birdeye gainers (caller-supplied snapshot) × 1.15.
  */
-export function sampleInstantBotOutcome(windowMs: number): { portfolioDeltaPct: number; squad: BotSquadEntry[] } {
-    const picks = randomVettedTrio();
+export function sampleInstantBotOutcome(
+    windowMs: number,
+    difficulty: BotDifficulty = 'medium',
+    gainersSnapshot: VettedMint[] = [],
+): { portfolioDeltaPct: number; squad: BotSquadEntry[] } {
+    const picks = randomTrioForDifficulty(difficulty, gainersSnapshot);
     const bucket = Math.floor(Date.now() / Math.max(1000, windowMs));
+    const diffMul = BOT_DIFFICULTY_MULTIPLIERS[difficulty] ?? 1.0;
     const squad: BotSquadEntry[] = [];
     let sum = 0;
     for (const p of picks) {
@@ -196,11 +213,11 @@ export function sampleInstantBotOutcome(windowMs: number): { portfolioDeltaPct: 
         };
         const magnitude = prng() * 6;   // 0-6% typical
         const direction = prng() > 0.5 ? 1 : -1;
-        const delta = direction * magnitude;
+        const delta = direction * magnitude * diffMul;
         squad.push({ mint: p.mint, symbol: p.symbol, seedVolatility: 0, deltaPct: delta });
         sum += delta;
     }
     const portfolioDeltaPct = sum / squad.length;
-    console.log(`${TAG} sampleInstantBotOutcome | squad=[${squad.map((s) => `${s.symbol}(${s.deltaPct.toFixed(2)}%)`).join(',')}] portfolio=${portfolioDeltaPct.toFixed(2)}% bucket=${bucket}`);
+    console.log(`${TAG} sampleInstantBotOutcome | difficulty=${difficulty} mul=${diffMul.toFixed(2)} squad=[${squad.map((s) => `${s.symbol}(${s.deltaPct.toFixed(2)}%)`).join(',')}] portfolio=${portfolioDeltaPct.toFixed(2)}% bucket=${bucket}`);
     return { portfolioDeltaPct, squad };
 }

@@ -55,3 +55,53 @@ export function randomVettedTrio(): [VettedMint, VettedMint, VettedMint] {
     const shuffled = VETTED_MINTS.slice().sort(() => Math.random() - 0.5);
     return [shuffled[0], shuffled[1], shuffled[2]];
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase E — Bot difficulty universes.
+//
+// Easy   → STABLE_BLUECHIP_MINTS (low-vol, predictable deltas).
+// Medium → VETTED_MINTS (the full safelist above; current behavior).
+// Hard   → getMomentumMints() pulls live Birdeye 24h gainers; falls back
+//          to VETTED_MINTS if Birdeye is unreachable.
+//
+// Mints are referenced by symbol against VETTED_MINTS to avoid duplication.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Easy universe — stables + LSTs + bluechip protocol tokens. Low vol. */
+export const STABLE_BLUECHIP_SYMBOLS = ['USDC', 'USDT', 'JitoSOL', 'mSOL', 'bSOL', 'JUP', 'RAY', 'ORCA'];
+
+export const STABLE_BLUECHIP_MINTS: VettedMint[] = VETTED_MINTS.filter(
+    (m) => STABLE_BLUECHIP_SYMBOLS.includes(m.symbol),
+);
+
+/** Pick 3 stable/bluechip mints. Used by Easy bots. */
+export function randomEasyTrio(): [VettedMint, VettedMint, VettedMint] {
+    const pool = STABLE_BLUECHIP_MINTS.length >= 3 ? STABLE_BLUECHIP_MINTS : VETTED_MINTS;
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5);
+    return [shuffled[0], shuffled[1], shuffled[2]];
+}
+
+/** Bot difficulty knob used by SquadBot to pick a token universe. */
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
+
+/**
+ * Hard universe — pulled live from Birdeye gainers by AppUI before kicking
+ * a Hard bot match, then handed to SquadBot via this snapshot. If empty or
+ * malformed, randomTrioForDifficulty falls back to VETTED_MINTS so a paper
+ * match never fails on a network blip.
+ */
+export function randomHardTrio(snapshot: VettedMint[]): [VettedMint, VettedMint, VettedMint] {
+    const pool = snapshot.length >= 3 ? snapshot : VETTED_MINTS;
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5);
+    return [shuffled[0], shuffled[1], shuffled[2]];
+}
+
+/** Single dispatch for SquadBot. Pass `gainersSnapshot` only on Hard. */
+export function randomTrioForDifficulty(
+    difficulty: BotDifficulty,
+    gainersSnapshot?: VettedMint[],
+): [VettedMint, VettedMint, VettedMint] {
+    if (difficulty === 'easy') return randomEasyTrio();
+    if (difficulty === 'hard') return randomHardTrio(gainersSnapshot ?? []);
+    return randomVettedTrio();
+}

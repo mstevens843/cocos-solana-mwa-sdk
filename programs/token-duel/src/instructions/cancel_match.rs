@@ -22,10 +22,16 @@ pub fn handler(ctx: Context<CancelMatch>) -> Result<()> {
             GameError::MatchBadStatus
         );
         let elapsed = clock.unix_timestamp.saturating_sub(m.created_at);
-        require!(
-            elapsed >= MATCH_WAIT_TIMEOUT_SECS,
-            GameError::MatchNotTimedOut
-        );
+        // Phase D — Branch B: the lone creator can self-cancel at any time
+        // (no timeout). Branch A: anyone can cancel after MATCH_WAIT_TIMEOUT_SECS.
+        let is_self_cancel = m.player_count == 1
+            && ctx.accounts.canceller.key() == m.players[0];
+        if !is_self_cancel {
+            require!(
+                elapsed >= MATCH_WAIT_TIMEOUT_SECS,
+                GameError::MatchNotTimedOut
+            );
+        }
         (m.players[0], m.player_count, m.wager_lamports)
     };
 

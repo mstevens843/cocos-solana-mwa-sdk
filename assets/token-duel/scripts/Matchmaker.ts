@@ -20,6 +20,7 @@ import { findOpenMatches, getMatch, getMatchCounter, MatchState } from './MatchR
 import { computeModePayout, xpForPlacement } from './PayoutCalc';
 import { encodeDeltaPct } from './ScoreEncoding';
 import { sampleInstantBotOutcome, BotSquadEntry } from './SquadBot';
+import { BotDifficulty, VettedMint } from './VettedMints';
 
 const TAG = '[Matchmaker]';
 
@@ -66,17 +67,23 @@ export function runPaperBotMatch(opts: {
     botGamesRemaining: number;
     /** betting-duel: window from ModePicker, drives bot delta magnitude. */
     windowMs?: number;
+    /** Phase E — bot difficulty (default medium for back-compat). */
+    difficulty?: BotDifficulty;
+    /** Phase E — caller-supplied Birdeye gainers snapshot for Hard mode. */
+    hardGainersSnapshot?: VettedMint[];
 }): MatchOutcome {
     const mode = MODES[opts.mode];
     const n = mode.requiredPlayers;
     const windowMs = opts.windowMs && opts.windowMs > 0 ? opts.windowMs : 30_000;
-    console.log(`${TAG} runPaperBotMatch | START mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_score=${opts.playerHeight} windowMs=${windowMs}`);
+    const difficulty: BotDifficulty = opts.difficulty ?? 'medium';
+    const gainersSnapshot = opts.hardGainersSnapshot ?? [];
+    console.log(`${TAG} runPaperBotMatch | START mode=${opts.mode} players=${n} wager=${opts.wagerTierLamports} player_score=${opts.playerHeight} windowMs=${windowMs} difficulty=${difficulty} gainers_snapshot=${gainersSnapshot.length}`);
 
     // Sample N-1 bot squads.
     const botSquads: BotSquadEntry[][] = [];
     const botHeights: number[] = [];
     for (let i = 0; i < n - 1; i++) {
-        const outcome = sampleInstantBotOutcome(windowMs);
+        const outcome = sampleInstantBotOutcome(windowMs, difficulty, gainersSnapshot);
         const encoded = encodeDeltaPct(outcome.portfolioDeltaPct);
         botHeights.push(encoded);
         botSquads.push(outcome.squad);
@@ -148,20 +155,33 @@ export async function resolveRealMatchAction(opts: {
     /** Part 9: 0=1h, 1=24h, 2=3d, 3=7d. Filters matchmaking + stored on Match. */
     timeWindow: number;
     blockhash: string;
+    /** Phase B: skip the search and always build a create tx (host flow). */
+    forceCreate?: boolean;
+    /** Phase A: build a join tx for this exact match PDA (browser explicit join).
+     *  When set, `findOpenMatches` is bypassed and `forceCreate` is ignored. */
+    explicitMatchPda?: string;
 }): Promise<RealMatchResolution> {
-    console.log(`${TAG} resolveRealMatchAction | START player=${opts.playerPubkey} mode=${opts.mode} tier=${opts.wagerTierIndex} xp_bucket=${opts.xpBucket} window=${opts.timeWindow}`);
+    console.log(`${TAG} resolveRealMatchAction | START player=${opts.playerPubkey} mode=${opts.mode} tier=${opts.wagerTierIndex} xp_bucket=${opts.xpBucket} window=${opts.timeWindow} forceCreate=${opts.forceCreate ? 'yes' : 'no'} explicit=${opts.explicitMatchPda ?? 'none'}`);
     const modeDef = MODES[opts.mode];
     const modeU8 = modeDef.modeU8;
 
-    const open = await findOpenMatches(opts.rpc, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow);
-    const joinable = open.filter((m) => !m.players.includes(opts.playerPubkey));
-    joinable.sort((a, b) => Number(a.createdAt - b.createdAt));
+    if (opts.explicitMatchPda) {
+        const tx = AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, opts.explicitMatchPda, opts.blockhash);
+        console.log(`${TAG} resolveRealMatchAction | JOIN_EXPLICIT match=${opts.explicitMatchPda}`);
+        return { action: 'join', matchPda: opts.explicitMatchPda, seq: 0n, txBytes: tx, blockhash: opts.blockhash };
+    }
 
-    if (joinable.length > 0) {
-        const target = joinable[0];
-        const tx = AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, target.pda, opts.blockhash);
-        console.log(`${TAG} resolveRealMatchAction | JOIN match=${target.pda} seq=${target.seq}`);
-        return { action: 'join', matchPda: target.pda, seq: target.seq, txBytes: tx, blockhash: opts.blockhash };
+    if (!opts.forceCreate) {
+        const open = await findOpenMatches(opts.rpc, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow);
+        const joinable = open.filter((m) => !m.players.includes(opts.playerPubkey));
+        joinable.sort((a, b) => Number(a.createdAt - b.createdAt));
+
+        if (joinable.length > 0) {
+            const target = joinable[0];
+            const tx = AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, target.pda, opts.blockhash);
+            console.log(`${TAG} resolveRealMatchAction | JOIN match=${target.pda} seq=${target.seq}`);
+            return { action: 'join', matchPda: target.pda, seq: target.seq, txBytes: tx, blockhash: opts.blockhash };
+        }
     }
 
     const counter = await getMatchCounter(opts.rpc);
@@ -170,7 +190,7 @@ export async function resolveRealMatchAction(opts: {
     const tx = AnchorBackend.buildJoinMatchCreateTx(
         opts.playerPubkey, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow, seq, opts.blockhash,
     );
-    console.log(`${TAG} resolveRealMatchAction | CREATE seq=${seq} match=${matchPda}`);
+    console.log(`${TAG} resolveRealMatchAction | CREATE seq=${seq} match=${matchPda} forced=${opts.forceCreate ? 'yes' : 'no'}`);
     return { action: 'create', matchPda, seq, txBytes: tx, blockhash: opts.blockhash };
 }
 
@@ -224,6 +244,10 @@ export async function joinOrCreateWithRetry(opts: {
     getBlockhash: () => Promise<string>;
     onRetry?: (attempt: number, max: number) => void;
     maxRetries?: number;
+    /** Phase B: always create a fresh lobby (skip auto-search). */
+    forceCreate?: boolean;
+    /** Phase A: explicit-join from the FindMatchPanel browser. */
+    explicitMatchPda?: string;
 }): Promise<JoinOrCreateResult> {
     const maxRetries = opts.maxRetries ?? 3;
     let lastError: Error = new Error('no attempts');
@@ -237,6 +261,8 @@ export async function joinOrCreateWithRetry(opts: {
             xpBucket: opts.xpBucket,
             timeWindow: opts.timeWindow,
             blockhash,
+            forceCreate: opts.forceCreate,
+            explicitMatchPda: opts.explicitMatchPda,
         });
         console.log(`${TAG} joinOrCreateWithRetry | attempt=${attempt} action=${resolved.action} seq=${resolved.seq} match=${resolved.matchPda}`);
         try {
@@ -287,8 +313,12 @@ export async function waitForOpponent(
     onPoll?: (u: WaitPollUpdate) => void,
 ): Promise<{ outcome: 'active' | 'settled' | 'cancelled' | 'timeout'; state: MatchState | null }> {
     const start = Date.now();
-    const intervalMs = 3000;
-    console.log(`${TAG} waitForOpponent | START match=${matchPda} timeout=${timeoutMs}ms`);
+    // Phase D — stepped cadence: 3s for the first 2 min (typical match-fill
+    // window) then 30s for the rest of the 24h lobby ttl. Saves RPC.
+    const FAST_INTERVAL_MS = 3_000;
+    const SLOW_INTERVAL_MS = 30_000;
+    const FAST_WINDOW_MS = 120_000;
+    console.log(`${TAG} waitForOpponent | START match=${matchPda} timeout=${timeoutMs}ms cadence=3s→30s@${FAST_WINDOW_MS}ms`);
     let polls = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -313,6 +343,7 @@ export async function waitForOpponent(
             console.log(`${TAG} waitForOpponent | TIMEOUT after ${elapsed}ms polls=${polls}`);
             return { outcome: 'timeout', state };
         }
+        const intervalMs = elapsed > FAST_WINDOW_MS ? SLOW_INTERVAL_MS : FAST_INTERVAL_MS;
         await new Promise((r) => setTimeout(r, intervalMs));
     }
 }

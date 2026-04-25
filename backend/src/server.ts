@@ -27,6 +27,8 @@ import { adminRouter } from './admin';
 import { StatsBucket } from './stats';
 import { TokenStatsBucket } from './token_stats';
 import { RakeListener } from './rake_listener';
+import { NotificationStore } from './notification_store';
+import { NotificationListener } from './notification_listener';
 import { TournamentHost } from './tournament_host';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { PROGRAM_ID } from '../../assets/token-duel/scripts/constants';
@@ -62,6 +64,51 @@ app.get('/pubkey', (_req, res) => {
     res.json({ pubkey: signer.pubkey.toBase58() });
 });
 
+/**
+ * Phase F2 — direct receipt signing for betting-duel real-track matches.
+ *
+ * The legacy /session/start + WS path was tied to stack-jump physics
+ * (drop-event validation). Betting-duel never streams drops, so finalize()
+ * always rejected with "claimed != observed". This endpoint sidesteps the
+ * session machinery: clients POST { matchPda, playerPubkey, height,
+ * signedAt? } and get back a signed Ed25519 receipt that satisfies
+ * `settle_match_verified`. Backend currently signs in attestation mode
+ * (no independent height validation) — verification proves the backend
+ * was reachable, which is what onchain enforces. Future Phase K can add
+ * independent Birdeye recompute for full anti-cheat.
+ */
+app.post('/receipts/sign', (req: Request, res: Response) => {
+    try {
+        const body = req.body as { matchPda?: string; playerPubkey?: string; height?: number; signedAt?: number };
+        if (!body || typeof body.matchPda !== 'string' || typeof body.playerPubkey !== 'string') {
+            return res.status(400).json({ error: 'matchPda + playerPubkey required' });
+        }
+        if (typeof body.height !== 'number' || !Number.isInteger(body.height) || body.height < 0 || body.height > 0xffffffff) {
+            return res.status(400).json({ error: 'height must be u32' });
+        }
+        let matchPk: PublicKey, playerPk: PublicKey;
+        try { matchPk = new PublicKey(body.matchPda); playerPk = new PublicKey(body.playerPubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        const signedAt = typeof body.signedAt === 'number' && Number.isFinite(body.signedAt)
+            ? Math.floor(body.signedAt)
+            : Math.floor(Date.now() / 1000);
+        const { ixDataB64 } = signer.sign({ matchPda: matchPk, player: playerPk, height: body.height, signedAt });
+        // Track for admin dashboard.
+        StatsBucket.bumpReceipt({
+            matchPda: matchPk.toBase58(),
+            player: playerPk.toBase58(),
+            height: body.height,
+            at: signedAt,
+            verified: true,
+        });
+        console.log(`${TAG} /receipts/sign OK match=${matchPk.toBase58().slice(0, 8)}... player=${playerPk.toBase58().slice(0, 8)}... height=${body.height} signed_at=${signedAt}`);
+        return res.json({ ed25519IxDataB64: ixDataB64, signedAt, height: body.height });
+    } catch (e: any) {
+        console.error(`${TAG} /receipts/sign ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
 // ═════════════════════════════════════════════════════════════════════
 // Part 12 Bundle B — admin live dashboard
 // Seeds StatsBucket context so /admin/stream can show server pubkey + tree.
@@ -89,6 +136,58 @@ const rakeListener = new RakeListener({
     tokenStats,
 });
 void rakeListener.start();
+
+// ═════════════════════════════════════════════════════════════════════
+// Phase N5 — Notification listener + store.
+// Listens to the same program logs as RakeListener but parses different
+// patterns (JoinMatch.JOIN, SettleMatch.FINAL, CancelMatch) into
+// notification events keyed by recipient pubkey. Live delivery via WS
+// `/notifications/:pubkey/stream`; cold-launch catchup via REST
+// `/notifications/:pubkey?since=<ts>`.
+// ═════════════════════════════════════════════════════════════════════
+
+const notificationStore = new NotificationStore();
+const notificationListener = new NotificationListener({
+    connection: rakeConnection,
+    programId: new PublicKey(PROGRAM_ID),
+    store: notificationStore,
+});
+void notificationListener.start();
+
+app.get('/notifications/:pubkey', (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        if (!pubkey || pubkey.length < 32 || pubkey.length > 44) {
+            return res.status(400).json({ error: 'invalid pubkey' });
+        }
+        try { new PublicKey(pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        const since = Number(req.query.since ?? 0);
+        const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 50)));
+        const events = notificationStore.getRecent(pubkey, Number.isFinite(since) ? since : 0, limit);
+        return res.json({ events });
+    } catch (e: any) {
+        console.error(`${TAG} GET /notifications ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.post('/notifications/:pubkey/:id/read', (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const id = req.params.id;
+        if (!pubkey || pubkey.length < 32 || pubkey.length > 44) {
+            return res.status(400).json({ error: 'invalid pubkey' });
+        }
+        try { new PublicKey(pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        const ok = notificationStore.markRead(pubkey, id);
+        return res.json({ ok });
+    } catch (e: any) {
+        console.error(`${TAG} POST /notifications/:id/read ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
 
 // Expose public /fees route as a clean alias to the static HTML page.
 app.get('/fees', (_req, res) => res.redirect('/fees.html'));
@@ -360,9 +459,39 @@ httpServer.on('upgrade', (request, socket, head) => {
         return;
     }
 
+    // Phase N5 — notification stream per pubkey: /notifications/:pubkey/stream
+    const notifStream = url.match(/^\/notifications\/([^/]+)\/stream$/);
+    if (notifStream) {
+        const pubkey = notifStream[1];
+        try { new PublicKey(pubkey); }
+        catch {
+            socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        wss.handleUpgrade(request, socket, head, (ws) => attachNotificationSubscriber(ws, pubkey));
+        return;
+    }
+
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
 });
+
+/** Phase N5 — bind a WebSocket to the notification store for a given player. */
+function attachNotificationSubscriber(ws: WebSocket, pubkey: string): void {
+    const unsubscribe = notificationStore.subscribe(pubkey, ws);
+    console.log(`${TAG} notif_subscriber OPEN pubkey=${pubkey.slice(0, 8)}...`);
+    // Welcome message confirms connection.
+    try { ws.send(JSON.stringify({ kind: 'connected', pubkey, at: Date.now() })); } catch (_) { /* ignore */ }
+    ws.on('message', () => { /* read-only channel */ });
+    ws.on('close', () => {
+        unsubscribe();
+        console.log(`${TAG} notif_subscriber CLOSE pubkey=${pubkey.slice(0, 8)}...`);
+    });
+    ws.on('error', (e) => {
+        console.warn(`${TAG} notif_subscriber ERROR pubkey=${pubkey.slice(0, 8)}...`, e);
+    });
+}
 
 function send(ws: WebSocket, msg: WsOutbound): void {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));

@@ -244,3 +244,53 @@ export class ReceiptSession {
         }
     }
 }
+
+/**
+ * Phase F2 — one-shot receipt sign for betting-duel real-track matches.
+ *
+ * No WS, no session state. POSTs the height + (matchPda, player) to the
+ * backend, gets back the Ed25519 precompile ix data ready to drop into
+ * settle_match_verified ix[1]. On any error returns null and the caller
+ * surfaces a "Backend unavailable — try again or wait for force-settle"
+ * toast (the unverified path is gated onchain after Phase F2 redeploy).
+ */
+export async function requestReceiptSign(opts: {
+    matchPda: string;
+    playerPubkey: string;
+    height: number;
+    timeoutMs?: number;
+}): Promise<ReceiptPayload | null> {
+    const timeoutMs = opts.timeoutMs ?? 4000;
+    const url = `${RECEIPT_BACKEND_URL}/receipts/sign`;
+    console.log(`${TAG} requestReceiptSign | POST ${url} match=${opts.matchPda.slice(0, 8)}... player=${opts.playerPubkey.slice(0, 8)}... height=${opts.height}`);
+    try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), timeoutMs);
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                matchPda: opts.matchPda,
+                playerPubkey: opts.playerPubkey,
+                height: opts.height,
+            }),
+            signal: ctl.signal as any,
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            console.log(`${TAG} requestReceiptSign | FAIL status=${res.status} body="${body.slice(0, 120)}"`);
+            return null;
+        }
+        const data = await res.json() as { ed25519IxDataB64: string; signedAt: number; height: number };
+        if (!data?.ed25519IxDataB64 || typeof data.signedAt !== 'number') {
+            console.log(`${TAG} requestReceiptSign | MALFORMED_RESPONSE`);
+            return null;
+        }
+        console.log(`${TAG} requestReceiptSign | OK signed_at=${data.signedAt} ix_data_len=${data.ed25519IxDataB64.length}`);
+        return { ed25519IxDataB64: data.ed25519IxDataB64, signedAt: data.signedAt, height: data.height };
+    } catch (e) {
+        console.log(`${TAG} requestReceiptSign | NET_ERR ${e}`);
+        return null;
+    }
+}

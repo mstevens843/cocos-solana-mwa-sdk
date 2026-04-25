@@ -65,6 +65,17 @@ pub fn handler<'info>(
             m.status == MatchStatus::Active as u8,
             GameError::MatchBadStatus
         );
+
+        // Phase F2 — gate the unverified path. Real-track matches (any with
+        // wager_lamports > 0) MUST go through `settle_match_verified` so the
+        // backend's Ed25519 signature on the height is enforced. Without this
+        // gate a malicious client could submit any height and win. force_settle
+        // remains the AFK-timeout escape hatch (backend-uptime fallback).
+        require!(
+            m.wager_lamports == 0,
+            GameError::VerifiedSettleRequired
+        );
+
         let slot = m.slot_of(&caller_key).ok_or(GameError::NotInMatch)?;
         require!(m.heights[slot] == u32::MAX, GameError::AlreadySettledMatch);
         m.heights[slot] = height;

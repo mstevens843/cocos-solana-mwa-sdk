@@ -66,4 +66,9 @@ pub enum GameError {
     DailyChallengeStale,
     #[msg("Season PDA is stale — cron did not initialize this week's season yet")]
     SeasonStale,
+    // Phase F — Critical safety gates
+    #[msg("Real-track matches must use the verified settle path; the unverified settle is rejected for paid matches")]
+    VerifiedSettleRequired,
+    #[msg("Match is already settled — force-settle cannot run twice")]
+    MatchAlreadyClosed,
 }

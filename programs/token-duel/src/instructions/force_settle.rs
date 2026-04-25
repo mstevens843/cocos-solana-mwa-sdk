@@ -57,6 +57,17 @@ pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, ForceSettle<'info>>) -> Re
         let elapsed = clock.unix_timestamp.saturating_sub(m.started_at);
         require!(elapsed >= FORCE_SETTLE_TIMEOUT_SECS, GameError::MatchNotForcedYet);
 
+        // Phase F1 — defense-in-depth guard. The status==Active check above
+        // already prevents the documented clobber attack (Solana serializes
+        // writes to the same account, so a settle_match.FINAL pass that ends
+        // with status=Settled blocks any concurrent force_settle from same-
+        // tx-batch landing). This explicit check codifies the invariant:
+        // force_settle is ONLY for matches with at least one missing height.
+        require!(
+            m.settled_count < m.required_players,
+            GameError::MatchAlreadyClosed
+        );
+
         let n = m.required_players as usize;
         let mut forfeits: u8 = 0;
         for i in 0..n {

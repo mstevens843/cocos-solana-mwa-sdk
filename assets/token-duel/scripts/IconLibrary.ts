@@ -36,7 +36,9 @@ export type IconName =
     | 'plus' | 'eye' | 'lock' | 'wand' | 'trade'
     // Phase 2b additions — emoji replacements for scene chrome.
     | 'cog' | 'user' | 'book' | 'bulb' | 'robot' | 'trash' | 'save'
-    | 'speaker' | 'speakerMuted' | 'vibration' | 'hand' | 'flag' | 'clipboard';
+    | 'speaker' | 'speakerMuted' | 'vibration' | 'hand' | 'flag' | 'clipboard'
+    // Phase N3 — Notification system
+    | 'bell';
 
 export interface IconAttachOptions {
     /** Logical size in points; defaults to 32. */
@@ -401,6 +403,43 @@ function drawClock(g: Graphics, size: number, color: Color): void {
     g.stroke();
     setFill(g, color);
     g.circle(0, 0, size * 0.05); g.fill();
+}
+
+function drawBell(g: Graphics, size: number, color: Color): void {
+    // Phase N3 — bell with curved dome + flared lip + clapper.
+    const lineW = Math.max(2, size * 0.06);
+    g.strokeColor = color;
+    g.lineWidth = lineW;
+    setFill(g, color, 0.18);
+    // Dome — wide arc that flares slightly at the bottom.
+    const top = size * 0.34;
+    const bottom = -size * 0.18;
+    const halfWidth = size * 0.30;
+    g.moveTo(-halfWidth, bottom);
+    g.lineTo(-halfWidth, bottom + size * 0.08);
+    g.bezierCurveTo(
+        -halfWidth, top,
+        halfWidth, top,
+        halfWidth, bottom + size * 0.08,
+    );
+    g.lineTo(halfWidth, bottom);
+    g.close();
+    g.fill();
+    g.stroke();
+    // Lip — short rectangle below the dome.
+    g.moveTo(-halfWidth - size * 0.06, bottom);
+    g.lineTo(halfWidth + size * 0.06, bottom);
+    g.lineTo(halfWidth + size * 0.06, bottom - size * 0.05);
+    g.lineTo(-halfWidth - size * 0.06, bottom - size * 0.05);
+    g.close();
+    setFill(g, color);
+    g.fill();
+    // Clapper — small filled circle below the lip.
+    g.circle(0, bottom - size * 0.13, size * 0.07);
+    g.fill();
+    // Top knob — single dot at the top.
+    g.circle(0, top + size * 0.04, size * 0.05);
+    g.fill();
 }
 
 function drawCheck(g: Graphics, size: number, color: Color): void {
@@ -819,3 +858,5 @@ REG.hand        = { draw: drawHand,         tintHex: Palette.text.lo,      emoji
 REG.starOutline = { draw: drawStarOutline,  tintHex: Palette.text.mid,     emoji: '☆' };
 REG.flag        = { draw: drawFlag,         tintHex: Palette.text.hi,      emoji: '🏁' };
 REG.clipboard   = { draw: drawClipboard,    tintHex: Palette.text.mid,     emoji: '📋' };
+// Phase N3 additions:
+REG.bell        = { draw: drawBell,         tintHex: Palette.text.hi,      emoji: '🔔' };

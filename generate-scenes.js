@@ -538,6 +538,31 @@ function generate() {
     // Gear icon → SettingsPanel (top-right). UX Phase 2b: label cleared, AppUI attaches IconBadge cog.
     const homeSettingsBtn = mkBtnXY(sb, 'OpenSettingsButton', hpN, '', 300, 700, 64, 64, 38, 44, 64);
 
+    // Phase A — Flag icon (top-left) → FindMatchPanel. Empty label; AppUI attaches IconBadge flag.
+    const homeFindMatchBtn = mkBtnXY(sb, 'OpenFindMatchButton', hpN, '', -300, 700, 64, 64, 38, 44, 64);
+
+    // Phase N3 — Notification bell + unread badge. AppUI attaches IconLibrary.bell.
+    const homeNotifBell = mkBtnXY(sb, 'NotificationBellButton', hpN, '', 220, 700, 64, 64, 38, 44, 64);
+    const homeNotifBadgeN = sb.e.length;
+    sb.node('NotificationBellBadge', hpN, [], [], v3(244, 722, 0));
+    const homeNotifBadgeUT = sb.ut(homeNotifBadgeN, 24, 24);
+    const homeNotifBadgeSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(homeNotifBadgeN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(236, 88, 122, 255), // rose / urgent red
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const homeNotifBadgeLbl = mkLabel(sb, 'NotificationBadgeLabel', homeNotifBadgeN, '0', 12, 0, 24, 24, 255, 255, 255);
+    sb.e[sb.e[homeNotifBadgeLbl]._components[1].__id__]._isBold = true;
+    sb.e[homeNotifBadgeN]._components = [rf(homeNotifBadgeUT), rf(homeNotifBadgeSpr)];
+    sb.e[homeNotifBadgeN]._children = [rf(homeNotifBadgeLbl)];
+    sb.e[homeNotifBadgeN]._active = false; // hidden when unread=0
+
     // ── Mascot container (Phase 2A) ─────────────────────────────────────
     // Empty Node — the MascotController component is added at runtime by
     // AppUI.start() (so we don't need an editor-minted UUID for the .ts file
@@ -555,7 +580,8 @@ function generate() {
         rf(pubkey), rf(homeRakeChip), rf(matchTicker), rf(homeTournamentBadge),
         rf(streakStrip), rf(quickPlay), rf(playDuel),
         rf(signMsg), rf(signTx), rf(signSend), rf(caps), rf(disconn), rf(del),
-        rf(mascotN), rf(homeStatus), rf(homeSettingsBtn),
+        rf(mascotN), rf(homeStatus), rf(homeSettingsBtn), rf(homeFindMatchBtn),
+        rf(homeNotifBell), rf(homeNotifBadgeN),
     ];
 
     // ═══════════════════════════════════════════════════════════════
@@ -1424,10 +1450,18 @@ function generate() {
     // Paper / Real toggle at y=90.
     const pickerPaperBtn = mkBtnXY(sb, 'PickerPaperToggle', modePickerN, 'Paper', -80, 90, 150, 44, 48, 198, 155);
     const pickerRealBtn  = mkBtnXY(sb, 'PickerRealToggle',  modePickerN, 'Real',   80, 90, 150, 44, 28, 34, 48);
-    // Start + Cancel buttons.
-    const pickerStartBtn  = mkBtn(sb, 'PickerStartButton',  modePickerN, 'Start Matching', 20, 420, 60, 56, 148, 252);
+
+    // Phase E — Bot difficulty toggle at y=40 (Easy/Medium/Hard). Visible
+    // only when track=Paper or after Real-track timeout fallback to bot.
+    // AppUI._refreshModePickerUi tints the active chip.
+    const pickerEasyBtn   = mkBtnXY(sb, 'PickerDifficultyEasy',   modePickerN, 'Easy',   -160, 40, 130, 40, 28, 34, 48);
+    const pickerMediumBtn = mkBtnXY(sb, 'PickerDifficultyMedium', modePickerN, 'Medium',    0, 40, 130, 40, 48, 198, 155);
+    const pickerHardBtn   = mkBtnXY(sb, 'PickerDifficultyHard',   modePickerN, 'Hard',    160, 40, 130, 40, 28, 34, 48);
+
+    // Start + Cancel buttons. Bumped Start down y=20 → y=-30 to fit difficulty row.
+    const pickerStartBtn  = mkBtn(sb, 'PickerStartButton',  modePickerN, 'Start Matching', -30, 420, 60, 56, 148, 252);
     const pickerCancelBtn = mkBtnXY(sb, 'PickerCancelButton', modePickerN, '✕', 300, 500, 40, 40, 55, 30, 30);
-    const pickerStatus = mkLabel(sb, 'PickerStatusLabel', modePickerN, '', 12, -50, 600, 20, 140, 150, 170);
+    const pickerStatus = mkLabel(sb, 'PickerStatusLabel', modePickerN, '', 12, -100, 600, 20, 140, 150, 170);
 
     sb.e[modePickerN]._components = [rf(mpUT), rf(mpSpr), rf(mpScrimBtn)];
     sb.e[modePickerN]._children = [
@@ -1436,6 +1470,7 @@ function generate() {
         ...wagerIndices.map(rf),
         ...windowIndices.map(rf),
         rf(pickerPaperBtn), rf(pickerRealBtn),
+        rf(pickerEasyBtn), rf(pickerMediumBtn), rf(pickerHardBtn),
         rf(pickerStartBtn), rf(pickerCancelBtn),
         rf(pickerStatus),
     ];
@@ -2675,6 +2710,141 @@ function generate() {
     ];
     sb.e[tourN]._active = false;
 
+    // ═══════════════════════════════════════════════════════════════
+    // Phase A — FIND MATCH PANEL (top-level lobby browser)
+    // Filters: mode (5 chips) / window (5 chips) / wager bucket (5 chips)
+    //          + HideFull toggle. Up to 8 visible match rows + empty state.
+    //          Host New Match CTA at bottom opens ModePickerOverlay in
+    //          host mode (forceCreate=true).
+    // ═══════════════════════════════════════════════════════════════
+    const fmN = sb.e.length;
+    sb.node('FindMatchPanel', canvas, [], [], v3(0, 0, 0));
+    sb.ut(fmN, 720, 1280);
+    sb.spr(fmN, 10, 14, 22);
+
+    // Header: back, title, refresh.
+    const fmBackBtn = mkBtn(sb, 'FindMatchBackButton', fmN, '← Back', 700, 160, 44, 55, 65, 85);
+    sb.e[fmBackBtn]._lpos = v3(-260, 700, 0);
+    const fmTitle = mkLabel(sb, 'FindMatchTitleLabel', fmN, 'Find a Match', 30, 700, 460, 42, 218, 165, 32);
+    style(sb, fmTitle, { bold: true });
+    const fmRefreshBtn = mkBtnXY(sb, 'FindMatchRefreshButton', fmN, '↻', 280, 700, 56, 56, 38, 44, 64);
+    const fmCountLabel = mkLabel(sb, 'FindMatchCountLabel', fmN, '— open lobbies', 12, 660, 600, 18, 140, 150, 170);
+
+    // Phase H2 — Mode tab row (Open Lobbies / Live Now). Bumps the filters
+    // down by 50px to fit at y=640. Selected tab tinted teal by AppUI.
+    const fmTabOpen = mkBtnXY(sb, 'FindMatchTabOpen', fmN, 'Open Lobbies', -100, 640, 200, 38, 48, 198, 155);
+    const fmTabLive = mkBtnXY(sb, 'FindMatchTabLive', fmN, 'Live Now',      100, 640, 200, 38, 28, 34, 48);
+
+    // Filter rows.
+    // Row 1 — Mode chips at y=600. 5 chips at ~125px each (5*125 + 4*8 = 657 < 720).
+    const fmModeKeys = ['all', 'oneVone', '4p', '8p', 'br10'];
+    const fmModeLabels = ['All', '1v1', '4p', '8p', 'BR'];
+    const fmModeIndices = [];
+    {
+        const w = 125, gap = 8;
+        const startX = -((fmModeKeys.length - 1) * (w + gap)) / 2;
+        for (let i = 0; i < fmModeKeys.length; i++) {
+            const x = startX + i * (w + gap);
+            const bN = mkBtnXY(sb, `FilterMode_${fmModeKeys[i]}`, fmN, fmModeLabels[i], x, 600, w, 38, 28, 34, 48);
+            fmModeIndices.push(bN);
+        }
+    }
+    // Row 2 — Window chips at y=550. Same layout.
+    const fmWindowKeys = ['all', '1h', '1d', '3d', '7d'];
+    const fmWindowLabels = ['All', '30s', '1m', '5m', '1h'];
+    const fmWindowIndices = [];
+    {
+        const w = 125, gap = 8;
+        const startX = -((fmWindowKeys.length - 1) * (w + gap)) / 2;
+        for (let i = 0; i < fmWindowKeys.length; i++) {
+            const x = startX + i * (w + gap);
+            const bN = mkBtnXY(sb, `FilterWindow_${fmWindowKeys[i]}`, fmN, fmWindowLabels[i], x, 550, w, 38, 28, 34, 48);
+            fmWindowIndices.push(bN);
+        }
+    }
+    // Row 3 — Wager bucket chips at y=500. Bucketed for less visual noise:
+    //   All / Low (0.001 + 0.01) / Mid (0.05 + 0.1) / High (0.25 + 0.5) / Whale (1 + 5)
+    const fmWagerKeys = ['all', 'low', 'mid', 'high', 'whale'];
+    const fmWagerLabels = ['All', 'Low', 'Mid', 'High', 'Whale'];
+    const fmWagerIndices = [];
+    {
+        const w = 125, gap = 8;
+        const startX = -((fmWagerKeys.length - 1) * (w + gap)) / 2;
+        for (let i = 0; i < fmWagerKeys.length; i++) {
+            const x = startX + i * (w + gap);
+            const bN = mkBtnXY(sb, `FilterWager_${fmWagerKeys[i]}`, fmN, fmWagerLabels[i], x, 500, w, 38, 28, 34, 48);
+            fmWagerIndices.push(bN);
+        }
+    }
+    // Hide-full toggle (small chip, right side at y=450).
+    const fmHideFullBtn = mkBtnXY(sb, 'FilterHideFullToggle', fmN, 'Hide full ✓', 0, 450, 220, 36, 48, 198, 155);
+
+    // 8 reusable MatchCardRow_0..7 templates. Each row 660×80, rendered y=380..-280 (8 * 88 stride).
+    const fmRowIndices = [];
+    {
+        const rowW = 660, rowH = 80;
+        const stride = 88;
+        const topY = 380;
+        for (let i = 0; i < 8; i++) {
+            const rN = sb.e.length;
+            const ry = topY - i * stride;
+            sb.node(`MatchCardRow_${i}`, fmN, [], [], v3(0, ry, 0));
+            const rUT = sb.ut(rN, rowW, rowH);
+            const rSpr = sb.spr(rN, 22, 28, 42);
+            const rBtn = sb.add({
+                __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+                node: rf(rN), _enabled: true, __prefab: null,
+                _interactable: true, _transition: 0,
+                _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+                _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+                _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
+            });
+            // Mode (left).
+            const modeL = mkLabel(sb, `MatchCardModeLabel_${i}`, rN, '1v1', 18, 0, 120, 24, 220, 230, 240);
+            sb.e[modeL]._lpos = v3(-280, 18, 0);
+            sb.e[sb.e[modeL]._components[1].__id__]._horizontalAlign = 0;
+            // Wager (left-mid).
+            const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 16, 0, 160, 22, 218, 165, 32);
+            sb.e[wagerL]._lpos = v3(-160, 18, 0);
+            sb.e[sb.e[wagerL]._components[1].__id__]._horizontalAlign = 0;
+            // Window (right-mid).
+            const winL = mkLabel(sb, `MatchCardWindowLabel_${i}`, rN, '30s race', 14, 0, 160, 20, 140, 220, 180);
+            sb.e[winL]._lpos = v3(40, 18, 0);
+            sb.e[sb.e[winL]._components[1].__id__]._horizontalAlign = 0;
+            // Players + age (subtitle line).
+            const subL = mkLabel(sb, `MatchCardSubLabel_${i}`, rN, '1/2 players · 0:42 ago', 13, 0, 540, 18, 160, 170, 190);
+            sb.e[subL]._lpos = v3(-280, -16, 0);
+            sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
+            // Join button (far right).
+            const joinL = mkBtnXY(sb, `MatchCardJoinButton_${i}`, rN, 'Join', 250, 0, 130, 50, 56, 148, 252);
+            sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
+            sb.e[rN]._children = [rf(modeL), rf(wagerL), rf(winL), rf(subL), rf(joinL)];
+            sb.e[rN]._active = false; // AppUI activates filled rows
+            fmRowIndices.push(rN);
+        }
+    }
+
+    // Empty state — shown when no rows pass the filter.
+    const fmEmptyL = mkLabel(sb, 'FindMatchEmptyLabel', fmN, 'No open lobbies match these filters — host one or play a bot.', 14, -340, 660, 22, 140, 150, 170);
+    sb.e[fmEmptyL]._active = false;
+
+    // Host CTA at bottom.
+    const fmHostBtn = mkBtn(sb, 'FindMatchHostButton', fmN, 'Host New Match', -440, 540, 64, VAR('warn').r, VAR('warn').g, VAR('warn').b);
+    style(sb, fmHostBtn, { bold: true });
+    const fmStatus = mkLabel(sb, 'FindMatchStatusLabel', fmN, '', 12, -700, 660, 20, 140, 150, 170);
+
+    sb.e[fmN]._children = [
+        rf(fmBackBtn), rf(fmTitle), rf(fmRefreshBtn), rf(fmCountLabel),
+        rf(fmTabOpen), rf(fmTabLive),
+        ...fmModeIndices.map(rf),
+        ...fmWindowIndices.map(rf),
+        ...fmWagerIndices.map(rf),
+        rf(fmHideFullBtn),
+        ...fmRowIndices.map(rf),
+        rf(fmEmptyL), rf(fmHostBtn), rf(fmStatus),
+    ];
+    sb.e[fmN]._active = false;
+
     // AppUI component on Canvas
     const appUI = sb.custom(canvas, UUIDS.AppUI);
 
@@ -2707,7 +2877,287 @@ function generate() {
     const signingHintN = mkLabel(sb, 'SigningHintLabel', signingN, 'Check your wallet app — sign to continue.', 16, -90, 620, 24, 140, 150, 170);
     sb.e[signingN]._children = [rf(signingSpinnerN), rf(signingStatusN), rf(signingHintN)];
 
-    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(countdownN), rf(signingN)];
+    // ═══════════════════════════════════════════════════════════════
+    // Phase H4 — LevelUpOverlay (full-screen XP celebration cinematic)
+    // Triggered from AppUI._onGameOver / _showPostMatchPanel when newLevel > previousLevel.
+    // Shows: scrim · "LEVEL UP" · big level number · rake-discount callout.
+    // Auto-dismisses after 2.8s; also tap-to-dismiss anywhere.
+    // ═══════════════════════════════════════════════════════════════
+    const luN = sb.e.length;
+    sb.node('LevelUpOverlay', canvas, [], [], v3(0, 0, 0));
+    const luUT = sb.ut(luN, 720, 1280);
+    const luBgSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(luN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(8, 6, 14, 235),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    // Tap-to-dismiss button covering the whole scrim. Wired by AppUI.
+    const luDismissBtn = sb.add({
+        __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(luN), _enabled: true, __prefab: null,
+        _interactable: true, _transition: 0,
+        _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+        _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+        _duration: 0.1, _zoomScale: 1, _target: rf(luN), _id: gid(),
+    });
+    sb.e[luN]._components = [rf(luUT), rf(luBgSpr), rf(luDismissBtn)];
+    // Title.
+    const luTitle = mkLabel(sb, 'LevelUpTitleLabel', luN, 'LEVEL UP', 64, 200, 600, 100, 218, 165, 32);
+    style(sb, luTitle, { bold: true });
+    // Big level number with count-up tween at runtime.
+    const luBigLevel = mkLabel(sb, 'LevelUpBigLevel', luN, '5', 180, 30, 600, 240, 255, 240, 200);
+    style(sb, luBigLevel, { bold: true });
+    // Caption (e.g. "Level 5 reached").
+    const luCaption = mkLabel(sb, 'LevelUpCaptionLabel', luN, 'Level 5 reached', 26, -190, 600, 36, 220, 230, 240);
+    // Rake discount callout (color = teal accent).
+    const luRake = mkLabel(sb, 'LevelUpRakeLabel', luN, 'Your rake: 4.5% (was 5.0%)', 22, -260, 600, 32, 48, 198, 155);
+    // Hint at the bottom.
+    const luHint = mkLabel(sb, 'LevelUpHintLabel', luN, 'tap to continue', 14, -560, 400, 22, 140, 150, 170);
+    sb.e[luN]._children = [rf(luTitle), rf(luBigLevel), rf(luCaption), rf(luRake), rf(luHint)];
+    sb.e[luN]._active = false;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase N3 — NotificationPanel (slide-in feed from the right edge).
+    // Backdrop button tap-outside-to-dismiss · 480×1280 card on right ·
+    // header (Notifications · Mark all read · ✕) · 8-row pool below ·
+    // empty state label centered when no rows visible.
+    // ═══════════════════════════════════════════════════════════════
+    const npN = sb.e.length;
+    sb.node('NotificationPanel', canvas, [], [], v3(0, 0, 0));
+    const npUT = sb.ut(npN, 720, 1280);
+    // Full-panel backdrop sprite — tap-outside-to-dismiss surface, semi-transparent.
+    const npBackdropBtn = sb.add({
+        __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(npN), _enabled: true, __prefab: null,
+        _interactable: true, _transition: 0,
+        _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+        _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+        _duration: 0.1, _zoomScale: 1, _target: rf(npN), _id: gid(),
+    });
+    const npBackdropSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(npN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(0, 0, 0, 140),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+
+    // Card container — 480×1280 anchored to right edge (x=120 means +120 from canvas center, so its right edge sits at the right wall).
+    const npCardN = sb.e.length;
+    sb.node('NotifPanelCard', npN, [], [], v3(120, 0, 0));
+    const npCardUT = sb.ut(npCardN, 480, 1280);
+    const npCardSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(npCardN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(11, 14, 26, 255), // Palette.bg.primary
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[npCardN]._components = [rf(npCardUT), rf(npCardSpr)];
+
+    // Header.
+    const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 26, 580, 360, 36, 218, 165, 32);
+    style(sb, npHeader, { bold: true });
+    const npCloseBtn = mkBtnXY(sb, 'NotifCloseButton', npCardN, '✕', 200, 580, 48, 48, 30, 36, 52);
+    const npMarkAllBtn = mkBtnXY(sb, 'NotifMarkAllReadButton', npCardN, 'Mark all read', -100, 530, 200, 36, 38, 44, 64);
+
+    // 8 row pool. Rows stack top→bottom inside a "list area" Node positioned
+    // below the header. We don't use a ScrollView here — 8 rows fit comfortably
+    // in the 1000px below header on most viewports. Future polish: wrap in a
+    // ScrollView with anchor 0.5/1 if rows ever exceed the visible area.
+    const npListN = sb.e.length;
+    sb.node('NotifListContainer', npCardN, [], [], v3(0, -60, 0));
+    const npListUT = sb.ut(npListN, 460, 980);
+    sb.e[npListN]._components = [rf(npListUT)];
+
+    const npRowIndices = [];
+    {
+        const rowW = 460, rowH = 92, gap = 8;
+        const topY = 480; // first row's y (relative to listN center 0,-60)
+        for (let i = 0; i < 8; i++) {
+            const rN = sb.e.length;
+            const ry = topY - i * (rowH + gap);
+            sb.node(`NotifRow_${i}`, npListN, [], [], v3(0, ry, 0));
+            const rUT = sb.ut(rN, rowW, rowH);
+            const rSpr = sb.spr(rN, 22, 28, 42); // dark slate card
+            const rBtn = sb.add({
+                __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+                node: rf(rN), _enabled: true, __prefab: null,
+                _interactable: true, _transition: 0,
+                _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+                _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+                _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
+            });
+            // Color stripe — 6×rowH on the left edge.
+            const stripeN = sb.e.length;
+            sb.node(`NotifRowStripe_${i}`, rN, [], [], v3(-227, 0, 0));
+            const stripeUT = sb.ut(stripeN, 6, rowH);
+            const stripeSpr = sb.add({
+                __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+                node: rf(stripeN), _enabled: true, __prefab: null,
+                _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+                _color: cl(153, 69, 255, 255),
+                _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+                _type: 1, _fillType: 0, _sizeMode: 0,
+                _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+                _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+                _id: gid(),
+            });
+            sb.e[stripeN]._components = [rf(stripeUT), rf(stripeSpr)];
+            // Icon container — 40×40 to the right of stripe.
+            const iconN = sb.e.length;
+            sb.node(`NotifRowIcon_${i}`, rN, [], [], v3(-185, 0, 0));
+            const iconUT = sb.ut(iconN, 40, 40);
+            sb.e[iconN]._components = [rf(iconUT)];
+            // Title — bold 16pt.
+            const titleN = mkLabel(sb, `NotifRowTitleLabel_${i}`, rN, 'Title', 16, 18, 280, 22, 244, 245, 249);
+            sb.e[titleN]._lpos = v3(-15, 18, 0);
+            sb.e[sb.e[titleN]._components[1].__id__]._horizontalAlign = 0;
+            sb.e[sb.e[titleN]._components[1].__id__]._isBold = true;
+            // Body — 13pt, two lines.
+            const bodyN = mkLabel(sb, `NotifRowBodyLabel_${i}`, rN, 'Body', 13, -10, 280, 32, 168, 174, 201);
+            sb.e[bodyN]._lpos = v3(-15, -8, 0);
+            sb.e[sb.e[bodyN]._components[1].__id__]._horizontalAlign = 0;
+            sb.e[sb.e[bodyN]._components[1].__id__]._overflow = 2;
+            // Time-ago — 11pt muted, bottom-right corner.
+            const timeN = mkLabel(sb, `NotifRowTimeLabel_${i}`, rN, '2m ago', 11, -32, 100, 16, 130, 140, 160);
+            sb.e[timeN]._lpos = v3(170, -32, 0);
+            // Unread dot — 8x8 teal circle, top-right, visible only when unread.
+            const dotN = sb.e.length;
+            sb.node(`NotifRowUnreadDot_${i}`, rN, [], [], v3(210, 32, 0));
+            const dotUT = sb.ut(dotN, 8, 8);
+            const dotSpr = sb.add({
+                __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+                node: rf(dotN), _enabled: true, __prefab: null,
+                _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+                _color: cl(48, 198, 155, 255),
+                _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+                _type: 1, _fillType: 0, _sizeMode: 0,
+                _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+                _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+                _id: gid(),
+            });
+            sb.e[dotN]._components = [rf(dotUT), rf(dotSpr)];
+            sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
+            sb.e[rN]._children = [rf(stripeN), rf(iconN), rf(titleN), rf(bodyN), rf(timeN), rf(dotN)];
+            sb.e[rN]._active = false;
+            npRowIndices.push(rN);
+        }
+    }
+    sb.e[npListN]._children = npRowIndices.map(rf);
+
+    // Empty state — visible when no rows are active.
+    const npEmptyL = mkLabel(sb, 'NotifEmptyLabel', npCardN, 'You\'re all caught up!', 16, 0, 360, 28, 168, 174, 201);
+    sb.e[npEmptyL]._active = false;
+
+    sb.e[npCardN]._children = [
+        rf(npHeader), rf(npCloseBtn), rf(npMarkAllBtn),
+        rf(npListN), rf(npEmptyL),
+    ];
+    sb.e[npN]._components = [rf(npUT), rf(npBackdropSpr), rf(npBackdropBtn)];
+    sb.e[npN]._children = [rf(npCardN)];
+    sb.e[npN]._active = false;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase N2 — NotificationToastOverlay (top-of-screen premium card).
+    // 720×360 transparent container with 3 stacked toast slots (y=600/490/380).
+    // Each slot is a 640×96 card with: color stripe · icon · title · body ·
+    // dismiss · progress bar. AppUI's NotificationToastQueue paints + animates.
+    // ═══════════════════════════════════════════════════════════════
+    const toastOvN = sb.e.length;
+    sb.node('NotificationToastOverlay', canvas, [], [], v3(0, 0, 0));
+    sb.ut(toastOvN, 720, 360);
+    // No backdrop sprite — fully transparent so taps fall through to anything below.
+    const toastSlotIndices = [];
+    const SLOT_YS = [600, 490, 380];
+    for (let i = 0; i < 3; i++) {
+        const slotN = sb.e.length;
+        sb.node(`NotificationToastSlot_${i}`, toastOvN, [], [], v3(0, SLOT_YS[i], 0));
+        const slotUT = sb.ut(slotN, 640, 96);
+        // Card background — dark slate with subtle border feel via opacity.
+        const slotBg = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(slotN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(20, 24, 38, 245),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        // Color stripe — 8×96 left edge. AppUI tints per kind.
+        const stripeN = sb.e.length;
+        sb.node(`ToastColorStripe_${i}`, slotN, [], [], v3(-316, 0, 0));
+        const stripeUT = sb.ut(stripeN, 8, 96);
+        const stripeSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(stripeN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(153, 69, 255, 255), // default = violet (Solana brand); AppUI overwrites
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[stripeN]._components = [rf(stripeUT), rf(stripeSpr)];
+        // Icon container — empty Node; IconLibrary.attach injects a Graphics + Label sibling.
+        const iconN = sb.e.length;
+        sb.node(`ToastIconContainer_${i}`, slotN, [], [], v3(-260, 0, 0));
+        const iconUT = sb.ut(iconN, 56, 56);
+        sb.e[iconN]._components = [rf(iconUT)];
+        // Title — bold 18pt, single line.
+        const titleN = mkLabel(sb, `ToastTitleLabel_${i}`, slotN, 'Title', 18, 18, 380, 26, 244, 245, 249);
+        sb.e[titleN]._lpos = v3(-160, 18, 0);
+        sb.e[sb.e[titleN]._components[1].__id__]._horizontalAlign = 0;
+        sb.e[sb.e[titleN]._components[1].__id__]._isBold = true;
+        // Body — regular 13pt, two-line.
+        const bodyN = mkLabel(sb, `ToastBodyLabel_${i}`, slotN, 'Body line', 13, -10, 380, 38, 168, 174, 201);
+        sb.e[bodyN]._lpos = v3(-160, -8, 0);
+        sb.e[sb.e[bodyN]._components[1].__id__]._horizontalAlign = 0;
+        sb.e[sb.e[bodyN]._components[1].__id__]._overflow = 2; // ENABLE_RESIZE_HEIGHT
+        // Dismiss button — full right-edge tap area with × glyph.
+        const dismissN = mkBtnXY(sb, `ToastDismissButton_${i}`, slotN, '✕', 290, 0, 50, 96, 30, 36, 52);
+        // Progress bar — 632×4 at the bottom, scaleX shrinks 1→0 over duration.
+        const progN = sb.e.length;
+        sb.node(`ToastProgressBar_${i}`, slotN, [], [], v3(0, -46, 0));
+        const progUT = sb.ut(progN, 632, 4);
+        const progSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(progN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(48, 198, 155, 200),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[progN]._components = [rf(progUT), rf(progSpr)];
+        sb.e[slotN]._components = [rf(slotUT), rf(slotBg)];
+        sb.e[slotN]._children = [rf(stripeN), rf(iconN), rf(titleN), rf(bodyN), rf(dismissN), rf(progN)];
+        sb.e[slotN]._active = false;
+        toastSlotIndices.push(slotN);
+    }
+    sb.e[toastOvN]._children = toastSlotIndices.map(rf);
+    // _active stays true — overlay container is always on, individual slots toggle.
+
+    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(countdownN), rf(signingN), rf(luN), rf(npN), rf(toastOvN)];
     sb.e[canvas]._components = [rf(cUT), rf(cCV), rf(cWG), rf(appUI)];
 
     // Scene Globals

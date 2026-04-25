@@ -50,7 +50,17 @@ export class MascotController extends Component {
     private _idleTimer = 0;
     private _idleWandCooldown = 0;
     private _useSpriteSheet = false;
-    private _spriteSheet: SpriteFrame[] | null = null;
+    private _framesByState: Partial<Record<MascotState, SpriteFrame[]>> = {};
+    private _currentFrame = 0;
+    private _frameAccumulator = 0;
+    // Per-state playback fps. Loops run at 12 to halve asset footprint;
+    // one-shots run at 24 for full motion fidelity.
+    private _stateFps: Record<MascotState, number> = {
+        idle: 12,
+        celebrate: 24,
+        think: 12,
+        lose: 24,
+    };
 
     onLoad(): void {
         this._buildMascot();
@@ -62,7 +72,11 @@ export class MascotController extends Component {
     }
 
     update(dt: number): void {
-        if (this._state !== 'idle' || this._useSpriteSheet) return;
+        if (this._useSpriteSheet) {
+            this._cycleFrames(dt);
+            return;
+        }
+        if (this._state !== 'idle') return;
         this._idleTimer += dt;
         this._idleWandCooldown -= dt;
         if (this._idleWandCooldown <= 0) {
@@ -71,12 +85,39 @@ export class MascotController extends Component {
         }
     }
 
+    private _cycleFrames(dt: number): void {
+        const frames = this._framesByState[this._state];
+        if (!frames || frames.length === 0) return;
+        const fps = this._stateFps[this._state];
+        const interval = 1 / fps;
+        this._frameAccumulator += dt;
+        while (this._frameAccumulator >= interval) {
+            this._frameAccumulator -= interval;
+            this._currentFrame++;
+            const isLoop = this._state === 'idle' || this._state === 'think';
+            if (this._currentFrame >= frames.length) {
+                this._currentFrame = isLoop ? 0 : frames.length - 1;
+            }
+        }
+        const spr = this.node.getComponent(Sprite);
+        if (spr && spr.spriteFrame !== frames[this._currentFrame]) {
+            spr.spriteFrame = frames[this._currentFrame];
+        }
+    }
+
     /** Switch state. Auto-returns to idle for celebrate/lose after their loop. */
     setState(s: MascotState): void {
         if (this._state === s) return;
         this._state = s;
+        this._currentFrame = 0;
+        this._frameAccumulator = 0;
         this._stopAll();
         console.log(`${TAG} setState | state=${s}`);
+        if (this._useSpriteSheet) {
+            const spr = this.node.getComponent(Sprite);
+            const frames = this._framesByState[s];
+            if (spr && frames && frames.length > 0) spr.spriteFrame = frames[0];
+        }
         switch (s) {
             case 'idle':      this._playIdle(); break;
             case 'celebrate': this._playCelebrate(); break;
@@ -85,30 +126,37 @@ export class MascotController extends Component {
         }
     }
 
-    /** Phase 3 swap: register a frame sequence to drive the body.
+    /** Phase 3 swap: register per-state frame sequences to drive the body.
      *
-     * For a static PNG, pass `[singleFrame]` — tween-driven idle/celebrate/
-     * think/lose motion still works since it operates on node transform,
-     * not frame-by-frame. For animated sprite sheets, pass `frames[]` and
-     * a future impl will cycle them per state.
+     * Pass `{ idle: [f1, f2, ...], celebrate: [...], ... }` — each state's
+     * frames are cycled at its configured fps (see `_stateFps`). Loops
+     * (idle, think) wrap; one-shots (celebrate, lose) clamp to last frame.
+     *
+     * Backwards-compat: if any state has just `[singleFrame]`, that frame
+     * is shown statically. Procedural body/eyes/wand are hidden whenever
+     * any state has frames; transform tweens (bob/spin/tilt/slump) still
+     * compose on top of the per-frame sprite swap.
      */
-    setSpriteSheet(frames: SpriteFrame[]): void {
-        this._spriteSheet = frames;
-        this._useSpriteSheet = frames.length > 0;
-        console.log(`${TAG} setSpriteSheet | frames=${frames.length} → procedural=${!this._useSpriteSheet}`);
+    setSpriteSheet(framesByState: Partial<Record<MascotState, SpriteFrame[]>>): void {
+        this._framesByState = framesByState;
+        const totalFrames = Object.values(framesByState).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
+        this._useSpriteSheet = totalFrames > 0;
+        const counts = (['idle', 'celebrate', 'think', 'lose'] as MascotState[])
+            .map(s => `${s}=${framesByState[s]?.length ?? 0}`).join(' ');
+        console.log(`${TAG} setSpriteSheet | ${counts} total=${totalFrames}`);
         if (this._useSpriteSheet) {
-            // Hide all procedural children — the PNG replaces them.
             if (this._bodyNode) this._bodyNode.active = false;
             if (this._wandNode) this._wandNode.active = false;
             if (this._eyeL) this._eyeL.active = false;
             if (this._eyeR) this._eyeR.active = false;
-            // Sparkle pool stays active — celebrate animation still uses it.
-            // Attach the sprite to the root container. Mascot motion (bob,
-            // spin, tilt, slump) happens on `this.node` transform, so the
-            // sprite inherits all tweens automatically.
             const spr = this.node.getComponent(Sprite) ?? this.node.addComponent(Sprite);
-            spr.spriteFrame = frames[0];
             spr.sizeMode = Sprite.SizeMode.CUSTOM;
+            const initial = framesByState[this._state]?.[0]
+                ?? framesByState.idle?.[0]
+                ?? Object.values(framesByState).find(arr => arr && arr.length > 0)?.[0];
+            if (initial) spr.spriteFrame = initial;
+            this._currentFrame = 0;
+            this._frameAccumulator = 0;
         }
     }
 

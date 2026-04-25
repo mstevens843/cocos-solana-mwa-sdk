@@ -1,0 +1,40 @@
+{
+  "name": "mascot-animations",
+  "version": "1.0.0",
+  "description": "Deterministic Remotion-rendered mascot animations for Token Duel. idle / celebrate / think / lose.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@remotion/cli": "4.0.434",
+    "@remotion/motion-blur": "4.0.434",
+    "@remotion/tailwind-v4": "4.0.434",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.434",
+    "tailwindcss": "4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.434",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "render:idle": "remotion render MascotIdle out/idle.mp4",
+    "render:celebrate": "remotion render MascotCelebrate out/celebrate.mp4",
+    "render:think": "remotion render MascotThink out/think.mp4",
+    "render:lose": "remotion render MascotLose out/lose.mp4",
+    "render:all": "npm run render:idle && npm run render:celebrate && npm run render:think && npm run render:lose",
+    "render:frames:idle": "remotion render MascotIdle out/idle-frames/frame-%03d.png --image-format=png",
+    "render:frames:celebrate": "remotion render MascotCelebrate out/celebrate-frames/frame-%03d.png --image-format=png",
+    "render:frames:think": "remotion render MascotThink out/think-frames/frame-%03d.png --image-format=png",
+    "render:frames:lose": "remotion render MascotLose out/lose-frames/frame-%03d.png --image-format=png",
+    "render:frames:all": "npm run render:frames:idle && npm run render:frames:celebrate && npm run render:frames:think && npm run render:frames:lose",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade"
+  }
+}

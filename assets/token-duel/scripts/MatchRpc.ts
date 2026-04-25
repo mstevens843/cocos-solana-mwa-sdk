@@ -201,4 +201,52 @@ export async function findOpenMatches(
     return parsed;
 }
 
+/**
+ * Discover ALL open Match accounts regardless of (mode, tier, window, xp).
+ * Used by the FindMatchPanel browser where the user filters client-side.
+ *
+ * Filters by account size (419 bytes) so other program account types
+ * (UserStats, Treasury, Counter, etc.) are excluded server-side. Status +
+ * playerCount filtering is post-parse.
+ */
+export const MATCH_ACCOUNT_BYTES = 8 + 411;
+
+export async function findAllOpenMatchesUnfiltered(
+    rpc: TokenDuelRpc,
+): Promise<MatchState[]> {
+    console.log(`${TAG} findAllOpenMatchesUnfiltered | START`);
+    const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
+        { dataSize: MATCH_ACCOUNT_BYTES },
+    ]);
+    const parsed = raw
+        .map((r) => parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64)))
+        .filter((m): m is MatchState => m !== null)
+        .filter((m) => m.status === 0 && m.playerCount < m.requiredPlayers);
+    parsed.sort((a, b) => Number(a.createdAt - b.createdAt));
+    console.log(`${TAG} findAllOpenMatchesUnfiltered | DONE scanned=${raw.length} open=${parsed.length}`);
+    return parsed;
+}
+
+/**
+ * Phase H2 — discover ACTIVE matches (currently racing) for the live
+ * spectator feed. Same shape as findAllOpenMatchesUnfiltered but filters
+ * status==Active (1). Sorted by startedAt desc so most-recently-started
+ * appear first.
+ */
+export async function findActiveMatchesUnfiltered(
+    rpc: TokenDuelRpc,
+): Promise<MatchState[]> {
+    console.log(`${TAG} findActiveMatchesUnfiltered | START`);
+    const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
+        { dataSize: MATCH_ACCOUNT_BYTES },
+    ]);
+    const parsed = raw
+        .map((r) => parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64)))
+        .filter((m): m is MatchState => m !== null)
+        .filter((m) => m.status === 1);
+    parsed.sort((a, b) => Number(b.startedAt - a.startedAt));
+    console.log(`${TAG} findActiveMatchesUnfiltered | DONE scanned=${raw.length} active=${parsed.length}`);
+    return parsed;
+}
+
 export { RPC_URL, PROGRAM_ID, SEEDS };

@@ -32,6 +32,13 @@ export interface PortfolioRaceOptions {
      * trending feed here so the race has entry prices even when the live
      * fetch returns nothing. If a mint is in `fallbackEntryPrices` AND
      * live fetch resolves it, live fetch wins.
+     *
+     * Phase F5 — re-enabled. When live entry-price fetch fails for a mint
+     * after retries, the cached priceUsd is used as the entry. Since the
+     * snapshot computation also falls back to entry when current is missing
+     * (delta=0 in that case), an unindexed token contributes 0% to the
+     * portfolio average rather than dropping out entirely. That preserves
+     * fairness across both player+opponent portfolios in the same match.
      */
     fallbackEntryPrices?: Record<string, number>;
     /** Fired on each poll tick with the current race state. */
@@ -40,6 +47,14 @@ export interface PortfolioRaceOptions {
     onComplete: (finalDeltaPct: number) => void;
     /** Optional: called after entry prices resolve but before polling begins. AppUI uses this for tutorial. */
     onBeforeStart?: () => Promise<void>;
+    /** Phase F5 — fired when a token's entry price came from fallback rather than Birdeye. */
+    onPriceFallback?: (mint: string, fallbackEntry: number) => void;
+    /** Phase F6 — fired when a token's current price has been missing for >2 ticks. */
+    onStalePrice?: (mint: string, missingTicks: number) => void;
+    /** Phase F6 — fired when a previously-stale token's price recovers. */
+    onPriceRecovered?: (mint: string) => void;
+    /** Phase F6 — connection state aggregate ('ok' | 'degraded' | 'lost'). */
+    onConnectionState?: (state: 'ok' | 'degraded' | 'lost') => void;
 }
 
 export interface RaceSnapshot {
@@ -64,6 +79,16 @@ export class PortfolioRace {
     private _running = false;
     private _completed = false;
     private _mintKeys: string[] = [];
+    /** Phase F6 — track ticks since last successful price for each mint. */
+    private _missingTickCount: Record<string, number> = {};
+    /** Phase F6 — track which mints have currently fired onStalePrice (so we
+     *  can fire onPriceRecovered when they come back). */
+    private _staleMints: Set<string> = new Set();
+    /** Phase F6 — number of consecutive failed bulk fetches. Drives
+     *  connection state: 0 → 'ok', 1 → 'degraded', ≥3 → 'lost'. */
+    private _consecutiveFetchErrors = 0;
+    /** Phase F6 — last connection state we emitted, to avoid spam. */
+    private _lastConnectionState: 'ok' | 'degraded' | 'lost' | null = null;
 
     constructor(opts: PortfolioRaceOptions) {
         this._opts = opts;
@@ -110,12 +135,28 @@ export class PortfolioRace {
             missing = this._mintKeys.filter((m) => !(m in live));
             console.log(`${TAG} start | entry_fetch attempt=${attempt + 1} resolved=${Object.keys(live).length}/${this._mintKeys.length} missing=[${missing.map((m) => m.slice(0, 4)).join(',')}]`);
         }
+        // Phase F5 — apply fallback entry prices for mints Birdeye didn't
+        // index. The snapshot computation already returns delta=0 when
+        // current is missing for a fallback-entry mint, so unindexed tokens
+        // contribute 0% to the portfolio (fair across both players).
+        const fallbacks = this._opts.fallbackEntryPrices ?? {};
+        let fallbackCount = 0;
+        for (const mint of missing) {
+            const fb = fallbacks[mint];
+            if (Number.isFinite(fb) && fb > 0) {
+                live[mint] = fb;
+                fallbackCount += 1;
+                try { this._opts.onPriceFallback?.(mint, fb); } catch (_) { /* ignore */ }
+                console.log(`${TAG} start | fallback_entry mint=${mint.slice(0, 8)} price=${fb}`);
+            }
+        }
         this._entryPrices = live;
         const resolvedEntries = Object.keys(this._entryPrices).length;
-        if (missing.length > 0) {
-            console.log(`${TAG} start | ENTRY_PRICES_DROPPED count=${missing.length} mints=[${missing.map((m) => m.slice(0, 4)).join(',')}] — racing with ${resolvedEntries}/${this._mintKeys.length} tokens (stale-fallback path removed, see plan)`);
+        const stillMissing = this._mintKeys.filter((m) => !(m in this._entryPrices));
+        if (stillMissing.length > 0) {
+            console.log(`${TAG} start | ENTRY_PRICES_DROPPED count=${stillMissing.length} mints=[${stillMissing.map((m) => m.slice(0, 4)).join(',')}] — racing with ${resolvedEntries}/${this._mintKeys.length} (live=${resolvedEntries - fallbackCount} fallback=${fallbackCount} dropped=${stillMissing.length})`);
         }
-        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
+        console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} fallback_used=${fallbackCount} sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
         if (resolvedEntries === 0) {
             console.log(`${TAG} start | NO_ENTRY_PRICES — aborting race, emitting 0% delta`);
             this._completeOnce(0);
@@ -205,15 +246,46 @@ export class PortfolioRace {
         let current: Record<string, number>;
         try {
             current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
+            this._consecutiveFetchErrors = 0;
+            this._emitConnectionState('ok');
         } catch (e: any) {
-            console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} error=${e?.message ?? e} — skipping tick`);
+            this._consecutiveFetchErrors += 1;
+            const state: 'degraded' | 'lost' = this._consecutiveFetchErrors >= 3 ? 'lost' : 'degraded';
+            this._emitConnectionState(state);
+            console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} consecutive=${this._consecutiveFetchErrors} state=${state} error=${e?.message ?? e} — skipping tick`);
             this._scheduleNextPoll();
             return;
         }
+        // Phase F6 — per-mint stale tracking.
+        for (const mint of this._mintKeys) {
+            const v = current[mint];
+            const ok = Number.isFinite(v) && v > 0;
+            if (ok) {
+                this._missingTickCount[mint] = 0;
+                if (this._staleMints.has(mint)) {
+                    this._staleMints.delete(mint);
+                    try { this._opts.onPriceRecovered?.(mint); } catch (_) { /* ignore */ }
+                    console.log(`${TAG} tick | price_recovered mint=${mint.slice(0, 8)}`);
+                }
+            } else {
+                this._missingTickCount[mint] = (this._missingTickCount[mint] ?? 0) + 1;
+                if (this._missingTickCount[mint] >= 2 && !this._staleMints.has(mint)) {
+                    this._staleMints.add(mint);
+                    try { this._opts.onStalePrice?.(mint, this._missingTickCount[mint]); } catch (_) { /* ignore */ }
+                    console.log(`${TAG} tick | stale_mint mint=${mint.slice(0, 8)} missing_ticks=${this._missingTickCount[mint]}`);
+                }
+            }
+        }
         const snapshot = this._buildSnapshot(current, elapsed, remaining);
-        console.log(`${TAG} tick | elapsed=${elapsed}ms remaining=${remaining}ms portfolio=${snapshot.portfolioDeltaPct.toFixed(2)}% resolved=${snapshot.resolvedCount}/${this._mintKeys.length}`);
+        console.log(`${TAG} tick | elapsed=${elapsed}ms remaining=${remaining}ms portfolio=${snapshot.portfolioDeltaPct.toFixed(2)}% resolved=${snapshot.resolvedCount}/${this._mintKeys.length} stale=${this._staleMints.size}`);
         try { this._opts.onTick?.(snapshot); } catch (e) { console.log(`${TAG} tick | onTick_error ${e}`); }
         this._scheduleNextPoll();
+    }
+
+    private _emitConnectionState(state: 'ok' | 'degraded' | 'lost'): void {
+        if (this._lastConnectionState === state) return;
+        this._lastConnectionState = state;
+        try { this._opts.onConnectionState?.(state); } catch (_) { /* ignore */ }
     }
 
     private async _finalize(): Promise<void> {

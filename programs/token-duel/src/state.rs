@@ -189,7 +189,9 @@ pub fn rake_bps_for_level(level: u16) -> u64 {
 }
 
 /// How long a Waiting match can sit before anyone can cancel + refund.
-pub const MATCH_WAIT_TIMEOUT_SECS: i64 = 120;
+/// Phase D (24h lobbies): bumped 120 → 86_400. The lone creator can still
+/// cancel at any time via the Branch B path in `cancel_match::handler`.
+pub const MATCH_WAIT_TIMEOUT_SECS: i64 = 86_400;
 
 /// Part 9: once a match has been `Active` for this long without all players
 /// settling, anyone may call `force_settle` to pay out top-K among the players

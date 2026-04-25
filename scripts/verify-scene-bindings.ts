@@ -217,6 +217,63 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     // ── UX overhaul Phase 2b: second mascot on PostMatchPanel so celebrate
     // plays on the panel the user is looking at. ──
     { name: 'PostMatchMascotContainer', components: ['cc.UITransform'] },
+
+    // ── Phase A — top-level lobby browser (FindMatchPanel) ──
+    { name: 'OpenFindMatchButton',          components: ['cc.Button'] },
+    { name: 'FindMatchPanel',               components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'FindMatchBackButton',          components: ['cc.Button'] },
+    { name: 'FindMatchTitleLabel',          components: ['cc.Label'] },
+    { name: 'FindMatchRefreshButton',       components: ['cc.Button'] },
+    { name: 'FindMatchCountLabel',          components: ['cc.Label'] },
+    { name: 'FilterMode_all',               components: ['cc.Button'] },
+    { name: 'FilterMode_oneVone',           components: ['cc.Button'] },
+    { name: 'FilterMode_4p',                components: ['cc.Button'] },
+    { name: 'FilterMode_8p',                components: ['cc.Button'] },
+    { name: 'FilterMode_br10',              components: ['cc.Button'] },
+    { name: 'FilterWindow_all',             components: ['cc.Button'] },
+    { name: 'FilterWindow_1h',              components: ['cc.Button'] },
+    { name: 'FilterWindow_1d',              components: ['cc.Button'] },
+    { name: 'FilterWindow_3d',              components: ['cc.Button'] },
+    { name: 'FilterWindow_7d',              components: ['cc.Button'] },
+    { name: 'FilterWager_all',              components: ['cc.Button'] },
+    { name: 'FilterWager_low',              components: ['cc.Button'] },
+    { name: 'FilterWager_mid',              components: ['cc.Button'] },
+    { name: 'FilterWager_high',             components: ['cc.Button'] },
+    { name: 'FilterWager_whale',            components: ['cc.Button'] },
+    { name: 'FilterHideFullToggle',         components: ['cc.Button'] },
+    { name: 'FindMatchEmptyLabel',          components: ['cc.Label'] },
+    { name: 'FindMatchHostButton',          components: ['cc.Button'] },
+    { name: 'FindMatchStatusLabel',         components: ['cc.Label'] },
+    { name: 'FindMatchTabOpen',             components: ['cc.Button'] },
+    { name: 'FindMatchTabLive',             components: ['cc.Button'] },
+
+    // ── Phase E — bot difficulty toggle on ModePickerOverlay ──
+    { name: 'PickerDifficultyEasy',         components: ['cc.Button'] },
+    { name: 'PickerDifficultyMedium',       components: ['cc.Button'] },
+    { name: 'PickerDifficultyHard',         components: ['cc.Button'] },
+
+    // ── Phase H4 — LevelUpOverlay cinematic ──
+    { name: 'LevelUpOverlay',               components: ['cc.UITransform', 'cc.Sprite', 'cc.Button'] },
+    { name: 'LevelUpTitleLabel',            components: ['cc.Label'] },
+    { name: 'LevelUpBigLevel',              components: ['cc.Label'] },
+    { name: 'LevelUpCaptionLabel',          components: ['cc.Label'] },
+    { name: 'LevelUpRakeLabel',             components: ['cc.Label'] },
+    { name: 'LevelUpHintLabel',             components: ['cc.Label'] },
+
+    // ── Phase N2 — NotificationToastOverlay (3 stacked slots) ──
+    { name: 'NotificationToastOverlay',     components: ['cc.UITransform'] },
+
+    // ── Phase N3 — Bell + badge on HomePanel + NotificationPanel ──
+    { name: 'NotificationBellButton',       components: ['cc.Button'] },
+    { name: 'NotificationBellBadge',        components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'NotificationBadgeLabel',       components: ['cc.Label'] },
+    { name: 'NotificationPanel',            components: ['cc.UITransform', 'cc.Sprite', 'cc.Button'] },
+    { name: 'NotifPanelCard',               components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'NotifHeaderLabel',             components: ['cc.Label'] },
+    { name: 'NotifCloseButton',             components: ['cc.Button'] },
+    { name: 'NotifMarkAllReadButton',       components: ['cc.Button'] },
+    { name: 'NotifListContainer',           components: ['cc.UITransform'] },
+    { name: 'NotifEmptyLabel',              components: ['cc.Label'] },
 ];
 
 /** Parametric rows: PresetRow_0..4, ChallengeRow_0..2 + labels, ChallengeDescriptionLabel_0..2, etc. */
@@ -234,6 +291,15 @@ const SPECTATOR_PLAYER_ROW_COUNT = 10;
 
 /** betting-duel Phase 3 — RacePanel token card pool (5 slots). */
 const RACE_TOKEN_CARD_COUNT = 5;
+
+/** Phase A — FindMatchPanel match-card row pool (8 rows). */
+const MATCH_CARD_ROW_COUNT = 8;
+
+/** Phase N2 — Notification toast slot pool (3 stacked slots). */
+const NOTIF_TOAST_SLOT_COUNT = 3;
+
+/** Phase N3 — NotificationPanel row pool (8 rows). */
+const NOTIF_ROW_COUNT = 8;
 
 /** Feed rows are parametric: 20 pooled instances. Verify separately. */
 const FEED_ROW_COUNT = 20;
@@ -397,6 +463,68 @@ function main(): void {
             `TokenEntryLabel_${i}`,
             `TokenCurrentLabel_${i}`,
             `TokenDeltaLabel_${i}`,
+        ];
+        for (const name of names) {
+            const indices = nameToIdx.get(name);
+            if (!indices || indices.length === 0) {
+                failures.push(`MISSING node="${name}"`);
+                continue;
+            }
+            passed++;
+        }
+    }
+
+    // Phase N2 — NotificationToastSlot_0..2 + each slot's children.
+    for (let i = 0; i < NOTIF_TOAST_SLOT_COUNT; i++) {
+        const names = [
+            `NotificationToastSlot_${i}`,
+            `ToastColorStripe_${i}`,
+            `ToastIconContainer_${i}`,
+            `ToastTitleLabel_${i}`,
+            `ToastBodyLabel_${i}`,
+            `ToastDismissButton_${i}`,
+            `ToastProgressBar_${i}`,
+        ];
+        for (const name of names) {
+            const indices = nameToIdx.get(name);
+            if (!indices || indices.length === 0) {
+                failures.push(`MISSING node="${name}"`);
+                continue;
+            }
+            passed++;
+        }
+    }
+
+    // Phase N3 — NotificationPanel row pool (NotifRow_0..7) + each row's children.
+    for (let i = 0; i < NOTIF_ROW_COUNT; i++) {
+        const names = [
+            `NotifRow_${i}`,
+            `NotifRowStripe_${i}`,
+            `NotifRowIcon_${i}`,
+            `NotifRowTitleLabel_${i}`,
+            `NotifRowBodyLabel_${i}`,
+            `NotifRowTimeLabel_${i}`,
+            `NotifRowUnreadDot_${i}`,
+        ];
+        for (const name of names) {
+            const indices = nameToIdx.get(name);
+            if (!indices || indices.length === 0) {
+                failures.push(`MISSING node="${name}"`);
+                continue;
+            }
+            passed++;
+        }
+    }
+
+    // Phase A — FindMatchPanel row pool (MatchCardRow_0..7) + per-row labels + Join button.
+    for (let i = 0; i < MATCH_CARD_ROW_COUNT; i++) {
+        const names = [
+            `MatchCardRow_${i}`,
+            `MatchCardModeLabel_${i}`,
+            `MatchCardWagerLabel_${i}`,
+            `MatchCardWindowLabel_${i}`,
+            `MatchCardSubLabel_${i}`,
+            `MatchCardJoinButton_${i}`,
         ];
         for (const name of names) {
             const indices = nameToIdx.get(name);
