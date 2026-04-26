@@ -63,11 +63,21 @@ export class MascotController extends Component {
     };
 
     onLoad(): void {
-        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'}`);
-        this._buildMascot();
-        console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
-        this.setState('idle');
-        console.log(`${TAG} onLoad | DONE`);
+        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'} — deferring _buildMascot to next tick`);
+        // FIX: defer runtime Node + Graphics creation off the first-frame draw
+        // walk. If we addComponent(Graphics) on dynamically-created Nodes inside
+        // onLoad, the engine's render-entity (UIModelProxy._renderDrawInfos)
+        // may not be fully initialized when the first DRAW phase walks the
+        // scene. Crash signature: SIGSEGV at offset 0x28 in
+        // std::vector<RenderDrawInfo*>::size() called from
+        // js_cc_UIModelProxy_activeSubModels (jsb_2d_auto.cpp:2923).
+        this.scheduleOnce(() => {
+            console.log(`${TAG} onLoad | DEFERRED_BUILD start`);
+            this._buildMascot();
+            console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
+            this.setState('idle');
+            console.log(`${TAG} onLoad | DEFERRED_BUILD done`);
+        }, 0);
     }
 
     onDestroy(): void {
@@ -221,6 +231,33 @@ export class MascotController extends Component {
             s.active = false;
             this._sparkleNodes.push(s);
         }
+        // Default state: procedural HIDDEN. Made visible only by explicit
+        // showProceduralFallback() call when Seedance loading fails. This
+        // prevents the procedural body from flashing for ~3s on cold start
+        // before phase3 swaps to the per-state Seedance frames.
+        if (this._bodyNode) this._bodyNode.active = false;
+        if (this._wandNode) this._wandNode.active = false;
+        if (this._eyeL) this._eyeL.active = false;
+        if (this._eyeR) this._eyeR.active = false;
+    }
+
+    /**
+     * Activate the procedural body/wand/eyes. Called only as a fallback when
+     * Seedance frame loading fails (or the frames/ folder is empty). No-op if
+     * the sprite-sheet path is already engaged.
+     */
+    showProceduralFallback(): void {
+        if (this._useSpriteSheet) return;
+        if (this._bodyNode) this._bodyNode.active = true;
+        if (this._wandNode) this._wandNode.active = true;
+        if (this._eyeL) this._eyeL.active = true;
+        if (this._eyeR) this._eyeR.active = true;
+        console.log(`${TAG} showProceduralFallback | activating procedural body`);
+        // Re-run the current state's tween player so animations restart on the
+        // newly-visible body.
+        const s = this._state;
+        this._state = ('__force__' as any);
+        this.setState(s);
     }
 
     private _mkChild(name: string, pos: Vec3): Node {

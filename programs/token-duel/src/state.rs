@@ -201,56 +201,78 @@ pub const FORCE_SETTLE_TIMEOUT_SECS: i64 = 300;
 /// Starting value for `bot_games_remaining` (handicap window for new players).
 pub const BOT_HANDICAP_GAMES: u8 = 5;
 
-/// Max players supported by a single Match PDA. Sized to fit Battle Royale.
+/// Max players supported by a single Match PDA. Held at 10 for backwards-
+/// compatibility with pre-Stage 3 deployed accounts (which were sized for
+/// 10-player Battle Royale). New largest mode is 8 (EightPlayer); the
+/// trailing 2 slots in the array stay unused for new matches.
 pub const MATCH_MAX_PLAYERS: usize = 10;
 
-/// Game modes shipped in Session D Part 6. All modes share the same Match
-/// struct; `required_players` + payout tables + XP tables differ per mode.
+/// Game modes — Stage 3 rebalance (2026-04-25):
+///   modeU8=0: 1v1     (2 players, was unchanged)
+///   modeU8=1: Trio    (3 players, NEW — replaces former FourPlayer slot)
+///   modeU8=2: 4p      (4 players, slid down from u8=1)
+///   modeU8=3: 8p      (8 players, slid down from u8=2; former BR10 retired)
+///
+/// Existing devnet matches with old u8 mappings will have mismatched
+/// required_players after deploy; cancel/refund non-Settled matches before
+/// upgrade or accept devnet wipe.
 #[repr(u8)]
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum GameMode {
     OneVOne = 0,
-    FourPlayer = 1,
-    EightPlayer = 2,
-    BattleRoyale = 3,
+    Trio = 1,
+    FourPlayer = 2,
+    EightPlayer = 3,
 }
 
 impl GameMode {
     pub fn from_u8(b: u8) -> Option<Self> {
         match b {
             0 => Some(GameMode::OneVOne),
-            1 => Some(GameMode::FourPlayer),
-            2 => Some(GameMode::EightPlayer),
-            3 => Some(GameMode::BattleRoyale),
+            1 => Some(GameMode::Trio),
+            2 => Some(GameMode::FourPlayer),
+            3 => Some(GameMode::EightPlayer),
             _ => None,
         }
     }
     pub fn required_players(self) -> u8 {
         match self {
-            GameMode::OneVOne => 2,
-            GameMode::FourPlayer => 4,
+            GameMode::OneVOne     => 2,
+            GameMode::Trio        => 3,
+            GameMode::FourPlayer  => 4,
             GameMode::EightPlayer => 8,
-            GameMode::BattleRoyale => 10,
         }
     }
     /// Payout tables in basis points (sum = 10_000 per mode). Caller applies
-    /// `RAKE_BPS` to the pot BEFORE distributing per this table.
+    /// `rake_bps_for_level` to the pot BEFORE distributing per this table.
+    ///
+    /// Stage 3 splits (post-rake pot at 0.05 SOL stake):
+    ///   1v1   pot=0.10 → 1st 0.10 (2× stake)
+    ///   Trio  pot=0.15 → 1st 0.15 (3× stake)
+    ///   4p    pot=0.20 → 1st 0.15 (3×), 2nd 0.05 (1× refund minus rake)
+    ///   8p    pot=0.40 → 1st 0.25 (5×), 2nd 0.10 (2×), 3rd 0.05 (refund minus rake)
     pub fn payout_table(self) -> &'static [u16] {
         match self {
-            GameMode::OneVOne      => &[10_000],
-            GameMode::FourPlayer   => &[7_000, 3_000],
-            GameMode::EightPlayer  => &[5_000, 3_000, 2_000],
-            GameMode::BattleRoyale => &[5_000, 2_500, 1_500, 1_000],
+            GameMode::OneVOne     => &[10_000],
+            GameMode::Trio        => &[10_000],
+            GameMode::FourPlayer  => &[7_500, 2_500],
+            GameMode::EightPlayer => &[6_250, 2_500, 1_250],
         }
     }
-    /// XP awarded per placement. Index 0 = 1st, index 1 = 2nd, etc. Unranked
-    /// (outside payout table) still get the "loser" value at end.
+    /// XP awarded per placement (index 0 = 1st). Stage 3 values include the
+    /// 2.0× Real-track multiplier baked in (so Real wins award the displayed
+    /// value directly without further multiplier logic at settle time).
+    /// Paper / Bot tracks DON'T go on-chain — their XP is computed client-side
+    /// from the BASE values in `assets/token-duel/scripts/ModeDefs.ts` with
+    /// 0.5× / 1.0× multipliers and stored in localStorage.
+    ///
+    /// Aligned with payout_table BPS for symmetry (8p XP 100/25/13 ≈ 62.5/25/12.5%).
     pub fn xp_table(self) -> &'static [u64] {
         match self {
-            GameMode::OneVOne      => &[100, 25],
-            GameMode::FourPlayer   => &[100, 60, 30, 15],
-            GameMode::EightPlayer  => &[150, 80, 60, 40, 20, 20, 20, 20],
-            GameMode::BattleRoyale => &[200, 100, 70, 40, 10, 10, 10, 10, 10, 10],
+            GameMode::OneVOne     => &[200, 0],                 // base 100 × 2.0
+            GameMode::Trio        => &[350, 0, 0],              // base 175 × 2.0
+            GameMode::FourPlayer  => &[500, 160, 0, 0],         // base 250/80 × 2.0
+            GameMode::EightPlayer => &[1000, 250, 130, 0, 0, 0, 0, 0],  // base 500/125/65 × 2.0
         }
     }
 }
@@ -638,20 +660,39 @@ pub fn xp_for_loss(mode: u8) -> u64 {
         .unwrap_or(0)
 }
 
-/// Pokémon-cubic curve: `xp_for_level(N) = N^3`. Returns highest N where N^3 ≤ xp.
+/// Stage 3 curve — `xp_for_level(N) = floor(500 * (N-1) * (N+1.5))`.
+///
+/// Closed-form approximation of the Pokemon-style table:
+///   L1=0, L2=1500, L3=4000, L4=8125, L5=13750, L6=21250, L7=30625, L8=41875,
+///   L9=55000, L10=70000, ...
+///
+/// Linear-additive ~1k/level early to give 2-4 wins per level at low ranks
+/// (teaches the loop). Quadratic-ish growth keeps grinding meaningful at
+/// higher levels without an unbounded ceiling. Real 8p 1st = 1000 XP =
+/// 67% of L1's 1500 → satisfying single-win contribution but no auto-promote.
+///
+/// Stored as u64 to handle high levels without overflow (level ~1450 hits
+/// u64::MAX). Used both on-chain (settle path) and mirrored in
+/// `assets/token-duel/scripts/PayoutCalc.ts`.
+pub fn xp_for_level(n: u16) -> u64 {
+    if n == 0 { return 0; }
+    let n_u64 = n as u64;
+    // 500 * (n-1) * (2n+3) / 2 = 500 * (n-1) * (n+1.5) without floats.
+    let prev = n_u64.saturating_sub(1);
+    let two_n_plus_3 = n_u64.saturating_mul(2).saturating_add(3);
+    prev.saturating_mul(two_n_plus_3).saturating_mul(500) / 2
+}
+
+/// Returns highest N where `xp_for_level(N) ≤ xp`. Caps at u16::MAX.
 pub fn level_from_xp(xp: u64) -> u16 {
-    // Integer cube-root search — matches on u64 within u16 bounds (max level ≈ 65535).
     let mut n: u16 = 0;
     loop {
-        let next = (n as u64).saturating_add(1);
-        let cube = next.saturating_mul(next).saturating_mul(next);
-        if cube > xp {
+        let next = n.saturating_add(1);
+        if xp_for_level(next) > xp {
             return n;
         }
-        if n == u16::MAX {
-            return n;
-        }
-        n = next as u16;
+        if n == u16::MAX { return n; }
+        n = next;
     }
 }
 
@@ -703,5 +744,133 @@ mod tests {
             &[1u16, 10u16],
         );
         assert_eq!(rake_mixed, 80_000_000);
+    }
+
+    // ── Stage 3 — new curve + new modes ─────────────────────────────
+
+    #[test]
+    fn xp_for_level_thresholds() {
+        // Stage 3 curve: 500 * (n-1) * (2n+3) / 2 = 250 * (n-1) * (2n+3)
+        // Values: L1=0, L2=1750, L3=4500, L4=8250, L5=13000, L6=18750, L7=25500,
+        //         L8=33250, L9=42000, L10=51750.
+        assert_eq!(xp_for_level(0), 0);
+        assert_eq!(xp_for_level(1), 0);
+        assert_eq!(xp_for_level(2), 1750);
+        assert_eq!(xp_for_level(3), 4500);
+        assert_eq!(xp_for_level(4), 8250);
+        assert_eq!(xp_for_level(5), 13000);
+        assert_eq!(xp_for_level(10), 51750);
+    }
+
+    #[test]
+    fn level_from_xp_boundaries() {
+        // level_from_xp returns highest N where xp_for_level(N) ≤ xp.
+        // xp_for_level(1) = 0, so xp=0 ≥ 0 → at least L1. We return 1.
+        assert_eq!(level_from_xp(0), 1);
+        assert_eq!(level_from_xp(1749), 1);
+        assert_eq!(level_from_xp(1750), 2);
+        assert_eq!(level_from_xp(4499), 2);
+        assert_eq!(level_from_xp(4500), 3);
+        assert_eq!(level_from_xp(13000), 5);
+    }
+
+    #[test]
+    fn level_from_xp_monotone() {
+        let mut prev = 0u16;
+        for xp in [0u64, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 500000].iter() {
+            let lvl = level_from_xp(*xp);
+            assert!(lvl >= prev, "non-monotone at xp={} prev_lvl={} cur_lvl={}", xp, prev, lvl);
+            prev = lvl;
+        }
+    }
+
+    #[test]
+    fn required_players_per_mode() {
+        assert_eq!(GameMode::OneVOne.required_players(), 2);
+        assert_eq!(GameMode::Trio.required_players(), 3);
+        assert_eq!(GameMode::FourPlayer.required_players(), 4);
+        assert_eq!(GameMode::EightPlayer.required_players(), 8);
+    }
+
+    #[test]
+    fn payout_table_stage3_splits() {
+        // 1v1 + Trio: winner-takes-all 100%
+        assert_eq!(GameMode::OneVOne.payout_table(), &[10_000]);
+        assert_eq!(GameMode::Trio.payout_table(), &[10_000]);
+        // 4p: 75/25
+        assert_eq!(GameMode::FourPlayer.payout_table(), &[7_500, 2_500]);
+        let sum_4p: u16 = GameMode::FourPlayer.payout_table().iter().sum();
+        assert_eq!(sum_4p, 10_000);
+        // 8p: 62.5 / 25 / 12.5
+        assert_eq!(GameMode::EightPlayer.payout_table(), &[6_250, 2_500, 1_250]);
+        let sum_8p: u16 = GameMode::EightPlayer.payout_table().iter().sum();
+        assert_eq!(sum_8p, 10_000);
+    }
+
+    #[test]
+    fn compute_mode_payout_trio_winner_takes_all() {
+        // 3p Trio at 0.05 SOL each. Pot = 0.15 SOL. All level 1 (5% rake).
+        let pot: u64 = 150_000_000;
+        let levels = [1u16, 1, 1];
+        let heights = [200u32, 150, 100]; // player 0 wins
+        let (rake, dist) = compute_mode_payout(GameMode::Trio, pot, &heights, &levels);
+        // Per-player rake: 50M × 500/10000 = 2.5M; total 7.5M.
+        assert_eq!(rake, 7_500_000);
+        // Distributable = 142.5M; 1st gets 100% = 142.5M.
+        assert_eq!(dist.len(), 1);
+        assert_eq!(dist[0].0, 0); // player 0 = 1st
+        assert_eq!(dist[0].1, 142_500_000);
+    }
+
+    #[test]
+    fn compute_mode_payout_4p_75_25() {
+        // 4p at 0.05 SOL each. Pot = 0.20 SOL. All level 1 (5% rake).
+        let pot: u64 = 200_000_000;
+        let levels = [1u16, 1, 1, 1];
+        let heights = [400u32, 300, 200, 100];
+        let (rake, dist) = compute_mode_payout(GameMode::FourPlayer, pot, &heights, &levels);
+        assert_eq!(rake, 10_000_000);  // 5% of 0.20
+        let distributable = pot - rake; // 190M
+        assert_eq!(dist.len(), 2);
+        // 1st: 75% of 190M = 142.5M
+        assert_eq!(dist[0].1, distributable * 7_500 / 10_000);
+        // 2nd: 25% of 190M = 47.5M
+        assert_eq!(dist[1].1, distributable * 2_500 / 10_000);
+    }
+
+    #[test]
+    fn compute_mode_payout_8p_top3() {
+        // 8p at 0.05 SOL each. Pot = 0.40 SOL. All level 1 (5% rake).
+        let pot: u64 = 400_000_000;
+        let levels = [1u16; 8];
+        let heights = [800u32, 700, 600, 500, 400, 300, 200, 100];
+        let (rake, dist) = compute_mode_payout(GameMode::EightPlayer, pot, &heights, &levels);
+        assert_eq!(rake, 20_000_000);
+        let distributable = pot - rake; // 380M
+        assert_eq!(dist.len(), 3);
+        // 1st: 62.5% of 380M = 237.5M
+        assert_eq!(dist[0].1, distributable * 6_250 / 10_000);
+        // 2nd: 25% of 380M = 95M
+        assert_eq!(dist[1].1, distributable * 2_500 / 10_000);
+        // 3rd: 12.5% of 380M = 47.5M
+        assert_eq!(dist[2].1, distributable * 1_250 / 10_000);
+    }
+
+    #[test]
+    fn xp_table_stage3_real_mult_baked() {
+        // Stage 3 baked × 2.0 Real-track multiplier into on-chain xp_table.
+        // 1v1: base 100 × 2 = 200 for 1st.
+        assert_eq!(xp_for_placement(GameMode::OneVOne, 0), 200);
+        // Trio: base 175 × 2 = 350 for 1st.
+        assert_eq!(xp_for_placement(GameMode::Trio, 0), 350);
+        // 4p: base 250 × 2 = 500 for 1st, 80 × 2 = 160 for 2nd.
+        assert_eq!(xp_for_placement(GameMode::FourPlayer, 0), 500);
+        assert_eq!(xp_for_placement(GameMode::FourPlayer, 1), 160);
+        // 8p: 500 × 2 = 1000 for 1st.
+        assert_eq!(xp_for_placement(GameMode::EightPlayer, 0), 1000);
+        assert_eq!(xp_for_placement(GameMode::EightPlayer, 1), 250);
+        assert_eq!(xp_for_placement(GameMode::EightPlayer, 2), 130);
+        // Real 8p 1st = 1000 XP < L1→L2 threshold (1750) — no auto-promote.
+        assert!(1000 < xp_for_level(2));
     }
 }

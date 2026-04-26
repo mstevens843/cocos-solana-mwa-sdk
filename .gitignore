@@ -32,3 +32,14 @@ test-ledger/
 **/*.rs.bk
 .yarn/
 yarn.lock.DS_Store
+
+#//////////////////////////
+# Secrets / env files (DB URLs, API keys, wallet keypairs)
+#//////////////////////////
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+*.keypair.json
+scripts/.test-player-*.json

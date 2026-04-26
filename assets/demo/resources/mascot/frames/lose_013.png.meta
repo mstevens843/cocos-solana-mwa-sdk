@@ -41,12 +41,12 @@
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": 0,
-        "offsetY": 0,
-        "trimX": 0,
-        "trimY": 0,
-        "width": 384,
-        "height": 384,
+        "offsetX": -12.5,
+        "offsetY": 5.5,
+        "trimX": 62,
+        "trimY": 87,
+        "width": 235,
+        "height": 199,
         "rawWidth": 384,
         "rawHeight": 384,
         "borderTop": 0,
@@ -60,17 +60,17 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -192,
-            -192,
+            -117.5,
+            -99.5,
             0,
-            192,
-            -192,
+            117.5,
+            -99.5,
             0,
-            -192,
-            192,
+            -117.5,
+            99.5,
             0,
-            192,
-            192,
+            117.5,
+            99.5,
             0
           ],
           "indexes": [
@@ -82,33 +82,33 @@
             3
           ],
           "uv": [
-            0,
-            384,
-            384,
-            384,
-            0,
-            0,
-            384,
-            0
+            62,
+            297,
+            297,
+            297,
+            62,
+            98,
+            297,
+            98
           ],
           "nuv": [
-            0,
-            0,
-            1,
-            0,
-            0,
-            1,
-            1,
-            1
+            0.16145833333333334,
+            0.2552083333333333,
+            0.7734375,
+            0.2552083333333333,
+            0.16145833333333334,
+            0.7734375,
+            0.7734375,
+            0.7734375
           ],
           "minPos": [
-            -192,
-            -192,
+            -117.5,
+            -99.5,
             0
           ],
           "maxPos": [
-            192,
-            192,
+            117.5,
+            99.5,
             0
           ]
         },
@@ -128,7 +128,7 @@
   "userData": {
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
-    "hasAlpha": false,
+    "hasAlpha": true,
     "redirect": "fa92417e-8176-4e7b-a086-eaab23262cee@6c48a"
   }
 }

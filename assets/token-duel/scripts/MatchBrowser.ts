@@ -130,6 +130,22 @@ export class MatchBrowser {
         this._timer = null;
     }
 
+    /**
+     * Re-arm the auto-refresh loop at a new interval. AppUI uses this to
+     * throttle the home-screen browser to 15s (count-badge only, low RPC
+     * pressure) and full 5s while the lobby is open. No-op if the new value
+     * matches the current. Restarts the timer if it was running.
+     */
+    setIntervalMs(ms: number): void {
+        if (ms <= 0 || ms === this._intervalMs) return;
+        console.log(`${TAG} setIntervalMs | ${this._intervalMs}ms → ${ms}ms`);
+        this._intervalMs = ms;
+        if (this._timer !== null) {
+            this.stop();
+            this.start();
+        }
+    }
+
     private _fanout(): void {
         const rows = this.getRows();
         for (const fn of this._listeners) {

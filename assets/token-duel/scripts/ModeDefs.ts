@@ -10,7 +10,17 @@
  * Any change here MUST mirror in state.rs or payouts diverge.
  */
 
-export type ModeId = 'oneVone' | 'fourPlayer' | 'eightPlayer' | 'battleRoyale';
+/**
+ * ModeId — Stage 3 rebalance (2026-04-25):
+ *   modeU8=0: oneVone     (2p, unchanged)
+ *   modeU8=1: trio        (3p, NEW — replaces former fourPlayer slot)
+ *   modeU8=2: fourPlayer  (4p, slid down from u8=1)
+ *   modeU8=3: eightPlayer (8p, slid down from u8=2; former battleRoyale retired)
+ *
+ * Mirrors `programs/token-duel/src/state.rs::GameMode`. Stage 4 redeploy
+ * is required for old devnet matches with stale required_players.
+ */
+export type ModeId = 'oneVone' | 'trio' | 'fourPlayer' | 'eightPlayer';
 
 export interface ModeDef {
     id: ModeId;
@@ -20,7 +30,15 @@ export interface ModeDef {
     requiredPlayers: number;
     /** Payout bps per rank. Sum ≤ 10_000. Unranked slots get 0. */
     payoutBps: number[];
-    /** XP table, one entry per rank. Unranked slots tail to `xpTable[last]`. */
+    /**
+     * XP table per rank — BASE values (NOT including track multiplier).
+     * For Real-track on-chain awards, the on-chain `xp_table()` already has
+     * the 2.0× multiplier baked in (returns 200/350/500/1000 for 1st place).
+     * Client uses these BASE values + applies multiplier per track:
+     *   Bot Match    × 0.5
+     *   Paper-Real   × 1.0
+     *   Real (SOL)   × 2.0   ← on-chain table also returns this final value
+     */
     xpTable: number[];
     /** Back-compat convenience. */
     xpWin: number;
@@ -37,57 +55,64 @@ export const MODES: Record<ModeId, ModeDef> = {
         shortLabel: '1v1',
         requiredPlayers: 2,
         payoutBps: [10_000],
-        xpTable: [100, 25],
+        xpTable: [100, 0],
         xpWin: 100,
-        xpLoss: 25,
+        xpLoss: 0,
+        payoutPct: [100],
+    },
+    trio: {
+        id: 'trio',
+        modeU8: 1,
+        label: 'Trio · 1v1v1',
+        shortLabel: 'Trio',
+        requiredPlayers: 3,
+        payoutBps: [10_000],
+        xpTable: [175, 0, 0],
+        xpWin: 175,
+        xpLoss: 0,
         payoutPct: [100],
     },
     fourPlayer: {
         id: 'fourPlayer',
-        modeU8: 1,
-        label: '4p Pot',
+        modeU8: 2,
+        label: '4p FFA',
         shortLabel: '4p',
         requiredPlayers: 4,
-        payoutBps: [7_000, 3_000],
-        xpTable: [100, 60, 30, 15],
-        xpWin: 100,
-        xpLoss: 15,
-        payoutPct: [70, 30],
+        payoutBps: [7_500, 2_500],
+        xpTable: [250, 80, 0, 0],
+        xpWin: 250,
+        xpLoss: 0,
+        payoutPct: [75, 25],
     },
     eightPlayer: {
         id: 'eightPlayer',
-        modeU8: 2,
-        label: '8p Pot',
-        shortLabel: '8p',
-        requiredPlayers: 8,
-        payoutBps: [5_000, 3_000, 2_000],
-        xpTable: [150, 80, 60, 40, 20, 20, 20, 20],
-        xpWin: 150,
-        xpLoss: 20,
-        payoutPct: [50, 30, 20],
-    },
-    battleRoyale: {
-        id: 'battleRoyale',
         modeU8: 3,
         label: 'Battle Royale',
-        shortLabel: 'BR10',
-        requiredPlayers: 10,
-        payoutBps: [5_000, 2_500, 1_500, 1_000],
-        xpTable: [200, 100, 70, 40, 10, 10, 10, 10, 10, 10],
-        xpWin: 200,
-        xpLoss: 10,
-        payoutPct: [50, 25, 15, 10],
+        shortLabel: '8p',
+        requiredPlayers: 8,
+        payoutBps: [6_250, 2_500, 1_250],
+        xpTable: [500, 125, 65, 0, 0, 0, 0, 0],
+        xpWin: 500,
+        xpLoss: 0,
+        payoutPct: [62.5, 25, 12.5],
     },
 };
 
 /** Reverse lookup — resolve modeU8 byte → ModeDef. */
 export function modeFromU8(b: number): ModeDef {
     if (b === 0) return MODES.oneVone;
-    if (b === 1) return MODES.fourPlayer;
-    if (b === 2) return MODES.eightPlayer;
-    if (b === 3) return MODES.battleRoyale;
+    if (b === 1) return MODES.trio;
+    if (b === 2) return MODES.fourPlayer;
+    if (b === 3) return MODES.eightPlayer;
     return MODES.oneVone;
 }
+
+/** Track-XP multipliers — applied client-side to base XP table (Stage 3). */
+export const TRACK_XP_MULTIPLIER: Record<'bot' | 'paper-real' | 'real', number> = {
+    bot: 0.5,           // paper · vs bots · free practice
+    'paper-real': 1.0,  // paper · PvP, no SOL
+    real: 2.0,          // SOL on-chain
+};
 
 /** Wager tier lamports, indexed 0-7. Mirrors WAGER_TIERS in state.rs.
  *  Indices 6-7 added on betting-duel branch (1 SOL, 5 SOL high-stakes). */

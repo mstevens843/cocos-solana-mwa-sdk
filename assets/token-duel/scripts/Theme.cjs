@@ -44,6 +44,37 @@ const Palette = {
         bronze: '#E08A4A',
         slate:  '#5D6485',
     },
+    // Phase 14 (B4) — card edge-accent palette. Each card gets a 4-px
+    // brand-color strip at its top edge that signals semantic role.
+    cardEdge: {
+        amber:    [255, 210, 74],   // warm achievement (gold/amber)
+        amberW:   [255, 180, 84],   // warmer amber (action)
+        teal:     [20, 241, 149],   // status / progress (Solana teal)
+        violet:   [153, 69, 255],   // brand / identity
+        gold:     [255, 210, 74],   // rank
+        blue:     [56, 148, 252],   // data / price
+        slate:    [93, 100, 133],   // utility / muted
+        edgeAlpha:        255,
+        edgeThicknessPx:  4,
+    },
+    // Phase 13 (B3) — premium button bevel + halo alphas.
+    btn: {
+        bevelTopAlpha:    52,   // top highlight strip — was a flat 36 in Phase 2c
+        bevelBottomAlpha: 46,   // bottom shadow strip — black, new in B3
+        glowAlpha:        80,   // hero halo alpha
+        glowPaddingPx:    12,   // halo extends 12 px on every side
+    },
+    // Phase 12 (B1+B2) — neon-trading background polish. Halos sit between
+    // the canvas-level black plate and panel content; alpha is intentionally
+    // low so corners breathe brand color while center stays dark.
+    glow: {
+        violet:   '#9945FF3C',  // 60 alpha — top-left halo
+        teal:     '#14F19532',  // 50 alpha — bottom-right halo
+        amber:    '#FFB45416',  // 22 alpha — center accent spot
+        starFar:  '#FFFFFF40',  // 64 alpha — faintest dust tier
+        starMid:  '#FFFFFF96',  // 150 alpha — mid tier
+        starNear: '#FFFFFFC8',  // 200 alpha — brightest sparks
+    },
 };
 
 const Spacing = { xs: 4, sm: 8, md: 12, lg: 20, xl: 32, xxl: 48 };

@@ -25,7 +25,7 @@
  *     }
  */
 
-import { Button, Color, Node, Sprite, tween, Tween, Vec3 } from 'cc';
+import { Button, Color, Node, Sprite, tween, Tween, UIOpacity, Vec3 } from 'cc';
 
 const TAG = '[ButtonFX]';
 
@@ -111,7 +111,38 @@ export function setStrongPress(button: Button, zoom = 1.08): void {
     (button as any).zoomScale = zoom;
 }
 
-/** Convenience: apply all three effects to a button. */
+/**
+ * Phase 18 — ripple-on-click for hero CTAs.
+ *
+ * Looks for a `Ripple_<button.name>` child sprite created by mkBtnHero at
+ * scene-gen time. On CLICK: activates it, scales 0.4× → 2.5× + opacity
+ * 100 → 0 over 400ms, then deactivates. Layers atop press-pop + idle-pulse.
+ *
+ * Silent no-op if the button isn't a hero (no Ripple_ child). Safe to call
+ * on any Button.
+ */
+export function addRipple(button: Button): void {
+    const node = button.node;
+    const ripple = node.getChildByName(`Ripple_${node.name}`);
+    if (!ripple) return; // not a hero button — silent skip
+    button.node.on(Button.EventType.CLICK, () => {
+        ripple.active = true;
+        Tween.stopAllByTarget(ripple);
+        const op = ripple.getComponent(UIOpacity) ?? ripple.addComponent(UIOpacity);
+        Tween.stopAllByTarget(op);
+        op.opacity = 100;
+        ripple.setScale(0.4, 0.4, 1);
+        tween(ripple)
+            .to(0.40, { scale: new Vec3(2.5, 2.5, 1) }, { easing: 'cubicOut' })
+            .start();
+        tween(op)
+            .to(0.40, { opacity: 0 }, { easing: 'cubicOut' })
+            .call(() => { ripple.active = false; })
+            .start();
+    });
+}
+
+/** Convenience: apply all four effects to a button. */
 export function enhancePrimaryCTA(node: Node | null): void {
     if (!node) return;
     const btn = node.getComponent(Button);
@@ -122,5 +153,6 @@ export function enhancePrimaryCTA(node: Node | null): void {
     addIdlePulse(node);
     addPressPop(btn);
     setStrongPress(btn);
+    addRipple(btn);  // Phase 18 — ripple on hero CTAs (silent no-op if no Ripple_ child)
     console.log(`${TAG} enhancePrimaryCTA | applied to ${node.name}`);
 }

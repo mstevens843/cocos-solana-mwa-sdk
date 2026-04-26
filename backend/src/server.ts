@@ -30,6 +30,11 @@ import { RakeListener } from './rake_listener';
 import { NotificationStore } from './notification_store';
 import { NotificationListener } from './notification_listener';
 import { TournamentHost } from './tournament_host';
+import { ping as dbPing, dbConfigured, closePool } from './db';
+import { runMigrations } from './migrate';
+import { getUser, setUsername, touchUser, validateUsername } from './users';
+import { getPaperXp, recordPaperMatch, type PaperTrack } from './paper_xp';
+import { recordMatch, listForPlayer, type MatchHistoryRecord } from './match_history';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { PROGRAM_ID } from '../../assets/token-duel/scripts/constants';
 import * as path from 'path';
@@ -57,7 +62,190 @@ app.get('/health', (_req, res) => {
         ok: true,
         sessions: sessions.stats(),
         uptimeSec: Math.floor(process.uptime()),
+        dbConfigured: dbConfigured(),
     });
+});
+
+// DB Stage 1 — DB-specific health probe. Exposes pool latency for monitoring.
+app.get('/health/db', async (_req, res) => {
+    const result = await dbPing();
+    res.status(result.ok ? 200 : 503).json(result);
+});
+
+// DB Stage 2 — user profile lookup. Returns 404 if user hasn't been seen yet.
+app.get('/users/:pubkey', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const user = await getUser(pubkey);
+        if (!user) return res.status(404).json({ error: 'user not found' });
+        return res.json({
+            pubkey: user.pubkey,
+            username: user.username,
+            joinedAt: user.joined_at,
+            lastSeenAt: user.last_seen_at,
+        });
+    } catch (e: any) {
+        console.log(`${TAG} GET /users/:pubkey error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 3 — paper/bot XP read.
+app.get('/paper-xp/:pubkey', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const row = await getPaperXp(pubkey);
+        if (!row) {
+            // Returning zeros (rather than 404) keeps the client chip happy on
+            // a brand-new wallet without a special-case branch.
+            return res.json({
+                pubkey,
+                totalXp: 0, botXp: 0, paperRealXp: 0,
+                gamesPlayed: 0, wins: 0, losses: 0,
+            });
+        }
+        return res.json({
+            pubkey: row.pubkey,
+            totalXp: Number(row.total_xp),
+            botXp: Number(row.bot_xp),
+            paperRealXp: Number(row.paper_real_xp),
+            gamesPlayed: row.games_played,
+            wins: row.wins,
+            losses: row.losses,
+            lastUpdated: row.last_updated,
+        });
+    } catch (e: any) {
+        console.log(`${TAG} GET /paper-xp/:pubkey error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 3 — paper/bot XP delta upload after match resolves.
+app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as { xp?: number; track?: string; won?: boolean };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!body || typeof body.xp !== 'number' || typeof body.won !== 'boolean') {
+            return res.status(400).json({ error: 'body must include { xp:number, track:"bot"|"paper-real", won:boolean }' });
+        }
+        if (body.track !== 'bot' && body.track !== 'paper-real') {
+            return res.status(400).json({ error: 'track must be "bot" or "paper-real"' });
+        }
+        if (body.xp < 0 || body.xp > 100_000) {
+            return res.status(400).json({ error: 'xp delta out of bounds (0..100000)' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const row = await recordPaperMatch(pubkey, {
+            xp: Math.floor(body.xp),
+            track: body.track as PaperTrack,
+            won: body.won,
+        });
+        return res.json({
+            pubkey: row.pubkey,
+            totalXp: Number(row.total_xp),
+            botXp: Number(row.bot_xp),
+            paperRealXp: Number(row.paper_real_xp),
+            gamesPlayed: row.games_played,
+        });
+    } catch (e: any) {
+        console.log(`${TAG} POST /paper-xp/:pubkey error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 4 — match history list (per-player).
+app.get('/matches/history', async (req: Request, res: Response) => {
+    try {
+        const player = String(req.query.player ?? '');
+        const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10) || 20, 100);
+        try { new PublicKey(player); } catch { return res.status(400).json({ error: 'invalid player pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const rows = await listForPlayer(player, limit);
+        return res.json({ player, count: rows.length, matches: rows });
+    } catch (e: any) {
+        console.log(`${TAG} GET /matches/history error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 4 — match history insert (idempotent on match_pda).
+// Client-uploaded after settle. Trust model documented in match_history.ts.
+app.post('/matches/history', async (req: Request, res: Response) => {
+    try {
+        const body = req.body as Partial<MatchHistoryRecord> & { squadMintsByPlayer?: Record<string, string[]> };
+        if (!body || typeof body.matchPda !== 'string' || body.matchPda.length < 32) {
+            return res.status(400).json({ error: 'matchPda required' });
+        }
+        if (typeof body.modeU8 !== 'number' || body.modeU8 < 0 || body.modeU8 > 3) {
+            return res.status(400).json({ error: 'modeU8 must be 0..3' });
+        }
+        if (!Array.isArray(body.players) || !Array.isArray(body.heights)) {
+            return res.status(400).json({ error: 'players[] and heights[] required' });
+        }
+        try { new PublicKey(body.matchPda); for (const p of body.players) new PublicKey(p); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+
+        const result = await recordMatch({
+            matchPda: body.matchPda,
+            modeU8: body.modeU8,
+            wagerTier: body.wagerTier ?? 0,
+            wagerLamports: body.wagerLamports ?? 0,
+            timeWindow: body.timeWindow ?? 0,
+            players: body.players,
+            heights: body.heights,
+            winnerPubkey: body.winnerPubkey ?? null,
+            payouts: Array.isArray(body.payouts) ? body.payouts : [],
+            rakeLamports: body.rakeLamports ?? 0,
+            status: body.status ?? 2,
+            createdAt: body.createdAt ?? new Date().toISOString(),
+            startedAt: body.startedAt ?? null,
+            settledAt: body.settledAt ?? new Date().toISOString(),
+        }, body.squadMintsByPlayer);
+
+        // Touch participating users so their last_seen_at refreshes.
+        for (const p of body.players) {
+            void touchUser(p).catch(() => {});
+        }
+        return res.json({ ok: true, ...result });
+    } catch (e: any) {
+        console.log(`${TAG} POST /matches/history error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 2 — set username for a pubkey. Returns 409 if name is taken,
+// 400 if invalid. NOTE: this endpoint does NOT verify that the caller
+// actually owns the pubkey — for hackathon scope we trust the client. A
+// production version should require a signed message proving ownership.
+app.post('/users/:pubkey/username', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as { username?: string };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!body || typeof body.username !== 'string') {
+            return res.status(400).json({ error: 'body must include username (string)' });
+        }
+        const validation = validateUsername(body.username);
+        if (!validation.ok) return res.status(400).json({ error: validation.error });
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        try {
+            const updated = await setUsername(pubkey, body.username);
+            return res.json({ pubkey: updated.pubkey, username: updated.username });
+        } catch (e: any) {
+            const msg = String(e?.message ?? e);
+            if (msg.includes('already taken')) return res.status(409).json({ error: msg });
+            throw e;
+        }
+    } catch (e: any) {
+        console.log(`${TAG} POST /users/:pubkey/username error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
 });
 
 app.get('/pubkey', (_req, res) => {
@@ -154,7 +342,7 @@ const notificationListener = new NotificationListener({
 });
 void notificationListener.start();
 
-app.get('/notifications/:pubkey', (req: Request, res: Response) => {
+app.get('/notifications/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
         if (!pubkey || pubkey.length < 32 || pubkey.length > 44) {
@@ -164,7 +352,7 @@ app.get('/notifications/:pubkey', (req: Request, res: Response) => {
         catch { return res.status(400).json({ error: 'malformed pubkey' }); }
         const since = Number(req.query.since ?? 0);
         const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 50)));
-        const events = notificationStore.getRecent(pubkey, Number.isFinite(since) ? since : 0, limit);
+        const events = await notificationStore.getRecent(pubkey, Number.isFinite(since) ? since : 0, limit);
         return res.json({ events });
     } catch (e: any) {
         console.error(`${TAG} GET /notifications ERROR`, e);
@@ -192,9 +380,24 @@ app.post('/notifications/:pubkey/:id/read', (req: Request, res: Response) => {
 // Expose public /fees route as a clean alias to the static HTML page.
 app.get('/fees', (_req, res) => res.redirect('/fees.html'));
 // Also expose /admin/tokens JSON for direct inspection.
-app.get('/admin/tokens', (req, res) => {
+// DB Stage 5 — falls back to in-memory TokenStatsBucket when DB not configured
+// or when the requested week has no rows yet (fresh DB after deploy).
+app.get('/admin/tokens', async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 10)));
-    res.json({ tokens: tokenStats.getTopTokens(limit) });
+    const week = String(req.query.week ?? '');
+    try {
+        if (dbConfigured()) {
+            const { topTokensByWeek, isoWeek } = await import('./match_history');
+            const w = week || isoWeek(new Date());
+            const dbRows = await topTokensByWeek(w, limit);
+            if (dbRows.length > 0) {
+                return res.json({ tokens: dbRows, source: 'db', week: w });
+            }
+        }
+    } catch (e: any) {
+        console.log(`${TAG} /admin/tokens db_err | ${e?.message ?? e} — falling back to in-memory`);
+    }
+    res.json({ tokens: tokenStats.getTopTokens(limit), source: 'memory' });
 });
 
 // ═════════════════════════════════════════════════════════════════════
@@ -368,6 +571,11 @@ app.post('/match/:matchPda/publish-squad', (req: Request, res: Response) => {
 
         const result = sessions.publishMatchSquad(matchPda, body.playerPubkey, body.mints);
         if (!result.ok) return res.status(400).json({ error: result.reason });
+        // DB Stage 2 — auto-create / touch user row on every interaction.
+        // Fire-and-forget; DB unavailability shouldn't block the squad publish.
+        void touchUser(body.playerPubkey).catch((e) =>
+            console.log(`${TAG} touchUser_err | ${e?.message ?? e}`),
+        );
         return res.json({ ok: true });
     } catch (e: any) {
         console.error(`${TAG} /match/:pda/publish-squad ERROR`, e);
@@ -608,6 +816,17 @@ function handleMessage(ws: WebSocket, sessionId: string, msg: WsInbound): void {
 httpServer.listen(PORT, () => {
     console.log(`${TAG} listening on :${PORT} · serverPubkey=${signer.pubkey.toBase58()}`);
     console.log(`${TAG} CORS=${JSON.stringify(CORS_ORIGINS)} max_sessions=${MAX_CONCURRENT} birdeye=${BIRDEYE_KEY ? 'set' : 'MISSING (permissive physics)'}`);
+    // DB Stage 1 — auto-apply pending migrations on startup.
+    if (dbConfigured()) {
+        runMigrations()
+            .then((r) => {
+                if (r.applied.length > 0) console.log(`${TAG} migrations applied=${r.applied.join(',')}`);
+                else console.log(`${TAG} migrations up-to-date`);
+            })
+            .catch((e) => console.log(`${TAG} migration_failed | ${e?.message ?? e}`));
+    } else {
+        console.log(`${TAG} db DISABLED (DATABASE_URL not set) — DB-backed routes return 503`);
+    }
 });
 
 // Part 10 pt2: retention cron — skip if CRON_ENABLED=false (local dev default)
@@ -629,5 +848,6 @@ if (cronEnabled && cronHasCreds) {
 process.on('SIGTERM', () => {
     console.log(`${TAG} SIGTERM — shutting down`);
     sessions.shutdown();
+    void closePool();
     httpServer.close(() => process.exit(0));
 });

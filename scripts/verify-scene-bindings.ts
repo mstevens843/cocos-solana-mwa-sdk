@@ -40,15 +40,22 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     // ── Landing ──
     { name: 'ConnectButton',   components: ['cc.Button'] },
     { name: 'ReconnectButton', components: ['cc.Button'] },
+    { name: 'PlayAsGuestButton',  components: ['cc.Button'] },
+    { name: 'PlayAsGuestSubtitle', components: ['cc.Label'] },
     { name: 'StatusLabel',     components: ['cc.Label'], note: 'matches on both Landing and TokenDuel — that is OK' },
 
-    // ── Home ──
-    { name: 'PlayTokenDuelButton', components: ['cc.Button'] },
-    { name: 'SignMessageButton',   components: ['cc.Button'] },
-    { name: 'SignTxButton',        components: ['cc.Button'] },
-    { name: 'SignSendButton',      components: ['cc.Button'] },
-    { name: 'CapabilitiesButton',  components: ['cc.Button'] },
+    // ── Home ── Phase A overhaul: Sign* + Capabilities + PlayTokenDuel
+    // retired in favor of Start/Find/Bot Match trio (see below).
+    { name: 'StartMatchButton',    components: ['cc.Button'] },
+    { name: 'FindMatchButton',     components: ['cc.Button'] },
+    { name: 'BotMatchButton',      components: ['cc.Button'] },
+    { name: 'StartMatchSubtitle',  components: ['cc.Label'] },
+    { name: 'FindMatchSubtitle',   components: ['cc.Label'] },
+    { name: 'BotMatchSubtitle',    components: ['cc.Label'] },
+    { name: 'FindMatchButtonCountBadge', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'FindMatchButtonCountLabel', components: ['cc.Label'] },
     { name: 'DisconnectButton',    components: ['cc.Button'] },
+    { name: 'SignOutGuestButton',  components: ['cc.Button'] },
     { name: 'DeleteButton',        components: ['cc.Button'] },
     { name: 'PubkeyLabel',         components: ['cc.Label'] },
     { name: 'StreakFlameContainer', components: ['cc.UITransform'] },
@@ -83,8 +90,8 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     // ── Session 4 B3 — search clear ──
     { name: 'SearchClearButton',    components: ['cc.Button'] },
 
-    // ── Part 10 Bundle 2 — Quick Play + squad helpers ──
-    { name: 'QuickPlayButton',        components: ['cc.Button'] },
+    // ── Part 10 Bundle 2 — squad helpers ──
+    // (QuickPlayButton retired — Bot Match takes over the same role; see Home section above.)
     { name: 'DailyStreakStrip',       components: ['cc.Button'] },
     { name: 'OpenSquadPresetsButton', components: ['cc.Button'] },
     { name: 'SuggestSquadButton',     components: ['cc.Button'] },
@@ -108,35 +115,36 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'SeasonRankLabel',        components: ['cc.Label'] },
     { name: 'SeasonPodiumLabel',      components: ['cc.Label'] },
 
-    // ── Part 10 pt2 — SettingsPanel QuickPlayDefaultsCard ──
-    { name: 'QuickPlayDefaultsCard',  components: ['cc.UITransform', 'cc.Sprite'] },
-    { name: 'QPMode_1v1',             components: ['cc.Button'] },
-    { name: 'QPMode_4p',              components: ['cc.Button'] },
-    { name: 'QPMode_8p',              components: ['cc.Button'] },
-    { name: 'QPMode_br10',            components: ['cc.Button'] },
-    { name: 'QPWindow_1h',            components: ['cc.Button'] },
-    { name: 'QPWindow_1d',            components: ['cc.Button'] },
-    { name: 'QPWindow_3d',            components: ['cc.Button'] },
-    { name: 'QPWindow_7d',            components: ['cc.Button'] },
-    { name: 'QPWager_001',            components: ['cc.Button'] },
-    { name: 'QPWager_005',            components: ['cc.Button'] },
-    { name: 'QPWager_01',             components: ['cc.Button'] },
-    { name: 'QPWager_025',            components: ['cc.Button'] },
-    { name: 'QPWager_05',             components: ['cc.Button'] },
-    { name: 'QPTrack_paper',          components: ['cc.Button'] },
-    { name: 'QPTrack_real',           components: ['cc.Button'] },
+    // ── Part 10 pt2 — SettingsPanel QuickPlayDefaultsCard (Phase 27 popovers) ──
+    // QP segment buttons were retired in favor of three popovers + a track
+    // toggle. Updated REQUIRED list to match current scene-gen output.
+    { name: 'QuickPlayDefaultsCard',     components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'QPModePopover_1v1',         components: ['cc.Button'] },
+    { name: 'QPModePopover_4p',          components: ['cc.Button'] },
+    { name: 'QPModePopover_8p',          components: ['cc.Button'] },
+    { name: 'QPModePopover_trio',        components: ['cc.Button'] },
+    { name: 'QPWindowPopover_1h',        components: ['cc.Button'] },
+    { name: 'QPWindowPopover_1d',        components: ['cc.Button'] },
+    { name: 'QPWindowPopover_3d',        components: ['cc.Button'] },
+    { name: 'QPWindowPopover_7d',        components: ['cc.Button'] },
+    { name: 'QPWagerPopover_001',        components: ['cc.Button'] },
+    { name: 'QPWagerPopover_005',        components: ['cc.Button'] },
+    { name: 'QPWagerPopover_01',         components: ['cc.Button'] },
+    { name: 'QPWagerPopover_025',        components: ['cc.Button'] },
+    { name: 'QPWagerPopover_05',         components: ['cc.Button'] },
+    { name: 'QPTrackToggle',             components: ['cc.UITransform'] },
+    { name: 'QPTrackPaperLabel',         components: ['cc.Label'] },
+    { name: 'QPTrackRealLabel',          components: ['cc.Label'] },
 
     // ── Part 10 pt2 — LeaderboardPanel season tab ──
     { name: 'LBTab_season',           components: ['cc.Button'] },
 
-    // ── Part 11 D1 — 4-bubble tutorial ──
+    // ── Part 11 D1 — 4-card tutorial (renamed from TutorialBubble_* in carousel refactor) ──
     { name: 'TutorialOverlay',        components: ['cc.UITransform', 'cc.Sprite', 'cc.Button'] },
-    { name: 'TutorialBubble_0',       components: ['cc.UITransform'] },
-    { name: 'TutorialBubble_1',       components: ['cc.UITransform'] },
-    { name: 'TutorialBubble_2',       components: ['cc.UITransform'] },
-    { name: 'TutorialBubble_3',       components: ['cc.UITransform'] },
-    { name: 'TutorialBubbleIndex',    components: ['cc.Label'] },
-    { name: 'TutorialHintLabel',      components: ['cc.Label'] },
+    { name: 'TutorialCard_0',         components: ['cc.UITransform'] },
+    { name: 'TutorialCard_1',         components: ['cc.UITransform'] },
+    { name: 'TutorialCard_2',         components: ['cc.UITransform'] },
+    { name: 'TutorialCard_3',         components: ['cc.UITransform'] },
 
     // ── betting-duel polish — wager chip row removed from ModePicker; replaced
     //    by WagerControlRow on TokenDuelPanel + read-only readout in picker. ──
@@ -219,7 +227,8 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'PostMatchMascotContainer', components: ['cc.UITransform'] },
 
     // ── Phase A — top-level lobby browser (FindMatchPanel) ──
-    { name: 'OpenFindMatchButton',          components: ['cc.Button'] },
+    // (OpenFindMatchButton chrome icon retired; FindMatchButton in the home
+    //  CTA trio is now the entry point — see Home section above.)
     { name: 'FindMatchPanel',               components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'FindMatchBackButton',          components: ['cc.Button'] },
     { name: 'FindMatchTitleLabel',          components: ['cc.Label'] },
@@ -229,7 +238,7 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'FilterMode_oneVone',           components: ['cc.Button'] },
     { name: 'FilterMode_4p',                components: ['cc.Button'] },
     { name: 'FilterMode_8p',                components: ['cc.Button'] },
-    { name: 'FilterMode_br10',              components: ['cc.Button'] },
+    { name: 'FilterMode_trio',              components: ['cc.Button'] },
     { name: 'FilterWindow_all',             components: ['cc.Button'] },
     { name: 'FilterWindow_1h',              components: ['cc.Button'] },
     { name: 'FilterWindow_1d',              components: ['cc.Button'] },
@@ -241,11 +250,17 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'FilterWager_high',             components: ['cc.Button'] },
     { name: 'FilterWager_whale',            components: ['cc.Button'] },
     { name: 'FilterHideFullToggle',         components: ['cc.Button'] },
+
+    // ── Phase 2b — segmented-control container cards behind chip rows ──
+    { name: 'TabRowContainer',              components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'ModeRowContainer',             components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WindowRowContainer',           components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WagerRowContainer',            components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'FindMatchEmptyLabel',          components: ['cc.Label'] },
     { name: 'FindMatchHostButton',          components: ['cc.Button'] },
     { name: 'FindMatchStatusLabel',         components: ['cc.Label'] },
-    { name: 'FindMatchTabOpen',             components: ['cc.Button'] },
-    { name: 'FindMatchTabLive',             components: ['cc.Button'] },
+    { name: 'FindMatchTab_Open',            components: ['cc.Button'] },
+    { name: 'FindMatchTab_Live',            components: ['cc.Button'] },
 
     // ── Phase E — bot difficulty toggle on ModePickerOverlay ──
     { name: 'PickerDifficultyEasy',         components: ['cc.Button'] },
@@ -259,6 +274,37 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'LevelUpCaptionLabel',          components: ['cc.Label'] },
     { name: 'LevelUpRakeLabel',             components: ['cc.Label'] },
     { name: 'LevelUpHintLabel',             components: ['cc.Label'] },
+
+    // ── Phase A — Join confirm overlay + locked-wager chip on TokenDuelPanel ──
+    { name: 'JoinMatchConfirmOverlay',      components: ['cc.UITransform'] },
+    { name: 'JoinConfirmScrim',             components: ['cc.UITransform', 'cc.Sprite', 'cc.Button'] },
+    { name: 'JoinConfirmCard',              components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'JoinConfirmTitleLabel',        components: ['cc.Label'] },
+    { name: 'JoinConfirmSubtitleLabel',     components: ['cc.Label'] },
+    { name: 'JoinConfirmModeBadge',         components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'JoinConfirmModeBadgeLabel',    components: ['cc.Label'] },
+    { name: 'JoinConfirmTrackChip',         components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'JoinConfirmTrackChipLabel',    components: ['cc.Label'] },
+    { name: 'JoinConfirmWagerHeroLabel',    components: ['cc.Label'] },
+    { name: 'JoinConfirmWindowLabel',       components: ['cc.Label'] },
+    { name: 'JoinConfirmCapacityLabel',     components: ['cc.Label'] },
+    { name: 'JoinConfirmHostLabel',         components: ['cc.Label'] },
+    { name: 'JoinConfirmAgeLabel',          components: ['cc.Label'] },
+    { name: 'JoinConfirmCapacityBar',       components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'JoinConfirmCapacityBarFill',   components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'JoinConfirmCancelButton',      components: ['cc.Button'] },
+    { name: 'JoinConfirmGoButton',          components: ['cc.Button'] },
+    { name: 'JoinConfirmHintLabel',         components: ['cc.Label'] },
+    { name: 'WagerLockChip',                components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WagerLockChipLabel',           components: ['cc.Label'] },
+    { name: 'WagerBotChip',                 components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WagerBotChipLabel',            components: ['cc.Label'] },
+
+    // ── Stage 2 — Top-right Level chip on Home + TokenDuel ──
+    { name: 'HomeLevelChip',                components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeLevelChipLabel',           components: ['cc.Label'] },
+    { name: 'TokenDuelLevelChip',           components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'TokenDuelLevelChipLabel',      components: ['cc.Label'] },
 
     // ── Phase N2 — NotificationToastOverlay (3 stacked slots) ──
     { name: 'NotificationToastOverlay',     components: ['cc.UITransform'] },

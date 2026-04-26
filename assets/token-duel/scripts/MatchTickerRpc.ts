@@ -107,7 +107,8 @@ export function tickerStatusIcon(entry: MatchTickerEntry): TickerIconName {
  *  Tournament variant (Part 14): "TOURNAMENT · 4/10 joined · 0.001 SOL · 24h · 42s ago"
  */
 export function formatTickerLine(entry: MatchTickerEntry, nowSec: number): string {
-    const modeKey = (['oneVone', 'fourPlayer', 'eightPlayer', 'battleRoyale'][entry.mode] ?? 'oneVone') as keyof typeof MODES;
+    // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
+    const modeKey = (['oneVone', 'trio', 'fourPlayer', 'eightPlayer'][entry.mode] ?? 'oneVone') as keyof typeof MODES;
     const modeLabel = entry.isTournament ? 'TOURNAMENT' : (MODES[modeKey]?.shortLabel ?? '1v1');
     const windowLabel = ['1h', '24h', '3d', '7d'][entry.timeWindow] ?? '24h';
     const elapsedSec = Math.max(0, nowSec - Number(entry.createdAt));

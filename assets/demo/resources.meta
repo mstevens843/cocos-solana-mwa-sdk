@@ -5,5 +5,27 @@
   "uuid": "2e4b68b0-a687-44b9-983a-228e2b4472e0",
   "files": [],
   "subMetas": {},
-  "userData": {}
+  "userData": {
+    "isBundle": true,
+    "bundleName": "resources",
+    "priority": 1,
+    "compressionType": {
+      "android": "merge_dependence",
+      "ios": "merge_dependence",
+      "html5": "merge_dependence",
+      "windows": "merge_dependence",
+      "mac": "merge_dependence",
+      "linux": "merge_dependence"
+    },
+    "optimizeHotUpdate": false,
+    "inlineSpriteFrames": false,
+    "isRemoteBundle": {
+      "android": false,
+      "ios": false,
+      "html5": false,
+      "windows": false,
+      "mac": false,
+      "linux": false
+    }
+  }
 }

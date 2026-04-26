@@ -11,11 +11,15 @@
  * `(matchPda, kind, slot)` so the SAME event arriving from multiple
  * sources collapses on the client side via dedupe-by-id.
  *
- * In-memory only for v1. ~50 events × ~2KB × N players is small. For
- * multi-replica scale, swap for Redis with same API.
+ * DB Stage 6: write-through Postgres cache. push() persists each event in
+ * the `notifications` table; getRecent() backfills the in-memory ring on
+ * first request after restart. WS push remains in-memory for low-latency
+ * live delivery.
  */
 
 import { WebSocket } from 'ws';
+import { dbConfigured, query } from './db';
+import { touchUser } from './users';
 
 const TAG = '[notification_store]';
 
@@ -53,6 +57,66 @@ export class NotificationStore {
     private _byPlayer: Map<string, NotificationEvent[]> = new Map();
     private _subscribers: Map<string, Set<WebSocket>> = new Map();
     private _readBy: Map<string, Set<string>> = new Map();
+    /** DB Stage 6 — pubkeys whose in-memory ring has been hydrated from DB. */
+    private _hydrated: Set<string> = new Set();
+
+    /** DB Stage 6 — fire-and-forget DB write. Failures don't block in-memory push. */
+    private _persistAsync(event: NotificationEvent): void {
+        if (!dbConfigured()) return;
+        // Touch user FK first (notifications.pubkey REFERENCES users.pubkey).
+        void touchUser(event.player).then(() =>
+            query(
+                `INSERT INTO notifications (id, pubkey, kind, title, body, payload, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, to_timestamp($7 / 1000.0))
+                 ON CONFLICT (id) DO NOTHING`,
+                [event.id, event.player, event.kind, event.title, event.body, JSON.stringify(event.payload ?? {}), event.createdAt],
+            )
+        ).catch((e: any) => {
+            console.log(`${TAG} persist_err | id=${event.id} ${e?.message ?? e}`);
+        });
+    }
+
+    /** DB Stage 6 — hydrate in-memory ring from DB on first read. */
+    private async _hydrateFromDb(player: string): Promise<void> {
+        if (this._hydrated.has(player)) return;
+        if (!dbConfigured()) { this._hydrated.add(player); return; }
+        try {
+            const rows = await query<{
+                id: string; pubkey: string; kind: string; title: string; body: string;
+                payload: any; created_at: Date; read_at: Date | null;
+            }>(
+                `SELECT id, pubkey, kind, title, body, payload, created_at, read_at
+                 FROM notifications WHERE pubkey = $1
+                 ORDER BY created_at DESC LIMIT $2`,
+                [player, STORE_LIMIT_PER_PLAYER],
+            );
+            const buf: NotificationEvent[] = rows.map((r) => ({
+                id: r.id,
+                kind: r.kind as NotificationKind,
+                player: r.pubkey,
+                title: r.title,
+                body: r.body,
+                payload: r.payload ?? {},
+                createdAt: r.created_at instanceof Date ? r.created_at.getTime() : Number(r.created_at),
+            }));
+            // Merge with any in-memory entries (push could have arrived during hydration).
+            const existing = this._byPlayer.get(player) ?? [];
+            const seen = new Set(existing.map((e) => e.id));
+            const merged = [...existing, ...buf.filter((e) => !seen.has(e.id))];
+            // Sort newest-first, cap to limit.
+            merged.sort((a, b) => b.createdAt - a.createdAt);
+            this._byPlayer.set(player, merged.slice(0, STORE_LIMIT_PER_PLAYER));
+            // Backfill _readBy from DB read_at.
+            const readSet = this._readBy.get(player) ?? new Set<string>();
+            for (const r of rows) if (r.read_at !== null) readSet.add(r.id);
+            this._readBy.set(player, readSet);
+            console.log(`${TAG} hydrate | player=${player.slice(0, 8)} loaded=${rows.length} merged=${merged.length}`);
+        } catch (e: any) {
+            console.log(`${TAG} hydrate_err | player=${player.slice(0, 8)} ${e?.message ?? e}`);
+        } finally {
+            this._hydrated.add(player);
+        }
+    }
 
     /** Push a new event for `player`. Returns the persisted record. */
     push(input: Omit<NotificationEvent, 'createdAt'> & { createdAt?: number }): NotificationEvent {
@@ -70,6 +134,9 @@ export class NotificationStore {
         buf.unshift(event);
         if (buf.length > STORE_LIMIT_PER_PLAYER) buf.length = STORE_LIMIT_PER_PLAYER;
         console.log(`${TAG} push | id=${event.id} kind=${event.kind} player=${event.player.slice(0, 8)} buf_len=${buf.length}`);
+        // DB Stage 6 — persist to Postgres in parallel. Fire-and-forget; failures
+        // are logged but don't block the in-memory + WS push path.
+        this._persistAsync(event);
         // Broadcast to live subscribers.
         const subs = this._subscribers.get(event.player);
         if (subs && subs.size > 0) {
@@ -83,11 +150,17 @@ export class NotificationStore {
         return event;
     }
 
-    /** Recent (non-stale, non-read?) events for a player, optionally since a ts. */
-    getRecent(player: string, since?: number, limit: number = STORE_LIMIT_PER_PLAYER): NotificationEvent[] {
+    /**
+     * Recent (non-stale, non-read?) events for a player, optionally since a ts.
+     *
+     * DB Stage 6: hydrates the in-memory ring from `notifications` table on
+     * first call per pubkey (covers backend-restart case). Subsequent calls
+     * read directly from the in-memory cache.
+     */
+    async getRecent(player: string, since?: number, limit: number = STORE_LIMIT_PER_PLAYER): Promise<NotificationEvent[]> {
+        await this._hydrateFromDb(player);
         const buf = this._byPlayer.get(player) ?? [];
         const cutoff = Date.now() - STALE_PRUNE_MS;
-        // Lazy prune anything stale.
         const fresh = buf.filter((e) => e.createdAt >= cutoff);
         if (fresh.length !== buf.length) this._byPlayer.set(player, fresh);
         const sinceTs = since ?? 0;
@@ -101,6 +174,13 @@ export class NotificationStore {
         if (!set) { set = new Set(); this._readBy.set(player, set); }
         if (set.has(id)) return false;
         set.add(id);
+        // DB Stage 6 — persist read_at. Fire-and-forget.
+        if (dbConfigured()) {
+            void query(
+                `UPDATE notifications SET read_at = now() WHERE id = $1 AND pubkey = $2 AND read_at IS NULL`,
+                [id, player],
+            ).catch((e: any) => console.log(`${TAG} mark_read_err | id=${id} ${e?.message ?? e}`));
+        }
         return true;
     }
 

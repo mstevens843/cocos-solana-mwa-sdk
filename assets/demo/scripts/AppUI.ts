@@ -12,7 +12,7 @@ import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
 import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransitions';
 import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
 import { Palette, themeColor } from '../../token-duel/scripts/Theme';
-import { enhancePrimaryCTA } from '../../token-duel/scripts/ButtonFX';
+import { enhancePrimaryCTA, addIdlePulse } from '../../token-duel/scripts/ButtonFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -49,7 +49,7 @@ import { checkUserStatsExists, xpBucketFor, getUserStats, UserStatsState } from 
 import { loadRealStats } from '../../token-duel/scripts/RealStats';
 import { getMatch } from '../../token-duel/scripts/MatchRpc';
 import { fetchLeaderboard, LeaderboardEntry as ModeLeaderboardEntry } from '../../token-duel/scripts/LeaderboardRpc';
-import { levelFromXp, levelProgress, computeModePayout, xpForPlacement, rakeBpsForLevel } from '../../token-duel/scripts/PayoutCalc';
+import { levelFromXp, levelProgress, xpForLevel, computeModePayout, xpForPlacement, rakeBpsForLevel } from '../../token-duel/scripts/PayoutCalc';
 import { modeFromU8 } from '../../token-duel/scripts/ModeDefs';
 import { getCurrentDailyChallenge, describeChallenge, countCompleted, DailyChallengeState, ChallengeDef } from '../../token-duel/scripts/DailyChallengeRpc';
 import { getCurrentSeason, getUserSeasonRank, SeasonState, SeasonEntry } from '../../token-duel/scripts/SeasonRpc';
@@ -104,9 +104,25 @@ export class AppUI extends Component {
     // is visible on the panel the user is looking at. Home mascot keeps idle/think.
     private _postMatchMascot: MascotController | null = null;
 
+    // 4-state coverage: idle on LandingPanel (greets the user immediately),
+    // think on RacePanel (visible during gameplay — _showRacePanel rewires
+    // the think state from the hidden HomePanel mascot to this one).
+    private _landingMascot: MascotController | null = null;
+    private _raceMascot: MascotController | null = null;
+
     // Landing elements
     private _connectButton: Button = null!;
     private _reconnectButton: Button = null!;
+    /** Play as Guest — Landing CTA. Sets _guestId + skips wallet auth. */
+    private _playAsGuestButton: Button | null = null;
+    /** Sign Out Guest — Home CTA (hidden in real-wallet mode). */
+    private _signOutGuestButton: Button | null = null;
+    /**
+     * Synthetic local-only id for guest sessions. Format `guest_<hex>`.
+     * Stored in localStorage as `tokenduel:guest_id`. Cleared on Sign Out
+     * AND when a real wallet connects (real wallet wins).
+     */
+    private _guestId: string | null = null;
     private _landingStatus: Label = null!;
 
     // Home elements
@@ -212,6 +228,26 @@ export class AppUI extends Component {
     private _signingHintLabel: Label | null = null;
     /** Phase G4 — action-specific copy populated by callers before signing. */
     private _signingActionHint: string = '';
+
+    // Phase 19 — LoadingOverlay (post-connect / reconnect gap polish).
+    private _loadingOverlay: Node | null = null;
+    /** Phase 20 — cold-start asset gate: captures the phase3 art-load promise
+     *  so _gateColdStartLoad() can race it against a 3s timeout. */
+    private _phase3LoadPromise: Promise<void> | null = null;
+    private _loadingSpinnerLabel: Label | null = null;
+    private _loadingStatusLabel: Label | null = null;
+    private _loadingTipLabel: Label | null = null;
+    private _loadingTipIndex: number = 0;
+    private _loadingTipTimer: number | null = null;
+
+    private static readonly LOADING_TIPS = [
+        'Pick 3 tokens you think will pump.',
+        'Matches settle in ~400ms on Solana.',
+        'Stake some SOL, race the % delta.',
+        'First match is on the house.',
+        'Watch the live timer — last 5s pulse.',
+        'Tournament mode rewards top-3 every week.',
+    ];
     // Phase H4 — LevelUpOverlay bindings.
     private _levelUpOverlay: Node | null = null;
     private _levelUpTitleLabel: Label | null = null;
@@ -389,13 +425,17 @@ export class AppUI extends Component {
     private _matchHistoryCache: Map<string, MatchState | null> = new Map();
     private _matchHistoryLoading: boolean = false;
 
-    // Part 9: first-run tutorial overlay.
+    // Part 9 / Phase 28: tutorial overlay (gamified card carousel).
     private _tutorialOverlay: Node | null = null;
-    private _tutorialBubbles: Node[] = [];
-    private _tutorialIndexLabel: Label | null = null;
+    private _tutorialCards: Node[] = [];
+    private _tutorialGlows: Node[] = [];
+    private _tutorialMascots: (MascotController | null)[] = [];
     private _tutorialStep: number = 0;
+    private _tutorialAnimating: boolean = false;
     private _tutorialDismissed: (() => void) | null = null;
     private readonly _TUTORIAL_FLAG = 'tokenduel:tutorialSeen';
+    /** Per-step mascot state — matches LayoutSpec.tutorialCard.mascotStates. */
+    private readonly _TUTORIAL_MASCOT_STATES: MascotState[] = ['idle', 'celebrate', 'think', 'celebrate'];
 
     // Part 10 Bundle 3 / pt2: DailyChallengePanel + SquadPresetsOverlay + QP-defaults.
     private _dailyChallengePanel: Node | null = null;
@@ -405,11 +445,23 @@ export class AppUI extends Component {
     private _presetNameEditBox: EditBox | null = null;
     /** Presets currently rendered into the overlay; indexed parallel to _presetRowNodes. */
     private _renderedPresets: SquadPreset[] = [];
-    /** QuickPlay defaults radio-button tracking — grouped by row for tint sync. */
-    private _qpModeButtons: Map<string, Button> = new Map();
-    private _qpWindowButtons: Map<string, Button> = new Map();
-    private _qpWagerButtons: Map<string, Button> = new Map();
-    private _qpTrackButtons: Map<string, Button> = new Map();
+    /** Phase 27 — QuickPlay defaults dropdowns + pill toggle. */
+    private _qpModeRow: Node | null = null;
+    private _qpWindowRow: Node | null = null;
+    private _qpWagerRow: Node | null = null;
+    private _qpModeValueLabel: Label | null = null;
+    private _qpWindowValueLabel: Label | null = null;
+    private _qpWagerValueLabel: Label | null = null;
+    private _qpModePopover: Node | null = null;
+    private _qpWindowPopover: Node | null = null;
+    private _qpWagerPopover: Node | null = null;
+    private _qpModeOptionButtons: Map<string, Button> = new Map();
+    private _qpWindowOptionButtons: Map<string, Button> = new Map();
+    private _qpWagerOptionButtons: Map<string, Button> = new Map();
+    /** Track pill toggle — sliding indicator + Paper/Real labels + invisible hit areas. */
+    private _qpTrackIndicator: Node | null = null;
+    private _qpTrackPaperLabel: Label | null = null;
+    private _qpTrackRealLabel: Label | null = null;
 
     // Part 11 A: cached share-summary query string for the last displayed
     // PostMatchPanel. `null` when no shareable match is in view (e.g. paper).
@@ -501,6 +553,12 @@ export class AppUI extends Component {
     private _wagerHintLabel: Label | null = null;
     private _wagerDropdown: Node | null = null;
     private _wagerDropdownRows: Button[] = [];
+    /** Phase A — JOIN mode: locked-wager chip; replaces WagerValueButton when _pickerJoinTarget set. */
+    private _wagerLockChip: Node | null = null;
+    private _wagerLockChipLabel: Label | null = null;
+    /** Stage 1 — BOT mode: rose "FREE · Bot Match" chip; replaces WagerValueButton when _pickerBotMode true. */
+    private _wagerBotChip: Node | null = null;
+    private _wagerBotChipLabel: Label | null = null;
     // Part 9: TimeWindow axis — stored as TimeWindowId, mapped to u8 at tx-build time.
     private _pickerWindowButtons: Map<string, Button> = new Map();
     private _pickerSelectedWindow: TimeWindowId = DEFAULT_TIME_WINDOW;
@@ -554,12 +612,78 @@ export class AppUI extends Component {
     private _filterModeButtons: Map<string, Button> = new Map();
     private _filterWindowButtons: Map<string, Button> = new Map();
     private _filterWagerButtons: Map<string, Button> = new Map();
+    /** Phase 2b — previous-active chip key per row, for tween dedupe. */
+    private _filterActiveChip: Map<'mode' | 'window' | 'wager' | 'tab', string> = new Map();
     /** Each row container — children include mode/wager/window/sub labels + Join button. */
     private _matchCardRows: Node[] = [];
     /** Per-row Join buttons; row index → matchPda last bound, used by the click handler. */
     private _matchCardRowMatchPdas: (string | null)[] = [];
     private _matchBrowser: MatchBrowser | null = null;
     private _matchBrowserUnsubscribe: (() => void) | null = null;
+    /** Home-screen FindMatch button live count badge + label + 2nd subscription. */
+    private _findMatchCountBadge: Node | null = null;
+    private _findMatchCountBadgeLabel: Label | null = null;
+    private _findMatchCountUnsubscribe: (() => void) | null = null;
+    private _findMatchCountLastValue: number = 0;
+    /** Phase A2 — FindMatchPanel polish: Lv/XP chip + empty-state cluster + per-row edge stripes + capacity bars. */
+    private _findMatchLvXpChip: Node | null = null;
+    private _findMatchLvXpChipLabel: Label | null = null;
+    /** Stage 2 — Top-right Level chips on Home + TokenDuel (FindMatch reuses _findMatchLvXpChip relocated). */
+    private _homeLevelChip: Node | null = null;
+    private _homeLevelChipLabel: Label | null = null;
+    private _tokenDuelLevelChip: Node | null = null;
+    private _tokenDuelLevelChipLabel: Label | null = null;
+    /** Last computed level — drives pulse animation when level changes. */
+    private _lastDisplayedLevel: number = 0;
+    /** DB Stage 2 — sync cache of pubkey → resolved username (empty string = no name set). */
+    private _displayNameCache: Map<string, string> = new Map();
+    /** Pubkeys with an in-flight fetch — prevents duplicate roundtrips. */
+    private _displayNameInflight: Set<string> = new Set();
+    private _findMatchEmptyMascotNode: Node | null = null;
+    private _findMatchEmptyMascot: MascotController | null = null;
+    private _findMatchEmptyTitle: Label | null = null;
+    private _findMatchEmptySubtitle: Label | null = null;
+    private _findMatchEmptyHostBtn: Button | null = null;
+    private _findMatchEmptyBotBtn: Button | null = null;
+    /** Per-row edge stripes (mode-color) + capacity bar fills (tweened scaleX). */
+    private _matchCardEdgeStripes: Node[] = [];
+    private _matchCardCapBarFills: Node[] = [];
+    private _matchCardTrackChips: Node[] = [];
+
+    /** Phase A — JoinMatchConfirmOverlay node refs. */
+    private _joinConfirmOverlay: Node | null = null;
+    private _joinConfirmCard: Node | null = null;
+    private _joinConfirmModeLabel: Label | null = null;
+    private _joinConfirmModeBadge: Node | null = null;
+    private _joinConfirmTrackChip: Node | null = null;
+    private _joinConfirmTrackLabel: Label | null = null;
+    private _joinConfirmWagerHero: Label | null = null;
+    private _joinConfirmWindowLabel: Label | null = null;
+    private _joinConfirmCapacityLabel: Label | null = null;
+    private _joinConfirmHostLabel: Label | null = null;
+    private _joinConfirmAgeLabel: Label | null = null;
+    private _joinConfirmCapacityBarFill: Node | null = null;
+    private _joinConfirmCancelButton: Button | null = null;
+    private _joinConfirmGoButton: Button | null = null;
+    private _joinConfirmScrimButton: Button | null = null;
+    /** Match the user is about to join — set when overlay opens, cleared on Cancel/Go. */
+    private _joinConfirmTarget: import('../../token-duel/scripts/MatchRpc').MatchState | null = null;
+    /** Connected-screen browser interval — slow on Home, full speed when in lobby. */
+    private static readonly HOME_BROWSER_INTERVAL_MS = 15_000;
+    private static readonly LOBBY_BROWSER_INTERVAL_MS = 5_000;
+    /**
+     * Phase A — when set, the next picker submission joins this open match
+     * instead of creating a new one. Set by _onJoinMatchConfirmed; cleared
+     * after submission, on race end, or on back-out to home.
+     */
+    private _pickerJoinTarget: import('../../token-duel/scripts/MatchRpc').MatchState | null = null;
+    /**
+     * Stage 1 — when true, the picker is in BOT mode. Set by _onBotMatch;
+     * cleared on _showHome / on Race start. Drives the rose "FREE" chip in
+     * the wager slot + relabels WagerStartButton to "Start Bot Match" +
+     * skips ModePicker on tap (track is already locked to paper).
+     */
+    private _pickerBotMode: boolean = false;
     // Last match outcome — set when a bot match resolves so post-game flow can use it.
     private _lastMatchOutcome: { won: boolean; opponentHeight: number; xp: number; track: 'paper' | 'real' } | null = null;
 
@@ -637,7 +761,23 @@ export class AppUI extends Component {
     private _rpc!: SolanaRpc;
 
     start(): void {
-        console.log(`${TAG} BUILD_STAMP v=2026-04-25-T0900-diag — full deterministic logging build`);
+        console.log(`${TAG} BUILD_STAMP v=2026-04-25-T0330-mascot-4state — Landing+Race mascots, instant-ref reveal, CC strip`);
+        // SURGICAL BISECT: NotificationToastOverlay is the ONLY new always-active
+        // top-level panel since master (16 other new panels are active=False).
+        // Disable it BEFORE any wiring runs — if crash gone, this overlay (or
+        // its runtime Button wiring in NotificationToastQueue._buildSlot) is the
+        // culprit. Confirmation = absence of SIGSEGV at fault addr 0x28 on the
+        // first DRAW frame.
+        try {
+            const toastOverlay = this.node.getChildByName('NotificationToastOverlay');
+            console.log(`${TAG} BISECT | NotificationToastOverlay found=${!!toastOverlay} active_before=${toastOverlay?.active} children=${toastOverlay?.children?.length ?? -1}`);
+            if (toastOverlay) {
+                toastOverlay.active = false;
+                console.log(`${TAG} BISECT | NotificationToastOverlay -> active=false (will not render)`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} BISECT | overlay toggle THREW ${e?.message ?? e}`);
+        }
         console.log(`${TAG} start | START`);
         console.log(`${TAG} start | CHK1 — entered start()`);
         // Frame heartbeat: log director update + draw ticks so we can see
@@ -685,6 +825,10 @@ export class AppUI extends Component {
             return;
         }
 
+        // Stage 2 — TokenDuel top-right Lv/XP chip (Home + Find chips bound below).
+        this._tokenDuelLevelChip = this._tokenDuelPanel.getChildByName('TokenDuelLevelChip') ?? null;
+        this._tokenDuelLevelChipLabel = this._tokenDuelLevelChip?.getChildByName('TokenDuelLevelChipLabel')?.getComponent(Label) ?? null;
+
         // ── Landing elements ──
         this._connectButton = this._landingPanel.getChildByName('ConnectButton')?.getComponent(Button)!;
         this._reconnectButton = this._landingPanel.getChildByName('ReconnectButton')?.getComponent(Button)!;
@@ -694,18 +838,38 @@ export class AppUI extends Component {
         this._connectButton?.node.on(Button.EventType.CLICK, this._onConnect, this);
         this._reconnectButton?.node.on(Button.EventType.CLICK, this._onReconnect, this);
 
+        // Guest mode — Landing entry + Home Sign Out.
+        this._playAsGuestButton = this._landingPanel.getChildByName('PlayAsGuestButton')?.getComponent(Button) ?? null;
+        this._playAsGuestButton?.node.on(Button.EventType.CLICK, this._onPlayAsGuest, this);
+        this._signOutGuestButton = this._homePanel.getChildByName('SignOutGuestButton')?.getComponent(Button) ?? null;
+        this._signOutGuestButton?.node.on(Button.EventType.CLICK, this._onSignOutGuest, this);
+        // Cold-start hydration: if a guest_id is in localStorage and no
+        // wallet is connected, restore guest mode and skip Landing.
+        try {
+            const ls = (globalThis as any).sys?.localStorage ?? (globalThis as any).localStorage;
+            const cachedGuest = ls?.getItem?.('tokenduel:guest_id');
+            if (typeof cachedGuest === 'string' && cachedGuest.startsWith('guest_')) {
+                this._guestId = cachedGuest;
+                console.log(`${TAG} start | guest_session restored id=${cachedGuest}`);
+            }
+        } catch (_) { /* ignore */ }
+
         // ── Wire home buttons ──
+        // Connected-screen primary trio: Start Match (host) / Find Match
+        // (browse open lobbies) / Bot Match (paper · vs bots · free) +
+        // account mgmt. Sign* + Capabilities buttons retired with the
+        // home overhaul.
         const homeBtnNames = [
-            'QuickPlayButton',
-            'PlayTokenDuelButton',
-            'SignMessageButton', 'SignTxButton', 'SignSendButton',
-            'CapabilitiesButton', 'DisconnectButton', 'DeleteButton',
+            'StartMatchButton',
+            'FindMatchButton',
+            'BotMatchButton',
+            'DisconnectButton', 'DeleteButton',
         ];
         const homeHandlers = [
-            this._onQuickPlay,
-            this._onPlayTokenDuel,
-            this._onSignMessage, this._onSignTransaction, this._onSignAndSend,
-            this._onCapabilities, this._onDisconnect, this._onDelete,
+            this._onStartMatch,
+            this._showFindMatchPanel,
+            this._onBotMatch,
+            this._onDisconnect, this._onDelete,
         ];
 
         // Part 10 Bundle 3: streak strip tap → opens DailyChallengePanel (or
@@ -742,6 +906,10 @@ export class AppUI extends Component {
         this._pubkeyLabel = this._homePanel.getChildByName('PubkeyLabel')?.getComponent(Label)!;
         this._homeStatus = this._homePanel.getChildByName('HomeStatusLabel')?.getComponent(Label)!;
 
+        // Stage 2 — Lv/XP chip top-right on Home + TokenDuel.
+        this._homeLevelChip = this._homePanel.getChildByName('HomeLevelChip') ?? null;
+        this._homeLevelChipLabel = this._homeLevelChip?.getChildByName('HomeLevelChipLabel')?.getComponent(Label) ?? null;
+
         // Stage 4K — streak flame. Container hidden until UserStats loads and
         // reports currentStreak > 0. `_updateStreakFlame` is idempotent.
         this._streakFlameContainer = this._homePanel.getChildByName('StreakFlameContainer') ?? null;
@@ -770,14 +938,20 @@ export class AppUI extends Component {
 
         // UX overhaul Phase 3: load real PNG icons + mascot from
         // assets/demo/resources/{icons,mascot}/ and re-attach badges so they
-        // render as cc.Sprite instead of procedural Graphics. Async — icons
-        // show procedural for ~100ms until loads complete, then pop to PNG.
-        void this._loadPhase3Art();
+        // render as cc.Sprite instead of procedural Graphics.
+        // Phase 20: capture the promise so _gateColdStartLoad() can race it
+        // against a timeout and gate Landing's reveal on full art.
+        this._phase3LoadPromise = this._loadPhase3Art();
 
         // UX overhaul Phase 2d: tactile polish on the 4 primary CTAs — idle
         // pulse + press pop + stronger zoomScale. Applied AFTER panels are
         // bound so nodes exist.
         this._enhancePrimaryCTAs();
+
+        // Phase 16 — animation polish item 1: starfield twinkle. Picks 16 of
+        // the 64 BackgroundFX stars and oscillates their UIOpacity so the
+        // background reads as alive instead of painted.
+        this._initStarfieldTwinkle();
 
         // Belt-and-suspenders: hide stale ReconnectHomeButton if the scene
         // JSON wasn't regenerated after generate-scenes.js removed it.
@@ -1065,6 +1239,11 @@ export class AppUI extends Component {
         }
         console.log(`${TAG} start | TokenDuel row_extended_cols rows=${this._feedRowNodes.length} missing_cols_on=${rowsMissingCols} (0 = all new columns found)`);
 
+        // Phase 17 (item 2) — wire tap-down glow on each FeedRow. Must run
+        // AFTER the FeedRow node array is populated (above). Adds TOUCH_START/
+        // END/CANCEL handlers alongside the existing Button CLICK handler.
+        this._initFeedRowTactile();
+
         // Session 11: Search suggestion popover — 5 pre-instantiated rows.
         this._searchPopoverNode = this._tokenDuelPanel.getChildByName('SearchSuggestionPopover') ?? null;
         if (this._searchPopoverNode) {
@@ -1270,11 +1449,12 @@ export class AppUI extends Component {
             }
             // Session D Part 7: per-mode filter tabs. Part 10 pt2 adds
             // `season` (modeU8=4 sentinel) as the 5th tab for This Week wins.
+            // Stage 3: br10 retired, Trio added at u8=1, 4p slid to u8=2, 8p to u8=3.
             const tabKeys: { key: string; modeU8: number }[] = [
                 { key: '1v1', modeU8: 0 },
-                { key: '4p',  modeU8: 1 },
-                { key: '8p',  modeU8: 2 },
-                { key: 'br10', modeU8: 3 },
+                { key: 'trio', modeU8: 1 },
+                { key: '4p',  modeU8: 2 },
+                { key: '8p',  modeU8: 3 },
                 { key: 'season', modeU8: 4 },
             ];
             for (const t of tabKeys) {
@@ -1320,15 +1500,23 @@ export class AppUI extends Component {
             cancelBtn?.node.on(Button.EventType.CLICK, () => this._onPresetSaveCancel(), this);
         }
 
-        // Part 9: TutorialOverlay bindings.
+        // Phase 28: TutorialOverlay bindings (4 themed cards + glows + mascots).
         this._tutorialOverlay = this.node.getChildByName('TutorialOverlay') ?? null;
         if (this._tutorialOverlay) {
-            // Part 11 D1: 4 bubbles now (added squad-delta explainer).
             for (let i = 0; i < 4; i++) {
-                const b = this._tutorialOverlay.getChildByName(`TutorialBubble_${i}`);
-                if (b) this._tutorialBubbles.push(b);
+                const card = this._tutorialOverlay.getChildByName(`TutorialCard_${i}`);
+                const glow = this._tutorialOverlay.getChildByName(`TutorialCardGlow_${i}`);
+                if (card) this._tutorialCards.push(card);
+                if (glow) this._tutorialGlows.push(glow);
+                // Add MascotController to each card's mascot slot.
+                const mascN = card?.getChildByName(`TutorialCard_${i}_Mascot`);
+                if (mascN) {
+                    const m = mascN.getComponent(MascotController) ?? mascN.addComponent(MascotController);
+                    this._tutorialMascots.push(m);
+                } else {
+                    this._tutorialMascots.push(null);
+                }
             }
-            this._tutorialIndexLabel = this._tutorialOverlay.getChildByName('TutorialBubbleIndex')?.getComponent(Label) ?? null;
             const scrimBtn = this._tutorialOverlay.getComponent(Button);
             scrimBtn?.node.on(Button.EventType.CLICK, () => this._onTutorialTap(), this);
         }
@@ -1376,40 +1564,63 @@ export class AppUI extends Component {
                 this._refreshAudioCard();
             }
 
-            // Part 10 pt2: Quick Play defaults radio rows.
+            // Phase 27 — Quick Play defaults: 3 dropdowns + 1 pill toggle.
             const qpCard = this._settingsPanel.getChildByName('QuickPlayDefaultsCard');
             if (qpCard) {
-                const modeKeys: Array<[string, string]> = [['1v1','oneVone'],['4p','fourPlayer'],['8p','eightPlayer'],['br10','battleRoyale']];
+                // Row buttons + their value labels (children of each row).
+                this._qpModeRow   = qpCard.getChildByName('QPModeRow');
+                this._qpWindowRow = qpCard.getChildByName('QPWindowRow');
+                this._qpWagerRow  = qpCard.getChildByName('QPWagerRow');
+                this._qpModeValueLabel   = this._qpModeRow?.getChildByName('QPModeRowValueLabel')?.getComponent(Label) ?? null;
+                this._qpWindowValueLabel = this._qpWindowRow?.getChildByName('QPWindowRowValueLabel')?.getComponent(Label) ?? null;
+                this._qpWagerValueLabel  = this._qpWagerRow?.getChildByName('QPWagerRowValueLabel')?.getComponent(Label) ?? null;
+                // Popovers — direct children of SettingsPanel for z-order.
+                this._qpModePopover   = this._settingsPanel.getChildByName('QPModePopover');
+                this._qpWindowPopover = this._settingsPanel.getChildByName('QPWindowPopover');
+                this._qpWagerPopover  = this._settingsPanel.getChildByName('QPWagerPopover');
+                // Row taps → toggle popover with mutual exclusivity.
+                this._qpModeRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
+                    () => this._toggleQPPopover('mode'), this);
+                this._qpWindowRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
+                    () => this._toggleQPPopover('window'), this);
+                this._qpWagerRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
+                    () => this._toggleQPPopover('wager'), this);
+                // Mode options. Stage 3: trio replaces br10.
+                const modeKeys: Array<[string, string]> = [['1v1','oneVone'],['trio','trio'],['4p','fourPlayer'],['8p','eightPlayer']];
                 for (const [ui, logical] of modeKeys) {
-                    const b = qpCard.getChildByName(`QPMode_${ui}`)?.getComponent(Button);
+                    const b = this._qpModePopover?.getChildByName(`QPModePopover_${ui}`)?.getComponent(Button);
                     if (b) {
-                        this._qpModeButtons.set(ui, b);
+                        this._qpModeOptionButtons.set(ui, b);
                         b.node.on(Button.EventType.CLICK, () => this._onQPModeClick(ui, logical), this);
                     }
                 }
+                // Window options.
                 for (const w of ['1h','1d','3d','7d']) {
-                    const b = qpCard.getChildByName(`QPWindow_${w}`)?.getComponent(Button);
+                    const b = this._qpWindowPopover?.getChildByName(`QPWindowPopover_${w}`)?.getComponent(Button);
                     if (b) {
-                        this._qpWindowButtons.set(w, b);
+                        this._qpWindowOptionButtons.set(w, b);
                         b.node.on(Button.EventType.CLICK, () => this._onQPWindowClick(w), this);
                     }
                 }
+                // Wager options.
                 for (let i = 0; i < 5; i++) {
                     const key = ['001','005','01','025','05'][i];
-                    const b = qpCard.getChildByName(`QPWager_${key}`)?.getComponent(Button);
+                    const b = this._qpWagerPopover?.getChildByName(`QPWagerPopover_${key}`)?.getComponent(Button);
                     if (b) {
-                        this._qpWagerButtons.set(key, b);
+                        this._qpWagerOptionButtons.set(key, b);
                         const idx = i;
                         b.node.on(Button.EventType.CLICK, () => this._onQPWagerClick(key, idx), this);
                     }
                 }
-                for (const t of ['paper','real']) {
-                    const b = qpCard.getChildByName(`QPTrack_${t}`)?.getComponent(Button);
-                    if (b) {
-                        this._qpTrackButtons.set(t, b);
-                        b.node.on(Button.EventType.CLICK, () => this._onQPTrackClick(t as 'paper'|'real'), this);
-                    }
-                }
+                // Track pill toggle.
+                const tt = qpCard.getChildByName('QPTrackToggle');
+                this._qpTrackIndicator  = tt?.getChildByName('QPTrackIndicator') ?? null;
+                this._qpTrackPaperLabel = tt?.getChildByName('QPTrackPaperLabel')?.getComponent(Label) ?? null;
+                this._qpTrackRealLabel  = tt?.getChildByName('QPTrackRealLabel')?.getComponent(Label) ?? null;
+                tt?.getChildByName('QPTrackPaperHit')?.getComponent(Button)?.node
+                    .on(Button.EventType.CLICK, () => this._onQPTrackClick('paper'), this);
+                tt?.getChildByName('QPTrackRealHit')?.getComponent(Button)?.node
+                    .on(Button.EventType.CLICK, () => this._onQPTrackClick('real'), this);
             }
         }
         const homeSettingsBtn = this._homePanel.getChildByName('OpenSettingsButton')?.getComponent(Button);
@@ -1474,8 +1685,8 @@ export class AppUI extends Component {
             // Scrim button (tap-outside to cancel)
             const scrimBtn = this._modePickerOverlay.getComponent(Button);
             scrimBtn?.node.on(Button.EventType.CLICK, () => this._onPickerCancel(), this);
-            // Mode buttons
-            for (const key of ['oneVone', '4p', '8p', 'br10']) {
+            // Mode buttons (Stage 3: keys are now ModeId strings directly).
+            for (const key of ['oneVone', 'trio', 'fourPlayer', 'eightPlayer']) {
                 const n = this._modePickerOverlay.getChildByName(`Mode_${key}`);
                 const b = n?.getComponent(Button);
                 if (b) {
@@ -1557,6 +1768,14 @@ export class AppUI extends Component {
             this._wagerStartButton.node.on(Button.EventType.CLICK, () => this._onWagerStartTap(), this);
         }
         this._wagerHintLabel = this._tokenDuelPanel.getChildByName('WagerHintLabel')?.getComponent(Label) ?? null;
+        this._wagerLockChip = this._tokenDuelPanel.getChildByName('WagerLockChip') ?? null;
+        if (this._wagerLockChip) {
+            this._wagerLockChipLabel = this._wagerLockChip.getChildByName('WagerLockChipLabel')?.getComponent(Label) ?? null;
+        }
+        this._wagerBotChip = this._tokenDuelPanel.getChildByName('WagerBotChip') ?? null;
+        if (this._wagerBotChip) {
+            this._wagerBotChipLabel = this._wagerBotChip.getChildByName('WagerBotChipLabel')?.getComponent(Label) ?? null;
+        }
         this._wagerDropdown = this._tokenDuelPanel.getChildByName('WagerDropdown') ?? null;
         if (this._wagerDropdown) {
             for (let i = 0; i < 8; i++) {
@@ -1620,6 +1839,24 @@ export class AppUI extends Component {
                 this._postMatchMascot = pmMascotN.getComponent(MascotController) ?? pmMascotN.addComponent(MascotController);
                 console.log(`${TAG} start | postMatchMascot bound`);
             }
+        }
+        // 4-state coverage: bind LandingMascotContainer + RaceMascotContainer.
+        // LandingMascot greets the user on the Connect/Reconnect screen
+        // (idle); RaceMascot animates 'think' during gameplay (set in
+        // _showRacePanel). Both are populated by phase3's setSpriteSheet.
+        const landingMascotN = this._landingPanel?.getChildByName('LandingMascotContainer');
+        if (landingMascotN) {
+            this._landingMascot = landingMascotN.getComponent(MascotController) ?? landingMascotN.addComponent(MascotController);
+            console.log(`${TAG} start | landingMascot bound`);
+        }
+        const raceMascotN = this._racePanel?.getChildByName('RaceMascotContainer');
+        if (raceMascotN) {
+            this._raceMascot = raceMascotN.getComponent(MascotController) ?? raceMascotN.addComponent(MascotController);
+            console.log(`${TAG} start | raceMascot bound`);
+        }
+        if (this._postMatchPanel) {
+            // (post-match mascot bind already happened above; this trailing
+            // brace closes the original `if (this._postMatchPanel)` block).
             // Pre-allocate confetti Graphics once (fixes native render-thread
             // crash on Seeker/Android from spawning 12 cc.Graphics in one frame).
             this._bindPostMatchConfetti();
@@ -1669,6 +1906,19 @@ export class AppUI extends Component {
             this._signingHintLabel    = this._signingOverlay.getChildByName('SigningHintLabel')?.getComponent(Label) ?? null;
         }
 
+        // Phase 19 — LoadingOverlay bindings.
+        this._loadingOverlay = this.node.getChildByName('LoadingOverlay') ?? null;
+        if (this._loadingOverlay) {
+            this._loadingSpinnerLabel = this._loadingOverlay.getChildByName('LoadingSpinnerLabel')?.getComponent(Label) ?? null;
+            this._loadingStatusLabel  = this._loadingOverlay.getChildByName('LoadingStatusLabel')?.getComponent(Label) ?? null;
+            this._loadingTipLabel     = this._loadingOverlay.getChildByName('LoadingTipLabel')?.getComponent(Label) ?? null;
+            // Spawn a 5th MascotController instance for the loading greeter.
+            const loadingMascotContainer = this._loadingOverlay.getChildByName('LoadingMascotContainer');
+            if (loadingMascotContainer && !loadingMascotContainer.getComponent(MascotController)) {
+                loadingMascotContainer.addComponent(MascotController);
+            }
+        }
+
         // Phase H4 — LevelUpOverlay bindings.
         this._levelUpOverlay = this.node.getChildByName('LevelUpOverlay') ?? null;
         if (this._levelUpOverlay) {
@@ -1716,16 +1966,16 @@ export class AppUI extends Component {
             this._findMatchHostButton  = this._findMatchPanel.getChildByName('FindMatchHostButton')?.getComponent(Button) ?? null;
             this._findMatchHideFullToggle = this._findMatchPanel.getChildByName('FilterHideFullToggle')?.getComponent(Button) ?? null;
             // Phase H2 — Open / Live tab buttons.
-            this._findMatchTabOpenBtn = this._findMatchPanel.getChildByName('FindMatchTabOpen')?.getComponent(Button) ?? null;
-            this._findMatchTabLiveBtn = this._findMatchPanel.getChildByName('FindMatchTabLive')?.getComponent(Button) ?? null;
+            this._findMatchTabOpenBtn = this._findMatchPanel.getChildByName('FindMatchTab_Open')?.getComponent(Button) ?? null;
+            this._findMatchTabLiveBtn = this._findMatchPanel.getChildByName('FindMatchTab_Live')?.getComponent(Button) ?? null;
             this._findMatchTabOpenBtn?.node.on(Button.EventType.CLICK, () => this._onFindMatchTabClick('open'), this);
             this._findMatchTabLiveBtn?.node.on(Button.EventType.CLICK, () => this._onFindMatchTabClick('live'), this);
             this._findMatchBackButton?.node.on(Button.EventType.CLICK, () => this._hideFindMatchPanel(), this);
             this._findMatchRefreshButton?.node.on(Button.EventType.CLICK, () => { void this._matchBrowser?.refresh(); }, this);
             this._findMatchHostButton?.node.on(Button.EventType.CLICK, () => this._onFindMatchHostTap(), this);
             this._findMatchHideFullToggle?.node.on(Button.EventType.CLICK, () => this._onToggleHideFull(), this);
-            // Filter chips.
-            const modeKeys = ['all', 'oneVone', '4p', '8p', 'br10'];
+            // Filter chips (Stage 3: trio replaces br10).
+            const modeKeys = ['all', 'oneVone', 'trio', '4p', '8p'];
             for (const k of modeKeys) {
                 const b = this._findMatchPanel.getChildByName(`FilterMode_${k}`)?.getComponent(Button);
                 if (b) {
@@ -1749,28 +1999,98 @@ export class AppUI extends Component {
                     b.node.on(Button.EventType.CLICK, () => this._onFilterWagerClick(k), this);
                 }
             }
-            // 8 row pool.
+            // 8 row pool — Phase A2 redesign: edge stripes + capacity bar fills + track chips.
             for (let i = 0; i < 8; i++) {
                 const row = this._findMatchPanel.getChildByName(`MatchCardRow_${i}`);
                 if (!row) continue;
                 this._matchCardRows.push(row);
                 this._matchCardRowMatchPdas.push(null);
+                this._matchCardEdgeStripes.push(row.getChildByName(`MatchCardEdgeStripe_${i}`) as Node);
+                this._matchCardCapBarFills.push(row.getChildByName(`MatchCardCapBarFill_${i}`) as Node);
+                this._matchCardTrackChips.push(row.getChildByName(`MatchCardTrackChip_${i}`) as Node);
                 const joinBtn = row.getChildByName(`MatchCardJoinButton_${i}`)?.getComponent(Button);
                 joinBtn?.node.on(Button.EventType.CLICK, () => this._onMatchCardJoinClick(i), this);
             }
-            // Construct the browser; auto-refresh starts on panel show.
-            this._matchBrowser = new MatchBrowser(this._tdRpc, 5000);
+            // Phase A2 — header polish + empty-state cluster bindings.
+            this._findMatchLvXpChip = this._findMatchPanel.getChildByName('FindMatchLvXpChip') ?? null;
+            this._findMatchLvXpChipLabel = this._findMatchLvXpChip?.getChildByName('FindMatchLvXpChipLabel')?.getComponent(Label) ?? null;
+            if (this._findMatchCountLabel) {
+                try { addIdlePulse(this._findMatchCountLabel.node, 1.04); } catch (_) { /* ignore */ }
+            }
+            this._findMatchEmptyMascotNode = this._findMatchPanel.getChildByName('FindMatchEmptyMascot') ?? null;
+            if (this._findMatchEmptyMascotNode) {
+                this._findMatchEmptyMascot = this._findMatchEmptyMascotNode.getComponent(MascotController) ?? this._findMatchEmptyMascotNode.addComponent(MascotController);
+            }
+            this._findMatchEmptyTitle    = this._findMatchPanel.getChildByName('FindMatchEmptyTitle')?.getComponent(Label) ?? null;
+            this._findMatchEmptySubtitle = this._findMatchPanel.getChildByName('FindMatchEmptySubtitle')?.getComponent(Label) ?? null;
+            this._findMatchEmptyHostBtn  = this._findMatchPanel.getChildByName('FindMatchEmptyHostButton')?.getComponent(Button) ?? null;
+            this._findMatchEmptyBotBtn   = this._findMatchPanel.getChildByName('FindMatchEmptyBotButton')?.getComponent(Button) ?? null;
+            this._findMatchEmptyHostBtn?.node.on(Button.EventType.CLICK, () => this._onFindMatchHostTap(), this);
+            this._findMatchEmptyBotBtn?.node.on(Button.EventType.CLICK, () => {
+                this._hideFindMatchPanel();
+                void this._onBotMatch();
+            }, this);
+            // Refresh button — 360° spin tween on tap (gives the icon a "refreshing" feel).
+            this._findMatchRefreshButton?.node.on(Button.EventType.CLICK, () => {
+                const n = this._findMatchRefreshButton!.node;
+                Tween.stopAllByTarget(n);
+                n.eulerAngles = new Vec3(0, 0, 0);
+                tween(n).to(0.45, { eulerAngles: new Vec3(0, 0, -360) }, { easing: 'cubicOut' }).start();
+            }, this);
+            // Construct the browser; default 5000ms but throttled to
+            // HOME_BROWSER_INTERVAL_MS while user is on the home screen so
+            // the count badge stays warm without hammering RPC.
+            this._matchBrowser = new MatchBrowser(this._tdRpc, AppUI.HOME_BROWSER_INTERVAL_MS);
             this._matchBrowserUnsubscribe = this._matchBrowser.subscribe(() => this._renderMatchList());
             console.log(`${TAG} start | FindMatchPanel wired=true rows=${this._matchCardRows.length}/8 mode_chips=${this._filterModeButtons.size} window_chips=${this._filterWindowButtons.size} wager_chips=${this._filterWagerButtons.size}`);
         } else {
             console.log(`${TAG} start | WARN FindMatchPanel missing — regenerate scene`);
         }
 
-        // Phase A — OpenFindMatchButton on HomePanel (top-left chrome).
-        const openFindMatchBtn = this._homePanel?.getChildByName('OpenFindMatchButton')?.getComponent(Button);
-        if (openFindMatchBtn) {
-            openFindMatchBtn.node.on(Button.EventType.CLICK, () => this._showFindMatchPanel(), this);
-            console.log(`${TAG} start | OpenFindMatchButton wired=true`);
+        // ── FindMatchButton live count badge on HomePanel ───────────────
+        // Subscribes a second listener on the existing _matchBrowser so the
+        // home-screen Find Match button shows current open-lobby count
+        // ("Find Match · 5"). Auto-refresh runs at HOME_BROWSER_INTERVAL_MS
+        // (15s) to keep RPC traffic light; flips to 5s when the lobby opens.
+        this._findMatchCountBadge = this._homePanel?.getChildByName('FindMatchButtonCountBadge') ?? null;
+        if (this._findMatchCountBadge) {
+            this._findMatchCountBadgeLabel = this._findMatchCountBadge.getChildByName('FindMatchButtonCountLabel')?.getComponent(Label) ?? null;
+        }
+        if (this._matchBrowser && this._findMatchCountBadge) {
+            this._findMatchCountUnsubscribe = this._matchBrowser.subscribe((rows) => this._renderFindMatchCount(rows.length));
+            // Kick the home-browser into life so the badge populates without
+            // the user having to enter the lobby first.
+            this._matchBrowser.start();
+            console.log(`${TAG} start | FindMatchButton wired=true count_badge=true`);
+        }
+
+        // ── Phase A — JoinMatchConfirmOverlay bindings ──────────────────
+        this._joinConfirmOverlay = this.node.getChildByName('JoinMatchConfirmOverlay') ?? null;
+        if (this._joinConfirmOverlay) {
+            this._joinConfirmCard = this._joinConfirmOverlay.getChildByName('JoinConfirmCard') ?? null;
+            const card = this._joinConfirmCard;
+            const scrim = this._joinConfirmOverlay.getChildByName('JoinConfirmScrim');
+            this._joinConfirmScrimButton = scrim?.getComponent(Button) ?? null;
+            if (card) {
+                this._joinConfirmModeBadge = card.getChildByName('JoinConfirmModeBadge') ?? null;
+                this._joinConfirmModeLabel = this._joinConfirmModeBadge?.getChildByName('JoinConfirmModeBadgeLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmTrackChip = card.getChildByName('JoinConfirmTrackChip') ?? null;
+                this._joinConfirmTrackLabel = this._joinConfirmTrackChip?.getChildByName('JoinConfirmTrackChipLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmWagerHero = card.getChildByName('JoinConfirmWagerHeroLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmWindowLabel = card.getChildByName('JoinConfirmWindowLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmCapacityLabel = card.getChildByName('JoinConfirmCapacityLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmHostLabel = card.getChildByName('JoinConfirmHostLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmAgeLabel = card.getChildByName('JoinConfirmAgeLabel')?.getComponent(Label) ?? null;
+                this._joinConfirmCapacityBarFill = card.getChildByName('JoinConfirmCapacityBarFill') ?? null;
+                this._joinConfirmCancelButton = card.getChildByName('JoinConfirmCancelButton')?.getComponent(Button) ?? null;
+                this._joinConfirmGoButton = card.getChildByName('JoinConfirmGoButton')?.getComponent(Button) ?? null;
+            }
+            this._joinConfirmCancelButton?.node.on(Button.EventType.CLICK, () => this._hideJoinConfirmOverlay(), this);
+            this._joinConfirmScrimButton?.node.on(Button.EventType.CLICK, () => this._hideJoinConfirmOverlay(), this);
+            this._joinConfirmGoButton?.node.on(Button.EventType.CLICK, () => this._onJoinConfirmGoTap(), this);
+            console.log(`${TAG} start | JoinMatchConfirmOverlay wired=true card=${!!this._joinConfirmCard}`);
+        } else {
+            console.log(`${TAG} start | WARN JoinMatchConfirmOverlay missing — regenerate scene`);
         }
 
         // ── Phase N — Notification bell, badge, panel, toast queue. ─────
@@ -1977,6 +2297,13 @@ export class AppUI extends Component {
         } catch (e) {
             console.log(`${TAG} frame | probe install ERROR ${e}`);
         }
+
+        // Phase 20 — cold-start asset gate. Runs fire-and-forget; the
+        // LoadingOverlay covers Landing while Phase 3 art (icons + mascot
+        // frames) loads. Dismisses on assets-done OR 3s timeout, with a
+        // 600ms minimum display floor so the mascot+tip greeting registers.
+        // Reveals Landing with full art instead of a procedural-to-PNG pop.
+        void this._gateColdStartLoad();
     }
 
     /**
@@ -2036,20 +2363,33 @@ export class AppUI extends Component {
     private _showHome(): void {
         console.log(`${TAG} _showHome | ENTRY`);
         console.log(`${TAG} _showHome | switching to home panel`);
+        // Clear any stale picker mode flags — back-out from a join confirm
+        // or bot match shouldn't leak into a fresh "Start Match" tap.
+        this._pickerJoinTarget = null;
+        this._pickerBotMode = false;
         this._setActivePanel('home');
         console.log(`${TAG} _showHome | AFTER_setActivePanel`);
+        // Stage 2 — refresh top-right Level chip on Home arrival.
+        void this._refreshLevelChip();
         // UX overhaul Phase 2: mascot greets on Home arrival.
         this._setMascotState('idle');
         console.log(`${TAG} _showHome | AFTER_setMascotState`);
         const mwa = MWAManager.instance;
         const pubkey = mwa?.connectedPubkey ?? '';
         if (this._pubkeyLabel) {
-            const short = pubkey.length > 8
-                ? pubkey.substring(0, 4) + '...' + pubkey.substring(pubkey.length - 4)
-                : pubkey || 'Not connected';
-            const walletName = mwa?.walletDisplayName() ?? '';
-            this._pubkeyLabel.string = walletName ? `${short} (${walletName})` : short;
+            if (this._isGuest()) {
+                this._pubkeyLabel.string = '👤 Guest';
+            } else {
+                const short = pubkey.length > 8
+                    ? pubkey.substring(0, 4) + '...' + pubkey.substring(pubkey.length - 4)
+                    : pubkey || 'Not connected';
+                const walletName = mwa?.walletDisplayName() ?? '';
+                this._pubkeyLabel.string = walletName ? `${short} (${walletName})` : short;
+            }
         }
+        // Apply guest-mode hiding rules — must run AFTER pubkey label set so
+        // the guest label sticks even if other refresh paths overwrite it.
+        this._applyGuestModeUiHiding();
         // Phase J4 \u2014 bot handicap visibility for new players. Shows
         // "Training: N free matches left \u00b7 easier bots, no real wager."
         // until they've played BOT_HANDICAP_GAMES paper matches.
@@ -2077,17 +2417,6 @@ export class AppUI extends Component {
         // then start the countdown polling + 1s badge repaint.
         void this._fetchTournamentHostOnce().then(() => this._startTournamentCountdown());
 
-        // Hide Sign Message button on wallets that don't implement sign_messages
-        // (Phantom, Solflare). See MWAManager.supportsSignMessages() and
-        // KNOWN_ISSUES.md #11 for the evidence.
-        const signMsgBtnNode = this._homePanel.getChildByName('SignMessageButton');
-        if (signMsgBtnNode) {
-            const supported = mwa?.supportsSignMessages() ?? true;
-            signMsgBtnNode.active = supported;
-            if (!supported) {
-                console.log(`${TAG} _showHome | hiding SignMessageButton — wallet doesn't declare sign_messages support (pkg="${mwa?.connectedWalletPackage || '(unknown)'}")`);
-            }
-        }
         console.log(`${TAG} _showHome | DONE pubkey=${this._pubkeyLabel?.string}`);
     }
 
@@ -2096,6 +2425,8 @@ export class AppUI extends Component {
         this._setActivePanel('tokenDuel');
         this._resetStakeFlow();
         this._hideLegacyBettingDuelNodes();
+        // Stage 2 — refresh top-right Level chip whenever this panel opens.
+        void this._refreshLevelChip();
         // betting-duel round-4: tutorial NO LONGER auto-fires — it dulled the
         // screen every panel open and users found it annoying. Still reachable
         // on-demand via the top-right `?` HelpButton.
@@ -2320,7 +2651,10 @@ export class AppUI extends Component {
             // Home chrome
             { panel: this._homePanel, name: 'DailyStreakStrip',       icon: 'flame',  size: 22, offsetX: -320 },
             { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 20, offsetX: -320 },
-            { panel: this._homePanel, name: 'QuickPlayButton',        icon: 'bolt',   size: 28, offsetX: -310 },
+            // CTA trio — IconBadge sits left of each label so the icon reads first.
+            { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 26, offsetX: -200 },
+            { panel: this._homePanel, name: 'FindMatchButton',        icon: 'eye',    size: 26, offsetX: -200 },
+            { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 26, offsetX: -200 },
             { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 30, offsetX: 0 },  // home top-right gear, 64×64
 
             // TokenDuel top-bar (5 solo-icon buttons, 48×40 cells)
@@ -2391,6 +2725,35 @@ export class AppUI extends Component {
             }
         }
 
+        // Phase 2b — FindMatchPanel filter chips. Every chip gets a 16px icon
+        // prefix at offsetX=-42 so the existing label stays readable.
+        const fmPanel = this._findMatchPanel ?? this.node.getChildByName('FindMatchPanel');
+        if (fmPanel) {
+            const chipIcons: Array<{ name: string; icon: IconName }> = [
+                { name: 'FindMatchTab_Open',   icon: 'sword' },
+                { name: 'FindMatchTab_Live',   icon: 'eye' },
+                { name: 'FilterMode_all',      icon: 'cog' },
+                { name: 'FilterMode_oneVone',  icon: 'sword' },
+                { name: 'FilterMode_trio',     icon: 'user' },
+                { name: 'FilterMode_4p',       icon: 'user' },
+                { name: 'FilterMode_8p',       icon: 'flag' },
+                { name: 'FilterWindow_all',    icon: 'clock' },
+                { name: 'FilterWindow_1h',     icon: 'clock' },
+                { name: 'FilterWindow_1d',     icon: 'clock' },
+                { name: 'FilterWindow_3d',     icon: 'clock' },
+                { name: 'FilterWindow_7d',     icon: 'clock' },
+                { name: 'FilterWager_all',     icon: 'coin' },
+                { name: 'FilterWager_low',     icon: 'coin' },
+                { name: 'FilterWager_mid',     icon: 'coin' },
+                { name: 'FilterWager_high',    icon: 'coin' },
+                { name: 'FilterWager_whale',   icon: 'coin' },
+            ];
+            for (const c of chipIcons) {
+                const n = fmPanel.getChildByName(c.name);
+                if (n) this._ensureIconBadge(n, c.icon, { size: 16, offsetX: -42 });
+            }
+        }
+
         // Feed tab dropdown rows (6 rows) — per-row icons.
         const tabIcon: Record<string, IconName> = {
             new: 'bolt', trending: 'flame', gainers: 'chart',
@@ -2426,7 +2789,12 @@ export class AppUI extends Component {
      * zoomScale). Silent no-op for any button that isn't found in the scene.
      */
     private _enhancePrimaryCTAs(): void {
-        enhancePrimaryCTA(this._homePanel?.getChildByName('QuickPlayButton') ?? null);
+        // Phase 13 (B3): Connect is the gateway action — first thing in any
+        // demo recording. It must breathe.
+        enhancePrimaryCTA(this._landingPanel?.getChildByName('ConnectButton') ?? null);
+        enhancePrimaryCTA(this._homePanel?.getChildByName('StartMatchButton') ?? null);
+        enhancePrimaryCTA(this._homePanel?.getChildByName('FindMatchButton') ?? null);
+        enhancePrimaryCTA(this._homePanel?.getChildByName('BotMatchButton') ?? null);
         enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('WagerStartButton') ?? null);
         enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StartGameButton') ?? null);
         enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StakeCommitButton') ?? null);
@@ -2456,7 +2824,8 @@ export class AppUI extends Component {
             'trash', 'save', 'speaker', 'speakerMuted',
             'vibration', 'hand', 'flame', 'bolt', 'sword',
             'coin', 'chart', 'brain', 'star', 'starOutline',
-            'sparkle', 'starBurst', 'flag',
+            'sparkle', 'starBurst', 'flag', 'eye',
+            'bell', 'check', 'clock', 'crown',
         ];
 
         // Kill switches — flip a flag to bypass each loader path. Default ALL
@@ -2564,10 +2933,54 @@ export class AppUI extends Component {
             });
         });
 
-        // SERIAL load — parallel obscures the crashing asset. Run icons one at a
-        // time so the LAST `LOADING` log without a matching `LOADED` reveals
-        // exactly which asset's native decode/upload triggers the SIGSEGV.
-        console.log(`${TAG} phase3 | SERIAL_START icons=${iconNames.length} skipIcons=${skipIconsLoad} skipMascotRef=${skipMascotRefLoad} skipFrames=${skipFramesLoad}`);
+        // MASCOT-FIRST + INSTANT_REF order — Two-step reveal so the mascot
+        // appears within ~150ms of launch instead of waiting ~1s on the
+        // mascot frames LOAD_DIR. Step 1: static ref loads fast (~100ms) →
+        // setSpriteSheet({idle:[ref]}) → mascot visible. Step 2: per-state
+        // frames load (~900ms) → setSpriteSheet(framesByState) → animation
+        // kicks in. The transition is invisible because both steps use the
+        // same mascot art; only the loop count changes.
+        console.log(`${TAG} phase3 | MASCOT_FIRST start skipMascotRef=${skipMascotRefLoad} skipFrames=${skipFramesLoad}`);
+        const killMascot = (globalThis as any).TD_DISABLE_MASCOT_FRAMES === true;
+
+        // Step 1 — static ref first (fast).
+        await loadMascot();
+        if (mascotFrame && !killMascot) {
+            console.log(`${TAG} phase3 | mascot INSTANT_REF applied (single static frame)`);
+            this._mascot?.setSpriteSheet({ idle: [mascotFrame] });
+            this._postMatchMascot?.setSpriteSheet({ idle: [mascotFrame] });
+            this._landingMascot?.setSpriteSheet({ idle: [mascotFrame] });
+            this._raceMascot?.setSpriteSheet({ idle: [mascotFrame] });
+            // Phase 28 — tutorial card mascots (4 instances).
+            for (const tm of this._tutorialMascots) tm?.setSpriteSheet({ idle: [mascotFrame] });
+        }
+
+        // Step 2 — per-state frames upgrade.
+        await loadMascotFrames();
+        const hasFrames = Object.values(mascotFramesByState).some(arr => (arr?.length ?? 0) > 0);
+        console.log(`${TAG} phase3 | mascot DONE ref=${!!mascotFrame} hasFrames=${hasFrames}`);
+
+        if (killMascot) {
+            console.log(`${TAG} phase3 | mascot SKIPPED (TD_DISABLE_MASCOT_FRAMES=true)`);
+        } else if (hasFrames) {
+            console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (per-state)`);
+            this._mascot?.setSpriteSheet(mascotFramesByState);
+            this._postMatchMascot?.setSpriteSheet(mascotFramesByState);
+            this._landingMascot?.setSpriteSheet(mascotFramesByState);
+            this._raceMascot?.setSpriteSheet(mascotFramesByState);
+            for (const tm of this._tutorialMascots) tm?.setSpriteSheet(mascotFramesByState);
+            console.log(`${TAG} phase3 | mascot UPGRADED to per-state frame sequences (4 + tutorial)`);
+        } else if (!mascotFrame) {
+            console.log(`${TAG} phase3 | mascot FAILED — falling back to procedural body`);
+            this._mascot?.showProceduralFallback();
+            this._postMatchMascot?.showProceduralFallback();
+            this._landingMascot?.showProceduralFallback();
+            this._raceMascot?.showProceduralFallback();
+            for (const tm of this._tutorialMascots) tm?.showProceduralFallback();
+        }
+
+        // Now load icons serially in the background. Mascot is already showing.
+        console.log(`${TAG} phase3 | icons starting count=${iconNames.length} skipIcons=${skipIconsLoad}`);
         if (!skipIconsLoad) {
             for (const name of iconNames) {
                 await loadOneSerial(name);
@@ -2576,47 +2989,20 @@ export class AppUI extends Component {
             console.log(`${TAG} phase3 | icons SKIPPED (TD_DISABLE_ICON_LOAD=true)`);
         }
         console.log(`${TAG} phase3 | icons DONE loaded=${loaded} failed=${failed}`);
-        await loadMascot();
-        console.log(`${TAG} phase3 | mascot_ref DONE`);
-        await loadMascotFrames();
-        console.log(`${TAG} phase3 | mascot_frames DONE`);
-        console.log(`${TAG} phase3 | DONE icons_loaded=${loaded}/${iconNames.length} failed=${failed} mascot=${!!mascotFrame}`);
+        console.log(`${TAG} phase3 | DONE icons_loaded=${loaded}/${iconNames.length} failed=${failed} mascot=${!!mascotFrame || hasFrames}`);
 
-        // Re-attach all bind-time IconBadges now that sprite frames are registered.
-        // IconLibrary.attach checks the registry first — registered icons get
-        // cc.Sprite path, unregistered fall back to procedural.
+        // Re-attach all bind-time IconBadges now that sprite frames are
+        // registered. IconLibrary.attach checks the registry first —
+        // registered icons get cc.Sprite path, unregistered stay blank.
         console.log(`${TAG} phase3 | step=_attachStaticIconBadges`);
         this._attachStaticIconBadges();
-        // Refresh state-driven icons (audio toggles, watchlist star, feed tab).
         console.log(`${TAG} phase3 | step=_refreshAudioCard`);
         this._refreshAudioCard();
         console.log(`${TAG} phase3 | step=_refreshWatchlistStarTint`);
         this._refreshWatchlistStarTint();
-        // Feed tab icon refreshes the next time the user switches tabs; force one now.
         if (this._feedTabDropdownLabel) {
             console.log(`${TAG} phase3 | step=_updateFeedTabDropdownLabel`);
             this._updateFeedTabDropdownLabel(this._currentFeedTab as any);
-        }
-
-        // Mascot: prefer per-state frame sequences (Seedance clips), fall back
-        // to single static PNG if the frames/ folder is empty.
-        const hasFrames = Object.values(mascotFramesByState).some(arr => (arr?.length ?? 0) > 0);
-        console.log(`${TAG} phase3 | mascot_apply hasFrames=${hasFrames} mascotFrame=${!!mascotFrame}`);
-        // Phase N debug — kill switch. Set globalThis.TD_DISABLE_MASCOT_FRAMES=true
-        // to skip this entirely as a smoke test for native crashes.
-        const killMascot = (globalThis as any).TD_DISABLE_MASCOT_FRAMES === true;
-        if (killMascot) {
-            console.log(`${TAG} phase3 | mascot SKIPPED (TD_DISABLE_MASCOT_FRAMES=true)`);
-        } else if (hasFrames) {
-            console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (per-state)`);
-            this._mascot?.setSpriteSheet(mascotFramesByState);
-            this._postMatchMascot?.setSpriteSheet(mascotFramesByState);
-            console.log(`${TAG} phase3 | mascot swapped to per-state frame sequences`);
-        } else if (mascotFrame) {
-            console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (static)`);
-            this._mascot?.setSpriteSheet({ idle: [mascotFrame] });
-            this._postMatchMascot?.setSpriteSheet({ idle: [mascotFrame] });
-            console.log(`${TAG} phase3 | mascot swapped to static PNG`);
         }
         console.log(`${TAG} phase3 | EXIT — all assets applied`);
     }
@@ -2651,6 +3037,61 @@ export class AppUI extends Component {
     //  LANDING HANDLERS
     // ═══════════════════════════════════════════════════════════════════
 
+    /**
+     * Play as Guest — zero-friction entry. Generates a synthetic local-only
+     * id (`guest_<hex>`), persists it in localStorage, and drops the user
+     * straight into Home in guest mode (paper-bot only, no SOL, no wallet).
+     */
+    private _onPlayAsGuest(): void {
+        // Clear any stale wallet state so the guest flow doesn't conflict.
+        const id = `guest_${Date.now().toString(16)}${Math.floor(Math.random() * 0xFFFF).toString(16)}`;
+        this._guestId = id;
+        try {
+            const ls = (globalThis as any).sys?.localStorage ?? (globalThis as any).localStorage;
+            ls?.setItem?.('tokenduel:guest_id', id);
+        } catch (_) { /* ignore */ }
+        console.log(`${TAG} _onPlayAsGuest | id=${id}`);
+        this._showHome();
+    }
+
+    /**
+     * Sign Out (guest) — clears guest_id + paper Stats, returns to Landing.
+     * No backend calls because guests never had any DB rows to clean up.
+     */
+    private _onSignOutGuest(): void {
+        const previousId = this._guestId;
+        console.log(`${TAG} _onSignOutGuest | clearing guest_id=${previousId}`);
+        this._guestId = null;
+        try {
+            const ls = (globalThis as any).sys?.localStorage ?? (globalThis as any).localStorage;
+            ls?.removeItem?.('tokenduel:guest_id');
+        } catch (_) { /* ignore */ }
+        // Per plan section F: paper Stats wiped on sign-out so next guest starts fresh.
+        try { Stats.clear('paper'); } catch (_) { /* ignore */ }
+        this._displayNameCache.clear();
+        this._displayNameInflight.clear();
+        this._setActivePanel('landing');
+    }
+
+    /**
+     * Resolve the active session id — real wallet pubkey first, then guest
+     * synthetic id, then empty string. Used everywhere we need an identity.
+     */
+    private _currentPubkey(): string {
+        return MWAManager.instance?.connectedPubkey || this._guestId || '';
+    }
+
+    /** True when running in guest mode (no real wallet, but a guest_id is set). */
+    private _isGuest(): boolean {
+        return !!this._guestId && !MWAManager.instance?.connectedPubkey;
+    }
+
+    /** True only when a REAL wallet is connected — gate for backend writes. */
+    private _shouldHitBackend(): boolean {
+        const pk = MWAManager.instance?.connectedPubkey;
+        return !!pk && pk.length >= 32 && !this._isGuest();
+    }
+
     private async _onConnect(): Promise<void> {
         console.log(`${TAG} onConnect | START — opening OS wallet picker`);
         this._setLandingEnabled(false);
@@ -2668,6 +3109,16 @@ export class AppUI extends Component {
             const siwsResult = (result as any).signInResult;
             const hasSiws = siwsResult && siwsResult.signature && siwsResult.signature.length > 0;
             console.log(`${TAG} onConnect | SUCCESS pubkey=${result.pubkey} authToken_len=${result.authToken?.length ?? 0} siws=${hasSiws ? 'yes' : 'no'} siws_sig_len=${siwsResult?.signature?.length ?? 0}`);
+            // Real wallet wins — guest_id retired. Paper Stats stay (device-keyed) so
+            // any guest progress carries forward.
+            if (this._guestId) {
+                console.log(`${TAG} onConnect | retiring guest_id=${this._guestId} for real wallet`);
+                this._guestId = null;
+                try {
+                    const ls = (globalThis as any).sys?.localStorage ?? (globalThis as any).localStorage;
+                    ls?.removeItem?.('tokenduel:guest_id');
+                } catch (_) { /* ignore */ }
+            }
             const shortPk = `${result.pubkey.substring(0, 4)}...${result.pubkey.substring(result.pubkey.length - 4)}`;
             if (hasSiws) {
                 showToast(`Signed in with Solana: ${shortPk}`, true);
@@ -2675,7 +3126,12 @@ export class AppUI extends Component {
                 showToast(`Connected: ${shortPk}`);
                 showToast('Auth cached');
             }
+            // Phase 19 — cover the post-auth → home-render gap with the
+            // LoadingOverlay. Wraps _showHome so the overlay shows while
+            // the home panel finishes binding/rendering, then dismisses.
+            this._showLoadingOverlay('Loading your dashboard…');
             this._showHome();
+            this._hideLoadingOverlay();
         } else {
             console.log(`${TAG} onConnect | FAIL result=null`);
             showToast('Authorization failed');
@@ -2689,6 +3145,8 @@ export class AppUI extends Component {
         this._setLandingEnabled(false);
         if (this._landingStatus) this._landingStatus.string = 'Reconnecting...';
 
+        // Phase 19 — cover the silent reauth + data-fetch gap (~300-1500ms).
+        this._showLoadingOverlay('Reconnecting your wallet…');
         const result = await MWAManager.instance?.reauthorize();
         if (result) {
             console.log(`${TAG} onReconnect | SUCCESS pubkey=${result.pubkey}`);
@@ -2700,85 +3158,58 @@ export class AppUI extends Component {
             if (this._landingStatus) this._landingStatus.string = 'Reconnect failed';
             this._setLandingEnabled(true);
         }
+        this._hideLoadingOverlay();
     }
 
     // ═══════════════════════════════════════════════════════════════════
     //  HOME HANDLERS
     // ═══════════════════════════════════════════════════════════════════
 
-    private _onPlayTokenDuel(): void {
-        console.log(`${TAG} onPlayTokenDuel | transitioning to Token Duel panel`);
+    /**
+     * Start Match — host a real on-chain match. Routes to TokenDuelPanel in
+     * "create" mode (no _pickerJoinTarget set) where the user picks 3 tokens
+     * + selects wager tier + opens ModePicker. Same flow the legacy
+     * "Play Token Duel" button used to invoke.
+     */
+    private _onStartMatch(): void {
+        console.log(`${TAG} _onStartMatch | host new match — clearing join + bot flags`);
+        this._pickerJoinTarget = null;
+        this._pickerBotMode = false;
         this._showTokenDuel();
+        this._refreshWagerControlRow();
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  Part 10 Bundle 2 — Quick Play + Squad Presets + Suggested Squad
+    //  Part 10 Bundle 2 — Bot Match (formerly Quick Play) + Squad Presets + Suggested Squad
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Quick Play: the zero-to-first-match button. Auto-fills squad from top
-     * 24h gainers, applies cached picker defaults from Settings (or sensible
-     * defaults), and kicks the standard pickerStart flow. Falls back to
-     * VETTED_MINTS random trio if Birdeye gainers are unavailable.
+     * Bot Match — opens TokenDuelPanel in BOT mode so the user picks tokens
+     * manually (mirror of Start Match flow). Track is pre-set to paper, no
+     * wager dropdown is shown (free practice), and the WagerStartButton
+     * routes straight to the paper bot flow without going through ModePicker.
+     *
+     * Phase A2: previously this auto-filled the squad and skipped the picker
+     * entirely (legacy Quick Play behavior). User asked for picker to open
+     * so they can choose tokens like a real match.
      */
-    private async _onQuickPlay(): Promise<void> {
-        console.log(`${TAG} _onQuickPlay | START`);
-        // Defaults. Future Settings UI will let the user override these.
+    private _onBotMatch(): void {
+        console.log(`${TAG} _onBotMatch | open_picker track=paper`);
+        // Read user's last-used Bot defaults so the mode chip + window default
+        // sensibly. Wager tier is irrelevant in bot mode (free practice).
         const ls = this._readLocalStorage();
         const modeId = (ls?.getItem?.('tokenduel:qp.mode') as keyof typeof MODES) ?? 'oneVone';
-        const wagerIdx = parseInt(ls?.getItem?.('tokenduel:qp.wager') ?? '0', 10) || 0;
         const windowId = (ls?.getItem?.('tokenduel:qp.window') as TimeWindowId) ?? DEFAULT_TIME_WINDOW;
-        const track = (ls?.getItem?.('tokenduel:qp.track') as 'paper' | 'real') ?? 'paper';
 
+        this._pickerJoinTarget = null;
+        this._pickerHostMode = false;
         this._pickerSelectedMode = MODES[modeId] ? modeId : 'oneVone';
-        this._pickerSelectedWagerIndex = wagerIdx;
+        this._pickerSelectedTrack = 'paper';
         this._pickerSelectedWindow = windowId;
-        this._pickerSelectedTrack = track;
+        this._pickerBotMode = true;
 
-        // Show Token Duel panel (needed for game-area + WaitingPanel lifecycle).
         this._showTokenDuel();
-
-        // Auto-fill squad.
-        const filled = await this._autoFillSquadForQuickPlay();
-        if (!filled) {
-            showToast('Squad fill failed — tap tokens manually');
-            return;
-        }
-        // Kick off via the standard _onPickerStart flow (mode/wager/window/track already set).
-        try { this._onPickerStart(); } catch (e) { console.log(`${TAG} _onQuickPlay | STARTER_ERROR ${e}`); }
-    }
-
-    private async _autoFillSquadForQuickPlay(): Promise<boolean> {
-        // Strategy 1: last-winning squad.
-        try {
-            const preset = SquadPresets.getLastWinning();
-            if (preset && preset.winCount > 0) {
-                this._applySquadFromSlots(preset.slots);
-                console.log(`${TAG} _autoFillSquadForQuickPlay | USED_LAST_WINNING name="${preset.name}"`);
-                return true;
-            }
-        } catch (_) { /* fall through */ }
-
-        // Strategy 2: top 3 24h gainers.
-        try {
-            this._ensureBirdeye();
-            const rows = await this._birdeye!.getTrending('gainers', 3);
-            if (rows && rows.length >= 3) {
-                this._applySquadFromRows(rows.slice(0, 3));
-                console.log(`${TAG} _autoFillSquadForQuickPlay | USED_GAINERS`);
-                return true;
-            }
-        } catch (e) { console.log(`${TAG} _autoFillSquadForQuickPlay | GAINERS_ERROR ${e}`); }
-
-        // Strategy 3: VETTED_MINTS random.
-        try {
-            const trio = randomVettedTrio();
-            this._applySquadFromSlots(trio.map((t) => ({ mint: t.mint, symbol: t.symbol, logoUri: '' })));
-            console.log(`${TAG} _autoFillSquadForQuickPlay | USED_VETTED`);
-            return true;
-        } catch (e) { console.log(`${TAG} _autoFillSquadForQuickPlay | VETTED_ERROR ${e}`); }
-
-        return false;
+        this._refreshWagerControlRow();
     }
 
     private _applySquadFromRows(rows: TokenRow[]): void {
@@ -3102,6 +3533,56 @@ export class AppUI extends Component {
                         `Payout from ${result.modeLabel} · landed in your wallet.`,
                         { payload: { matchPda, lamports: result.payoutLamports }, dedupeKey: `${matchPda}:payout` });
                 }
+                // Stage 2 — refresh top-right Level chip after Real settle.
+                void this._refreshLevelChip();
+                // DB Stage 4 — persist match record to backend for cross-device
+                // history lookup. Both winner and loser POST; backend dedupes
+                // on matchPda. Squad mints come from the player's local squad
+                // (other players' squads aren't known here; backend can later
+                // merge if other client posts with their squad).
+                const myPubkeyRS = MWAManager.instance?.connectedPubkey;
+                if (myPubkeyRS && matchPda) {
+                    (async () => {
+                        try {
+                            const { postMatchRecord } = await import('../../token-duel/scripts/MatchHistoryDbRpc');
+                            const mySquadMints = this._squad.slots
+                                .map((s) => s?.address ?? '')
+                                .filter((m) => m.length >= 32);
+                            // Result shape doesn't carry the full match — the
+                            // resolver computes payouts in-memory but keeps
+                            // typed surface narrow. Pull extra context off the
+                            // resolver result via dynamic access, then fall
+                            // back to single-player snapshot. Backend dedupes.
+                            const r: any = result;
+                            const players: string[] = Array.isArray(r.players) && r.players.length > 0
+                                ? r.players
+                                : [myPubkeyRS];
+                            const heights: number[] = Array.isArray(r.heights) && r.heights.length === players.length
+                                ? r.heights
+                                : players.map((p) => p === myPubkeyRS ? height : 0);
+                            const winnerPubkey: string | null = r.winnerPubkey ?? (result.won ? myPubkeyRS : null);
+                            await postMatchRecord({
+                                matchPda,
+                                modeU8: this._realMatchMode,
+                                wagerTier: this._realMatchWagerTier,
+                                wagerLamports: this._realMatchWagerLamports,
+                                timeWindow: TIME_WINDOWS[this._pickerSelectedWindow]?.windowU8 ?? 0,
+                                players,
+                                heights,
+                                winnerPubkey,
+                                payouts: Array.isArray(r.payouts) ? r.payouts : [],
+                                rakeLamports: typeof r.rakeLamports === 'number' ? r.rakeLamports : 0,
+                                status: 2,
+                                createdAt: typeof r.createdAt === 'string' ? r.createdAt : new Date().toISOString(),
+                                startedAt: typeof r.startedAt === 'string' ? r.startedAt : null,
+                                settledAt: new Date().toISOString(),
+                                squadMintsByPlayer: { [myPubkeyRS]: mySquadMints },
+                            });
+                        } catch (e) {
+                            console.log(`${TAG} match_history_post_err | ${e}`);
+                        }
+                    })();
+                }
             })().catch((e) => {
                 console.log(`${TAG} onGameOver | REAL_SETTLE_ERROR error=${e}`);
             });
@@ -3155,6 +3636,22 @@ export class AppUI extends Component {
             const placementDisplay = (outcome.placement ?? 0) + 1;
             const totalDisplay = outcome.totalPlayers ?? '?';
             console.log(`${TAG} onGameOver | PAPER_BOT_SETTLED mode=${modeId} placement=${placementDisplay}/${totalDisplay} won=${outcome.playerWon} xp=${outcome.xpGained} prev_level=${previousLevel} new_level=${newLevel}`);
+            // DB Stage 3 — sync paper XP delta to backend (cross-device). Fire-
+            // and-forget; localStorage Stats is still authoritative per-device.
+            // Guest mode skips backend (synthetic IDs would break FK constraints).
+            const myPubkey = MWAManager.instance?.connectedPubkey;
+            if (myPubkey && !this._isGuest() && outcome.xpGained > 0) {
+                (async () => {
+                    try {
+                        const { postPaperXpDelta } = await import('../../token-duel/scripts/PaperXpRpc');
+                        await postPaperXpDelta(myPubkey, outcome.xpGained, 'bot', outcome.playerWon);
+                    } catch (e) {
+                        console.log(`${TAG} paper_xp_post_err | ${e}`);
+                    }
+                })();
+            }
+            // Stage 2 — refresh top-right Level chip after paper-bot match.
+            void this._refreshLevelChip();
             return;
         }
 
@@ -3196,7 +3693,9 @@ export class AppUI extends Component {
             return;
         }
         // UX overhaul Phase 2: mascot starts thinking when race begins.
-        this._setMascotState('think');
+        // The HomePanel mascot is inactive during the race, so the 'think'
+        // animation needs to land on the RacePanel mascot to be visible.
+        this._raceMascot?.setState('think');
         this._raceActiveHoldings = holdings.slice();
         this._raceLastDeltaSign = 0;
         this._raceTickBindingGapLogged = false;
@@ -3888,6 +4387,112 @@ export class AppUI extends Component {
     }
 
     /**
+     * Phase 16 — animation polish item 1: starfield twinkle.
+     *
+     * Picks every 4th of the 64 BackgroundFX stars (= 16 stars) and runs an
+     * infinite UIOpacity oscillation on each. Per-star randomization (LCG
+     * seed=137) gives independent durations (1.8-3.5s) and phase delays
+     * (0-2s) so no two stars sync. The other 48 stars stay perfectly static —
+     * the eye reads the moving 16 against the static field as parallax depth.
+     */
+    private _initStarfieldTwinkle(): void {
+        const fxNode = this.node.getChildByName('BackgroundFX');
+        const starfield = fxNode?.getChildByName('Starfield');
+        if (!starfield) {
+            console.log(`${TAG} _initStarfieldTwinkle | no Starfield node`);
+            return;
+        }
+        // Deterministic LCG for per-star phase/duration variation.
+        let lcg = 137;
+        const rand = () => { lcg = (lcg * 1103515245 + 12345) & 0x7FFFFFFF; return lcg / 0x7FFFFFFF; };
+        const stars = starfield.children;
+        let twinkled = 0;
+        for (let i = 0; i < stars.length; i += 4) { // every 4th star
+            const star = stars[i];
+            if (!star) continue;
+            const op = this._ensureOpacity(star);
+            const dur = 1.8 + rand() * 1.7;        // 1.8-3.5s per cycle half
+            const delay = rand() * 2.0;            // 0-2s initial phase offset
+            // Half-cycle dim → bright → dim, repeating forever. The initial
+            // delay() lets each star start at a different point in the cycle.
+            tween(op)
+                .delay(delay)
+                .to(dur / 2, { opacity: 128 }, { easing: 'sineInOut' })
+                .to(dur / 2, { opacity: 255 }, { easing: 'sineInOut' })
+                .union()
+                .repeatForever()
+                .start();
+            twinkled++;
+        }
+        console.log(`${TAG} _initStarfieldTwinkle | ${twinkled} of ${stars.length} stars twinkling`);
+    }
+
+    /**
+     * Phase 17 (item 2) — FeedRow tap-down glow.
+     *
+     * Each FeedRow has a per-row BtnGlow_FeedRow_<i> child sprite (initial
+     * _active=false, alpha 0). On TOUCH_START we activate it and tween
+     * UIOpacity 0 → 100 over 80ms (cubicOut); on TOUCH_END / TOUCH_CANCEL we
+     * tween back to 0 over 200ms (cubicIn) and deactivate. Asymmetric
+     * in/out timing reads as confirmation rather than highlight.
+     */
+    private _initFeedRowTactile(): void {
+        let wired = 0;
+        for (const rowNode of this._feedRowNodes) {
+            if (!rowNode) continue;
+            // Row names are 'FeedRow_<i>'. Glow child is 'BtnGlow_FeedRow_<i>'.
+            const glow = rowNode.getChildByName(`BtnGlow_${rowNode.name}`);
+            if (!glow) continue;
+            const op = this._ensureOpacity(glow);
+            rowNode.on(Node.EventType.TOUCH_START, () => {
+                glow.active = true;
+                Tween.stopAllByTarget(op);
+                tween(op).to(0.08, { opacity: 100 }, { easing: 'cubicOut' }).start();
+            }, this);
+            const fadeOut = () => {
+                Tween.stopAllByTarget(op);
+                tween(op)
+                    .to(0.20, { opacity: 0 }, { easing: 'cubicIn' })
+                    .call(() => { glow.active = false; })
+                    .start();
+            };
+            rowNode.on(Node.EventType.TOUCH_END,    fadeOut, this);
+            rowNode.on(Node.EventType.TOUCH_CANCEL, fadeOut, this);
+            wired++;
+        }
+        console.log(`${TAG} _initFeedRowTactile | wired ${wired} FeedRow tap-down glows`);
+    }
+
+    /**
+     * Phase 17 (item 4) — generic count-up tween for hero numerics.
+     *
+     * Mirrors the established `_animatePayoutTicker` pattern (AppUI.ts:6936):
+     * tween a proxy {v} from fromN → toN, run formatter() in onUpdate,
+     * snap to formatter(toN) on completion.
+     *
+     * Use sparingly — count-up is for *milestone* changes (Day N+1, level
+     * up, payout) where the satisfaction matters. Don't use on data-feed
+     * numerics that update every tick.
+     */
+    private _animateCountUp(
+        label: Label,
+        fromN: number,
+        toN: number,
+        durationS: number,
+        formatter: (n: number) => string,
+    ): void {
+        if (fromN === toN) { label.string = formatter(toN); return; }
+        const proxy = { v: fromN };
+        tween(proxy)
+            .to(durationS, { v: toN }, {
+                easing: 'cubicOut',
+                onUpdate: () => { label.string = formatter(proxy.v); },
+            })
+            .call(() => { label.string = formatter(toN); })
+            .start();
+    }
+
+    /**
      * Stage 4K — update the home-screen streak flame.
      * Hidden when streak = 0. ≥ 1 shows flame + count. ≥ 3 adds pulse.
      * ≥ 5 switches to rare-state gold tint.
@@ -3895,6 +4500,11 @@ export class AppUI extends Component {
     /** Phase J1 — last-known on-chain streak, used to compute XP bonus
      *  display on PostMatchPanel without re-fetching mid-match. */
     private _lastKnownStreak: number = 0;
+
+    /** Phase 17 — last value shown by StreakDayLabel; used to drive a
+     *  count-up tween from oldVal → newVal when the streak increments.
+     *  Sentinel -1 means "first render" (instant set, no tween). */
+    private _lastShownStreakDay: number = -1;
 
     private _updateStreakFlame(streak: number): void {
         // Phase N4 — fire streak_milestone when crossing 3 / 6 / 10 boundaries.
@@ -4143,6 +4753,90 @@ export class AppUI extends Component {
 
         if (this._signingSpinnerLabel) Tween.stopAllByTarget(this._signingSpinnerLabel.node);
         console.log(`${TAG} _hideSigningOverlay | HIDE`);
+    }
+
+    /**
+     * Phase 19 — show LoadingOverlay during post-tap waits (reconnect,
+     * post-connect home render). Mirrors SigningOverlay structure +
+     * adds tip rotation (cycles 6 tips every 3s while shown).
+     */
+    private _showLoadingOverlay(status: string): void {
+        if (!this._loadingOverlay) return;
+        this._loadingOverlay.active = true;
+        if (this._loadingStatusLabel) this._loadingStatusLabel.string = status;
+        // Pick a random tip start-index; cycle every 3s while shown.
+        this._loadingTipIndex = Math.floor(Math.random() * AppUI.LOADING_TIPS.length);
+        if (this._loadingTipLabel) {
+            this._loadingTipLabel.string = `Tip: ${AppUI.LOADING_TIPS[this._loadingTipIndex]}`;
+        }
+        if (this._loadingTipTimer != null) clearInterval(this._loadingTipTimer);
+        this._loadingTipTimer = setInterval(() => {
+            if (!this._loadingTipLabel) return;
+            this._loadingTipIndex = (this._loadingTipIndex + 1) % AppUI.LOADING_TIPS.length;
+            this._loadingTipLabel.string = `Tip: ${AppUI.LOADING_TIPS[this._loadingTipIndex]}`;
+        }, 3000) as unknown as number;
+        // Spinner rotation (mirror SigningOverlay pattern).
+        if (this._loadingSpinnerLabel) {
+            const node = this._loadingSpinnerLabel.node;
+            Tween.stopAllByTarget(node);
+            node.angle = 0;
+            tween(node).by(1.0, { angle: -360 }).repeatForever().start();
+        }
+        console.log(`${TAG} _showLoadingOverlay | SHOW status="${status}"`);
+    }
+
+    /** Phase 19 — dismiss LoadingOverlay + clean up tip timer + spinner. */
+    private _hideLoadingOverlay(): void {
+        if (!this._loadingOverlay) return;
+        this._loadingOverlay.active = false;
+        if (this._loadingTipTimer != null) {
+            clearInterval(this._loadingTipTimer);
+            this._loadingTipTimer = null;
+        }
+        if (this._loadingSpinnerLabel) {
+            Tween.stopAllByTarget(this._loadingSpinnerLabel.node);
+        }
+        console.log(`${TAG} _hideLoadingOverlay | HIDE`);
+    }
+
+    /**
+     * Phase 20 — cold-start asset gate. Shows LoadingOverlay immediately,
+     * waits for Phase 3 art OR 3s timeout (whichever first), enforces a
+     * 600ms minimum display so the mascot/tip greeting registers, then
+     * hides. The user sees a polished mascot + spinner + tip instead of
+     * a Landing → procedural-to-PNG pop transition.
+     *
+     * Called fire-and-forget at the end of start(). The promise resolves
+     * silently after the gate completes; no caller awaits it.
+     */
+    private async _gateColdStartLoad(): Promise<void> {
+        if (!this._loadingOverlay) {
+            console.log(`${TAG} _gateColdStartLoad | SKIP — no LoadingOverlay node`);
+            return;
+        }
+        const startMs = Date.now();
+        const MIN_DISPLAY_MS = 600;
+        const MAX_TIMEOUT_MS = 3000;
+
+        this._showLoadingOverlay('Preparing your dashboard…');
+
+        // Race: phase3 done OR 3s timeout. .catch() prevents promise
+        // rejection from short-circuiting the race.
+        const phase3Wait = (this._phase3LoadPromise ?? Promise.resolve()).catch((e: any) => {
+            console.log(`${TAG} _gateColdStartLoad | phase3 rejected (continuing) err=${e?.message ?? e}`);
+        });
+        const timeoutWait = new Promise<void>((resolve) => setTimeout(resolve, MAX_TIMEOUT_MS));
+        await Promise.race([phase3Wait, timeoutWait]);
+
+        // Enforce minimum display so the overlay doesn't blink off if Phase
+        // 3 happened to finish in 50ms.
+        const elapsed = Date.now() - startMs;
+        if (elapsed < MIN_DISPLAY_MS) {
+            await new Promise<void>((resolve) => setTimeout(resolve, MIN_DISPLAY_MS - elapsed));
+        }
+
+        this._hideLoadingOverlay();
+        console.log(`${TAG} _gateColdStartLoad | DONE elapsed=${Date.now() - startMs}ms`);
     }
 
     /**
@@ -5837,6 +6531,43 @@ export class AppUI extends Component {
         console.log(`${TAG} _setHomeEnabled | DONE enabled=${enabled} button_count=${this._allHomeButtons.length}`);
     }
 
+    /**
+     * Toggle Home + Settings UI based on guest vs real-wallet mode.
+     *
+     * Guest mode (real wallet NOT connected, _guestId set):
+     *   • Hide Start Match, Find Match, Disconnect, Delete, NotificationBell, RakeChip
+     *   • Show Sign Out (in same slot as Disconnect)
+     *
+     * Real-wallet mode: opposite (Sign Out hidden, all wallet-only nodes shown).
+     *
+     * Idempotent — safe to call from _showHome on every entry. Settings panel
+     * sections (username editbox, wallet card, delete-account) are toggled
+     * separately in _onOpenSettingsClick since the panel might not exist yet.
+     */
+    private _applyGuestModeUiHiding(): void {
+        const guest = this._isGuest();
+        if (!this._homePanel) return;
+        const setActive = (name: string, active: boolean) => {
+            const n = this._homePanel.getChildByName(name);
+            if (n) n.active = active;
+        };
+        // Wallet-only buttons hidden in guest mode.
+        setActive('StartMatchButton',           !guest);
+        setActive('StartMatchSubtitle',         !guest);
+        setActive('FindMatchButton',            !guest);
+        setActive('FindMatchSubtitle',          !guest);
+        // Count badge has its own visibility logic; force-off in guest.
+        if (guest) setActive('FindMatchButtonCountBadge', false);
+        setActive('DisconnectButton',           !guest);
+        setActive('DeleteButton',               !guest);
+        setActive('NotificationBellButton',     !guest);
+        setActive('NotificationBellBadge',      !guest);
+        setActive('HomeRakeChip',               !guest);
+        // Guest-only.
+        setActive('SignOutGuestButton',         guest);
+        console.log(`${TAG} _applyGuestModeUiHiding | guest=${guest}`);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  SESSION 13 A1 — MinLiq dropdown
     // ═══════════════════════════════════════════════════════════════
@@ -6888,15 +7619,20 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════
 
     private _onPickerModeClick(key: string): void {
-        // Session D Part 6: all 4 modes active. Scene maps scene-level key
-        // ('4p', '8p', 'br10') → ModeId.
-        const sceneToModeId: Record<string, string> = {
-            oneVone: 'oneVone',
-            '4p':    'fourPlayer',
-            '8p':    'eightPlayer',
-            br10:    'battleRoyale',
+        // Stage 3 mode rebalance: scene keys ARE the ModeId now (oneVone, trio,
+        // fourPlayer, eightPlayer). Map any legacy '4p'/'8p'/'br10' to new ids.
+        const legacyToModeId: Record<string, string> = {
+            oneVone:     'oneVone',
+            trio:        'trio',
+            fourPlayer:  'fourPlayer',
+            eightPlayer: 'eightPlayer',
+            // Pre-Stage-3 legacy keys (kept for safety):
+            '4p':         'fourPlayer',
+            '8p':         'eightPlayer',
+            br10:         'eightPlayer',
+            battleRoyale: 'eightPlayer',
         };
-        const modeId = sceneToModeId[key] ?? 'oneVone';
+        const modeId = legacyToModeId[key] ?? 'oneVone';
         this._pickerSelectedMode = modeId;
         console.log(`${TAG} _onPickerModeClick | mode=${modeId} scene_key=${key}`);
         this._refreshModePickerUi();
@@ -6962,10 +7698,24 @@ export class AppUI extends Component {
     }
 
     private _onPickerStart(): void {
+        const join = this._isJoinMode();
+        const joinTarget = this._pickerJoinTarget;
+        // In join-mode, mode + wager + window are dictated by the lobby, not
+        // the local picker selections (which haven't been touched on this
+        // path). Override them so all downstream copy + on-chain calls match.
+        if (join && joinTarget) {
+            // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
+            const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
+            this._pickerSelectedMode = modeIdMap[joinTarget.mode] ?? 'oneVone';
+            this._pickerSelectedWagerIndex = joinTarget.wagerTier;
+            const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
+            this._pickerSelectedWindow = winIdMap[joinTarget.timeWindow] ?? '1h';
+            this._pickerSelectedTrack = 'real';
+        }
         const wager = WAGER_TIERS_LAMPORTS[this._pickerSelectedWagerIndex];
         const track = this._pickerSelectedTrack;
-        const hosting = this._pickerHostMode;
-        console.log(`${TAG} _onPickerStart | mode=${this._pickerSelectedMode} wager_lamports=${wager} track=${track} hosting=${hosting}`);
+        const hosting = this._pickerHostMode && !join;
+        console.log(`${TAG} _onPickerStart | mode=${this._pickerSelectedMode} wager_lamports=${wager} track=${track} hosting=${hosting} join=${join} target=${joinTarget?.pda ?? 'none'}`);
 
         // Phase E — kick off Hard gainers refresh in parallel (no-op for easy/medium).
         if (track === 'paper') void this._refreshHardGainersSnapshot();
@@ -6978,11 +7728,11 @@ export class AppUI extends Component {
                 mode: modeDef.label,
                 wagerSol: wager / 1e9,
                 track: 'real',
-                status: hosting ? 'Hosting · waiting for opponents…' : 'Checking wallet…',
+                status: join ? 'Joining lobby — sign tx…' : (hosting ? 'Hosting · waiting for opponents…' : 'Checking wallet…'),
                 requiredPlayers: modeDef.requiredPlayers,
             });
-            // Cache selections so settle flow knows what to do. Session D Part 6: derive modeU8 from picker.
-            const modeMap: Record<string, number> = { oneVone: 0, fourPlayer: 1, eightPlayer: 2, battleRoyale: 3 };
+            // Cache selections so settle flow knows what to do. Stage 3 modeU8 mapping.
+            const modeMap: Record<string, number> = { oneVone: 0, trio: 1, fourPlayer: 2, eightPlayer: 3 };
             this._realMatchMode = modeMap[this._pickerSelectedMode] ?? 0;
             this._realMatchWagerTier = this._pickerSelectedWagerIndex;
             this._realMatchWagerLamports = wager;
@@ -6996,7 +7746,13 @@ export class AppUI extends Component {
                     if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'Could not init stats — tap Play Bot or Cancel';
                     return;
                 }
-                const joinResult = await this._submitRealJoinMatch(this._realMatchMode, this._realMatchWagerTier, { forceCreate: hosting });
+                const joinOpts = join && joinTarget
+                    ? { explicitMatchPda: joinTarget.pda }
+                    : { forceCreate: hosting };
+                const joinResult = await this._submitRealJoinMatch(this._realMatchMode, this._realMatchWagerTier, joinOpts);
+                // Clear the join target now — submission is in flight; if a
+                // retry/back-out happens, the user starts fresh from Home.
+                if (join) this._pickerJoinTarget = null;
                 // Reset host flag after the request is in flight; a subsequent
                 // tap (back/cancel/replay) should default to auto-match again.
                 this._pickerHostMode = false;
@@ -7162,9 +7918,9 @@ export class AppUI extends Component {
         const stats = await loadRealStats(this._tdRpc, pubkey);
         const xpBucket = stats.loaded ? stats.xpBucket : 0;
 
-        // Session D Part 6: resolve ModeId from modeU8 byte.
-        const modeIdMap: Record<number, 'oneVone' | 'fourPlayer' | 'eightPlayer' | 'battleRoyale'> = {
-            0: 'oneVone', 1: 'fourPlayer', 2: 'eightPlayer', 3: 'battleRoyale',
+        // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
+        const modeIdMap: Record<number, 'oneVone' | 'trio' | 'fourPlayer' | 'eightPlayer'> = {
+            0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer',
         };
         const modeId = modeIdMap[mode] ?? 'oneVone';
 
@@ -7740,6 +8496,12 @@ export class AppUI extends Component {
         this._findMatchPanel.active = true;
         if (this._homePanel) this._homePanel.active = false;
         this._refreshFindMatchFilterChips();
+        // Phase A2 — refresh Lv/XP chip and reset empty-mascot to think state.
+        void this._refreshFindMatchHeaderXp();
+        this._findMatchEmptyMascot?.setState('think');
+        // Bump the browser to 5s so the lobby feels live; restored to 15s
+        // when the user backs out (see _hideFindMatchPanel).
+        this._matchBrowser.setIntervalMs(AppUI.LOBBY_BROWSER_INTERVAL_MS);
         // Render any cached rows immediately, then kick off auto-refresh.
         this._renderMatchList();
         this._matchBrowser.start();
@@ -7750,12 +8512,15 @@ export class AppUI extends Component {
         console.log(`${TAG} _hideFindMatchPanel | HIDE`);
         this._findMatchPanel.active = false;
         if (this._homePanel) this._homePanel.active = true;
-        this._matchBrowser?.stop();
+        // Throttle back down to home-screen cadence so the count badge
+        // keeps refreshing in the background without the lobby's full 5s pace.
+        this._matchBrowser?.setIntervalMs(AppUI.HOME_BROWSER_INTERVAL_MS);
     }
 
     private _onFilterModeClick(key: string): void {
+        // Stage 3 mode rebalance: 0=1v1, 1=Trio, 2=4p, 3=8p.
         const map: Record<string, number | null> = {
-            all: null, oneVone: 0, '4p': 1, '8p': 2, br10: 3,
+            all: null, oneVone: 0, trio: 1, '4p': 2, '8p': 3,
         };
         const v = key in map ? map[key] : null;
         this._matchBrowser?.setFilter({ mode: v ?? null });
@@ -7819,36 +8584,139 @@ export class AppUI extends Component {
         this._refreshFindMatchFilterChips();
     }
 
+    /**
+     * Phase 2b — segmented-control polish for FindMatch filter chips.
+     *
+     * Each chip can be in one of two visual states:
+     *   • Active   — solid teal sprite, bold white label, glow sibling visible,
+     *                addIdlePulse breathing.
+     *   • Inactive — dim cardHover sprite (alpha 220), mid text, no glow,
+     *                no pulse.
+     *
+     * On selection change, the OLD active chip and NEW active chip both
+     * tween color + scale via popScale + glow fade so the change is fluid.
+     *
+     * `_filterActiveChip` tracks the previous-active key per row so we know
+     * which chip needs the deactivation animation.
+     */
     private _refreshFindMatchFilterChips(): void {
         const filters = this._matchBrowser?.getFilters();
         if (!filters) return;
+        // Stage 3 mode rebalance: 0=1v1, 1=Trio, 2=4p, 3=8p.
         const sceneToMode: Record<string, number | null> = {
-            all: null, oneVone: 0, '4p': 1, '8p': 2, br10: 3,
+            all: null, oneVone: 0, trio: 1, '4p': 2, '8p': 3,
         };
         const sceneToWindow: Record<string, number | null> = {
             all: null, '1h': 0, '1d': 1, '3d': 2, '7d': 3,
         };
-        const tintActive = (b: Button | undefined, active: boolean) => {
-            const spr = b?.node.getComponent(Sprite);
-            if (spr) spr.color = active ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
+        // Resolve "which key is active per row".
+        const modeActiveKey = (() => {
+            for (const k of this._filterModeButtons.keys()) {
+                if (sceneToMode[k] === filters.mode) return k;
+            }
+            return 'all';
+        })();
+        const windowActiveKey = (() => {
+            for (const k of this._filterWindowButtons.keys()) {
+                if (sceneToWindow[k] === filters.window) return k;
+            }
+            return 'all';
+        })();
+        const wagerActiveKey = this._activeWagerBucketKey ?? 'all';
+        const browserMode = this._matchBrowser?.getMode() ?? 'open';
+        const tabActiveKey = browserMode === 'live' ? 'Live' : 'Open';
+
+        // Apply per-row polish. `prefix` matches the ChipGlow_<prefix>_<key> naming.
+        const fmPanel = this._findMatchPanel;
+        const applyRow = (
+            buttons: Map<string, Button>,
+            activeKey: string,
+            rowKey: 'mode' | 'window' | 'wager' | 'tab',
+            namePrefix: string,
+        ) => {
+            const previousActive = this._filterActiveChip.get(rowKey);
+            for (const [k, b] of buttons) {
+                const active = k === activeKey;
+                const node = b.node;
+                const spr = node.getComponent(Sprite);
+                if (spr) {
+                    spr.color = active
+                        ? new Color(48, 198, 155, 255)        // teal — active
+                        : new Color(28, 34, 48, 220);          // cardHover dim — inactive
+                }
+                // Bold + bright label when active.
+                const lbl = node.getChildByName('Label')?.getComponent(Label);
+                if (lbl) {
+                    lbl.color = active
+                        ? new Color(255, 255, 255, 255)
+                        : new Color(168, 174, 201, 255);
+                    (lbl as any)._isBold = active;
+                }
+                // Glow sibling toggle.
+                if (fmPanel) {
+                    const glow = fmPanel.getChildByName(`ChipGlow_${namePrefix}_${k}`);
+                    if (glow) glow.active = active;
+                }
+                // Idle pulse: only the active chip breathes. Stop pulses on
+                // any chip that just became inactive.
+                if (active) {
+                    try { addIdlePulse(node, 1.04, 1.5); } catch (_) { /* ignore */ }
+                    // popScale on the chip that just GAINED active status (not the
+                    // first render) so the change feels tactile.
+                    if (previousActive !== undefined && previousActive !== k) {
+                        try { popScale(node, 1.08); } catch (_) { /* ignore */ }
+                    }
+                } else {
+                    Tween.stopAllByTarget(node);
+                    node.scale = new Vec3(1, 1, 1);
+                }
+            }
+            this._filterActiveChip.set(rowKey, activeKey);
         };
-        for (const [k, b] of this._filterModeButtons) {
-            tintActive(b, sceneToMode[k] === filters.mode);
-        }
-        for (const [k, b] of this._filterWindowButtons) {
-            tintActive(b, sceneToWindow[k] === filters.window);
-        }
-        for (const [k, b] of this._filterWagerButtons) {
-            tintActive(b, k === this._activeWagerBucketKey);
-        }
+
+        applyRow(this._filterModeButtons,   modeActiveKey,   'mode',   'FilterMode');
+        applyRow(this._filterWindowButtons, windowActiveKey, 'window', 'FilterWindow');
+        applyRow(this._filterWagerButtons,  wagerActiveKey,  'wager',  'FilterWager');
+        // Tabs use a different button-map (open/live).
+        const tabMap = new Map<string, Button>();
+        if (this._findMatchTabOpenBtn) tabMap.set('Open', this._findMatchTabOpenBtn);
+        if (this._findMatchTabLiveBtn) tabMap.set('Live', this._findMatchTabLiveBtn);
+        applyRow(tabMap, tabActiveKey, 'tab', 'FindMatchTab');
+
         // HideFull toggle label.
         const hf = this._findMatchHideFullToggle?.node.getChildByName('Label')?.getComponent(Label);
         if (hf) hf.string = filters.hideFull ? 'Hide full ✓' : 'Hide full';
-        // Phase H2 — tab tinting.
-        const mode = this._matchBrowser?.getMode() ?? 'open';
-        if (this._findMatchTabOpenBtn) tintActive(this._findMatchTabOpenBtn ?? undefined, mode === 'open');
-        if (this._findMatchTabLiveBtn) tintActive(this._findMatchTabLiveBtn ?? undefined, mode === 'live');
     }
+
+    /**
+     * Update the home-screen FindMatchButton count badge. Called via a 2nd
+     * MatchBrowser.subscribe() listener registered at start(). Pops with a
+     * subtle scale tween whenever the count INCREASES (dopamine ding when
+     * a new lobby appears while the user is on Home). Hides at zero.
+     */
+    private _renderFindMatchCount(count: number): void {
+        const badge = this._findMatchCountBadge;
+        const lbl = this._findMatchCountBadgeLabel;
+        if (!badge || !lbl) return;
+        const visible = count > 0;
+        badge.active = visible;
+        if (visible) {
+            lbl.string = String(count);
+            // Pop only on increase to avoid pulsing on every refresh tick.
+            if (count > this._findMatchCountLastValue) {
+                try { popScale(badge, 1.18); } catch (_) { /* tween module not loaded */ }
+            }
+        }
+        this._findMatchCountLastValue = count;
+    }
+
+    /** Mode index → row edge stripe / mode-badge tint (Phase A2). */
+    private static readonly MODE_EDGE_TINT: Record<number, [number, number, number]> = {
+        0: [153, 69, 255],   // 1v1     — violet
+        1: [20, 241, 149],   // 4p Pot  — teal
+        2: [255, 180, 84],   // 8p Pot  — amber
+        3: [255, 92, 138],   // BR10    — rose
+    };
 
     private _renderMatchList(): void {
         if (!this._matchBrowser) return;
@@ -7867,15 +8735,29 @@ export class AppUI extends Component {
         const visible = rows.slice(0, this._matchCardRows.length);
         if (this._findMatchCountLabel) {
             const total = this._matchBrowser.getAllRowCount();
-            const noun = mode === 'live' ? 'live match' : 'match';
-            this._findMatchCountLabel.string = `${rows.length} ${noun}${rows.length === 1 ? '' : 'es'} after filters · ${total} ${mode === 'live' ? 'live' : 'open'} total`;
+            const totalLbl = mode === 'live' ? 'LIVE NOW' : 'OPEN LOBBIES';
+            this._findMatchCountLabel.string = `● ${rows.length} ${totalLbl}  ·  ${total} TOTAL`;
         }
-        if (this._findMatchEmptyLabel) {
-            this._findMatchEmptyLabel.node.active = visible.length === 0;
-            const empty = this._findMatchEmptyLabel;
-            if (mode === 'live') empty.string = 'No matches racing right now — check back in a moment.';
-            else empty.string = 'No open lobbies match these filters — host one or play a bot.';
+        // Phase A2 — gamified empty-state cluster (mascot + dual CTAs) replaces
+        // the bare "no lobbies" label.
+        const isEmpty = visible.length === 0;
+        if (this._findMatchEmptyMascotNode) this._findMatchEmptyMascotNode.active = isEmpty;
+        if (this._findMatchEmptyTitle)      this._findMatchEmptyTitle.node.active = isEmpty;
+        if (this._findMatchEmptySubtitle)   this._findMatchEmptySubtitle.node.active = isEmpty;
+        if (this._findMatchEmptyHostBtn)    this._findMatchEmptyHostBtn.node.active = isEmpty && mode === 'open';
+        if (this._findMatchEmptyBotBtn)     this._findMatchEmptyBotBtn.node.active = isEmpty && mode === 'open';
+        if (isEmpty && this._findMatchEmptyTitle) {
+            this._findMatchEmptyTitle.string = mode === 'live' ? 'No live matches' : 'No matches yet';
         }
+        if (isEmpty && this._findMatchEmptySubtitle) {
+            this._findMatchEmptySubtitle.string = mode === 'live'
+                ? 'Check back in a moment — race start any second.'
+                : 'Be the first to host — others will join in seconds.';
+        }
+        if (isEmpty) this._findMatchEmptyMascot?.setState('think');
+        // Hide the legacy bare empty label — replaced by the cluster above.
+        if (this._findMatchEmptyLabel) this._findMatchEmptyLabel.node.active = false;
+
         const now = Date.now() / 1000;
         for (let i = 0; i < this._matchCardRows.length; i++) {
             const node = this._matchCardRows[i];
@@ -7888,63 +8770,171 @@ export class AppUI extends Component {
             }
             node.active = true;
             this._matchCardRowMatchPdas[i] = m.pda;
-            // Mode label.
             const modeMap: Record<number, string> = { 0: '1v1', 1: '4p Pot', 2: '8p Pot', 3: 'BR10' };
             const modeL = node.getChildByName(`MatchCardModeLabel_${i}`)?.getComponent(Label);
             if (modeL) modeL.string = modeMap[m.mode] ?? `mode ${m.mode}`;
-            // Wager.
             const wagerL = node.getChildByName(`MatchCardWagerLabel_${i}`)?.getComponent(Label);
             if (wagerL) wagerL.string = WAGER_TIERS_LABELS[m.wagerTier] ?? `tier ${m.wagerTier}`;
-            // Window.
             const winLbl = ['30s', '1m', '5m', '1h'][m.timeWindow] ?? '?';
             const winL = node.getChildByName(`MatchCardWindowLabel_${i}`)?.getComponent(Label);
-            if (winL) winL.string = `${winLbl} race`;
-            // Sub-label: depends on mode.
+            if (winL) winL.string = `⏱  ${winLbl} race`;
             const subL = node.getChildByName(`MatchCardSubLabel_${i}`)?.getComponent(Label);
             const hostName = this._getDisplayName(m.players[0]);
             if (mode === 'live') {
-                // Show race progress.
                 const startedAt = Number(m.startedAt);
                 const windowSec = [30, 60, 300, 3600][m.timeWindow] ?? 60;
                 const elapsedSec = Math.max(0, now - startedAt);
                 const pct = Math.max(0, Math.min(100, (elapsedSec / windowSec) * 100));
-                if (subL) subL.string = `Hosted by ${hostName} · ${m.playerCount}/${m.requiredPlayers} racing · ${pct.toFixed(0)}% elapsed`;
+                if (subL) subL.string = `${hostName} · ${m.playerCount}/${m.requiredPlayers} racing · ${pct.toFixed(0)}% elapsed`;
             } else {
                 const ageSec = Math.max(0, now - Number(m.createdAt));
                 const ageStr = ageSec < 60 ? `${Math.floor(ageSec)}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ${Math.floor(ageSec) % 60}s` : `${Math.floor(ageSec / 3600)}h ${Math.floor((ageSec % 3600) / 60)}m`;
-                if (subL) subL.string = `Hosted by ${hostName} · ${m.playerCount}/${m.requiredPlayers} players · ${ageStr} ago`;
+                if (subL) subL.string = `${hostName} · ${m.playerCount}/${m.requiredPlayers} players · ${ageStr} ago`;
             }
-            // Action button — Join (open) or Spectate (live).
+            // Phase A2 — edge stripe (mode-color) + capacity bar (tweened) + track chip per row.
+            const tint = AppUI.MODE_EDGE_TINT[m.mode] ?? [153, 69, 255];
+            const edgeNode = this._matchCardEdgeStripes[i];
+            if (edgeNode) {
+                const spr = edgeNode.getComponent(Sprite);
+                if (spr) spr.color = new Color(tint[0], tint[1], tint[2], 255);
+            }
+            const capFill = this._matchCardCapBarFills[i];
+            if (capFill) {
+                const fillPct = m.requiredPlayers > 0 ? Math.min(1, m.playerCount / m.requiredPlayers) : 0;
+                Tween.stopAllByTarget(capFill);
+                tween(capFill).to(0.35, { scale: new Vec3(fillPct, 1, 1) }, { easing: 'cubicOut' }).start();
+            }
+            const trackChip = this._matchCardTrackChips[i];
+            if (trackChip) trackChip.active = mode === 'open';
             const actionBtn = node.getChildByName(`MatchCardJoinButton_${i}`)?.getComponent(Button);
             const lbl = actionBtn?.node.getChildByName('Label')?.getComponent(Label);
             if (mode === 'live') {
                 if (actionBtn) actionBtn.interactable = true;
                 if (lbl) lbl.string = 'Spectate';
             } else {
-                const ready = this._squad?.filled === 3;
-                if (actionBtn) actionBtn.interactable = ready;
-                if (lbl) lbl.string = ready ? 'Join' : 'Pick 3';
+                // Phase A2 — squad-not-full no longer gates Join. Picker opens
+                // after Confirm overlay so picking happens THEN.
+                if (actionBtn) actionBtn.interactable = true;
+                if (lbl) lbl.string = 'Join';
             }
         }
     }
 
-    /** User tapped a match card's Join button. Squad MUST be filled. */
+    /**
+     * Hydrate the FindMatchPanel header Lv/XP chip from on-chain UserStats.
+     * Stage 2 — superseded by _refreshLevelChip(). Kept thin for back-compat;
+     * just delegates to the unified helper.
+     */
+    private async _refreshFindMatchHeaderXp(): Promise<void> {
+        return this._refreshLevelChip();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Stage 2 — Top-right Level Chip
+    //  Combines on-chain UserStats.xp (Real matches) + Stats.load('paper').xp
+    //  (Paper/Bot training XP, per-device localStorage) into a single
+    //  displayed level + progress. Stats system already records paper XP via
+    //  Matchmaker.runPaperBotMatch; we just read it here.
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Refresh the top-right Lv/XP chip across Home / FindMatch / TokenDuel.
+     * Single source of truth — keeps all 3 panels in sync. Hidden when wallet
+     * not connected. Pulses chip if level changed (mini level-up celebration
+     * without the full LevelUpOverlay cinematic).
+     */
+    private async _refreshLevelChip(): Promise<void> {
+        const homeChip = this._homeLevelChip;
+        const findChip = this._findMatchLvXpChip;
+        const tdChip = this._tokenDuelLevelChip;
+        const homeLbl = this._homeLevelChipLabel;
+        const findLbl = this._findMatchLvXpChipLabel;
+        const tdLbl = this._tokenDuelLevelChipLabel;
+
+        const pubkey = MWAManager.instance?.connectedPubkey;
+        const guest = this._isGuest();
+
+        // No identity at all — hide chips.
+        if (!pubkey && !guest) {
+            if (homeChip) homeChip.active = false;
+            if (findChip) findChip.active = false;
+            if (tdChip) tdChip.active = false;
+            return;
+        }
+
+        // Guest mode — local Stats only, no chain or DB read.
+        let onchainXp = 0;
+        let localXp = 0;
+        if (guest) {
+            localXp = Stats.load('paper').xp ?? 0;
+        } else if (pubkey) {
+            try {
+                const stats = await getUserStats(this._tdRpc, pubkey);
+                if (stats) onchainXp = Number((stats as any).xp ?? 0);
+            } catch (e) {
+                console.log(`${TAG} _refreshLevelChip | onchain_read_err ${e}`);
+            }
+            // DB Stage 3 — paper/bot XP from backend table; falls back to local
+            // Stats when backend unreachable (offline play, network blip).
+            try {
+                const { fetchPaperXp } = await import('../../token-duel/scripts/PaperXpRpc');
+                const remote = await fetchPaperXp(pubkey);
+                if (remote) {
+                    localXp = remote.totalXp;
+                } else {
+                    localXp = Stats.load('paper').xp ?? 0;
+                }
+            } catch (e) {
+                localXp = Stats.load('paper').xp ?? 0;
+                console.log(`${TAG} _refreshLevelChip | paper_xp_read_err ${e} — using local fallback`);
+            }
+        }
+        const totalXp = onchainXp + localXp;
+        const { level } = levelProgress(totalXp);
+        const xpAtLevel = xpForLevel(level);
+        const xpForNext = xpForLevel(level + 1);
+        const into = totalXp - xpAtLevel;
+        const need = xpForNext - xpAtLevel;
+        const text = `Lv ${level} · ${into}/${need}`;
+
+        if (homeChip) homeChip.active = true;
+        if (findChip) findChip.active = true;
+        if (tdChip)   tdChip.active = true;
+        if (homeLbl)  homeLbl.string = text;
+        if (findLbl)  findLbl.string = text;
+        if (tdLbl)    tdLbl.string = text;
+        console.log(`${TAG} _refreshLevelChip | onchain=${onchainXp} local=${localXp} total=${totalXp} lvl=${level} progress=${into}/${need}`);
+
+        // Pulse on level-up. Skip on first ever display (lastDisplayedLevel=0).
+        if (this._lastDisplayedLevel > 0 && level > this._lastDisplayedLevel) {
+            for (const c of [homeChip, findChip, tdChip]) {
+                if (c?.active) {
+                    try { popScale(c, 1.18); } catch (_) { /* tween not loaded */ }
+                }
+            }
+        }
+        this._lastDisplayedLevel = level;
+    }
+
+    /**
+     * User tapped a match card's Join (or Spectate, in Live Now mode) button.
+     *
+     *  • LIVE Now mode → route to SpectatorPanel (unchanged).
+     *  • OPEN lobby mode → open JoinMatchConfirmOverlay (Phase A) populated
+     *    with the lobby summary. On Confirm, _onJoinConfirmGoTap routes to
+     *    TokenDuelPanel in join-mode so the user can pick 3 tokens then tap
+     *    "Join Match" to commit the on-chain join.
+     */
     private _onMatchCardJoinClick(rowIdx: number): void {
         const matchPda = this._matchCardRowMatchPdas[rowIdx];
         if (!matchPda) {
             console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} no_match_bound`);
             return;
         }
-        // Phase H2 — when in Live Now mode, the action is Spectate, not Join.
         if (this._matchBrowser?.getMode() === 'live') {
             console.log(`${TAG} _onMatchCardJoinClick | LIVE_SPECTATE row=${rowIdx} match=${matchPda}`);
             this._hideFindMatchPanel();
             this._onOpenSpectator(matchPda);
-            return;
-        }
-        if (this._squad?.filled !== 3) {
-            console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} squad_not_full filled=${this._squad?.filled ?? 0}/3`);
-            if (this._findMatchStatusLabel) this._findMatchStatusLabel.string = 'Pick 3 tokens on the Token Duel screen first.';
             return;
         }
         const allRows = this._matchBrowser?.getRows() ?? [];
@@ -7953,69 +8943,107 @@ export class AppUI extends Component {
             console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} match_not_in_browser_rows`);
             return;
         }
-        console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} match=${matchPda} mode=${target.mode} tier=${target.wagerTier} window=${target.timeWindow}`);
-        // Lock picker selections to the lobby's params so the WaitingPanel
-        // status copy + downstream race init use the right values.
-        const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: '4p', 2: '8p', 3: 'br10' };
+        console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} → confirm_overlay match=${matchPda} mode=${target.mode} tier=${target.wagerTier}`);
+        this._showJoinConfirmOverlay(target);
+    }
+
+    /**
+     * Populate + reveal the JoinMatchConfirmOverlay for the chosen lobby.
+     * Card content is fully driven from the MatchState so a stale overlay
+     * can never show wrong data.
+     */
+    private _showJoinConfirmOverlay(target: import('../../token-duel/scripts/MatchRpc').MatchState): void {
+        if (!this._joinConfirmOverlay) {
+            console.log(`${TAG} _showJoinConfirmOverlay | NO_OVERLAY — falling back to direct join`);
+            // Defensive fallback: if scene is missing the overlay, treat the
+            // card tap as Confirm so the user isn't blocked.
+            this._pickerJoinTarget = target;
+            this._hideFindMatchPanel();
+            this._showTokenDuel();
+            return;
+        }
+        this._joinConfirmTarget = target;
+        const modeNames: Record<number, string> = { 0: '1v1', 1: '4P FFA', 2: '8P Royale', 3: 'BR 10' };
+        const modeColors: Record<number, [number, number, number]> = {
+            0: [153, 69, 255],   // violet
+            1: [20, 241, 149],   // teal
+            2: [255, 180, 84],   // amber
+            3: [255, 92, 138],   // rose
+        };
+        if (this._joinConfirmModeLabel) this._joinConfirmModeLabel.string = modeNames[target.mode] ?? `mode ${target.mode}`;
+        if (this._joinConfirmModeBadge) {
+            const tint = modeColors[target.mode] ?? [153, 69, 255];
+            const spr = this._joinConfirmModeBadge.getComponent(Sprite);
+            if (spr) spr.color = new Color(tint[0], tint[1], tint[2], 220);
+        }
+        // Track chip — only Real lobbies appear in the on-chain feed today,
+        // but keep this future-proof for paper-track pots when added.
+        if (this._joinConfirmTrackLabel) this._joinConfirmTrackLabel.string = 'REAL';
+        const wagerLabel = WAGER_TIERS_LABELS[target.wagerTier] ?? `tier ${target.wagerTier}`;
+        if (this._joinConfirmWagerHero) this._joinConfirmWagerHero.string = wagerLabel;
+        const winLabel = ['30s race', '1m race', '5m race', '1h race'][target.timeWindow] ?? '? race';
+        if (this._joinConfirmWindowLabel) this._joinConfirmWindowLabel.string = `⏱  ${winLabel}`;
+        if (this._joinConfirmCapacityLabel) this._joinConfirmCapacityLabel.string = `${target.playerCount}/${target.requiredPlayers} players`;
+        const hostName = this._getDisplayName(target.players[0]);
+        if (this._joinConfirmHostLabel) this._joinConfirmHostLabel.string = `Host  ${hostName}`;
+        const ageSec = Math.max(0, Date.now() / 1000 - Number(target.createdAt));
+        const ageStr = ageSec < 60
+            ? `${Math.floor(ageSec)}s ago`
+            : ageSec < 3600
+                ? `${Math.floor(ageSec / 60)}m ${Math.floor(ageSec) % 60}s ago`
+                : `${Math.floor(ageSec / 3600)}h ago`;
+        if (this._joinConfirmAgeLabel) this._joinConfirmAgeLabel.string = ageStr;
+        // Capacity bar — tween scaleX from 0 to (count/required) for the
+        // dopamine "fill" effect.
+        if (this._joinConfirmCapacityBarFill) {
+            const fillPct = target.requiredPlayers > 0
+                ? Math.min(1, (target.playerCount + 1) / target.requiredPlayers) // +1 to preview "after I join"
+                : 0;
+            const fillNode = this._joinConfirmCapacityBarFill;
+            fillNode.scale = new Vec3(0, 1, 1);
+            tween(fillNode).to(0.45, { scale: new Vec3(fillPct, 1, 1) }, { easing: 'cubicOut' }).start();
+        }
+        // Show + fade-in.
+        this._joinConfirmOverlay.active = true;
+        try { popScale(this._joinConfirmCard ?? this._joinConfirmOverlay, 1.04); } catch (_) { /* tween module not loaded */ }
+        console.log(`${TAG} _showJoinConfirmOverlay | match=${target.pda} mode=${target.mode} tier=${target.wagerTier}`);
+    }
+
+    private _hideJoinConfirmOverlay(): void {
+        if (!this._joinConfirmOverlay) return;
+        this._joinConfirmOverlay.active = false;
+        this._joinConfirmTarget = null;
+        console.log(`${TAG} _hideJoinConfirmOverlay`);
+    }
+
+    /**
+     * User confirmed the join — lock the target, leave the lobby, and route
+     * to TokenDuelPanel in join-mode where they pick 3 tokens then commit
+     * via the relabeled Join Match button.
+     */
+    private _onJoinConfirmGoTap(): void {
+        const target = this._joinConfirmTarget;
+        if (!target) {
+            console.log(`${TAG} _onJoinConfirmGoTap | NO_TARGET`);
+            this._hideJoinConfirmOverlay();
+            return;
+        }
+        console.log(`${TAG} _onJoinConfirmGoTap | match=${target.pda} mode=${target.mode} tier=${target.wagerTier}`);
+        this._pickerJoinTarget = target;
+        // Pre-cache the lobby's mode/wager/window onto _picker* fields so
+        // _refreshWagerControlRow + _showTokenDuel paint the join-mode state
+        // immediately on arrival (before _onPickerStart runs).
+        // Stage 3 mode rebalance: 0=1v1, 1=Trio, 2=4p, 3=8p.
+        const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
         this._pickerSelectedMode = modeIdMap[target.mode] ?? 'oneVone';
         this._pickerSelectedWagerIndex = target.wagerTier;
         const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
         this._pickerSelectedWindow = winIdMap[target.timeWindow] ?? '1h';
         this._pickerSelectedTrack = 'real';
-        this._realMatchMode = target.mode;
-        this._realMatchWagerTier = target.wagerTier;
-        const wager = Number(target.wagerLamports);
-        this._realMatchWagerLamports = wager;
-        this._selectedStakeLamports = BigInt(wager);
-        this._syncStakeValueLabel(wager / 1e9);
-        // Hide the browser, show waiting, fire the explicit-join flow.
+        this._hideJoinConfirmOverlay();
         this._hideFindMatchPanel();
-        const modeDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
-        this._showWaitingPanel({
-            mode: modeDef.label,
-            wagerSol: wager / 1e9,
-            track: 'real',
-            status: 'Joining lobby — sign tx',
-            requiredPlayers: modeDef.requiredPlayers,
-        });
-        (async () => {
-            const initResult = await this._ensureUserStatsInitialized();
-            if (initResult !== 'ok') {
-                if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'Could not init stats — tap Play Bot or Cancel';
-                return;
-            }
-            const joinResult = await this._submitRealJoinMatch(target.mode, target.wagerTier, { explicitMatchPda: matchPda });
-            if (!joinResult) {
-                if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'Join tx failed — tap Play Bot or Cancel';
-                return;
-            }
-            this._activeRealMatchPda = joinResult.matchPda;
-            const squadMints = this._squad.slots.map((s) => s?.address ?? '').filter((m) => m.length >= 32);
-            if (squadMints.length === 3 && MWAManager.instance?.connectedPubkey) {
-                const { publishSquadToBackend } = await import('../../token-duel/scripts/SpectatorRpc');
-                void publishSquadToBackend(joinResult.matchPda, MWAManager.instance.connectedPubkey, squadMints);
-            }
-            const required = modeDef.requiredPlayers;
-            if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Match ${joinResult.matchPda.substring(0, 8)}… · waiting for race start`;
-            if (this._waitingProgressLabel) this._waitingProgressLabel.string = `${target.playerCount + 1}/${required} players · 0:00`;
-            const outcome = await this._runRealPollLoop(joinResult.matchPda);
-            if (outcome === 'active') {
-                this._pendingRealMatch = true;
-                this._hideWaitingPanel();
-                this._setStakeClusterVisible(true);
-                this._refreshSquadActionButtons();
-                showToast('Opponent ready — tap Commit to start');
-            } else if (outcome === 'timeout') {
-                if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No race start in 24h — tap Cancel+Refund';
-            } else if (outcome === 'settled' || outcome === 'cancelled') {
-                this._activeRealMatchPda = null;
-                this._hideWaitingPanel();
-                showToast(outcome === 'settled' ? 'Match already settled' : 'Match cancelled');
-            }
-        })().catch((e) => {
-            console.log(`${TAG} _onMatchCardJoinClick | EXPLICIT_JOIN_ERROR error=${e}`);
-            if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Error: ${e?.message ?? e}`;
-        });
+        this._showTokenDuel();
+        this._refreshWagerControlRow();
     }
 
     /** "Host New Match" CTA on FindMatchPanel — opens picker in host mode. */
@@ -8038,12 +9066,26 @@ export class AppUI extends Component {
     }
 
     private _refreshModePickerUi(): void {
-        // Session D Part 6: all 4 modes are active.
+        // Guest mode — lock track to paper, hide track + wager rows entirely.
+        if (this._isGuest()) {
+            this._pickerSelectedTrack = 'paper';
+            if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = false;
+            if (this._pickerRealToggle)  this._pickerRealToggle.node.active = false;
+            if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = false;
+            // Wager chips become irrelevant in guest paper mode.
+            for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
+        } else {
+            if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = true;
+            if (this._pickerRealToggle)  this._pickerRealToggle.node.active = true;
+            if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = true;
+            for (const btn of this._pickerWagerButtons.values()) btn.node.active = true;
+        }
+        // Stage 3 mode rebalance: scene keys ARE ModeIds now.
         const sceneToModeId: Record<string, string> = {
-            oneVone: 'oneVone',
-            '4p':    'fourPlayer',
-            '8p':    'eightPlayer',
-            br10:    'battleRoyale',
+            oneVone:     'oneVone',
+            trio:        'trio',
+            fourPlayer:  'fourPlayer',
+            eightPlayer: 'eightPlayer',
         };
         for (const [key, btn] of this._pickerModeButtons) {
             const modeId = sceneToModeId[key] ?? 'oneVone';
@@ -8106,12 +9148,79 @@ export class AppUI extends Component {
     //  betting-duel polish — Wager control row (TokenDuelPanel bottom)
     // ═══════════════════════════════════════════════════════════════
 
-    /** Refresh the wager value button label + start button enabled state. */
+    /** True when picker is in "join an existing match" mode (came from FindMatchPanel). */
+    private _isJoinMode(): boolean {
+        return this._pickerJoinTarget !== null;
+    }
+
+    /** True when picker is in "Bot Match" mode (came from Home Bot Match button). */
+    private _isBotMode(): boolean {
+        return this._pickerBotMode === true;
+    }
+
     private _refreshWagerControlRow(): void {
-        const label = WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex] ?? '0.05 SOL';
-        if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
         const filled = this._squad.filled;
         const ready = filled === 3;
+        const join = this._isJoinMode();
+        const bot = this._isBotMode();
+
+        if (join && this._pickerJoinTarget) {
+            // ── JOIN MODE — wager + mode pinned to the host's match. ──
+            const target = this._pickerJoinTarget;
+            const wagerLabel = WAGER_TIERS_LABELS[target.wagerTier] ?? '0.05 SOL';
+            const hostShort = target.players[0]
+                ? `${target.players[0].slice(0, 4)}…${target.players[0].slice(-4)}`
+                : 'host';
+            if (this._wagerValueButton) this._wagerValueButton.node.active = false;
+            if (this._wagerDropdown) this._wagerDropdown.active = false;
+            if (this._wagerBotChip) this._wagerBotChip.active = false;
+            if (this._wagerLockChip) {
+                this._wagerLockChip.active = true;
+                if (this._wagerLockChipLabel) this._wagerLockChipLabel.string = `🔒 ${wagerLabel}`;
+            }
+            if (this._wagerStartButton) {
+                this._wagerStartButton.interactable = ready;
+                if (this._wagerStartLabel) {
+                    this._wagerStartLabel.string = ready ? '▶ Join Match' : `Pick ${3 - filled} more`;
+                }
+            }
+            if (this._wagerHintLabel) {
+                this._wagerHintLabel.string = ready
+                    ? `Joining ${hostShort}'s match · ${wagerLabel} · tap Join to commit`
+                    : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to join`;
+            }
+            return;
+        }
+
+        if (bot) {
+            // ── BOT MODE — paper · vs bots · free practice. No wager dropdown. ──
+            if (this._wagerValueButton) this._wagerValueButton.node.active = false;
+            if (this._wagerDropdown) this._wagerDropdown.active = false;
+            if (this._wagerLockChip) this._wagerLockChip.active = false;
+            if (this._wagerBotChip) {
+                this._wagerBotChip.active = true;
+                if (this._wagerBotChipLabel) this._wagerBotChipLabel.string = '🤖 FREE · Bot Match';
+            }
+            if (this._wagerStartButton) {
+                this._wagerStartButton.interactable = ready;
+                if (this._wagerStartLabel) {
+                    this._wagerStartLabel.string = ready ? '▶ Start Bot Match' : `Pick ${3 - filled} more`;
+                }
+            }
+            if (this._wagerHintLabel) {
+                this._wagerHintLabel.string = ready
+                    ? 'Paper · vs Bots · free practice · tap to start'
+                    : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to play bots`;
+            }
+            return;
+        }
+
+        // ── CREATE MODE — original Start Match (real / paper-real) flow. ──
+        const label = WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex] ?? '0.05 SOL';
+        if (this._wagerValueButton) this._wagerValueButton.node.active = true;
+        if (this._wagerLockChip) this._wagerLockChip.active = false;
+        if (this._wagerBotChip) this._wagerBotChip.active = false;
+        if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
         if (this._wagerStartButton) {
             this._wagerStartButton.interactable = ready;
             if (this._wagerStartLabel) {
@@ -8148,7 +9257,16 @@ export class AppUI extends Component {
         this._syncBackdrop();
     }
 
-    /** User tapped the Start Match button — open ModePicker for mode/window/track confirmation. */
+    /**
+     * User tapped the Start Match / Join Match / Start Bot Match button.
+     *
+     *  • CREATE mode → opens ModePicker so the user picks mode/window/track.
+     *  • JOIN mode (came from FindMatchPanel → confirm overlay) → skips
+     *    ModePicker (host's lobby already decided those) → _onPickerStart
+     *    fires _submitRealJoinMatch with explicitMatchPda.
+     *  • BOT mode (came from Home Bot Match button) → skips ModePicker
+     *    (track is already paper) → _onPickerStart fires the paper bot path.
+     */
     private _onWagerStartTap(): void {
         const filled = this._squad.filled;
         if (filled !== 3) {
@@ -8158,6 +9276,16 @@ export class AppUI extends Component {
         }
         if (this._wagerDropdown) this._wagerDropdown.active = false;
         this._syncBackdrop();
+        if (this._isJoinMode()) {
+            console.log(`${TAG} _onWagerStartTap | JOIN_MODE skip_modepicker target=${this._pickerJoinTarget?.pda}`);
+            this._onPickerStart();
+            return;
+        }
+        if (this._isBotMode()) {
+            console.log(`${TAG} _onWagerStartTap | BOT_MODE skip_modepicker mode=${this._pickerSelectedMode}`);
+            this._onPickerStart();
+            return;
+        }
         console.log(`${TAG} _onWagerStartTap | OPEN_PICKER wager_idx=${this._pickerSelectedWagerIndex}`);
         if (this._modePickerOverlay) {
             this._modePickerOverlay.active = true;
@@ -8483,7 +9611,8 @@ export class AppUI extends Component {
 
     /** Highlight the active mode tab (teal) and dim the others. */
     private _refreshLeaderboardTabTints(): void {
-        const map: Record<number, string> = { 0: '1v1', 1: '4p', 2: '8p', 3: 'br10', 4: 'season' };
+        // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p, 4=season.
+        const map: Record<number, string> = { 0: '1v1', 1: 'trio', 2: '4p', 3: '8p', 4: 'season' };
         const activeKey = map[this._lbFilterMode];
         for (const [key, btn] of this._lbTabButtons) {
             const spr = btn.node.getComponent(Sprite);
@@ -8675,11 +9804,23 @@ export class AppUI extends Component {
             console.log(`${TAG} _refreshDailyChallengePanel | FETCH_ERR ${e}`);
         }
 
-        // Streak card.
+        // Streak card. Phase 17 (item 4): count-up tween when streak goes
+        // up. Mono digits (B5) hold position so the value climbs cleanly.
         const streakCard = this._dailyChallengePanel.getChildByName('DailyStreakCard');
         const streakDay = streakCard?.getChildByName('StreakDayLabel')?.getComponent(Label);
         const streakBest = streakCard?.getChildByName('StreakBestLabel')?.getComponent(Label);
-        if (streakDay) streakDay.string = `Day ${stats?.currentStreak ?? 0}`;
+        const newStreak = stats?.currentStreak ?? 0;
+        if (streakDay) {
+            const fmt = (n: number) => `Day ${Math.round(n)}`;
+            if (this._lastShownStreakDay < 0 || newStreak <= this._lastShownStreakDay) {
+                // First render OR streak unchanged/broken — instant set.
+                streakDay.string = fmt(newStreak);
+            } else {
+                // Streak went up — animate count-up over 600ms cubicOut.
+                this._animateCountUp(streakDay, this._lastShownStreakDay, newStreak, 0.6, fmt);
+            }
+            this._lastShownStreakDay = newStreak;
+        }
         if (streakBest) streakBest.string = `Best: ${stats?.bestStreak ?? 0}`;
 
         // 3 challenge rows.
@@ -8816,10 +9957,35 @@ export class AppUI extends Component {
     //  Part 10 pt2 — Quick Play Defaults card (Settings)
     // ═══════════════════════════════════════════════════════════════
 
+    /** Phase 27 — Toggle one QP popover, closing the other two (mutual exclusivity). */
+    private _toggleQPPopover(which: 'mode' | 'window' | 'wager'): void {
+        const popovers = {
+            mode:   this._qpModePopover,
+            window: this._qpWindowPopover,
+            wager:  this._qpWagerPopover,
+        };
+        const target = popovers[which];
+        if (!target) return;
+        const willOpen = !target.active;
+        // Close all first, then open target if needed.
+        for (const k of Object.keys(popovers) as Array<keyof typeof popovers>) {
+            const p = popovers[k];
+            if (p) p.active = (k === which && willOpen);
+        }
+        console.log(`${TAG} _toggleQPPopover | which=${which} open=${willOpen}`);
+    }
+
+    private _closeAllQPPopovers(): void {
+        if (this._qpModePopover)   this._qpModePopover.active = false;
+        if (this._qpWindowPopover) this._qpWindowPopover.active = false;
+        if (this._qpWagerPopover)  this._qpWagerPopover.active = false;
+    }
+
     private _onQPModeClick(uiKey: string, logicalKey: string): void {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.mode', logicalKey);
         console.log(`${TAG} _onQPModeClick | ui=${uiKey} logical=${logicalKey}`);
+        this._closeAllQPPopovers();
         this._refreshQPCard();
     }
 
@@ -8827,6 +9993,7 @@ export class AppUI extends Component {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.window', w);
         console.log(`${TAG} _onQPWindowClick | window=${w}`);
+        this._closeAllQPPopovers();
         this._refreshQPCard();
     }
 
@@ -8834,6 +10001,7 @@ export class AppUI extends Component {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.wager', idx.toString());
         console.log(`${TAG} _onQPWagerClick | key=${key} idx=${idx}`);
+        this._closeAllQPPopovers();
         this._refreshQPCard();
     }
 
@@ -8841,30 +10009,60 @@ export class AppUI extends Component {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.track', track);
         console.log(`${TAG} _onQPTrackClick | track=${track}`);
+        // Slide indicator with a 0.15s ease-out cubic tween (Phase 18 polish standard).
+        if (this._qpTrackIndicator) {
+            const targetX = track === 'paper' ? -78 : 78;
+            Tween.stopAllByTarget(this._qpTrackIndicator);
+            tween(this._qpTrackIndicator)
+                .to(0.15, { position: new Vec3(targetX, 0, 0) }, { easing: 'cubicOut' })
+                .start();
+        }
         this._refreshQPCard();
     }
 
-    /** Read current LS values and tint all 4 QP radio rows. */
+    /** Phase 27 — Read LS and update dropdown value labels + indicator + label colors. */
     private _refreshQPCard(): void {
         const ls = this._readLocalStorage();
         const logicalMode = (ls?.getItem('tokenduel:qp.mode') ?? 'oneVone');
         const windowKey = ls?.getItem('tokenduel:qp.window') ?? '1d';
         const wagerIdx = parseInt(ls?.getItem('tokenduel:qp.wager') ?? '2', 10);
         const track = (ls?.getItem('tokenduel:qp.track') ?? 'paper');
-        const uiMode = ({ oneVone: '1v1', fourPlayer: '4p', eightPlayer: '8p', battleRoyale: 'br10' } as Record<string, string>)[logicalMode] ?? '1v1';
+
+        // Dropdown value labels (Stage 3: trio replaces br10).
+        const modeLabels: Record<string, string> = { oneVone: '1v1', trio: 'Trio', fourPlayer: '4p', eightPlayer: '8p' };
+        const wagerLabels = ['0.01 SOL','0.05 SOL','0.1 SOL','0.25 SOL','0.5 SOL'];
+        if (this._qpModeValueLabel)   this._qpModeValueLabel.string   = `${modeLabels[logicalMode] ?? '1v1'}  ▾`;
+        if (this._qpWindowValueLabel) this._qpWindowValueLabel.string = `${windowKey}  ▾`;
+        if (this._qpWagerValueLabel)  this._qpWagerValueLabel.string  = `${wagerLabels[wagerIdx] ?? wagerLabels[2]}  ▾`;
+
+        // Highlight active option in each popover with ▣ prefix.
+        const uiMode = ({ oneVone: '1v1', trio: 'trio', fourPlayer: '4p', eightPlayer: '8p' } as Record<string, string>)[logicalMode] ?? '1v1';
         const wagerKey = ['001','005','01','025','05'][wagerIdx] ?? '01';
-        const active = new Color(48, 198, 155, 255);
-        const inactive = new Color(28, 34, 48, 255);
-        const tint = (map: Map<string, Button>, activeKey: string) => {
+        const optLabels: Record<string, string> = {
+            '1v1': '1v1', 'trio': 'Trio', '4p': '4p', '8p': '8p',
+            '1h': '1h', '1d': '1d', '3d': '3d', '7d': '7d',
+            '001': '0.01 SOL', '005': '0.05 SOL', '01': '0.1 SOL', '025': '0.25 SOL', '05': '0.5 SOL',
+        };
+        const paint = (map: Map<string, Button>, activeKey: string) => {
             for (const [k, b] of map) {
+                const lbl = b.node.getChildByName('Label')?.getComponent(Label);
+                if (lbl) lbl.string = (k === activeKey ? '▣  ' : '   ') + optLabels[k];
                 const spr = b.node.getComponent(Sprite);
-                if (spr) spr.color = k === activeKey ? active : inactive;
+                if (spr) spr.color = k === activeKey ? new Color(28, 92, 78, 255) : new Color(28, 34, 48, 255);
             }
         };
-        tint(this._qpModeButtons, uiMode);
-        tint(this._qpWindowButtons, windowKey);
-        tint(this._qpWagerButtons, wagerKey);
-        tint(this._qpTrackButtons, track);
+        paint(this._qpModeOptionButtons, uiMode);
+        paint(this._qpWindowOptionButtons, windowKey);
+        paint(this._qpWagerOptionButtons, wagerKey);
+
+        // Track pill indicator + label colors.
+        if (this._qpTrackIndicator) {
+            const targetX = track === 'paper' ? -78 : 78;
+            // Snap on first paint (no ongoing tween); tween triggered only by tap.
+            this._qpTrackIndicator.setPosition(targetX, 0, 0);
+        }
+        if (this._qpTrackPaperLabel) this._qpTrackPaperLabel.color = track === 'paper' ? new Color(255, 255, 255, 255) : new Color(160, 170, 190, 255);
+        if (this._qpTrackRealLabel)  this._qpTrackRealLabel.color  = track === 'real'  ? new Color(255, 255, 255, 255) : new Color(160, 170, 190, 255);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -8874,11 +10072,22 @@ export class AppUI extends Component {
     private async _onOpenSettingsClick(source: 'home' | 'tokenDuel'): Promise<void> {
         if (!this._settingsPanel) return;
         this._settingsReturnPanel = source;
-        console.log(`${TAG} _onOpenSettingsClick | source=${source}`);
+        console.log(`${TAG} _onOpenSettingsClick | source=${source} guest=${this._isGuest()}`);
         if (source === 'home') this._homePanel.active = false;
         else this._tokenDuelPanel.active = false;
         this._settingsPanel.active = true;
         this._hydrateSettingsPanel();
+        // Guest mode — hide wallet card + username editbox + delete account.
+        // Sound + haptics + fees-link sections stay (no setup required).
+        const guest = this._isGuest();
+        const setActive = (name: string, active: boolean) => {
+            const n = this._settingsPanel?.getChildByName(name);
+            if (n) n.active = active;
+        };
+        setActive('WalletCard',                  !guest);
+        setActive('ProfileCard',                 !guest);  // username editbox lives here
+        setActive('DeleteAccountSettingsButton', !guest);
+        setActive('DisconnectSettingsButton',    !guest);
     }
 
     private _onSettingsBackClick(): void {
@@ -8919,6 +10128,21 @@ export class AppUI extends Component {
         if (this._settingsUsernameEditBox) {
             const saved = this._loadUsername();
             this._settingsUsernameEditBox.string = saved;
+            // DB Stage 2 — hydrate from backend if available (covers cross-device case).
+            if (pubkey) {
+                (async () => {
+                    try {
+                        const { getUsername } = await import('../../token-duel/scripts/UserRpc');
+                        const remote = await getUsername(pubkey);
+                        if (remote && this._settingsUsernameEditBox) {
+                            this._settingsUsernameEditBox.string = remote;
+                            this._saveUsername(remote);
+                        }
+                    } catch (e) {
+                        console.log(`${TAG} settings hydrate username | err=${e}`);
+                    }
+                })();
+            }
         }
         if (this._settingsUsernameSavedLabel) this._settingsUsernameSavedLabel.string = '';
         // Part 10 pt2: refresh Quick Play defaults card tints from localStorage.
@@ -8940,15 +10164,51 @@ export class AppUI extends Component {
         if (this._settingsUsernameSavedLabel) this._settingsUsernameSavedLabel.string = '';
     }
 
-    /** Commit username to sys.localStorage on editing-did-ended. */
+    /**
+     * Commit username on editing-did-ended.
+     *
+     * DB Stage 2: writes to backend `users` table first (cross-device truth),
+     * then mirrors to localStorage for sync access. If the backend rejects
+     * (validation error / taken username), surfaces the error and keeps the
+     * old local value. Falls back to localStorage-only when offline.
+     */
     private _onUsernameCommit(): void {
         if (!this._settingsUsernameEditBox) return;
-        const val = (this._settingsUsernameEditBox.string ?? '').trim().substring(0, 24);
-        this._saveUsername(val);
-        if (this._settingsUsernameSavedLabel) {
-            this._settingsUsernameSavedLabel.string = val ? `saved ✓  "${val}"` : 'cleared';
+        const val = (this._settingsUsernameEditBox.string ?? '').trim();
+        const pubkey = MWAManager.instance?.connectedPubkey;
+        if (!pubkey) {
+            // No wallet connected — keep local fallback path.
+            this._saveUsername(val);
+            if (this._settingsUsernameSavedLabel) {
+                this._settingsUsernameSavedLabel.string = val ? `saved locally  "${val}"` : 'cleared';
+            }
+            return;
         }
-        console.log(`${TAG} _onUsernameCommit | saved="${val}"`);
+        if (!val) {
+            // User cleared — local-only for now (backend doesn't support null username via this endpoint).
+            this._saveUsername('');
+            if (this._settingsUsernameSavedLabel) this._settingsUsernameSavedLabel.string = 'cleared';
+            return;
+        }
+        if (this._settingsUsernameSavedLabel) this._settingsUsernameSavedLabel.string = 'saving…';
+        (async () => {
+            try {
+                const { setUsername } = await import('../../token-duel/scripts/UserRpc');
+                const saved = await setUsername(pubkey, val);
+                this._saveUsername(saved);
+                this._displayNameCache.set(pubkey, saved);
+                if (this._settingsUsernameSavedLabel) {
+                    this._settingsUsernameSavedLabel.string = `saved ✓  "${saved}"`;
+                }
+                console.log(`${TAG} _onUsernameCommit | OK pubkey=${pubkey.slice(0, 8)}… name="${saved}"`);
+            } catch (e: any) {
+                const msg = String(e?.message ?? e);
+                if (this._settingsUsernameSavedLabel) {
+                    this._settingsUsernameSavedLabel.string = `✕ ${msg}`;
+                }
+                console.log(`${TAG} _onUsernameCommit | FAIL pubkey=${pubkey.slice(0, 8)}… err=${msg}`);
+            }
+        })();
     }
 
     private _loadUsername(): string {
@@ -9003,15 +10263,48 @@ export class AppUI extends Component {
      * username if set. For other players (no name resolution available
      * client-side), returns a short truncated pubkey "ABCD…WXYZ". Always
      * returns a non-empty string.
+     *
+     * DB Stage 2: also resolves OTHER players' usernames via the backend
+     * `users` table. Stale-while-revalidate: returns truncated pubkey
+     * synchronously and kicks off an async fetch; next render picks up the
+     * cached username. UserRpc.ts handles its own 60s in-memory TTL.
      */
     private _getDisplayName(pubkey: string | null | undefined): string {
-        if (!pubkey || typeof pubkey !== 'string' || pubkey.length < 32) return '?';
+        if (!pubkey || typeof pubkey !== 'string') return '?';
+        // Guest pubkeys are local synthetic IDs (`guest_<hex>`), not real
+        // base58 — render as "Guest" without trying to fetch a username.
+        if (pubkey.startsWith('guest_')) return '👤 Guest';
+        if (pubkey.length < 32) return '?';
         const myPubkey = MWAManager.instance?.connectedPubkey ?? '';
         if (myPubkey && myPubkey === pubkey) {
             const username = this._loadUsername();
             if (username && username.length > 0) return username;
         }
+        // Sync local cache populated by async DB fetches.
+        const cached = this._displayNameCache.get(pubkey);
+        if (cached !== undefined) {
+            return cached.length > 0 ? cached : `${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`;
+        }
+        // Kick off async fetch; next render will use the cached value.
+        void this._fetchDisplayName(pubkey);
         return `${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`;
+    }
+
+    /** Async fetch + populate _displayNameCache. Idempotent guard via _displayNameInflight. */
+    private async _fetchDisplayName(pubkey: string): Promise<void> {
+        if (this._displayNameInflight.has(pubkey)) return;
+        this._displayNameInflight.add(pubkey);
+        try {
+            const { getUsername } = await import('../../token-duel/scripts/UserRpc');
+            const name = await getUsername(pubkey);
+            this._displayNameCache.set(pubkey, name ?? '');
+        } catch (e) {
+            // Mark as resolved-empty so we don't keep retrying every render.
+            this._displayNameCache.set(pubkey, '');
+            console.log(`${TAG} _fetchDisplayName | err pubkey=${pubkey.slice(0, 8)}… ${e}`);
+        } finally {
+            this._displayNameInflight.delete(pubkey);
+        }
     }
 
     private _onOpenPortfolioClick(): void {
@@ -9264,7 +10557,8 @@ export class AppUI extends Component {
             const payoutL = row.getChildByName('Payout')?.getComponent(Label);
             if (dateL) dateL.string = this._fmtHistoryDate(entry.at);
             if (modeL) {
-                const modeName = MODES[(['oneVone', 'fourPlayer', 'eightPlayer', 'battleRoyale'][entry.mode] ?? 'oneVone') as keyof typeof MODES]?.shortLabel ?? '—';
+                // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
+                const modeName = MODES[(['oneVone', 'trio', 'fourPlayer', 'eightPlayer'][entry.mode] ?? 'oneVone') as keyof typeof MODES]?.shortLabel ?? '—';
                 const windowLabel = TIME_WINDOWS[(['1h', '1d', '3d', '7d'][entry.timeWindow] ?? '1d') as TimeWindowId]?.label ?? '';
                 modeL.string = `${modeName} · ${windowLabel}${entry.wasForceSettled ? ' · AFK' : ''}`;
             }
@@ -9800,7 +11094,8 @@ export class AppUI extends Component {
         this._realMatchMode = m.mode;
         this._realMatchWagerTier = m.wagerTier;
         this._realMatchWagerLamports = Number(m.wagerLamports);
-        const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'fourPlayer', 2: 'eightPlayer', 3: 'battleRoyale' };
+        // Stage 3 mode rebalance: 0=1v1, 1=Trio, 2=4p, 3=8p.
+        const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
         this._pickerSelectedMode = modeIdMap[m.mode] ?? 'oneVone';
         this._pickerSelectedWagerIndex = m.wagerTier;
         this._pickerSelectedTrack = 'real';
@@ -10071,34 +11366,85 @@ export class AppUI extends Component {
     }
 
     private _showTutorial(): void {
-        if (!this._tutorialOverlay || this._tutorialBubbles.length === 0) {
-            // No overlay in scene — skip straight to resolve so the game starts.
+        if (!this._tutorialOverlay || this._tutorialCards.length === 0) {
             console.log(`${TAG} _showTutorial | NO_OVERLAY — skipping`);
             this._resolveTutorial();
             return;
         }
         console.log(`${TAG} _showTutorial | SHOW`);
         this._tutorialStep = 0;
-        for (let i = 0; i < this._tutorialBubbles.length; i++) {
-            this._tutorialBubbles[i].active = i === 0;
+        for (let i = 0; i < this._tutorialCards.length; i++) {
+            this._tutorialCards[i].active = false;
+            if (this._tutorialGlows[i]) this._tutorialGlows[i].active = false;
+            Tween.stopAllByTarget(this._tutorialCards[i]);
         }
-        if (this._tutorialIndexLabel) this._tutorialIndexLabel.string = `1 / ${this._tutorialBubbles.length}`;
         this._tutorialOverlay.active = true;
+        this._tutorialAnimating = true;
+        const c0 = this._tutorialCards[0];
+        if (this._tutorialGlows[0]) this._tutorialGlows[0].active = true;
+        c0.active = true;
+        c0.setPosition(0, -80, 0);
+        c0.setScale(0.92, 0.92, 1);
+        const op0 = c0.getComponent(UIOpacity) ?? c0.addComponent(UIOpacity);
+        op0.opacity = 0;
+        this._tutorialMascots[0]?.setState(this._TUTORIAL_MASCOT_STATES[0]);
+        tween(c0)
+            .to(0.35, { position: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1) }, { easing: 'cubicOut' })
+            .call(() => { this._tutorialAnimating = false; })
+            .start();
+        tween(op0).to(0.35, { opacity: 255 }, { easing: 'cubicOut' }).start();
     }
 
     private _onTutorialTap(): void {
-        this._tutorialStep += 1;
-        console.log(`${TAG} _onTutorialTap | step=${this._tutorialStep}/${this._tutorialBubbles.length}`);
-        if (this._tutorialStep >= this._tutorialBubbles.length) {
-            this._markTutorialSeen();
-            if (this._tutorialOverlay) this._tutorialOverlay.active = false;
-            this._resolveTutorial();
+        if (this._tutorialAnimating) return;
+        const next = this._tutorialStep + 1;
+        console.log(`${TAG} _onTutorialTap | step=${this._tutorialStep} → ${next}/${this._tutorialCards.length}`);
+        if (next >= this._tutorialCards.length) {
+            this._tutorialAnimating = true;
+            const cur = this._tutorialCards[this._tutorialStep];
+            const op = cur.getComponent(UIOpacity) ?? cur.addComponent(UIOpacity);
+            tween(cur)
+                .to(0.25, { position: new Vec3(0, 60, 0) }, { easing: 'cubicIn' })
+                .call(() => {
+                    this._markTutorialSeen();
+                    if (this._tutorialOverlay) this._tutorialOverlay.active = false;
+                    this._tutorialAnimating = false;
+                    this._resolveTutorial();
+                })
+                .start();
+            tween(op).to(0.25, { opacity: 0 }, { easing: 'cubicIn' }).start();
             return;
         }
-        for (let i = 0; i < this._tutorialBubbles.length; i++) {
-            this._tutorialBubbles[i].active = i === this._tutorialStep;
-        }
-        if (this._tutorialIndexLabel) this._tutorialIndexLabel.string = `${this._tutorialStep + 1} / ${this._tutorialBubbles.length}`;
+        this._tutorialAnimating = true;
+        const cur = this._tutorialCards[this._tutorialStep];
+        const curGlow = this._tutorialGlows[this._tutorialStep];
+        const nxt = this._tutorialCards[next];
+        const nxtGlow = this._tutorialGlows[next];
+        const curOp = cur.getComponent(UIOpacity) ?? cur.addComponent(UIOpacity);
+        tween(cur)
+            .to(0.25, { position: new Vec3(-400, 0, 0) }, { easing: 'cubicIn' })
+            .call(() => {
+                cur.active = false;
+                if (curGlow) curGlow.active = false;
+            })
+            .start();
+        tween(curOp).to(0.25, { opacity: 0 }, { easing: 'cubicIn' }).start();
+        nxt.active = true;
+        if (nxtGlow) nxtGlow.active = true;
+        nxt.setPosition(400, 0, 0);
+        nxt.setScale(1, 1, 1);
+        const nxtOp = nxt.getComponent(UIOpacity) ?? nxt.addComponent(UIOpacity);
+        nxtOp.opacity = 0;
+        this._tutorialMascots[next]?.setState(this._TUTORIAL_MASCOT_STATES[next]);
+        tween(nxt)
+            .delay(0.10)
+            .to(0.25, { position: new Vec3(0, 0, 0) }, { easing: 'cubicOut' })
+            .call(() => {
+                this._tutorialStep = next;
+                this._tutorialAnimating = false;
+            })
+            .start();
+        tween(nxtOp).delay(0.10).to(0.25, { opacity: 255 }, { easing: 'cubicOut' }).start();
     }
 
     private _resolveTutorial(): void {

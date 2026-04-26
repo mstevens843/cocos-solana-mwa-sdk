@@ -50,11 +50,12 @@ interface ModeConfig {
     payoutBps: number[];
     label: string;
 }
+// Stage 3 mode rebalance: [1v1, Trio, 4p, 8p]. modeU8 indices shifted.
 const MODE_CONFIGS: Record<string, ModeConfig> = {
-    '1v1':  { modeU8: 0, requiredPlayers: 2,  payoutBps: [10_000], label: '1v1 Duel' },
-    '4p':   { modeU8: 1, requiredPlayers: 4,  payoutBps: [7_000, 3_000], label: '4p Pot' },
-    '8p':   { modeU8: 2, requiredPlayers: 8,  payoutBps: [5_000, 3_000, 2_000], label: '8p Pot' },
-    'br10': { modeU8: 3, requiredPlayers: 10, payoutBps: [5_000, 2_500, 1_500, 1_000], label: 'Battle Royale' },
+    '1v1':  { modeU8: 0, requiredPlayers: 2, payoutBps: [10_000], label: '1v1 Duel' },
+    'trio': { modeU8: 1, requiredPlayers: 3, payoutBps: [10_000], label: 'Trio · 1v1v1' },
+    '4p':   { modeU8: 2, requiredPlayers: 4, payoutBps: [7_500, 2_500], label: '4p FFA' },
+    '8p':   { modeU8: 3, requiredPlayers: 8, payoutBps: [6_250, 2_500, 1_250], label: 'Battle Royale' },
 };
 
 const TIME_WINDOW_MAP: Record<string, number> = { '1h': 0, '1d': 1, '24h': 1, '3d': 2, '7d': 3 };

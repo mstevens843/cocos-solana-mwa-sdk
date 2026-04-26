@@ -12,7 +12,9 @@
     "test:physics": "tsx src/physics.test.ts",
     "test:receipt": "tsx src/receipt.test.ts",
     "test:session": "tsx src/session.test.ts",
-    "keygen": "tsx src/scripts/keygen.ts"
+    "keygen": "tsx src/scripts/keygen.ts",
+    "migrate": "tsx src/migrate.ts",
+    "migrate:dry": "tsx src/migrate.ts --dry"
   },
   "dependencies": {
     "@metaplex-foundation/mpl-bubblegum": "^4.2.1",
@@ -23,10 +25,12 @@
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
     "@solana/web3.js": "^1.98.0",
+    "@types/pg": "^8.20.0",
     "bs58": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "pg": "^8.20.0",
     "tweetnacl": "^1.0.3",
     "ws": "^8.18.0"
   },

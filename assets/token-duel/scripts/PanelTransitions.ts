@@ -18,6 +18,12 @@ import { Motion } from './Theme';
 
 const TAG = '[PanelTransitions]';
 
+// Phase 18 — slide-in distances. Subtle horizontal slide layered on top of
+// existing fade+scale gives panel transitions a spatial direction (forward
+// = right→left motion, back = left→right) without dragging out the duration.
+const SLIDE_IN_DX  = 80;
+const SLIDE_OUT_DX = 40;
+
 export type PanelDir = 'forward' | 'back' | 'instant';
 
 export function swapPanel(out: Node | null, into: Node | null, dir: PanelDir = 'forward'): void {
@@ -32,7 +38,7 @@ export function swapPanel(out: Node | null, into: Node | null, dir: PanelDir = '
         return;
     }
 
-    if (out && out.active) animateOut(out);
+    if (out && out.active) animateOut(out, dir);
     if (into) animateIn(into, dir);
 }
 
@@ -40,20 +46,28 @@ function ensureOpacity(node: Node): UIOpacity {
     return node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
 }
 
-function animateOut(node: Node): void {
+function animateOut(node: Node, dir: PanelDir = 'forward'): void {
     Tween.stopAllByTarget(node);
     const op = ensureOpacity(node);
     Tween.stopAllByTarget(op);
+    // Phase 18: outgoing slides opposite of incoming. Forward → left, Back → right.
+    const slideOutSign = dir === 'back' ? 1 : -1;
+    const endX = slideOutSign * SLIDE_OUT_DX;
     tween(node)
         .to(Motion.fast, { scale: new Vec3(0.96, 0.96, 1) }, { easing: 'cubicIn' })
         .call(() => {
             node.active = false;
             node.setScale(Vec3.ONE);
+            node.setPosition(new Vec3(0, 0, 0)); // reset for next show
         })
         .start();
     tween(op)
         .to(Motion.fast, { opacity: 0 })
         .call(() => { op.opacity = 255; })
+        .start();
+    // Phase 18: x-axis slide as it fades.
+    tween(node)
+        .to(Motion.fast, { position: new Vec3(endX, 0, 0) }, { easing: 'cubicIn' })
         .start();
 }
 
@@ -65,11 +79,19 @@ function animateIn(node: Node, dir: PanelDir): void {
     const startScale = dir === 'back' ? 0.96 : 1.04;
     node.setScale(new Vec3(startScale, startScale, 1));
     op.opacity = 0;
+    // Phase 18: incoming starts off-center on x-axis. Forward = +80 (slides
+    // in from right). Back = -80 (slides in from left).
+    const slideInSign = dir === 'back' ? -1 : 1;
+    const startX = slideInSign * SLIDE_IN_DX;
+    node.setPosition(new Vec3(startX, 0, 0));
     tween(node)
         .to(Motion.base, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicOut' })
         .start();
     tween(op)
         .to(Motion.base, { opacity: 255 })
+        .start();
+    tween(node)
+        .to(Motion.base, { position: new Vec3(0, 0, 0) }, { easing: 'cubicOut' })
         .start();
 }
 

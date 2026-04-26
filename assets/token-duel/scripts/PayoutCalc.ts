@@ -8,7 +8,7 @@
  * Keep in lockstep with Rust — any formula change must happen in both.
  */
 
-import { RAKE_BPS, BPS_DENOM, MODES, ModeId, modeFromU8 } from './ModeDefs';
+import { RAKE_BPS, BPS_DENOM, MODES, ModeId, ModeDef, modeFromU8 } from './ModeDefs';
 
 const TAG = '[PayoutCalc]';
 
@@ -126,29 +126,77 @@ export function xpForPlacement(modeOrU8: ModeId | number, rank: number): number 
     return table[table.length - 1];
 }
 
-/** Pokémon-cubic curve: level N requires N^3 XP total. */
+/**
+ * Stage 3 XP curve: floor(500 * (n-1) * (2n+3) / 2) = 250 * (n-1) * (2n+3)
+ * Matches `xp_for_level` in `programs/token-duel/src/state.rs`.
+ *
+ * Thresholds:
+ *   L1=0, L2=1750, L3=4500, L4=8250, L5=13000, L6=18750, L7=25500,
+ *   L8=33250, L9=42000, L10=51750.
+ */
+export function xpForLevel(n: number): number {
+    if (n <= 0) return 0;
+    if (n === 1) return 0;
+    return 250 * (n - 1) * (2 * n + 3);
+}
+
+/** Returns highest N where xpForLevel(N) ≤ xp. xp=0 → L1. */
 export function levelFromXp(xp: number): number {
-    if (!Number.isFinite(xp) || xp <= 0) return 0;
+    if (!Number.isFinite(xp) || xp < 0) return 1;
     let n = 0;
     while (true) {
         const next = n + 1;
-        if (next * next * next > xp) return n;
+        if (xpForLevel(next) > xp) return Math.max(1, n);
         n = next;
         if (n >= 65535) return n; // cap at u16 bound
     }
 }
 
-/** How much XP needed to reach level N (from level 0). */
-export function xpForLevel(n: number): number {
-    if (n <= 0) return 0;
-    return n * n * n;
-}
-
-/** Progress to next level as 0..1. */
+/** Progress to next level as 0..1 + amount needed. */
 export function levelProgress(xp: number): { level: number; progress: number; toNext: number } {
     const lvl = levelFromXp(xp);
     const atLevel = xpForLevel(lvl);
     const toLevel = xpForLevel(lvl + 1);
     const progress = toLevel > atLevel ? (xp - atLevel) / (toLevel - atLevel) : 0;
     return { level: lvl, progress, toNext: toLevel - xp };
+}
+
+/**
+ * Stage 5 — payoutPreview: returns rake-honest per-rank lamports for a given
+ * mode + wager tier + level, accounting for the 5%→3% rake taken from the
+ * full pot before split. Used to power the JoinMatchConfirmOverlay copy +
+ * ModePicker readouts so users see real take-home, not gross pot %.
+ *
+ * Returns:
+ *   first  — lamports won by 1st place
+ *   second — lamports won by 2nd place (0 for 1v1 / Trio)
+ *   third  — lamports won by 3rd place (0 for 1v1 / Trio / 4p)
+ *   rake   — total rake withheld (informational)
+ *   pot    — total pot (informational)
+ *
+ * Assumes uniform level across all players (uses `level` for per-player rake
+ * estimate). Real splits can vary because rake_bps_for_level reads each
+ * player's level individually; this is a single-player preview.
+ */
+export function payoutPreview(
+    mode: ModeDef,
+    wagerLamports: number,
+    level: number,
+): { first: number; second: number; third: number; rake: number; pot: number } {
+    const players = mode.requiredPlayers;
+    const pot = wagerLamports * players;
+    const rakeBps = rakeBpsForLevel(level);
+    const rake = Math.floor((pot * rakeBps) / BPS_DENOM);
+    const distributable = pot - rake;
+    const split = (rank: number) => {
+        const bps = mode.payoutBps[rank] ?? 0;
+        return Math.floor((distributable * bps) / BPS_DENOM);
+    };
+    return {
+        first: split(0),
+        second: split(1),
+        third: split(2),
+        rake,
+        pot,
+    };
 }

@@ -13,6 +13,25 @@ const { Palette: P, ButtonVariants: BV } = Theme;
 // rgb-tuple helpers — pull from a Theme variant.
 const VAR = (name) => BV[name]?.normal ?? BV.primary.normal;
 
+// ─── LAYOUT POLICY ────────────────────────────────────────────────────
+// Every UI element's (x, y, w, h) MUST come from
+// `assets/token-duel/scripts/LayoutSpec.cjs`. NO literal coordinates inline.
+// New elements: add to LayoutSpec FIRST, then reference here as
+// `LAYOUT.<panel>.elements.<name>.{x,y,w,h}`. After editing LayoutSpec, run
+//   npm run scenes && python3 scripts/verify-layout.py
+// to detect unintended overlaps WITHOUT rebuilding the APK.
+// ──────────────────────────────────────────────────────────────────────
+const LAYOUT = require('./assets/token-duel/scripts/LayoutSpec.cjs');
+
+// Phase 26 — Android safe-area top inset. Modern Android phones
+// (19.5:9+) have a status bar / camera notch that cuts into the top
+// of the widget-extended viewport. Panels with elements at y >= 580
+// would otherwise render behind the status bar / camera. Each
+// affected panel's root _lpos.y is shifted down by SAFE_AREA_TOP so
+// its top-zone elements land below the unsafe top region.
+// Internal panel layouts are unchanged (sibling positions preserved).
+const SAFE_AREA_TOP = 60;
+
 const UUIDS = {
     MWAManager: '409dciqDmlP9rvNGXKC80Rx',
     DemoAppConfig: '97371AjclpDVa7mBnZTheRu',
@@ -114,35 +133,124 @@ function style(sb, nodeIdx, opts = {}) {
 // UX Phase 2c palette shortcuts for typography pass.
 const GOLD = () => cl(255, 210, 74, 255);    // Palette.rank.gold
 const TEXT_HI = () => cl(244, 245, 249, 255); // Palette.text.hi
+// Phase 15 (B5): mid + lo tier helpers for the 3-tier text hierarchy.
+const TEXT_MID = () => cl(168, 174, 201, 255); // Palette.text.mid — secondary
+const TEXT_LO  = () => cl(93,  100, 133, 255); // Palette.text.lo  — tertiary / muted
 
-// UX Phase 2c: every button gets a Highlight child — a white sprite at ~14%
-// alpha covering the top 45% of the button. Creates a subtle gloss/gradient
-// feel without new assets. Children order [Highlight, Label] ensures the
-// highlight renders ABOVE the base (parent sprite) but BELOW the text.
+// Phase 13 (B3): every button gets a 2-strip bevel — top highlight + bottom
+// shadow. The brand-color base + brighter top + slight bottom-shadow reads
+// as a subtle convex surface (light-from-above). Children order
+// [TopHighlight, BottomShadow, Label] keeps Label on top.
 function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200) {
-    const bn=sb.e.length, hN=bn+1, ln=bn+2, bu=bn+3, sp=bn+4, bt=bn+5, hUt=bn+6, hSp=bn+7, lUt=bn+8, ll=bn+9;
+    const bn=sb.e.length;
+    const tHN=bn+1, bSN=bn+2, ln=bn+3, bu=bn+4, sp=bn+5, bt=bn+6;
+    const tHUt=bn+7, tHSp=bn+8, bSUt=bn+9, bSSp=bn+10, lUt=bn+11, ll=bn+12;
     const fontSize = Math.max(26, Math.round(h*0.34));
-    sb.node(name, parent, [hN, ln], [bu, sp, bt], v3(0, y, 0));
-    sb.node('Highlight', bn, [], [hUt, hSp], v3(0, h * 0.275, 0));
+    sb.node(name, parent, [tHN, bSN, ln], [bu, sp, bt], v3(0, y, 0));
+    sb.node('TopHighlight', bn, [], [tHUt, tHSp], v3(0, h * 0.30, 0));
+    sb.node('BottomShadow', bn, [], [bSUt, bSSp], v3(0, -h * 0.42, 0));
     sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
     sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
-    sb.ut(hN, w - 4, h * 0.45); sb.spr(hN, 255, 255, 255);
-    sb.e[hSp]._color = cl(255, 255, 255, 36); // ~14% alpha gloss
+    sb.ut(tHN, w - 4, h * 0.40); sb.spr(tHN, 255, 255, 255);
+    sb.e[tHSp]._color = cl(255, 255, 255, 52); // 20% white — top lift
+    sb.ut(bSN, w - 4, h * 0.16); sb.spr(bSN, 0, 0, 0);
+    sb.e[bSSp]._color = cl(0, 0, 0, 46); // 18% black — bottom depth
     sb.ut(ln, w, h); sb.lbl(ln, text, fontSize, 255, 255, 255);
     return bn;
 }
 
 function mkBtnXY(sb, name, parent, text, x, y, w=500, h=75, br=60, bg=120, bb=200) {
-    const bn=sb.e.length, hN=bn+1, ln=bn+2, bu=bn+3, sp=bn+4, bt=bn+5, hUt=bn+6, hSp=bn+7, lUt=bn+8, ll=bn+9;
+    const bn=sb.e.length;
+    const tHN=bn+1, bSN=bn+2, ln=bn+3, bu=bn+4, sp=bn+5, bt=bn+6;
+    const tHUt=bn+7, tHSp=bn+8, bSUt=bn+9, bSSp=bn+10, lUt=bn+11, ll=bn+12;
     const fontSize = Math.max(22, Math.round(h*0.34));
-    sb.node(name, parent, [hN, ln], [bu, sp, bt], v3(x, y, 0));
-    sb.node('Highlight', bn, [], [hUt, hSp], v3(0, h * 0.275, 0));
+    sb.node(name, parent, [tHN, bSN, ln], [bu, sp, bt], v3(x, y, 0));
+    sb.node('TopHighlight', bn, [], [tHUt, tHSp], v3(0, h * 0.30, 0));
+    sb.node('BottomShadow', bn, [], [bSUt, bSSp], v3(0, -h * 0.42, 0));
     sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
     sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
-    sb.ut(hN, w - 4, h * 0.45); sb.spr(hN, 255, 255, 255);
-    sb.e[hSp]._color = cl(255, 255, 255, 36); // ~14% alpha gloss
+    sb.ut(tHN, w - 4, h * 0.40); sb.spr(tHN, 255, 255, 255);
+    sb.e[tHSp]._color = cl(255, 255, 255, 52);
+    sb.ut(bSN, w - 4, h * 0.16); sb.spr(bSN, 0, 0, 0);
+    sb.e[bSSp]._color = cl(0, 0, 0, 46);
     sb.ut(ln, w, h); sb.lbl(ln, text, fontSize, 255, 255, 255);
     return bn;
+}
+
+// Phase 13 (B3): hero CTA — adds a brand-color glow halo behind the button.
+// The halo is a sibling rendered FIRST (before the button) so it appears
+// behind. 12-px bleed on every side, alpha 80, tinted the button's own
+// brand color. Returns { glow, btn } — caller adds both to parent's
+// _children list with glow first.
+function mkBtnHero(sb, name, parent, text, x, y, w, h, br, bg, bb) {
+    // Halo sibling — w+24, h+24, brand-color at alpha 80.
+    const glowN = sb.e.length;
+    sb.node(`BtnGlow_${name}`, parent, [], [], v3(x, y, 0));
+    const glowUT = sb.ut(glowN, w + 24, h + 24);
+    const glowSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(glowN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(br, bg, bb, 80),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[glowN]._components = [rf(glowUT), rf(glowSpr)];
+    // Actual button.
+    const btnN = mkBtnXY(sb, name, parent, text, x, y, w, h, br, bg, bb);
+    // Phase 18 — ripple-on-click child sprite. AppUI's ButtonFX.addRipple
+    // activates + tweens scale/opacity on CLICK. Initially _active=false +
+    // alpha 0 so it's invisible until tapped. Sized = button size; sits
+    // centered (0,0) inside the button.
+    const rippleN = sb.e.length;
+    sb.node(`Ripple_${name}`, btnN, [], [], v3(0, 0, 0));
+    const rippleUT = sb.ut(rippleN, w, h);
+    const rippleSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(rippleN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(255, 255, 255, 0),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[rippleN]._components = [rf(rippleUT), rf(rippleSpr)];
+    sb.e[rippleN]._active = false;
+    // Add ripple to the button's _children. mkBtnXY sets children to
+    // [TopHighlight, BottomShadow, Label]; insert ripple FIRST so it renders
+    // beneath labels (face-of-button overlay).
+    const existingChildren = sb.e[btnN]._children ?? [];
+    sb.e[btnN]._children = [rf(rippleN), ...existingChildren];
+    return { glow: glowN, btn: btnN, ripple: rippleN };
+}
+
+// Phase 14 (B4): premium card edge accent. 4-px brand-color strip at the
+// very top of a card. Caller appends the returned index to the card's
+// _children array (so it renders on top of the body sprite, behind
+// labels in the y-band — but bbox doesn't overlap any header label since
+// edge sits at y=h/2-2 outside the label y-range).
+function mkCardEdge(sb, cardN, w, h, r, g, b, alpha=255) {
+    const eN = sb.e.length;
+    sb.node('CardEdgeAccent', cardN, [], [], v3(0, h / 2 - 2, 0));
+    const eUT = sb.ut(eN, w - 4, 4);
+    const eSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(eN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(r, g, b, alpha),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[eN]._components = [rf(eUT), rf(eSpr)];
+    return eN;
 }
 
 // Schemas below match Cocos 3.8.8's default prefabs at
@@ -427,9 +535,98 @@ function generate() {
     const bgN = sb.e.length;
     sb.node('Background', canvas, [], [bgN+1, bgN+2, bgN+3], v3(0,0,0));
     sb.ut(bgN, 720, 1280);
-    // Session 12: near-black warm-undertone backdrop to match solpulse palette.
-    sb.spr(bgN, 10, 14, 22, '57520716-48c8-4a19-8acf-41c9f8777fb0@f9941', 0);
+    // Pure black plate. Phase 12 (B1+B2) layers the violet/teal glow +
+    // 64-star ambient field on top of this in BackgroundFX (next block).
+    sb.spr(bgN, 0, 0, 0, '57520716-48c8-4a19-8acf-41c9f8777fb0@f9941', 0);
     sb.widget(bgN);
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase 12 (B1+B2) — neon-trading background polish.
+    // 3 layered brand-color halo sprites + 64-star ambient field.
+    // Sits between the black Background plate and panel content.
+    // ═══════════════════════════════════════════════════════════════
+    const BFX = LAYOUT.BackgroundFX.elements;
+    const STAR = LAYOUT.BackgroundFX.templates.star;
+    const fxN = sb.e.length;
+    sb.node('BackgroundFX', canvas, [], [], v3(0, 0, 0));
+    sb.ut(fxN, LAYOUT.BackgroundFX.canvas.w, LAYOUT.BackgroundFX.canvas.h);
+
+    // Inline helper: make a halo sprite (white sprite tinted brand color, low alpha).
+    function mkGlow(name, def, color) {
+        const n = sb.e.length;
+        sb.node(name, fxN, [], [], v3(def.x, def.y, 0));
+        const ut = sb.ut(n, def.w, def.h);
+        const spr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(n), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: color,
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[n]._components = [rf(ut), rf(spr)];
+        return n;
+    }
+    // Phase 21 (F): each halo is now 3 stacked sprites (outer/mid/inner)
+    // for a soft radial-falloff illusion. Sums to brightest core, fades to
+    // edge of outer ring. Eye reads the stack as a smooth gradient.
+    const FX_HALOS = [
+        // Solana violet — top-left, 3 layered sprites
+        { name: 'BackgroundGlow_TopLeft_Outer',  spec: 'glowTopLeft_Outer',  r: 153, g: 69,  b: 255, a: 18 },
+        { name: 'BackgroundGlow_TopLeft_Mid',    spec: 'glowTopLeft_Mid',    r: 153, g: 69,  b: 255, a: 35 },
+        { name: 'BackgroundGlow_TopLeft_Inner',  spec: 'glowTopLeft_Inner',  r: 153, g: 69,  b: 255, a: 60 },
+        // Solana teal — bot-right, 3 layered sprites
+        { name: 'BackgroundGlow_BotRight_Outer', spec: 'glowBotRight_Outer', r: 20,  g: 241, b: 149, a: 15 },
+        { name: 'BackgroundGlow_BotRight_Mid',   spec: 'glowBotRight_Mid',   r: 20,  g: 241, b: 149, a: 28 },
+        { name: 'BackgroundGlow_BotRight_Inner', spec: 'glowBotRight_Inner', r: 20,  g: 241, b: 149, a: 50 },
+        // Amber — center, 3 layered sprites
+        { name: 'BackgroundGlow_Center_Outer',   spec: 'glowCenter_Outer',   r: 255, g: 180, b: 84,  a: 8 },
+        { name: 'BackgroundGlow_Center_Mid',     spec: 'glowCenter_Mid',     r: 255, g: 180, b: 84,  a: 14 },
+        { name: 'BackgroundGlow_Center_Inner',   spec: 'glowCenter_Inner',   r: 255, g: 180, b: 84,  a: 22 },
+    ];
+    const haloIndices = FX_HALOS.map(({ name, spec, r, g, b, a }) =>
+        mkGlow(name, BFX[spec], cl(r, g, b, a))
+    );
+
+    // Starfield — 64 deterministic-seeded dots across 3 alpha tiers.
+    // Seed is fixed so every build produces identical positions; verifier
+    // doesn't need to chase RNG and visual smoke tests reproduce.
+    const starN = sb.e.length;
+    sb.node('Starfield', fxN, [], [], v3(BFX.starfield.x, BFX.starfield.y, 0));
+    sb.ut(starN, BFX.starfield.w, BFX.starfield.h);
+    const starIndices = [];
+    let lcg = STAR.seed;
+    const rand = () => { lcg = (lcg * 1103515245 + 12345) & 0x7FFFFFFF; return lcg / 0x7FFFFFFF; };
+    let starIdx = 0;
+    for (const tier of STAR.tiers) {
+        for (let i = 0; i < tier.count; i++) {
+            const sx = STAR.xRange[0] + rand() * (STAR.xRange[1] - STAR.xRange[0]);
+            const sy = STAR.yRange[0] + rand() * (STAR.yRange[1] - STAR.yRange[0]);
+            const alpha = tier.alphaMin + Math.floor(rand() * (tier.alphaMax - tier.alphaMin + 1));
+            const sN = sb.e.length;
+            sb.node(`Star_${starIdx}`, starN, [], [], v3(Math.round(sx), Math.round(sy), 0));
+            const sUT = sb.ut(sN, tier.size, tier.size);
+            const sSpr = sb.add({
+                __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+                node: rf(sN), _enabled: true, __prefab: null,
+                _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+                _color: cl(255, 255, 255, alpha),
+                _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+                _type: 1, _fillType: 0, _sizeMode: 0,
+                _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+                _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+                _id: gid(),
+            });
+            sb.e[sN]._components = [rf(sUT), rf(sSpr)];
+            starIndices.push(sN);
+            starIdx++;
+        }
+    }
+    sb.e[starN]._children = starIndices.map(rf);
+    sb.e[fxN]._children = [...haloIndices.map(rf), rf(starN)];
 
     // MWAManager node
     const mwaN = sb.e.length;
@@ -443,48 +640,80 @@ function generate() {
     // ═══════════════════════════════════════════════════════════════
     const lpN = sb.e.length;
     sb.node('LandingPanel', canvas, [], [lpN+1], v3(0,0,0));
-    sb.ut(lpN, 720, 1280);
+    sb.ut(lpN, LAYOUT.Landing.canvas.w, LAYOUT.Landing.canvas.h);
 
-    // Title + Subtitle — UX Phase 2c: bold + gold title.
-    const title = mkLabel(sb, 'TitleLabel', lpN, 'Token Duel', 56, 420, 680, 90);
+    // ALL positions sourced from LayoutSpec.Landing.elements.* — no literals.
+    const LE = LAYOUT.Landing.elements;
+
+    const title = mkLabel(sb, 'TitleLabel', lpN, 'Token Duel',
+        56, LE.title.y, LE.title.w, LE.title.h);
     style(sb, title, { bold: true, color: GOLD() });
-    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Portfolio Race on Solana', 30, 340, 680, 60, 204, 204, 204);
 
-    // Connect Wallet — opens OS picker (no targetPackage)
-    // UX overhaul: Solana-violet primary CTA (was cobalt blue).
-    const connectBtn = mkBtn(sb, 'ConnectButton', lpN, 'Connect Wallet', 120, 680, 100, VAR('primary').r, VAR('primary').g, VAR('primary').b);
+    const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Portfolio Race on Solana',
+        30, LE.subtitle.y, LE.subtitle.w, LE.subtitle.h, 204, 204, 204);
+
+    // Connect Wallet — Solana-violet primary CTA. Phase 13 (B3): hero halo.
+    const { glow: connectGlow, btn: connectBtn } = mkBtnHero(sb,
+        'ConnectButton', lpN, 'Connect Wallet',
+        LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
+        VAR('primary').r, VAR('primary').g, VAR('primary').b);
     style(sb, connectBtn, { bold: true });
 
-    // Reconnect (hidden by default — shown when cached auth exists)
-    const reconnBtn = mkBtn(sb, 'ReconnectButton', lpN, 'Reconnect (Cached)', 10, 680, 100, VAR('success').r, VAR('success').g, VAR('success').b);
+    // Reconnect (hidden by default — shown by AppUI when cached auth exists)
+    const reconnBtn = mkBtn(sb, 'ReconnectButton', lpN, 'Reconnect (Cached)',
+        LE.reconnBtn.y, LE.reconnBtn.w, LE.reconnBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b);
     sb.e[reconnBtn]._active = false;
 
-    // Status label
-    const statusLbl = mkLabel(sb, 'StatusLabel', lpN, 'Tap Connect to link your wallet', 26, -100, 680, 90, 204, 204, 204);
+    const statusLbl = mkLabel(sb, 'StatusLabel', lpN, 'Tap Connect to link your wallet',
+        20, LE.statusLbl.y, LE.statusLbl.w, LE.statusLbl.h, 204, 204, 204);
+
+    // Play as Guest — zero-friction entry. Bypasses wallet auth, drops user
+    // into paper-bot-only flow with a synthetic local-only ID.
+    const { glow: guestGlow, btn: guestBtn } = mkBtnHero(sb,
+        'PlayAsGuestButton', lpN, '👤  Play as Guest',
+        LE.playAsGuestBtn.x, LE.playAsGuestBtn.y, LE.playAsGuestBtn.w, LE.playAsGuestBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b);
+    style(sb, guestBtn, { bold: true });
+    const guestSubtitle = mkLabel(sb, 'PlayAsGuestSubtitle', lpN, 'Practice with bots · paper-only · no wallet needed',
+        14, LE.playAsGuestSubtitle.y, LE.playAsGuestSubtitle.w, LE.playAsGuestSubtitle.h, 168, 174, 201);
+
+    // Mascot container — Empty Node; AppUI.start() adds MascotController
+    // at runtime and phase3 swaps in Seedance frames. Renders idle on
+    // Landing for both fresh-connect and cached-Reconnect screens.
+    const landingMascotN = sb.e.length;
+    sb.node('LandingMascotContainer', lpN, [], [], v3(LE.mascot.x, LE.mascot.y, 0));
+    const landingMascotUT = sb.ut(landingMascotN, LE.mascot.w, LE.mascot.h);
+    sb.e[landingMascotN]._components = [rf(landingMascotUT)];
 
     // Patch LandingPanel children
-    sb.e[lpN]._children = [rf(title), rf(sub), rf(connectBtn), rf(reconnBtn), rf(statusLbl)];
+    sb.e[lpN]._children = [
+        rf(title), rf(sub),
+        rf(connectGlow), rf(connectBtn), rf(reconnBtn), rf(statusLbl),
+        rf(guestGlow), rf(guestBtn), rf(guestSubtitle),
+        rf(landingMascotN),
+    ];
 
     // ═══════════════════════════════════════════════════════════════
     // HOME PANEL — portrait layout, color-coded buttons
+    // All positions sourced from LAYOUT.Home.elements.* — no literals.
     // ═══════════════════════════════════════════════════════════════
     const hpN = sb.e.length;
-    sb.node('HomePanel', canvas, [], [hpN+1], v3(0,0,0));
-    sb.ut(hpN, 720, 1280);
+    sb.node('HomePanel', canvas, [], [hpN+1], v3(0, -SAFE_AREA_TOP, 0));
+    sb.ut(hpN, LAYOUT.Home.canvas.w, LAYOUT.Home.canvas.h);
 
-    // Unity: pubkey=cyan(128,204,255), btns=blue(51,153,255), caps=slate(102,128,179),
-    //        disconnect=orange(204,102,51), delete=red(204,51,51)
-    // Home has no Reconnect button — user reconnects from Landing's "Reconnect (cached)"
-    // button (shown after a previous successful connect, cache retained through disconnect).
-    // betting-duel polish: spread content to fill the FIXED_WIDTH visible
-    // height (1602 on-device vs 1280 design). Top band pushes up to +720,
-    // button column widens gaps (was 90px stride → now 100px).
-    const pubkey = mkLabel(sb, 'PubkeyLabel', hpN, 'Not connected', 26, 700, 680, 40, 128, 204, 255);
+    const HE = LAYOUT.Home.elements;
 
-    // Stage 4K — streak flame on Home. Container sits top-right of PubkeyLabel
-    // with a procedural flame icon + Nx count. AppUI._updateStreakFlame toggles
-    // visibility based on UserStats.currentStreak (0 = hidden, ≥3 = pulse,
-    // ≥5 = gold tint).
+    // Pubkey label — w=360 (shrunk from 680) so it doesn't bbox-overlap the
+    // top-bar icon row at y=700. Color stays cyan (Unity convention).
+    const pubkey = mkLabel(sb, 'PubkeyLabel', hpN, 'Not connected', 26,
+        HE.pubkeyLabel.y, HE.pubkeyLabel.w, HE.pubkeyLabel.h, 128, 204, 255);
+
+    // Stage 4K — streak flame. Container sits in the chrome zone above
+    // the visible top bar. Toggled by AppUI._updateStreakFlame based on
+    // UserStats.currentStreak. NOTE: position-as-literal is deferred to
+    // a follow-up phase since the streak flame is a sub-component decoration
+    // (not a primary layout element); revisit when touched.
     const streakFlameN = sb.e.length;
     sb.node('StreakFlameContainer', hpN, [], [streakFlameN + 1], v3(280, 748, 0));
     sb.ut(streakFlameN, 100, 36);
@@ -492,7 +721,7 @@ function generate() {
     const streakIconN = sb.e.length;
     sb.node('StreakFlameIcon', streakFlameN, [], [streakIconN + 1, streakIconN + 2], v3(-28, 0, 0));
     sb.ut(streakIconN, 28, 28);
-    sb.lbl(streakIconN, '', 22, 255, 160, 70); // empty label; AppUI attaches IconLibrary.flame at runtime
+    sb.lbl(streakIconN, '', 22, 255, 160, 70);
     const streakCountN = sb.e.length;
     sb.node('StreakCountLabel', streakFlameN, [], [streakCountN + 1, streakCountN + 2], v3(22, 0, 0));
     sb.ut(streakCountN, 60, 30);
@@ -501,51 +730,140 @@ function generate() {
     style(sb, streakCountN, { mono: true });
     sb.e[streakFlameN]._children = [rf(streakIconN), rf(streakCountN)];
 
-    // Part 13: rake tier chip. Hidden until wallet connects; AppUI refreshes
-    // after UserStats load so the user sees their current fee tier up-front.
-    const homeRakeChip = mkLabel(sb, 'HomeRakeChip', hpN, 'Your rake: —', 14, 744, 700, 22, 180, 190, 210);
+    // Rake tier chip. Hidden until wallet connects.
+    const homeRakeChip = mkLabel(sb, 'HomeRakeChip', hpN, 'Your rake: —', 14,
+        HE.homeRakeChip.y, HE.homeRakeChip.w, HE.homeRakeChip.h, 180, 190, 210);
     sb.e[homeRakeChip]._active = false;
 
-    // Live match ticker / tournament badge (mutually exclusive).
-    const matchTicker = mkBtnXY(sb, 'HomeMatchTicker', hpN, '…', 0, 660, 700, 36, 22, 28, 44);
+    // Live match ticker / tournament badge (alternates of dailyStreakStrip).
+    const matchTicker = mkBtnXY(sb, 'HomeMatchTicker', hpN, '…',
+        HE.homeMatchTicker.x, HE.homeMatchTicker.y, HE.homeMatchTicker.w, HE.homeMatchTicker.h,
+        22, 28, 44);
     sb.e[matchTicker]._active = false;
 
-    // UX Phase 2b: emoji → IconBadge (attached at runtime by AppUI).
-    const homeTournamentBadge = mkBtnXY(sb, 'HomeTournamentBadge', hpN, 'Tournament in —', 0, 660, 700, 36, 140, 80, 180);
+    const homeTournamentBadge = mkBtnXY(sb, 'HomeTournamentBadge', hpN, 'Tournament in —',
+        HE.homeTournamentBadge.x, HE.homeTournamentBadge.y, HE.homeTournamentBadge.w, HE.homeTournamentBadge.h,
+        140, 80, 180);
     sb.e[homeTournamentBadge]._active = false;
 
-    // Daily streak strip. Clickable — opens DailyChallengePanel.
-    const streakStrip = mkBtnXY(sb, 'DailyStreakStrip', hpN, 'Day 1 · 0/3 challenges · Season —', 0, 600, 700, 48, 34, 38, 56);
+    // Daily streak strip — always visible. Clickable → DailyChallengePanel.
+    const streakStrip = mkBtnXY(sb, 'DailyStreakStrip', hpN, 'Day 1 · 0/3 challenges · Season —',
+        HE.dailyStreakStrip.x, HE.dailyStreakStrip.y, HE.dailyStreakStrip.w, HE.dailyStreakStrip.h,
+        34, 38, 56);
 
-    // Quick Play — dominant amber CTA. UX overhaul: Theme.accent.amber + bold.
-    const quickPlay = mkBtn(sb, 'QuickPlayButton', hpN, 'Quick Play · paper match in one tap', 500, 680, 108, VAR('warn').r, VAR('warn').g, VAR('warn').b);
-    style(sb, quickPlay, { bold: true });
+    // ── Primary CTA TRIO ──────────────────────────────────────────────
+    // Start Match (host a real on-chain match) / Find Match (browse open
+    // lobbies) / Bot Match (paper · vs bots · free). Each is a hero-haloed
+    // button with a 14pt mid-text subtitle below. FindMatch carries a live
+    // count badge fed by MatchBrowser.
+    //
+    // Start Match — primary violet hero (host).
+    const { glow: startMatchGlow, btn: startMatch } = mkBtnHero(sb,
+        'StartMatchButton', hpN, 'Start Match',
+        HE.startMatchBtn.x, HE.startMatchBtn.y, HE.startMatchBtn.w, HE.startMatchBtn.h,
+        VAR('primary').r, VAR('primary').g, VAR('primary').b);
+    style(sb, startMatch, { bold: true });
+    const startMatchSub = mkLabel(sb, 'StartMatchSubtitle', hpN, 'Host a lobby · invite anyone', 14,
+        HE.startMatchSubtitle.y, HE.startMatchSubtitle.w, HE.startMatchSubtitle.h, 168, 174, 201);
 
-    // Button column spread: stride 100px (was 90) so 7 buttons breathe in the
-    // expanded viewport. Y span now 380 → -380.
-    // UX overhaul: tier-1 (Play/Sign*) use Solana violet, secondary (Caps) uses ghost,
-    // destructive (Disconnect/Delete) keep their orange/red but routed through Theme.
-    const playDuel = mkBtn(sb, 'PlayTokenDuelButton', hpN, 'Play Token Duel',  380, 680, 86, VAR('primary').r, VAR('primary').g, VAR('primary').b);
-    style(sb, playDuel, { bold: true });
-    const signMsg  = mkBtn(sb, 'SignMessageButton',    hpN, 'Sign Message',     270, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
-    const signTx   = mkBtn(sb, 'SignTxButton',         hpN, 'Sign Transaction', 160, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
-    const signSend = mkBtn(sb, 'SignSendButton',       hpN, 'Sign & Send',       50, 680, 86, VAR('secondary').r, VAR('secondary').g, VAR('secondary').b);
-    const caps     = mkBtn(sb, 'CapabilitiesButton',   hpN, 'Get Capabilities', -60, 680, 86, VAR('ghost').r, VAR('ghost').g, VAR('ghost').b);
-    const disconn  = mkBtn(sb, 'DisconnectButton',     hpN, 'Disconnect',      -170, 680, 86, 204, 102, 51);
-    const del      = mkBtn(sb, 'DeleteButton',         hpN, 'Delete Account',  -280, 680, 86, VAR('danger').r, VAR('danger').g, VAR('danger').b);
-    const homeStatus = mkLabel(sb, 'HomeStatusLabel',  hpN, 'Connected — choose an action', 18, -700, 680, 32, 168, 174, 201);
+    // Find Match — success teal hero (browse). Live count badge on right side.
+    const { glow: findMatchGlow, btn: findMatch } = mkBtnHero(sb,
+        'FindMatchButton', hpN, 'Find Match',
+        HE.findMatchBtn.x, HE.findMatchBtn.y, HE.findMatchBtn.w, HE.findMatchBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b);
+    style(sb, findMatch, { bold: true });
+    const findMatchSub = mkLabel(sb, 'FindMatchSubtitle', hpN, 'Browse open lobbies', 14,
+        HE.findMatchSubtitle.y, HE.findMatchSubtitle.w, HE.findMatchSubtitle.h, 168, 174, 201);
 
-    // Gear icon → SettingsPanel (top-right). UX Phase 2b: label cleared, AppUI attaches IconBadge cog.
-    const homeSettingsBtn = mkBtnXY(sb, 'OpenSettingsButton', hpN, '', 300, 700, 64, 64, 38, 44, 64);
+    // Live open-lobby count pill on the FindMatch button.
+    // Anchored at panel-local (244, 401) — sits ON the right side of the
+    // button (allowed via Home.allowedOverlaps). AppUI subscribes to
+    // MatchBrowser and updates the inner label; sets _active=false when 0.
+    const findMatchBadgeN = sb.e.length;
+    sb.node('FindMatchButtonCountBadge', hpN, [], [], v3(HE.findMatchCountBadge.x, HE.findMatchCountBadge.y, 0));
+    const findMatchBadgeUT = sb.ut(findMatchBadgeN, HE.findMatchCountBadge.w, HE.findMatchCountBadge.h);
+    const findMatchBadgeSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(findMatchBadgeN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 241, 149, 240), // teal solid
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const findMatchBadgeLbl = mkLabel(sb, 'FindMatchButtonCountLabel', findMatchBadgeN, '0', 14, 0, 60, 28, 11, 14, 26);
+    sb.e[sb.e[findMatchBadgeLbl]._components[1].__id__]._isBold = true;
+    sb.e[findMatchBadgeN]._components = [rf(findMatchBadgeUT), rf(findMatchBadgeSpr)];
+    sb.e[findMatchBadgeN]._children = [rf(findMatchBadgeLbl)];
+    sb.e[findMatchBadgeN]._active = false; // hidden until count > 0
 
-    // Phase A — Flag icon (top-left) → FindMatchPanel. Empty label; AppUI attaches IconBadge flag.
-    const homeFindMatchBtn = mkBtnXY(sb, 'OpenFindMatchButton', hpN, '', -300, 700, 64, 64, 38, 44, 64);
+    // Bot Match — warn amber (paper / training).
+    const { glow: botMatchGlow, btn: botMatch } = mkBtnHero(sb,
+        'BotMatchButton', hpN, 'Bot Match',
+        HE.botMatchBtn.x, HE.botMatchBtn.y, HE.botMatchBtn.w, HE.botMatchBtn.h,
+        VAR('warn').r, VAR('warn').g, VAR('warn').b);
+    style(sb, botMatch, { bold: true });
+    const botMatchSub = mkLabel(sb, 'BotMatchSubtitle', hpN, 'Paper · vs Bots · free practice', 14,
+        HE.botMatchSubtitle.y, HE.botMatchSubtitle.w, HE.botMatchSubtitle.h, 168, 174, 201);
 
-    // Phase N3 — Notification bell + unread badge. AppUI attaches IconLibrary.bell.
-    const homeNotifBell = mkBtnXY(sb, 'NotificationBellButton', hpN, '', 220, 700, 64, 64, 38, 44, 64);
+    // Account management — Disconnect (orange) + Delete (red).
+    const disconn = mkBtn(sb, 'DisconnectButton', hpN, 'Disconnect',
+        HE.disconnectBtn.y, HE.disconnectBtn.w, HE.disconnectBtn.h, 204, 102, 51);
+    const del = mkBtn(sb, 'DeleteButton', hpN, 'Delete Account',
+        HE.deleteBtn.y, HE.deleteBtn.w, HE.deleteBtn.h,
+        VAR('danger').r, VAR('danger').g, VAR('danger').b);
+    // Guest "Sign Out" — overlaps DisconnectButton; only one is _active per
+    // mode (real-wallet → DisconnectButton, guest → SignOutGuestButton).
+    // Hidden by default; AppUI._applyGuestModeUiHiding toggles.
+    const signOutGuest = mkBtn(sb, 'SignOutGuestButton', hpN, 'Sign Out',
+        HE.signOutGuestBtn.y, HE.signOutGuestBtn.w, HE.signOutGuestBtn.h, 204, 102, 51);
+    sb.e[signOutGuest]._active = false;
+
+    // Status footer.
+    const homeStatus = mkLabel(sb, 'HomeStatusLabel', hpN, 'Connected — choose an action', 18,
+        HE.homeStatus.y, HE.homeStatus.w, HE.homeStatus.h, 168, 174, 201);
+
+    // Top-bar icon row at y=700. Symmetric Bell ↔ Pubkey ↔ Settings (the
+    // OpenFindMatchButton chrome icon was retired — Find Match is now a
+    // first-class hero CTA in the trio above).
+    const homeSettingsBtn = mkBtnXY(sb, 'OpenSettingsButton', hpN, '',
+        HE.openSettingsBtn.x, HE.openSettingsBtn.y, HE.openSettingsBtn.w, HE.openSettingsBtn.h,
+        56, 64, 90);
+    const homeNotifBell = mkBtnXY(sb, 'NotificationBellButton', hpN, '',
+        HE.notificationBell.x, HE.notificationBell.y, HE.notificationBell.w, HE.notificationBell.h,
+        56, 64, 90);
+
+    // ── Stage 2 — HomeLevelChip ────────────────────────────────────────
+    // Top-right Lv/XP chip. Hydrated by AppUI._refreshLevelChip from
+    // on-chain UserStats + localStorage (paper/bot training XP).
+    const homeLevelChipN = sb.e.length;
+    sb.node('HomeLevelChip', hpN, [], [], v3(HE.homeLevelChip.x, HE.homeLevelChip.y, 0));
+    const homeLevelChipUT = sb.ut(homeLevelChipN, HE.homeLevelChip.w, HE.homeLevelChip.h);
+    const homeLevelChipSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(homeLevelChipN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(28, 34, 48, 220),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const homeLevelChipLbl = mkLabel(sb, 'HomeLevelChipLabel', homeLevelChipN, 'Lv 1 · 0/1000', 14, 0,
+        HE.homeLevelChip.w - 16, HE.homeLevelChip.h - 6, 218, 165, 32);
+    sb.e[sb.e[homeLevelChipLbl]._components[1].__id__]._isBold = true;
+    sb.e[homeLevelChipN]._components = [rf(homeLevelChipUT), rf(homeLevelChipSpr)];
+    sb.e[homeLevelChipN]._children = [rf(homeLevelChipLbl)];
+    sb.e[homeLevelChipN]._active = false; // hidden until UserStats loads
+
+    // Notification badge — overlay on top-right of bell. Allowed to overlap
+    // bell intentionally (declared in LayoutSpec.Home.allowedOverlaps).
     const homeNotifBadgeN = sb.e.length;
-    sb.node('NotificationBellBadge', hpN, [], [], v3(244, 722, 0));
-    const homeNotifBadgeUT = sb.ut(homeNotifBadgeN, 24, 24);
+    sb.node('NotificationBellBadge', hpN, [], [], v3(HE.notificationBadge.x, HE.notificationBadge.y, 0));
+    const homeNotifBadgeUT = sb.ut(homeNotifBadgeN, HE.notificationBadge.w, HE.notificationBadge.h);
     const homeNotifBadgeSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(homeNotifBadgeN), _enabled: true, __prefab: null,
@@ -570,18 +888,26 @@ function generate() {
     // builds its own Graphics children (body / wand / eyes / sparkles) at
     // onLoad. Sits below the bottom button row, above HomeStatusLabel.
     const mascotN = sb.e.length;
-    // UX Phase 2b: shrunk to 160×200 and nudged up to y=-440 so small-viewport
-    // devices don't clip into HomeStatusLabel (y=-700).
-    sb.node('MascotContainer', hpN, [], [], v3(0, -440, 0));
-    const mascotUT = sb.ut(mascotN, 160, 200);
+    // UX: positioned per LAYOUT.Home.elements.mascot — moved from y=-440 to
+    // y=180 as visual centerpiece between the play CTAs and account
+    // management buttons (now that the Sign* gap exists). 140×180 matches
+    // the Landing/Race/PostMatch mascots.
+    sb.node('MascotContainer', hpN, [], [], v3(HE.mascot.x, HE.mascot.y, 0));
+    const mascotUT = sb.ut(mascotN, HE.mascot.w, HE.mascot.h);
     sb.e[mascotN]._components = [rf(mascotUT)];
 
     sb.e[hpN]._children = [
         rf(pubkey), rf(homeRakeChip), rf(matchTicker), rf(homeTournamentBadge),
-        rf(streakStrip), rf(quickPlay), rf(playDuel),
-        rf(signMsg), rf(signTx), rf(signSend), rf(caps), rf(disconn), rf(del),
-        rf(mascotN), rf(homeStatus), rf(homeSettingsBtn), rf(homeFindMatchBtn),
-        rf(homeNotifBell), rf(homeNotifBadgeN),
+        rf(streakStrip),
+        // CTA trio: glow → button → subtitle for each (glow renders behind button).
+        rf(startMatchGlow), rf(startMatch), rf(startMatchSub),
+        rf(findMatchGlow), rf(findMatch), rf(findMatchSub), rf(findMatchBadgeN),
+        rf(botMatchGlow), rf(botMatch), rf(botMatchSub),
+        // Account mgmt + chrome.
+        rf(disconn), rf(signOutGuest), rf(del),
+        rf(mascotN), rf(homeStatus),
+        rf(homeSettingsBtn), rf(homeNotifBell), rf(homeNotifBadgeN),
+        rf(homeLevelChipN),
     ];
 
     // ═══════════════════════════════════════════════════════════════
@@ -599,8 +925,9 @@ function generate() {
     //     the scene regen ships a version that removes them.
     // ═══════════════════════════════════════════════════════════════
     const tdN = sb.e.length;
-    sb.node('TokenDuelPanel', canvas, [], [tdN+1], v3(0,0,0));
+    sb.node('TokenDuelPanel', canvas, [], [tdN+1], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(tdN, 720, 1280);
+    sb.spr(tdN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind data
 
     // ─────────────────────────────────────────────────────────────────
     // Session 12: designer-heavy UX pass — solpulse-parity sleekness.
@@ -623,14 +950,18 @@ function generate() {
     // into 1280. Y range widened from [-625,+618] → [-740,+720] so the top
     // chrome and bottom status stretch edge-to-edge on device, killing the
     // "shadow frame" bands the user kept seeing.
-    const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18, 720, 110, 28, 160, 170, 190);
-    sb.e[tdBackLink]._lpos = v3(-280, 720, 0);
+    // TokenDuelPanel chrome positions sourced from LAYOUT.TokenDuelPanel.
+    const TDE = LAYOUT.TokenDuelPanel.elements;
+    const TDT = LAYOUT.TokenDuelPanel.templates;
+
+    const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18,
+        TDE.backLink.y, TDE.backLink.w, TDE.backLink.h, 160, 170, 190);
+    sb.e[tdBackLink]._lpos = v3(TDE.backLink.x, TDE.backLink.y, 0);
     const tdBackLinkL = sb.e[tdBackLink]._components[1].__id__;
-    sb.e[tdBackLinkL]._horizontalAlign = 0; // left-aligned
-    // Invisible hit-area Button covers the label region so taps still fire the back handler.
+    sb.e[tdBackLinkL]._horizontalAlign = 0;
     const tdBackBtn = sb.e.length;
-    sb.node('BackButton', tdN, [], [], v3(-280, 720, 0));
-    const tdBackBtnUT = sb.ut(tdBackBtn, 140, 36);
+    sb.node('BackButton', tdN, [], [], v3(TDE.backBtn.x, TDE.backBtn.y, 0));
+    const tdBackBtnUT = sb.ut(tdBackBtn, TDE.backBtn.w, TDE.backBtn.h);
     const tdBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(tdBackBtn), _enabled: true, __prefab: null,
@@ -641,143 +972,167 @@ function generate() {
     });
     sb.e[tdBackBtn]._components = [rf(tdBackBtnUT), rf(tdBackBtnBtn)];
 
-    // Title — UX Phase 2c: bold.
-    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32, 700, 280, 44, 218, 165, 32);
+    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32,
+        TDE.title.y, TDE.title.w, TDE.title.h, 218, 165, 32);
     style(sb, tdTitle, { bold: true });
 
-    // Session 14 C: Leaderboard + Portfolio entry buttons.
-    // Compact icons in the top bar between back link and title area.
-    // UX Phase 2b: solo-emoji chrome buttons cleared; AppUI attaches IconBadges.
-    // UX Phase 2d: row moved up to y=735 so it doesn't overlap TitleLabel at y=700.
-    const tdLeaderboardBtn = mkBtnXY(sb, 'OpenLeaderboardButton', tdN, '', -180, 735, 48, 40, 28, 34, 48);
-    const tdPortfolioBtn   = mkBtnXY(sb, 'OpenPortfolioButton',   tdN, '', -128, 735, 48, 40, 28, 34, 48);
-    const tdSettingsBtn    = mkBtnXY(sb, 'OpenSettingsButton',    tdN, '', -76,  735, 48, 40, 28, 34, 48);
-    const tdPresetsBtn     = mkBtnXY(sb, 'OpenSquadPresetsButton', tdN, '', -24,  735, 48, 40, 28, 34, 48);
-    const tdSuggestBtn     = mkBtnXY(sb, 'SuggestSquadButton',     tdN, '',  28,  735, 48, 40, 28, 34, 48);
-    const tdHelpBtn        = mkBtnXY(sb, 'HelpButton',              tdN, '?',   80,  735, 48, 40, 28, 34, 48);
+    // ── Stage 2 — TokenDuelLevelChip ───────────────────────────────────
+    // Top-right Lv/XP chip mirroring Home + FindMatchPanel. Same styling.
+    const tdLevelChipN = sb.e.length;
+    sb.node('TokenDuelLevelChip', tdN, [], [], v3(TDE.tokenDuelLevelChip.x, TDE.tokenDuelLevelChip.y, 0));
+    const tdLevelChipUT = sb.ut(tdLevelChipN, TDE.tokenDuelLevelChip.w, TDE.tokenDuelLevelChip.h);
+    const tdLevelChipSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(tdLevelChipN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(28, 34, 48, 220),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelChipN, 'Lv 1 · 0/1000', 14, 0,
+        TDE.tokenDuelLevelChip.w - 16, TDE.tokenDuelLevelChip.h - 6, 218, 165, 32);
+    sb.e[sb.e[tdLevelChipLbl]._components[1].__id__]._isBold = true;
+    sb.e[tdLevelChipN]._components = [rf(tdLevelChipUT), rf(tdLevelChipSpr)];
+    sb.e[tdLevelChipN]._children = [rf(tdLevelChipLbl)];
+    sb.e[tdLevelChipN]._active = false;
+
+    // 6 top-row icon buttons from LAYOUT.TokenDuelPanel.templates.topRowActionBtn.
+    // Row moved from y=735 → y=750 so bbox clears TitleLabel at y=700 h=44.
+    const TRA = TDT.topRowActionBtn;
+    const tdActionBtns = [];
+    for (let i = 0; i < TRA.count; i++) {
+        // Phase 24: bg color (28,34,48) → (56,64,90) for visibility against
+        // canvas dark-slate (mirrors Phase 22 Home icons treatment).
+        const bN = mkBtnXY(sb, TRA.names[i], tdN, TRA.labels[i],
+            TRA.xs[i], TRA.y, TRA.w, TRA.h, 56, 64, 90);
+        tdActionBtns.push(bN);
+    }
+    const [tdLeaderboardBtn, tdPortfolioBtn, tdSettingsBtn, tdPresetsBtn, tdSuggestBtn, tdHelpBtn] = tdActionBtns;
 
     // Balance chip — muted emerald, top-right.
-    const tdBalance = mkLabel(sb, 'BalanceChipLabel', tdN, '◼ 0.0000 SOL', 17, 700, 180, 32, 140, 220, 180);
-    sb.e[tdBalance]._lpos = v3(230, 700, 0);
+    const tdBalance = mkLabel(sb, 'BalanceChipLabel', tdN, '◼ 0.0000 SOL', 17,
+        TDE.balanceChip.y, TDE.balanceChip.w, TDE.balanceChip.h, 140, 220, 180);
+    sb.e[tdBalance]._lpos = v3(TDE.balanceChip.x, TDE.balanceChip.y, 0);
     const tdBalanceL = sb.e[tdBalance]._components[1].__id__;
-    sb.e[tdBalanceL]._horizontalAlign = 2; // right-aligned
-    // Stage 5N — mono the balance chip so the SOL value stays stable when it updates.
+    sb.e[tdBalanceL]._horizontalAlign = 2;
     style(sb, tdBalance, { mono: true });
 
-    // Search input — flat chrome bg, no clear button (we'll restyle it as a subtle × inside).
-    const tdSearch = mkEditBox(sb, 'SearchEditBox', tdN, 'Search token by symbol or mint…', 0, 640, 620, 46, 17);
-    const tdSearchClear = mkBtnXY(sb, 'SearchClearButton', tdN, '×', 285, 640, 40, 40, 45, 55, 72);
+    // Search input + clear button.
+    const tdSearch = mkEditBox(sb, 'SearchEditBox', tdN, 'Search token by symbol or mint…',
+        TDE.search.x, TDE.search.y, TDE.search.w, TDE.search.h, 17);
+    const tdSearchClear = mkBtnXY(sb, 'SearchClearButton', tdN, '×',
+        TDE.searchClear.x, TDE.searchClear.y, TDE.searchClear.w, TDE.searchClear.h, 45, 55, 72);
     sb.e[tdSearchClear]._active = false;
 
-    // Header-chrome row: dropdown · watchlist star · live indicator — single horizontal band.
-    const tabY = 590;
-    // UX Phase 2b: emoji stripped, AppUI dynamically attaches tab-specific IconBadge.
-    const tdTabDropdown = mkBtnXY(sb, 'FeedTabDropdownButton', tdN, 'New Pairs  ▾', -200, tabY, 240, 40, 28, 34, 48);
-    // Session 14 A3: widened from 140→170 so "+ N to Watchlist" never truncates.
-    // UX Phase 2b: AppUI toggles IconBadge star/starOutline per watchlist state.
-    const tdWatchStar   = mkBtnXY(sb, 'WatchlistStarButton',   tdN, 'Watchlist',    10, tabY, 170, 38, 28, 34, 48);
-    const tdWatchCancel = mkBtnXY(sb, 'CancelWatchlistButton', tdN, '✕', 115, tabY, 36, 36, 55, 30, 30);
+    // Header-chrome row: dropdown · watchlist star · live indicator.
+    const tabY = TDE.feedTabDropdown.y;
+    const tdTabDropdown = mkBtnXY(sb, 'FeedTabDropdownButton', tdN, 'New Pairs  ▾',
+        TDE.feedTabDropdown.x, TDE.feedTabDropdown.y, TDE.feedTabDropdown.w, TDE.feedTabDropdown.h,
+        28, 34, 48);
+    const tdWatchStar = mkBtnXY(sb, 'WatchlistStarButton', tdN, 'Watchlist',
+        TDE.watchlistStar.x, TDE.watchlistStar.y, TDE.watchlistStar.w, TDE.watchlistStar.h,
+        28, 34, 48);
+    const tdWatchCancel = mkBtnXY(sb, 'CancelWatchlistButton', tdN, '✕',
+        TDE.cancelWatchlist.x, TDE.cancelWatchlist.y, TDE.cancelWatchlist.w, TDE.cancelWatchlist.h,
+        55, 30, 30);
     sb.e[tdWatchCancel]._active = false;
-    const tdLiveLbl     = mkLabel(sb, 'LiveIndicatorLabel', tdN, '●  LIVE', 14, tabY, 110, 40, 48, 198, 155);
-    sb.e[tdLiveLbl]._lpos = v3(260, tabY, 0);
+    const tdLiveLbl = mkLabel(sb, 'LiveIndicatorLabel', tdN, '●  LIVE', 14,
+        TDE.liveIndicator.y, TDE.liveIndicator.w, TDE.liveIndicator.h, 48, 198, 155);
+    sb.e[tdLiveLbl]._lpos = v3(TDE.liveIndicator.x, TDE.liveIndicator.y, 0);
+    style(sb, tdLiveLbl, { spacing: 1 });  // Phase 15 (B5): tracked uppercase
 
-    // Dropdown popover — stacked vertically, 6 options. Hidden by default.
-    const popN = sb.e.length;
-    sb.node('FeedTabDropdownPopover', tdN, [], [], v3(-200, tabY - 165, 0));
-    const popUT = sb.ut(popN, 240, 304);
-    const popSpr = sb.spr(popN, 18, 24, 36);
-    const popOptionNames = ['new', 'trending', 'gainers', 'volume', 'smart', 'watchlist'];
+    // FeedTabDropdownPopover — 6 options from LAYOUT.TokenDuelPanel.templates.feedTabOption.
     // UX Phase 2b: emoji stripped; AppUI attaches per-row IconBadges (bolt/flame/chart/chart/brain/star).
-    const popOptionLabels = ['New Pairs', 'Trending', 'Top Gainers', 'Top Volume', 'Smart Money', 'Watchlist'];
-    const popOptYs = [126, 76, 26, -24, -74, -124];
+    const FTDP = TDE.feedTabDropdownPopover;
+    const FTO  = TDT.feedTabOption;
+    const popN = sb.e.length;
+    sb.node('FeedTabDropdownPopover', tdN, [], [], v3(FTDP.x, FTDP.y, 0));
+    const popUT = sb.ut(popN, FTDP.w, FTDP.h);
+    const popSpr = sb.spr(popN, 18, 24, 36);
     const popOptIndices = [];
-    for (let p = 0; p < 6; p++) {
-        const optN = mkBtnXY(sb, `FeedTabOption_${popOptionNames[p]}`, popN, popOptionLabels[p], 0, popOptYs[p], 224, 40, 28, 34, 48);
+    for (let p = 0; p < FTO.count; p++) {
+        const optN = mkBtnXY(sb, `FeedTabOption_${FTO.keys[p]}`, popN, FTO.labels[p],
+            0, FTO.ys[p], FTO.w, FTO.h, 28, 34, 48);
         popOptIndices.push(optN);
     }
     sb.e[popN]._components = [rf(popUT), rf(popSpr)];
     sb.e[popN]._children = popOptIndices.map(rf);
     sb.e[popN]._active = false;
 
-    // Session 14 A1: widened chips + gaps + MinLiq dropdown inset so nothing
-    // crowds. Columns button pulled in from x=285 → x=250 away from the edge.
-    const chipY = 550;
-    const chipH = 28;
-    const chipGap = 8;
-    const sortChipNames  = ['newest',   'liq_desc', 'liq_asc'];
-    const sortChipLabels = ['Newest',   'Liq↓',     'Liq↑'];
-    const sortChipW = 72;
-    const sortStartX = -268;
+    // 3 sort filter chips from LAYOUT.TokenDuelPanel.templates.feedFilterChip.
+    const FFC = TDT.feedFilterChip;
     const chipIndices = [];
-    for (let c = 0; c < 3; c++) {
-        const cx = sortStartX + c * (sortChipW + chipGap);
-        const cN = mkBtnXY(sb, `FilterChip_${sortChipNames[c]}`, tdN, sortChipLabels[c], cx, chipY, sortChipW, chipH, 28, 34, 48);
+    for (let c = 0; c < FFC.count; c++) {
+        const cx = FFC.baseX + c * FFC.gapX;
+        const cN = mkBtnXY(sb, `FilterChip_${FFC.keys[c]}`, tdN, FFC.labels[c],
+            cx, FFC.y, FFC.w, FFC.h, 28, 34, 48);
         chipIndices.push(cN);
     }
-    // MinLiq dropdown — wider at 110w so "$10K+ ▾" fits comfortably.
-    const tdMinLiqBtn = mkBtnXY(sb, 'MinLiqDropdownButton', tdN, 'All  ▾', -35, chipY, 110, chipH, 28, 34, 48);
-    // UX Phase 2b: IconBadge cog attached by AppUI.
-    const tdColumnsBtn = mkBtnXY(sb, 'ColumnsButton', tdN, 'Columns', 250, chipY, 110, chipH, 28, 34, 48);
+    const chipY = FFC.y;
+    const chipH = FFC.h;
+    // MinLiq dropdown — moved x=-35 → x=15 to clear FilterChip_liq_asc bbox.
+    const tdMinLiqBtn = mkBtnXY(sb, 'MinLiqDropdownButton', tdN, 'All  ▾',
+        TDE.minLiqDropdown.x, TDE.minLiqDropdown.y, TDE.minLiqDropdown.w, TDE.minLiqDropdown.h,
+        28, 34, 48);
+    const tdColumnsBtn = mkBtnXY(sb, 'ColumnsButton', tdN, 'Columns',
+        TDE.columnsBtn.x, TDE.columnsBtn.y, TDE.columnsBtn.w, TDE.columnsBtn.h,
+        28, 34, 48);
 
-    // MinLiq popover — 4 options stacked. Opens DOWN-LEFT of MinLiqDropdownButton.
-    // Hidden by default.
+    // MinLiq popover — 4 options from LAYOUT.TokenDuelPanel.templates.minLiqOption.
+    const MLP = TDE.minLiqDropdownPopover;
+    const MLO = TDT.minLiqOption;
     const minLiqPopN = sb.e.length;
-    sb.node('MinLiqDropdownPopover', tdN, [], [], v3(-60, chipY - 96, 0));
-    const minLiqPopUT = sb.ut(minLiqPopN, 120, 180);
+    sb.node('MinLiqDropdownPopover', tdN, [], [], v3(MLP.x, MLP.y, 0));
+    const minLiqPopUT = sb.ut(minLiqPopN, MLP.w, MLP.h);
     const minLiqPopSpr = sb.spr(minLiqPopN, 18, 24, 36);
-    const minLiqOptNames  = ['all', '1k', '5k', '10k'];
-    const minLiqOptLabels = ['All', '$1K+', '$5K+', '$10K+'];
-    const minLiqOptYs = [72, 24, -24, -72];
     const minLiqOptIndices = [];
-    for (let m = 0; m < 4; m++) {
-        const oN = mkBtnXY(sb, `MinLiqOption_${minLiqOptNames[m]}`, minLiqPopN, minLiqOptLabels[m], 0, minLiqOptYs[m], 108, 38, 28, 34, 48);
+    for (let m = 0; m < MLO.count; m++) {
+        const oN = mkBtnXY(sb, `MinLiqOption_${MLO.keys[m]}`, minLiqPopN, MLO.labels[m],
+            0, MLO.ys[m], MLO.w, MLO.h, 28, 34, 48);
         minLiqOptIndices.push(oN);
     }
     sb.e[minLiqPopN]._components = [rf(minLiqPopUT), rf(minLiqPopSpr)];
     sb.e[minLiqPopN]._children = minLiqOptIndices.map(rf);
     sb.e[minLiqPopN]._active = false;
 
-    // Session 13 A3: Columns popover — opens DOWN-LEFT of the Columns button
-    // so it doesn't clip off the right edge. 10 toggle rows; each shows a
-    // ✓ prefix when active. Wired at runtime by AppUI.
+    // Columns popover — 10 toggles from LAYOUT.TokenDuelPanel.templates.columnsToggle.
+    // Each shows a ✓ prefix when active (wired at runtime). Footer hint
+    // "Max 6 columns" reads from TDE.columnsPopoverHint.
+    const CP  = TDE.columnsPopover;
+    const CPH = TDE.columnsPopoverHint;
+    const CT  = TDT.columnsToggle;
     const colPopN = sb.e.length;
-    sb.node('ColumnsPopover', tdN, [], [], v3(215, chipY - 208, 0));
-    const colPopUT = sb.ut(colPopN, 170, 360);
+    sb.node('ColumnsPopover', tdN, [], [], v3(CP.x, CP.y, 0));
+    const colPopUT = sb.ut(colPopN, CP.w, CP.h);
     const colPopSpr = sb.spr(colPopN, 18, 24, 36);
-    const colPopLabels = ['Score', 'Liq', 'Vol', '24h', 'Age', 'MC', 'FDV', 'Price', 'Holders', 'DEX'];
-    const colPopKeys   = ['score', 'liq', 'vol', 'change', 'age', 'mc', 'fdv', 'price', 'holders', 'source'];
-    const colPopStartY = 160;
-    const colPopRowH = 32;
     const colPopIndices = [];
-    for (let k = 0; k < colPopLabels.length; k++) {
-        const cY = colPopStartY - k * colPopRowH;
-        const cN = mkBtnXY(sb, `ColToggle_${colPopKeys[k]}`, colPopN, `✓  ${colPopLabels[k]}`, 0, cY, 154, 30, 28, 34, 48);
+    for (let k = 0; k < CT.count; k++) {
+        const cY = CT.startY - k * CT.rowH;
+        const cN = mkBtnXY(sb, `ColToggle_${CT.keys[k]}`, colPopN, `✓  ${CT.labels[k]}`,
+            0, cY, CT.w, CT.h, 28, 34, 48);
         colPopIndices.push(cN);
     }
-    // Footer "Max 6 columns" hint
-    const colPopHintN = mkLabel(sb, 'ColMaxHintLabel', colPopN, 'Max 6 columns', 10, colPopStartY - colPopLabels.length * colPopRowH - 4, 160, 20, 100, 110, 130);
+    const colPopHintN = mkLabel(sb, 'ColMaxHintLabel', colPopN, 'Max 6 columns', 10,
+        CPH.y, CPH.w, CPH.h, 100, 110, 130);
+    sb.e[colPopHintN]._lpos = v3(CPH.x, CPH.y, 0);
     sb.e[colPopN]._components = [rf(colPopUT), rf(colPopSpr)];
     sb.e[colPopN]._children = [...colPopIndices.map(rf), rf(colPopHintN)];
     sb.e[colPopN]._active = false;
 
-    // Session 12: Column headers row — sticky, directly above the feed.
-    // Matches row column x-positions exactly so numbers align under labels.
-    const headerY = 505;
+    // Column headers row — sticky group, directly above the feed. Cols sourced
+    // from LAYOUT.TokenDuelPanel.templates.feedColHeader; group position from
+    // LAYOUT.TokenDuelPanel.elements.feedColumnHeaders.
+    const FCH = TDT.feedColHeader;
     const headerGroupN = sb.e.length;
-    sb.node('FeedColumnHeaders', tdN, [], [], v3(0, headerY, 0));
-    sb.ut(headerGroupN, 700, 24);
-    const hdrDefs = [
-        { name: 'ColHeader_Token',  text: 'TOKEN',  x: -262, w: 160, align: 0 },
-        { name: 'ColHeader_Score',  text: 'SCORE',  x: -90,  w: 40,  align: 1 },
-        { name: 'ColHeader_Liq',    text: 'LIQ',    x: -40,  w: 60,  align: 1 },
-        { name: 'ColHeader_Vol',    text: 'VOL',    x: 30,   w: 60,  align: 1 },
-        { name: 'ColHeader_Change', text: '24H',    x: 100,  w: 60,  align: 1 },
-        { name: 'ColHeader_Price',  text: 'PRICE',  x: 180,  w: 80,  align: 1 },
-        { name: 'ColHeader_Age',    text: 'AGE',    x: 285,  w: 40,  align: 1 },
-    ];
+    sb.node('FeedColumnHeaders', tdN, [], [],
+        v3(TDE.feedColumnHeaders.x, TDE.feedColumnHeaders.y, 0));
+    sb.ut(headerGroupN, TDE.feedColumnHeaders.w, TDE.feedColumnHeaders.h);
     const hdrIndices = [];
-    for (const d of hdrDefs) {
-        const hN = mkLabel(sb, d.name, headerGroupN, d.text, 11, 0, d.w, 22, 100, 110, 130);
+    for (const d of FCH.cols) {
+        const hN = mkLabel(sb, `ColHeader_${d.key}`, headerGroupN, d.text, 11, 0, d.w, FCH.h, 100, 110, 130);
         sb.e[hN]._lpos = v3(d.x, 0, 0);
         const hL = sb.e[hN]._components[1].__id__;
         sb.e[hL]._horizontalAlign = d.align;
@@ -786,53 +1141,53 @@ function generate() {
     }
     sb.e[headerGroupN]._children = hdrIndices.map(rf);
 
-    // Session 12: Feed ScrollView — **660px tall** (was 400). Positioned so
-    // the bottom edge sits at y=-260 and top at y=+400, with the scrollview
-    // centered at y=+70. This gives ~65% more visible rows (≈10 at rest vs 6).
-    const FEED_ROW_LIMIT = 20;
-    const rowHeight = 66;
-    const rowGap = 4;
-    const rowStride = rowHeight + rowGap;
-    const rowW = 680;
-    const feedWinH = 820;
-    const { root: tdFeedSV, content: tdFeedContent, contentUT: tdFeedContentUT } = mkScrollView(sb, 'FeedScrollView', tdN, 0, 30, 700, feedWinH);
+    // Feed ScrollView + 20 rows. Window pos/size from
+    // LAYOUT.TokenDuelPanel.elements.feedScrollView; row internals from
+    // LAYOUT.TokenDuelPanel.templates.feedRow.
+    const FR = TDT.feedRow;
+    const FEED_ROW_LIMIT = FR.count;
+    const rowHeight = FR.h;
+    const rowStride = -FR.gapY; // gapY is negative (rows stack downward)
+    const rowW = FR.w;
+    const { root: tdFeedSV, content: tdFeedContent, contentUT: tdFeedContentUT } = mkScrollView(
+        sb, 'FeedScrollView', tdN,
+        TDE.feedScrollView.x, TDE.feedScrollView.y,
+        TDE.feedScrollView.w, TDE.feedScrollView.h,
+    );
     // Size content to fit the full 20-row pool so the ScrollView can scroll.
     sb.e[tdFeedContentUT]._contentSize = sz(rowW, FEED_ROW_LIMIT * rowStride);
 
-    // Session 13 row layout (tightened to match header column positions):
-    //   [SelEdge] [Checkbox] [Logo] [$TICKER / name]   [Score][Liq][Vol][24h][Price][Age][LiveDot]
-    //                                (bottom line: name · 4ch…4ch    |    DEX)
-    // SelectedEdge + Checkbox default hidden; toggled at runtime.
+    // Row internal layout matches FeedColumnHeaders x positions exactly so
+    // numeric columns line up under each label. SelectedEdge + Checkbox are
+    // hidden by default; toggled at runtime when watchlist-mode is active.
+    // Phase 8b: SymbolLabel.w shrunk 160 → 140 so its right edge clears
+    // ScoreLabel's left edge (eliminates 20× SymbolLabel↔ScoreLabel overlap).
     const feedRowIndices = [];
-    const rowHalfW = rowW / 2; // 340
-    const topY = 12;
-    const botY = -14;
     for (let i = 0; i < FEED_ROW_LIMIT; i++) {
-        const ry = -(rowHeight / 2) - i * rowStride;
+        const ry = FR.baseY + i * FR.gapY;
         const rn = sb.e.length;
         sb.node(`FeedRow_${i}`, tdFeedContent, [], [], v3(0, ry, 0));
         const rUT  = sb.ut(rn, rowW, rowHeight);
         const rSpr = sb.spr(rn, 14, 18, 28);
         const rBtn = sb.btn(rn, 14, 18, 28);
 
-        // Session 13 A5: SelectedEdge — 3×rowHeight emerald strip, left edge.
+        // SelectedEdge — emerald strip on row's left edge (hidden).
         const selEdgeN = sb.e.length;
-        sb.node('SelectedEdge', rn, [], [], v3(-rowHalfW + 2, 0, 0));
-        const selEdgeUT = sb.ut(selEdgeN, 3, rowHeight - 6);
+        sb.node('SelectedEdge', rn, [], [], v3(FR.selectedEdge.x, FR.selectedEdge.y, 0));
+        const selEdgeUT = sb.ut(selEdgeN, FR.selectedEdge.w, FR.selectedEdge.h);
         const selEdgeSpr = sb.spr(selEdgeN, 48, 198, 155);
         sb.e[selEdgeN]._components = [rf(selEdgeUT), rf(selEdgeSpr)];
         sb.e[selEdgeN]._active = false;
 
-        // Session 13 A6: CheckboxSprite — 24×24 square at far left; hidden
-        // outside watchlist-mode. Checked state colored emerald at runtime.
-        // betting-duel polish: black ✓ overlay inside the square when checked.
+        // CheckboxSprite — square at far left, hidden outside watchlist-mode.
+        // Checked state colored emerald at runtime; black ✓ overlay child.
         const chkN = sb.e.length;
-        sb.node('CheckboxSprite', rn, [], [], v3(-rowHalfW + 20, 0, 0));
-        const chkUT = sb.ut(chkN, 22, 22);
+        sb.node('CheckboxSprite', rn, [], [], v3(FR.checkbox.x, FR.checkbox.y, 0));
+        const chkUT = sb.ut(chkN, FR.checkbox.w, FR.checkbox.h);
         const chkSpr = sb.spr(chkN, 45, 52, 70);
         const chkIconN = sb.e.length;
-        sb.node('CheckmarkIcon', chkN, [], [], v3(0, 1, 0));
-        const chkIconUT = sb.ut(chkIconN, 22, 22);
+        sb.node('CheckmarkIcon', chkN, [], [], v3(FR.checkmark.x, FR.checkmark.y, 0));
+        const chkIconUT = sb.ut(chkIconN, FR.checkmark.w, FR.checkmark.h);
         const chkIconL  = sb.lbl(chkIconN, '✓', 18, 0, 0, 0);
         sb.e[chkIconL]._isBold = true;
         sb.e[chkIconN]._components = [rf(chkIconUT), rf(chkIconL)];
@@ -841,100 +1196,120 @@ function generate() {
         sb.e[chkN]._children = [rf(chkIconN)];
         sb.e[chkN]._active = false;
 
-        // Logo — 28×28 at left edge (after checkbox column). When watchlist
-        // mode is active, AppUI can nudge this right by 20px at runtime.
+        // Logo — round 28×28 at left. AppUI nudges right 20px in watchlist mode.
         const logoN = sb.e.length;
-        sb.node('LogoSprite', rn, [], [], v3(-rowHalfW + 30, 0, 0));
-        const logoUT = sb.ut(logoN, 28, 28);
+        sb.node('LogoSprite', rn, [], [], v3(FR.logo.x, FR.logo.y, 0));
+        const logoUT = sb.ut(logoN, FR.logo.w, FR.logo.h);
         const logoSpr = sb.spr(logoN, 255, 255, 255);
         sb.e[logoN]._components = [rf(logoUT), rf(logoSpr)];
 
-        // SymbolLabel — top line, bold, left-aligned. Aligned to ColHeader_Token.
+        // SymbolLabel — top line, bold, left-aligned. Aligned under ColHeader_Token.
         const symN = sb.e.length;
-        sb.node('SymbolLabel', rn, [], [], v3(-180, topY, 0));
-        const symUT = sb.ut(symN, 160, 22);
+        sb.node('SymbolLabel', rn, [], [], v3(FR.symbol.x, FR.symbol.y, 0));
+        const symUT = sb.ut(symN, FR.symbol.w, FR.symbol.h);
         const symL  = sb.lbl(symN, '—', 18, 255, 255, 255);
         sb.e[symL]._horizontalAlign = 0;
         sb.e[symL]._isBold = true;
         sb.e[symN]._components = [rf(symUT), rf(symL)];
 
-        // NameLabel — bottom line, 11pt muted.
+        // NameLabel — bottom line, muted.
         const nameN = sb.e.length;
-        sb.node('NameLabel', rn, [], [], v3(-180, botY, 0));
-        const nameUT = sb.ut(nameN, 200, 18);
+        sb.node('NameLabel', rn, [], [], v3(FR.name.x, FR.name.y, 0));
+        const nameUT = sb.ut(nameN, FR.name.w, FR.name.h);
         const nameL  = sb.lbl(nameN, '', 11, 120, 130, 145);
         sb.e[nameL]._horizontalAlign = 0;
         sb.e[nameN]._components = [rf(nameUT), rf(nameL)];
 
-        // ScoreLabel — aligned to ColHeader_Score (x=-90).
+        // ScoreLabel — aligned under ColHeader_Score.
         const scoreN = sb.e.length;
-        sb.node('ScoreLabel', rn, [], [], v3(-90, topY, 0));
-        const scoreUT = sb.ut(scoreN, 40, 22);
+        sb.node('ScoreLabel', rn, [], [], v3(FR.score.x, FR.score.y, 0));
+        const scoreUT = sb.ut(scoreN, FR.score.w, FR.score.h);
         const scoreL  = sb.lbl(scoreN, '—', 14, 220, 220, 230);
         sb.e[scoreL]._isBold = true;
         sb.e[scoreN]._components = [rf(scoreUT), rf(scoreL)];
 
-        // LiqLabel — aligned to ColHeader_Liq (x=-40).
+        // LiqLabel — aligned under ColHeader_Liq.
         const liqN = sb.e.length;
-        sb.node('LiqLabel', rn, [], [], v3(-40, topY, 0));
-        const liqUT = sb.ut(liqN, 60, 22);
+        sb.node('LiqLabel', rn, [], [], v3(FR.liq.x, FR.liq.y, 0));
+        const liqUT = sb.ut(liqN, FR.liq.w, FR.liq.h);
         const liqL  = sb.lbl(liqN, '—', 13, 120, 220, 200);
         sb.e[liqN]._components = [rf(liqUT), rf(liqL)];
 
-        // VolLabel — aligned to ColHeader_Vol (x=30).
+        // VolLabel — aligned under ColHeader_Vol.
         const volN = sb.e.length;
-        sb.node('VolLabel', rn, [], [], v3(30, topY, 0));
-        const volUT = sb.ut(volN, 60, 22);
+        sb.node('VolLabel', rn, [], [], v3(FR.vol.x, FR.vol.y, 0));
+        const volUT = sb.ut(volN, FR.vol.w, FR.vol.h);
         const volL  = sb.lbl(volN, '—', 13, 180, 180, 170);
         sb.e[volN]._components = [rf(volUT), rf(volL)];
 
-        // ChangeLabel — aligned to ColHeader_Change (x=100).
+        // ChangeLabel — aligned under ColHeader_Change.
         const changeN = sb.e.length;
-        sb.node('ChangeLabel', rn, [], [], v3(100, topY, 0));
-        const changeUT = sb.ut(changeN, 60, 22);
+        sb.node('ChangeLabel', rn, [], [], v3(FR.change.x, FR.change.y, 0));
+        const changeUT = sb.ut(changeN, FR.change.w, FR.change.h);
         const changeL  = sb.lbl(changeN, '', 14, 200, 200, 200);
         sb.e[changeN]._components = [rf(changeUT), rf(changeL)];
 
-        // DeltaLabel — back-compat alias; hidden.
+        // DeltaLabel — alternate of ChangeLabel; hidden by default.
         const deltaN = sb.e.length;
-        sb.node('DeltaLabel', rn, [], [], v3(100, topY, 0));
-        const deltaUT = sb.ut(deltaN, 60, 22);
+        sb.node('DeltaLabel', rn, [], [], v3(FR.delta.x, FR.delta.y, 0));
+        const deltaUT = sb.ut(deltaN, FR.delta.w, FR.delta.h);
         const deltaL  = sb.lbl(deltaN, '', 14, 200, 200, 200);
         sb.e[deltaN]._components = [rf(deltaUT), rf(deltaL)];
         sb.e[deltaN]._active = false;
 
-        // PriceLabel — aligned to ColHeader_Price (x=180).
+        // PriceLabel — aligned under ColHeader_Price.
         const priceN = sb.e.length;
-        sb.node('PriceLabel', rn, [], [], v3(180, topY, 0));
-        const priceUT = sb.ut(priceN, 80, 22);
+        sb.node('PriceLabel', rn, [], [], v3(FR.price.x, FR.price.y, 0));
+        const priceUT = sb.ut(priceN, FR.price.w, FR.price.h);
         const priceL  = sb.lbl(priceN, '', 14, 218, 165, 32);
         sb.e[priceN]._components = [rf(priceUT), rf(priceL)];
 
-        // AgeLabel — Session 13 A2: moved from bottom-line to TOP-LINE at far
-        // right. Aligned to new ColHeader_Age (x=285).
+        // AgeLabel — top line, far right. Aligned under ColHeader_Age.
         const ageN = sb.e.length;
-        sb.node('AgeLabel', rn, [], [], v3(285, topY, 0));
-        const ageUT = sb.ut(ageN, 40, 22);
+        sb.node('AgeLabel', rn, [], [], v3(FR.age.x, FR.age.y, 0));
+        const ageUT = sb.ut(ageN, FR.age.w, FR.age.h);
         const ageL  = sb.lbl(ageN, '—', 12, 140, 200, 150);
         sb.e[ageN]._components = [rf(ageUT), rf(ageL)];
 
-        // DexLabel — bottom line, muted. (Bottom row is subtitle + dex.)
+        // DexLabel — bottom line, muted.
         const dexN = sb.e.length;
-        sb.node('DexLabel', rn, [], [], v3(80, botY, 0));
-        const dexUT = sb.ut(dexN, 200, 18);
+        sb.node('DexLabel', rn, [], [], v3(FR.dex.x, FR.dex.y, 0));
+        const dexUT = sb.ut(dexN, FR.dex.w, FR.dex.h);
         const dexL  = sb.lbl(dexN, '', 11, 140, 140, 155);
         sb.e[dexN]._components = [rf(dexUT), rf(dexL)];
 
-        // LiveDot — right of AgeLabel (bottom line so it doesn't clash).
+        // LiveDot — right of AgeLabel (bottom line); hidden by default.
         const liveN = sb.e.length;
-        sb.node('LiveDot', rn, [], [], v3(315, botY, 0));
-        const liveUT = sb.ut(liveN, 8, 8);
+        sb.node('LiveDot', rn, [], [], v3(FR.liveDot.x, FR.liveDot.y, 0));
+        const liveUT = sb.ut(liveN, FR.liveDot.w, FR.liveDot.h);
         const liveSpr = sb.spr(liveN, 90, 200, 120);
         sb.e[liveN]._components = [rf(liveUT), rf(liveSpr)];
         sb.e[liveN]._active = false;
 
+        // Phase 17 (item 2): tap-down glow halo — teal flash on TOUCH_START.
+        // Initial alpha 0; AppUI._initFeedRowTactile activates + tweens.
+        // Sized 1.04× row (688×74). Named BtnGlow_FeedRow_<i> so verifier's
+        // BtnGlow_* skip rule (Phase 13) handles the bbox overlap with siblings.
+        const glowN = sb.e.length;
+        sb.node(`BtnGlow_FeedRow_${i}`, rn, [], [], v3(0, 0, 0));
+        const glowUT = sb.ut(glowN, rowW + 28, rowHeight + 8);
+        const glowSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(glowN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(48, 198, 155, 0),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[glowN]._components = [rf(glowUT), rf(glowSpr)];
+        sb.e[glowN]._active = false;
+
         sb.e[rn]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
         sb.e[rn]._children = [
+            rf(glowN),  // first so it renders BEHIND row content
             rf(selEdgeN), rf(chkN),
             rf(logoN), rf(symN), rf(nameN),
             rf(scoreN), rf(liqN), rf(volN), rf(changeN), rf(deltaN),
@@ -943,63 +1318,56 @@ function generate() {
         sb.e[rn]._active = false;
         feedRowIndices.push(rn);
     }
-    // Session 10: without this, content._children stays [] and Cocos's
-    // getChildByName walks an empty list -> every FeedRow_N lookup returns
-    // null -> _feedRowNodes is empty -> Birdeye calls ship limit=0 and 400.
-    // `sb.node(name, parent, ...)` only writes _parent on the child; the
-    // back-reference on the parent has to be written explicitly.
+    // sb.node(name, parent, ...) only writes _parent on the child; the
+    // back-reference on the parent has to be written explicitly or
+    // getChildByName('FeedRow_N') walks an empty list.
     sb.e[tdFeedContent]._children = feedRowIndices.map(rf);
 
-    // Session 14 B1: Action-button row replaces hero-tile / squad-slot chaos.
-    // 3 buttons at y=-295: + Pick | Drop | ▶ Run Squad
-    const actionRowY = -440;
-    const tdSquadPick = mkBtnXY(sb, 'SquadPickButton', tdN, '+ Pick',          -220, actionRowY, 200, 48, 48, 198, 155);
-    style(sb, tdSquadPick, { bold: true });
-    const tdSquadDrop = mkBtnXY(sb, 'SquadDropButton', tdN, 'Manage Squad',      0, actionRowY, 200, 48, 28, 34, 48);
-    const tdSquadRun  = mkBtnXY(sb, 'SquadRunButton',  tdN, '▶ Run Squad',     220, actionRowY, 200, 48, 56, 148, 252);
-    style(sb, tdSquadRun, { bold: true });
+    // 3 squad action buttons at y=-440 from LAYOUT.TokenDuelPanel.templates.squadActionBtn.
+    // Pick = emerald CTA, Drop = chrome neutral, Run = blue primary.
+    const SAB = TDT.squadActionBtn;
+    const tdSquadActionBtns = [];
+    for (let i = 0; i < SAB.count; i++) {
+        const [r, g, b] = SAB.colors[i];
+        const bN = mkBtnXY(sb, SAB.names[i], tdN, SAB.labels[i],
+                           SAB.xs[i], SAB.y, SAB.w, SAB.h, r, g, b);
+        if (SAB.bold[i]) style(sb, bN, { bold: true });
+        tdSquadActionBtns.push(bN);
+    }
+    const [tdSquadPick, tdSquadDrop, tdSquadRun] = tdSquadActionBtns;
 
-    // Session 14 B1: compact squad chips — small pills below the action row
-    // showing current picks. Replace the bulky 200×64 SquadSlot buttons.
-    const squadHeaderY = -510;
-    const squadY = -550;
-    const tdSquadHeader = mkLabel(sb, 'SquadHeaderLabel', tdN, 'YOUR SQUAD', 11, squadHeaderY, 420, 18, 100, 110, 130);
-    const tdSquadHeaderL = sb.e[tdSquadHeader]._components[1].__id__;
-    sb.e[tdSquadHeaderL]._spacingX = 1;
-    // betting-duel polish — each SquadSlot is now a composite: Button bg +
-    // LogoSprite (round 36×36 left) + SymbolLabel (symbol, bold) +
-    // DeltaLabel (24h % under the symbol, colored). The back-compat `Label`
-    // child is retained so legacy code paths don't crash; AppUI prefers the
-    // new SymbolLabel when present.
-    const squadSlotW = 180, squadSlotH = 54;
-    const squadSlotXs = [-200, 0, 200];
+    // Squad header + 3 slots from LAYOUT.TokenDuelPanel.{elements.squadHeaderLabel,
+    // templates.squadSlot}. Each slot is a composite: bg button + back-compat Label
+    // (hidden) + LogoSprite + SymbolLabel + DeltaLabel. Slots _active=false until
+    // AppUI populates squad. squadSlot.logo.x = -squadSlotW/2 + 26 = -64.
+    const tdSquadHeader = mkLabel(sb, 'SquadHeaderLabel', tdN, 'YOUR SQUAD', 11,
+        TDE.squadHeaderLabel.y, TDE.squadHeaderLabel.w, TDE.squadHeaderLabel.h, 100, 110, 130);
+    sb.e[sb.e[tdSquadHeader]._components[1].__id__]._spacingX = 1;
+
+    const SS = TDT.squadSlot;
     function mkSquadSlot(slotIdx) {
-        const x = squadSlotXs[slotIdx];
+        const x = SS.xs[slotIdx];
         const bn = sb.e.length, ln = bn + 1, bu = bn + 2, sp = bn + 3, bt = bn + 4, lu = bn + 5, ll = bn + 6;
-        sb.node(`SquadSlot_${slotIdx}`, tdN, [ln], [bu, sp, bt], v3(x, squadY, 0));
-        // Back-compat Label (hidden; symbol lives in SymbolLabel child now).
+        sb.node(`SquadSlot_${slotIdx}`, tdN, [ln], [bu, sp, bt], v3(x, SS.y, 0));
         sb.node('Label', bn, [], [lu, ll], v3(0, 0, 0));
-        sb.ut(bn, squadSlotW, squadSlotH); sb.spr(bn, 26, 32, 48); sb.btn(bn, 26, 32, 48);
-        sb.ut(ln, squadSlotW, squadSlotH); sb.lbl(ln, '', 1, 0, 0, 0, 0);
+        sb.ut(bn, SS.w, SS.h); sb.spr(bn, 26, 32, 48); sb.btn(bn, 26, 32, 48);
+        sb.ut(ln, SS.w, SS.h); sb.lbl(ln, '', 1, 0, 0, 0, 0);
         sb.e[ln]._active = false;
-        // Logo — 36×36 circle sprite at left.
         const logoN = sb.e.length;
-        sb.node('LogoSprite', bn, [], [], v3(-squadSlotW/2 + 26, 0, 0));
-        const logoUT = sb.ut(logoN, 36, 36);
+        sb.node('LogoSprite', bn, [], [], v3(SS.logo.x, SS.logo.y, 0));
+        const logoUT = sb.ut(logoN, SS.logo.w, SS.logo.h);
         const logoSpr = sb.spr(logoN, 255, 255, 255);
         sb.e[logoN]._components = [rf(logoUT), rf(logoSpr)];
-        // SymbolLabel — top line, bold.
         const symN = sb.e.length;
-        sb.node('SymbolLabel', bn, [], [], v3(12, 8, 0));
-        const symUT = sb.ut(symN, squadSlotW - 60, 22);
+        sb.node('SymbolLabel', bn, [], [], v3(SS.symbol.x, SS.symbol.y, 0));
+        const symUT = sb.ut(symN, SS.symbol.w, SS.symbol.h);
         const symL = sb.lbl(symN, '+', 18, 230, 230, 235);
         sb.e[symL]._isBold = true;
         sb.e[symL]._horizontalAlign = 0;
         sb.e[symN]._components = [rf(symUT), rf(symL)];
-        // DeltaLabel — bottom line, 24h % colored.
         const dltN = sb.e.length;
-        sb.node('DeltaLabel', bn, [], [], v3(12, -12, 0));
-        const dltUT = sb.ut(dltN, squadSlotW - 60, 16);
+        sb.node('DeltaLabel', bn, [], [], v3(SS.delta.x, SS.delta.y, 0));
+        const dltUT = sb.ut(dltN, SS.delta.w, SS.delta.h);
         const dltL = sb.lbl(dltN, '', 12, 160, 170, 190);
         sb.e[dltL]._horizontalAlign = 0;
         sb.e[dltN]._components = [rf(dltUT), rf(dltL)];
@@ -1009,89 +1377,150 @@ function generate() {
     const tdSquad0 = mkSquadSlot(0);
     const tdSquad1 = mkSquadSlot(1);
     const tdSquad2 = mkSquadSlot(2);
-    // Hidden until squad has a token in that slot.
     sb.e[tdSquad0]._active = false;
     sb.e[tdSquad1]._active = false;
     sb.e[tdSquad2]._active = false;
 
-    // Session 12: stake cluster merged into a single value line ("Stake 0.010 SOL")
-    // instead of separate header + value, then slider, then chips.
-    const stakeValueY = -420;
-    const stakeSliderY = -455;
-    const stakeChipY = -515;
-    // StakeHeaderLabel retained as a tiny uppercase section label above the value.
-    const tdStakeHeader = mkLabel(sb, 'StakeHeaderLabel', tdN, 'STAKE AMOUNT', 11, -395, 280, 18, 100, 110, 130);
-    const tdStakeHeaderL = sb.e[tdStakeHeader]._components[1].__id__;
-    sb.e[tdStakeHeaderL]._spacingX = 1;
-    const tdStakeValueLabel = mkLabel(sb, 'StakeValueLabel', tdN, '0.010 SOL', 20, stakeValueY, 300, 28, 218, 165, 32);
-    const tdStakeSlider = mkSlider(sb, 'StakeSlider', tdN, 0, stakeSliderY, 560, 14, 0.1);
+    // Legacy stake cluster — solo commit→start→claim flow is dead on the
+    // betting-duel branch. Nodes preserved for back-compat (AppUI's
+    // _setStakeClusterVisible / _hideLegacyBettingDuelNodes still target them
+    // by name) but force `_active = false` at scene-gen so the verifier sees
+    // the truthful state. Positions sourced from LAYOUT for completeness.
+    const tdStakeHeader = mkLabel(sb, 'StakeHeaderLabel', tdN, 'STAKE AMOUNT', 11,
+        TDE.stakeHeaderLabel.y, TDE.stakeHeaderLabel.w, TDE.stakeHeaderLabel.h, 100, 110, 130);
+    sb.e[sb.e[tdStakeHeader]._components[1].__id__]._spacingX = 1;
+    sb.e[tdStakeHeader]._active = false;
 
-    // Snap-to chips — single emerald accent for active only (applied at runtime); idle is chrome bg.
-    const tdStake001  = mkBtnXY(sb, 'StakeChip_001', tdN, '0.001', -220, stakeChipY, 160, 40, 28, 34, 48);
-    const tdStake010  = mkBtnXY(sb, 'StakeChip_010', tdN, '0.01',     0, stakeChipY, 160, 40, 28, 34, 48);
-    const tdStake100  = mkBtnXY(sb, 'StakeChip_100', tdN, '0.1',    220, stakeChipY, 160, 40, 28, 34, 48);
+    const tdStakeValueLabel = mkLabel(sb, 'StakeValueLabel', tdN, '0.010 SOL', 20,
+        TDE.stakeValueLabel.y, TDE.stakeValueLabel.w, TDE.stakeValueLabel.h, 218, 165, 32);
+    style(sb, tdStakeValueLabel, { mono: true, bold: true });  // Phase 15 (B5): hero numeric
+    sb.e[tdStakeValueLabel]._active = false;
 
-    // Commit button — prominent blue CTA, bottom-aligned within the button cluster.
-    const commitBtnY = -580;
-    const tdCommit = mkBtn(sb, 'StakeCommitButton', tdN, 'Stake + Commit', commitBtnY, 620, 56, 56, 148, 252);
+    const tdStakeSlider = mkSlider(sb, 'StakeSlider', tdN, TDE.stakeSlider.x, TDE.stakeSlider.y,
+        TDE.stakeSlider.w, TDE.stakeSlider.h, 0.1);
+    sb.e[tdStakeSlider]._active = false;
+
+    const SCH = TDT.stakeChip;
+    const tdStakeChips = [];
+    for (let i = 0; i < SCH.count; i++) {
+        const cN = mkBtnXY(sb, SCH.names[i], tdN, SCH.labels[i],
+                           SCH.xs[i], SCH.y, SCH.w, SCH.h, 28, 34, 48);
+        sb.e[cN]._active = false;
+        tdStakeChips.push(cN);
+    }
+    const [tdStake001, tdStake010, tdStake100] = tdStakeChips;
+
+    const tdCommit = mkBtn(sb, 'StakeCommitButton', tdN, 'Stake + Commit',
+        TDE.stakeCommitButton.y, TDE.stakeCommitButton.w, TDE.stakeCommitButton.h, 56, 148, 252);
     style(sb, tdCommit, { bold: true });
+    sb.e[tdCommit]._active = false;
 
-    // Start Game (revealed after commit) and Claim Payout (revealed on game-over) share the same slot.
-    const tdStartGame = mkBtn(sb, 'StartGameButton', tdN, 'Start Game', commitBtnY, 620, 56, 218, 165, 32);
+    const tdStartGame = mkBtn(sb, 'StartGameButton', tdN, 'Start Game',
+        TDE.startGameButton.y, TDE.startGameButton.w, TDE.startGameButton.h, 218, 165, 32);
     style(sb, tdStartGame, { bold: true });
     sb.e[tdStartGame]._active = false;
-    const tdClaim = mkBtn(sb, 'ClaimPayoutButton', tdN, 'Claim Payout', commitBtnY, 620, 56, 150, 85, 210);
+
+    const tdClaim = mkBtn(sb, 'ClaimPayoutButton', tdN, 'Claim Payout',
+        TDE.claimPayoutButton.y, TDE.claimPayoutButton.w, TDE.claimPayoutButton.h, 150, 85, 210);
     style(sb, tdClaim, { bold: true });
     sb.e[tdClaim]._active = false;
 
-    // betting-duel polish — WagerControlRow sits under the squad slots.
-    // Two buttons: tier selector (left, opens dropdown upward) + start match
-    // (right). Replaces the force-hidden StakeCommitButton. Legacy stake UI
-    // stays in the scene but is force-hidden by AppUI._hideLegacyBettingDuelNodes.
-    const wagerRowY = -640;
-    // UX Phase 2b: AppUI attaches IconBadge coin. Phase 2c: bold for emphasis.
-    const tdWagerValueBtn = mkBtnXY(sb, 'WagerValueButton', tdN, '0.05 SOL  ▾', -180, wagerRowY, 300, 56, 34, 44, 68);
+    // Wager row — live betting-duel CTA. Two buttons (tier selector left,
+    // start match right) + tiny hint label below. Positions from
+    // LAYOUT.TokenDuelPanel.elements.{wagerValueButton,wagerStartButton,wagerHintLabel}.
+    const tdWagerValueBtn = mkBtnXY(sb, 'WagerValueButton', tdN, '0.05 SOL  ▾',
+        TDE.wagerValueButton.x, TDE.wagerValueButton.y,
+        TDE.wagerValueButton.w, TDE.wagerValueButton.h, 34, 44, 68);
     style(sb, tdWagerValueBtn, { bold: true });
-    const tdWagerStartBtn = mkBtnXY(sb, 'WagerStartButton', tdN, '▶ Start Match',   180, wagerRowY, 320, 56, 56, 148, 252);
+    // Phase 13 (B3): hero halo — blue match-start CTA.
+    const { glow: tdWagerStartGlow, btn: tdWagerStartBtn } = mkBtnHero(sb,
+        'WagerStartButton', tdN, '▶ Start Match',
+        TDE.wagerStartButton.x, TDE.wagerStartButton.y,
+        TDE.wagerStartButton.w, TDE.wagerStartButton.h, 56, 148, 252);
     style(sb, tdWagerStartBtn, { bold: true });
-    // Tiny hint under the row.
-    const tdWagerHint = mkLabel(sb, 'WagerHintLabel', tdN, 'Pick 3 tokens, then tap Start', 11, wagerRowY - 44, 600, 16, 120, 130, 150);
+    const tdWagerHint = mkLabel(sb, 'WagerHintLabel', tdN, 'Pick 3 tokens, then tap Start', 11,
+        TDE.wagerHintLabel.y, TDE.wagerHintLabel.w, TDE.wagerHintLabel.h, 120, 130, 150);
     sb.e[sb.e[tdWagerHint]._components[1].__id__]._spacingX = 1;
 
+    // ── WagerLockChip — JOIN-MODE only ─────────────────────────────────
+    // Replaces WagerValueButton when AppUI._pickerJoinTarget is set (user
+    // tapped a match in FindMatchPanel + confirmed). Same x/y/w/h as the
+    // wager-value button so layout doesn't shift; appears as a locked-style
+    // chip with "🔒 0.05 SOL · joining 5Ksq…sDst". _active=false by default;
+    // AppUI._refreshWagerControlRow toggles based on _isJoinMode().
+    const tdWagerLockChip = sb.e.length;
+    sb.node('WagerLockChip', tdN, [], [], v3(TDE.wagerLockChip.x, TDE.wagerLockChip.y, 0));
+    const tdWagerLockUT = sb.ut(tdWagerLockChip, TDE.wagerLockChip.w, TDE.wagerLockChip.h);
+    const tdWagerLockSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(tdWagerLockChip), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(36, 30, 56, 240), // muted violet — feels "locked"
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const tdWagerLockLabel = mkLabel(sb, 'WagerLockChipLabel', tdWagerLockChip, '🔒 0.05 SOL', 16, 0,
+        TDE.wagerLockChip.w - 24, TDE.wagerLockChip.h - 12, 218, 165, 32);
+    sb.e[sb.e[tdWagerLockLabel]._components[1].__id__]._isBold = true;
+    sb.e[tdWagerLockChip]._components = [rf(tdWagerLockUT), rf(tdWagerLockSpr)];
+    sb.e[tdWagerLockChip]._children = [rf(tdWagerLockLabel)];
+    sb.e[tdWagerLockChip]._active = false;
+
+    // ── WagerBotChip — BOT-MODE only ───────────────────────────────────
+    // Stage 1: replaces WagerValueButton when AppUI._pickerBotMode is true
+    // (user tapped Home Bot Match). Same x/y/w/h as wager-value button so
+    // layout doesn't shift; appears as a rose chip "🤖 FREE · Bot Match".
+    // _active=false by default; AppUI._refreshWagerControlRow toggles.
+    const tdWagerBotChip = sb.e.length;
+    sb.node('WagerBotChip', tdN, [], [], v3(TDE.wagerBotChip.x, TDE.wagerBotChip.y, 0));
+    const tdWagerBotUT = sb.ut(tdWagerBotChip, TDE.wagerBotChip.w, TDE.wagerBotChip.h);
+    const tdWagerBotSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(tdWagerBotChip), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(76, 38, 56, 240), // muted rose — paper / training feel
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const tdWagerBotLabel = mkLabel(sb, 'WagerBotChipLabel', tdWagerBotChip, '🤖 FREE · Bot Match', 16, 0,
+        TDE.wagerBotChip.w - 24, TDE.wagerBotChip.h - 12, 255, 92, 138);
+    sb.e[sb.e[tdWagerBotLabel]._components[1].__id__]._isBold = true;
+    sb.e[tdWagerBotChip]._components = [rf(tdWagerBotUT), rf(tdWagerBotSpr)];
+    sb.e[tdWagerBotChip]._children = [rf(tdWagerBotLabel)];
+    sb.e[tdWagerBotChip]._active = false;
+
     // WagerDropdown — 8 tier rows, opens upward from WagerValueButton.
-    // Initially hidden. Anchor bottom=(0.5,0) so _lpos.y is the dropdown's
-    // bottom edge; we position that just above the WagerValueButton.
+    // Anchor (0.5, 0) bottom-center so _lpos.y is the dropdown's bottom edge,
+    // positioned just above WagerValueButton's top. Hidden by default.
+    // AppUI._onWagerRowTap maps display row → on-chain tier via
+    // WAGER_DISPLAY_TO_TIER in ModeDefs.ts ([0,1,2,3,4,6,7,5]).
+    const WDR = TDT.wagerDropdownRow;
     const tdWagerDropdown = sb.e.length;
-    const dropdownW = 360;
-    const dropdownRowH = 42;
-    const dropdownRowCount = 8;
-    const dropdownPadding = 12;
-    const dropdownH = dropdownRowCount * dropdownRowH + dropdownPadding * 2;
-    // Bottom sits just above the WagerValueButton (top of value btn = wagerRowY + 56/2 = -447).
-    const dropdownBottomY = wagerRowY + 28 + 6;
-    sb.node('WagerDropdown', tdN, [], [], v3(-180, dropdownBottomY, 0));
-    const dropdownUT = sb.ut(tdWagerDropdown, dropdownW, dropdownH);
-    sb.e[dropdownUT]._anchorPoint = v2(0.5, 0);  // anchor bottom-center so grows upward
+    const dropdownH = WDR.count * WDR.rowH + WDR.padding * 2;
+    sb.node('WagerDropdown', tdN, [], [], v3(TDE.wagerDropdown.x, TDE.wagerDropdown.y, 0));
+    const dropdownUT = sb.ut(tdWagerDropdown, TDE.wagerDropdown.w, dropdownH);
+    sb.e[dropdownUT]._anchorPoint = v2(0.5, 0);
     const dropdownSpr = sb.spr(tdWagerDropdown, 18, 22, 32);
     sb.e[tdWagerDropdown]._components = [rf(dropdownUT), rf(dropdownSpr)];
     sb.e[tdWagerDropdown]._active = false;
-    // Display order: ascending $$ then INTRO last (user preference).
-    // AppUI._onWagerRowTap translates dropdown row → on-chain tier index via
-    // WAGER_DISPLAY_TO_TIER in ModeDefs.ts ([0,1,2,3,4,6,7,5]).
-    const wagerLabels = ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL', '0.5 SOL', '1 SOL', '5 SOL', '0.001 · INTRO'];
+
     const wagerDropdownRows = [];
-    for (let i = 0; i < dropdownRowCount; i++) {
-        // Row y: top of dropdown content is dropdownH - padding (since anchor bottom).
-        // Rows cascade top-down from there.
-        const rowLocalY = dropdownH - dropdownPadding - (i + 0.5) * dropdownRowH;
-        const rowN = mkBtnXY(sb, `WagerDropdownRow_${i}`, tdWagerDropdown, wagerLabels[i], 0, rowLocalY, dropdownW - 20, dropdownRowH - 4, 28, 34, 48);
+    for (let i = 0; i < WDR.count; i++) {
+        const rowLocalY = dropdownH - WDR.padding - (i + 0.5) * WDR.rowH;
+        const rowN = mkBtnXY(sb, `WagerDropdownRow_${i}`, tdWagerDropdown, WDR.labels[i],
+                             0, rowLocalY, WDR.w, WDR.h, 28, 34, 48);
         wagerDropdownRows.push(rowN);
     }
-    // Stage 5O — INTRO chip gets the rare-state gold tint + label accent so
-    // the free-practice tier reads as a bonus item, not a leftover option.
+    // INTRO row (last) gets a rare-state gold tint so the free-practice tier
+    // reads as a bonus item, not a leftover option.
     const introRowN = wagerDropdownRows[wagerDropdownRows.length - 1];
     if (introRowN != null) {
-        // Tint the row's sprite + button to a muted gold.
         const introComps = sb.e[introRowN]._components ?? [];
         for (const c of introComps) {
             const comp = sb.e[c.__id__];
@@ -1103,15 +1532,13 @@ function generate() {
                 comp._pressedColor  = cl(46,  36,  14, 255);
             }
         }
-        // Gold label text.
         style(sb, introRowN, { color: GOLD() });
     }
     sb.e[tdWagerDropdown]._children = wagerDropdownRows.map(rf);
 
-    // Session 14 A6: Hero tiles DELETED. They were cosmetic-only (game never
-    // read _pickedHeroSymbol for gameplay) and caused a visible "SOL" overlap
-    // on the middle squad slot when the wallet had SOL holdings. Stub indices
-    // still exist so the children-list patch below doesn't shift.
+    // Hero tile stub indices — placeholders kept at (-999, -999) only so the
+    // children-list patch below doesn't shift. Hero tiles were deleted in
+    // Session 14 A6 (cosmetic-only; game never read _pickedHeroSymbol).
     const tdHero1 = mkBtnXY(sb, 'HeroTile1Button_deleted', tdN, '', -999, -999, 1, 1, 0, 0, 0);
     const tdHero2 = mkBtnXY(sb, 'HeroTile2Button_deleted', tdN, '', -999, -999, 1, 1, 0, 0, 0);
     const tdHero3 = mkBtnXY(sb, 'HeroTile3Button_deleted', tdN, '', -999, -999, 1, 1, 0, 0, 0);
@@ -1119,21 +1546,29 @@ function generate() {
     sb.e[tdHero2]._active = false;
     sb.e[tdHero3]._active = false;
 
-    // Legacy Holding labels — kept hidden as safety net; AppUI tolerates absence.
-    const h1N = mkLabel(sb, 'Holding1Label', tdN, '--', 28, squadY, 200, 50, 255, 255, 255);
-    const h2N = mkLabel(sb, 'Holding2Label', tdN, '--', 28, squadY, 200, 50, 255, 255, 255);
-    const h3N = mkLabel(sb, 'Holding3Label', tdN, '--', 28, squadY, 200, 50, 255, 255, 255);
+    // Legacy Holding labels — back-compat safety net; AppUI._renderHoldings
+    // is no-op'd on this branch (_holdingLabels[] cleared in
+    // _hideLegacyBettingDuelNodes).
+    const h1N = mkLabel(sb, 'Holding1Label', tdN, '--', 28,
+        TDE.holding1Label.y, TDE.holding1Label.w, TDE.holding1Label.h, 255, 255, 255);
+    const h2N = mkLabel(sb, 'Holding2Label', tdN, '--', 28,
+        TDE.holding2Label.y, TDE.holding2Label.w, TDE.holding2Label.h, 255, 255, 255);
+    const h3N = mkLabel(sb, 'Holding3Label', tdN, '--', 28,
+        TDE.holding3Label.y, TDE.holding3Label.w, TDE.holding3Label.h, 255, 255, 255);
     sb.e[h1N]._active = false;
     sb.e[h2N]._active = false;
     sb.e[h3N]._active = false;
 
-    // GameArea — hidden container for the tower, active block, and HUD.
+    // GameArea — hidden full-panel container for the tower, active block, and
+    // HUD (paper-match flow; inactive on betting-duel branch). Size from
+    // LAYOUT.TokenDuelPanel.elements.gameArea. HUD children retain inline
+    // positions — internal to a hidden container, will be revisited if the
+    // paper-match flow ever returns.
     const tdGameArea = sb.e.length;
-    sb.node('GameArea', tdN, [], [tdGameArea+1], v3(0, 0, 0));
-    sb.ut(tdGameArea, 720, 1000);
+    sb.node('GameArea', tdN, [], [tdGameArea+1], v3(TDE.gameArea.x, TDE.gameArea.y, 0));
+    sb.ut(tdGameArea, TDE.gameArea.w, TDE.gameArea.h);
     sb.e[tdGameArea]._active = false;
 
-    // HUD
     const tdHeight = sb.e.length;
     sb.node('HeightLabel', tdGameArea, [], [tdHeight+1, tdHeight+2], v3(-220, 440, 0));
     sb.ut(tdHeight, 220, 60);
@@ -1144,7 +1579,6 @@ function generate() {
     sb.ut(tdBadge, 260, 60);
     sb.lbl(tdBadge, 'SOL', 30, 218, 165, 32);
 
-    // BlockTemplate — hidden sprite; game reads its spriteFrame (KNOWN_ISSUES #8).
     const tdBlockTpl = sb.e.length;
     sb.node('BlockTemplate', tdGameArea, [], [tdBlockTpl+1, tdBlockTpl+2], v3(0, -600, 0));
     sb.ut(tdBlockTpl, 100, 60);
@@ -1153,10 +1587,11 @@ function generate() {
 
     sb.e[tdGameArea]._children = [rf(tdHeight), rf(tdBadge), rf(tdBlockTpl)];
 
-    // Game-over overlay
+    // Game-over overlay — full-panel; inactive on betting-duel branch.
     const tdGameOver = sb.e.length;
-    sb.node('GameOverLabel', tdN, [], [tdGameOver+1, tdGameOver+2], v3(0, 0, 0));
-    sb.ut(tdGameOver, 680, 180);
+    sb.node('GameOverLabel', tdN, [], [tdGameOver+1, tdGameOver+2],
+        v3(TDE.gameOverLabel.x, TDE.gameOverLabel.y, 0));
+    sb.ut(tdGameOver, TDE.gameOverLabel.w, TDE.gameOverLabel.h);
     sb.lbl(tdGameOver, 'Game Over — Height: 0\n(Tier: Forfeit)', 44, 218, 165, 32);
     sb.e[tdGameOver]._active = false;
 
@@ -1167,23 +1602,21 @@ function generate() {
     // allocates 5 token cards; AppUI activates only as many as the
     // current squad size (1, 3, or 5 — Phase 5 wires the selector).
     // ═══════════════════════════════════════════════════════════════
+    // All RacePanel positions sourced from LAYOUT.RacePanel — no literals.
+    const RPE = LAYOUT.RacePanel.elements;
+    const RPT = LAYOUT.RacePanel.templates;
+
     const racePanelN = sb.e.length;
-    // UX Phase 2d: RacePanel oversize to 720×1800 so it fully covers the device
-    // viewport on FIXED_WIDTH (up to ~1700 tall on modern Androids). Previously
-    // 720×1280 showed TokenDuelPanel chrome at top/bottom of the race screen
-    // because device viewport exceeds design height by ~320px.
-    // Children stay centered on panel origin; only the background sprite +
-    // UITransform grow.
     sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], v3(0, 0, 0));
-    sb.ut(racePanelN, 720, 1800);
+    sb.ut(racePanelN, LAYOUT.RacePanel.canvas.w, LAYOUT.RacePanel.canvas.h);
     sb.spr(racePanelN, 8, 12, 20);                // near-black scrim — covers feed/HUD below
     sb.e[racePanelN]._active = false;
 
     // Stage-1A polish: radial timer ring (draining arc). Graphics node drawn
     // by AppUI._drawTimerRing on each tick. Digital mm:ss sits centered inside.
     const raceTimerRingN = sb.e.length;
-    sb.node('RaceTimerRing', racePanelN, [], [raceTimerRingN + 1, raceTimerRingN + 2], v3(0, 480, 0));
-    sb.ut(raceTimerRingN, 140, 140);
+    sb.node('RaceTimerRing', racePanelN, [], [raceTimerRingN + 1, raceTimerRingN + 2], v3(RPE.timerRing.x, RPE.timerRing.y, 0));
+    sb.ut(raceTimerRingN, RPE.timerRing.w, RPE.timerRing.h);
     sb.add({
         __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(raceTimerRingN), _enabled: true, __prefab: null,
@@ -1194,8 +1627,8 @@ function generate() {
     });
     // Inner last-5s pulse ring (hidden until remainingMs<=5000).
     const raceTimerPulseN = sb.e.length;
-    sb.node('RaceTimerPulse', raceTimerRingN, [], [raceTimerPulseN + 1, raceTimerPulseN + 2], v3(0, 0, 0));
-    sb.ut(raceTimerPulseN, 110, 110);
+    sb.node('RaceTimerPulse', raceTimerRingN, [], [raceTimerPulseN + 1, raceTimerPulseN + 2], v3(RPE.timerPulse.x, RPE.timerPulse.y, 0));
+    sb.ut(raceTimerPulseN, RPE.timerPulse.w, RPE.timerPulse.h);
     sb.add({
         __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(raceTimerPulseN), _enabled: true, __prefab: null,
@@ -1208,48 +1641,48 @@ function generate() {
     sb.e[raceTimerRingN]._children = [rf(raceTimerPulseN)];
 
     // Countdown digits — shrunk to fit inside the ring.
-    const raceCountdownN = mkLabel(sb, 'RaceCountdownLabel',  racePanelN, '0:30',              26, 480, 110, 36, 240, 245, 255);
-    const raceHeroN      = mkLabel(sb, 'RaceHeroDeltaLabel',  racePanelN, '+0.00%',            96, 340, 680, 140, 255, 255, 255);
-    const raceHeroSubN   = mkLabel(sb, 'RaceHeroSubtitleLabel', racePanelN, 'Portfolio change', 24, 250, 600, 40, 140, 150, 170);
+    const raceCountdownN = mkLabel(sb, 'RaceCountdownLabel',  racePanelN, '0:30', 26,
+        RPE.countdownLabel.y, RPE.countdownLabel.w, RPE.countdownLabel.h, 240, 245, 255);
+    const raceHeroN = mkLabel(sb, 'RaceHeroDeltaLabel', racePanelN, '+0.00%', 96,
+        RPE.heroDelta.y, RPE.heroDelta.w, RPE.heroDelta.h, 255, 255, 255);
+    const raceHeroSubN = mkLabel(sb, 'RaceHeroSubtitleLabel', racePanelN, 'Portfolio change', 24,
+        RPE.heroSubtitle.y, RPE.heroSubtitle.w, RPE.heroSubtitle.h, 140, 150, 170);
     // Stage 5N — monospace the number columns so roll-tweens don't "dance".
     style(sb, raceCountdownN, { mono: true });
     style(sb, raceHeroN, { mono: true });
 
-    // Token cards — 5 slots, layout from y=50 down. AppUI toggles _active per slot.
+    // Token cards — 5 slots stacked per LAYOUT.RacePanel.templates.raceCard.
+    // Internal layout (sym/entry/cur/delta) also from the template.
     const raceCardIndices = [];
-    const raceCardYs = [50, -80, -210, -340, -470];
-    for (let i = 0; i < 5; i++) {
+    const RC = RPT.raceCard;
+    for (let i = 0; i < RC.count; i++) {
+        const cardY = RC.baseY + i * RC.gapY;
         const cardN = sb.e.length;
-        sb.node(`RaceTokenCard_${i}`, racePanelN, [], [cardN+1, cardN+2], v3(0, raceCardYs[i], 0));
-        sb.ut(cardN, 640, 110);
+        sb.node(`RaceTokenCard_${i}`, racePanelN, [], [cardN+1, cardN+2], v3(0, cardY, 0));
+        sb.ut(cardN, RC.w, RC.h);
         sb.spr(cardN, 22, 28, 42);
         sb.e[cardN]._active = i < 3;   // default: 3 shown until squad-size axis lands
 
-        // Symbol (left)
         const symN = sb.e.length;
-        sb.node(`TokenSymbolLabel_${i}`, cardN, [], [symN+1, symN+2], v3(-250, 0, 0));
-        sb.ut(symN, 140, 44);
+        sb.node(`TokenSymbolLabel_${i}`, cardN, [], [symN+1, symN+2], v3(RC.sym.x, RC.sym.y, 0));
+        sb.ut(symN, RC.sym.w, RC.sym.h);
         sb.lbl(symN, 'SYM', 30, 255, 255, 255);
 
-        // Entry price (center-top)
         const entryN = sb.e.length;
-        sb.node(`TokenEntryLabel_${i}`, cardN, [], [entryN+1, entryN+2], v3(-40, 18, 0));
-        sb.ut(entryN, 220, 28);
+        sb.node(`TokenEntryLabel_${i}`, cardN, [], [entryN+1, entryN+2], v3(RC.entry.x, RC.entry.y, 0));
+        sb.ut(entryN, RC.entry.w, RC.entry.h);
         sb.lbl(entryN, 'entry —', 20, 120, 130, 150);
 
-        // Current price (center-bottom)
         const curN = sb.e.length;
-        sb.node(`TokenCurrentLabel_${i}`, cardN, [], [curN+1, curN+2], v3(-40, -18, 0));
-        sb.ut(curN, 220, 28);
+        sb.node(`TokenCurrentLabel_${i}`, cardN, [], [curN+1, curN+2], v3(RC.cur.x, RC.cur.y, 0));
+        sb.ut(curN, RC.cur.w, RC.cur.h);
         sb.lbl(curN, '—', 22, 230, 230, 240);
 
-        // Delta (right) — big, colored live
         const deltaN = sb.e.length;
-        sb.node(`TokenDeltaLabel_${i}`, cardN, [], [deltaN+1, deltaN+2], v3(220, 0, 0));
-        sb.ut(deltaN, 180, 60);
+        sb.node(`TokenDeltaLabel_${i}`, cardN, [], [deltaN+1, deltaN+2], v3(RC.delta.x, RC.delta.y, 0));
+        sb.ut(deltaN, RC.delta.w, RC.delta.h);
         sb.lbl(deltaN, '0.00%', 34, 200, 200, 210);
 
-        // Stage 5N — monospace the number columns.
         style(sb, entryN, { mono: true });
         style(sb, curN, { mono: true });
         style(sb, deltaN, { mono: true });
@@ -1261,36 +1694,33 @@ function generate() {
     // Opponent card — same visual weight as a player token card.
     // 640×110 matches RaceTokenCard_X so the bot feels like a real contender,
     // not a half-height afterthought.
+    // Opponent card — internals from LAYOUT.RacePanel.templates.oppCardInternal.
+    const OCI = RPT.oppCardInternal;
     const raceOppCard = sb.e.length;
-    sb.node('RaceOpponentCard', racePanelN, [], [raceOppCard+1, raceOppCard+2], v3(0, -400, 0));
-    sb.ut(raceOppCard, 640, 110);
+    sb.node('RaceOpponentCard', racePanelN, [], [raceOppCard+1, raceOppCard+2], v3(RPE.opponentCard.x, RPE.opponentCard.y, 0));
+    sb.ut(raceOppCard, RPE.opponentCard.w, RPE.opponentCard.h);
     sb.spr(raceOppCard, 38, 28, 46);
     sb.e[raceOppCard]._active = false;
-    // Avatar — UX Phase 2b: empty label; AppUI attaches IconLibrary robot at runtime.
     const raceOppAvatarN = sb.e.length;
-    sb.node('OpponentAvatarLabel', raceOppCard, [], [raceOppAvatarN+1, raceOppAvatarN+2], v3(-280, 0, 0));
-    sb.ut(raceOppAvatarN, 60, 60);
+    sb.node('OpponentAvatarLabel', raceOppCard, [], [raceOppAvatarN+1, raceOppAvatarN+2], v3(OCI.avatar.x, OCI.avatar.y, 0));
+    sb.ut(raceOppAvatarN, OCI.avatar.w, OCI.avatar.h);
     sb.lbl(raceOppAvatarN, '', 40, 255, 255, 255);
-    // Name — "Bot" label under/next to avatar.
     const raceOppNameN = sb.e.length;
-    sb.node('OpponentNameLabel', raceOppCard, [], [raceOppNameN+1, raceOppNameN+2], v3(-180, 20, 0));
-    sb.ut(raceOppNameN, 140, 24);
+    sb.node('OpponentNameLabel', raceOppCard, [], [raceOppNameN+1, raceOppNameN+2], v3(OCI.name.x, OCI.name.y, 0));
+    sb.ut(raceOppNameN, OCI.name.w, OCI.name.h);
     const raceOppNameL = sb.lbl(raceOppNameN, 'Bot', 20, 230, 230, 240);
     sb.e[raceOppNameL]._isBold = true;
-    // Bot squad symbols — shown beneath the name so user sees what the bot picked.
     const raceOppSymsN = sb.e.length;
-    sb.node('OpponentSymbolsLabel', raceOppCard, [], [raceOppSymsN+1, raceOppSymsN+2], v3(-180, -14, 0));
-    sb.ut(raceOppSymsN, 260, 24);
+    sb.node('OpponentSymbolsLabel', raceOppCard, [], [raceOppSymsN+1, raceOppSymsN+2], v3(OCI.syms.x, OCI.syms.y, 0));
+    sb.ut(raceOppSymsN, OCI.syms.w, OCI.syms.h);
     sb.lbl(raceOppSymsN, '— · — · —', 16, 170, 180, 200);
-    // Delta — big, colored live (right side).
     const raceOppDeltaN = sb.e.length;
-    sb.node('OpponentDeltaLabel', raceOppCard, [], [raceOppDeltaN+1, raceOppDeltaN+2], v3(220, 8, 0));
-    sb.ut(raceOppDeltaN, 180, 48);
+    sb.node('OpponentDeltaLabel', raceOppCard, [], [raceOppDeltaN+1, raceOppDeltaN+2], v3(OCI.delta.x, OCI.delta.y, 0));
+    sb.ut(raceOppDeltaN, OCI.delta.w, OCI.delta.h);
     sb.lbl(raceOppDeltaN, '0.00%', 32, 200, 200, 210);
-    // Gap — small subtitle under delta ("+0.8pp ahead" / "-1.2pp behind").
     const raceOppGapN = sb.e.length;
-    sb.node('OpponentGapLabel', raceOppCard, [], [raceOppGapN+1, raceOppGapN+2], v3(220, -22, 0));
-    sb.ut(raceOppGapN, 200, 22);
+    sb.node('OpponentGapLabel', raceOppCard, [], [raceOppGapN+1, raceOppGapN+2], v3(OCI.gap.x, OCI.gap.y, 0));
+    sb.ut(raceOppGapN, OCI.gap.w, OCI.gap.h);
     sb.lbl(raceOppGapN, '—', 14, 140, 150, 170);
     // Stage 5N — monospace the opponent number columns.
     style(sb, raceOppDeltaN, { mono: true });
@@ -1300,48 +1730,41 @@ function generate() {
     // 4p/8p multi-bot leaderboard strip. Used in place of the big opponent
     // card when mode.requiredPlayers > 2. Pre-allocates 7 compact rows
     // (4p → rows 0/1/2 active; 8p → 0-6 active). BR10 truncates to top-7.
+    // Opponent strip + 7 rows from LAYOUT.RacePanel.templates.oppRow.
+    const ORW = RPT.oppRow;
     const raceOppStripN = sb.e.length;
-    sb.node('RaceOpponentStrip', racePanelN, [], [raceOppStripN + 1], v3(0, -406, 0));
-    sb.ut(raceOppStripN, 640, 260);
+    sb.node('RaceOpponentStrip', racePanelN, [], [raceOppStripN + 1], v3(RPE.opponentStrip.x, RPE.opponentStrip.y, 0));
+    sb.ut(raceOppStripN, RPE.opponentStrip.w, RPE.opponentStrip.h);
     sb.e[raceOppStripN]._active = false;
     const raceOppRowIndices = [];
-    const OPP_ROW_COUNT = 7;
-    const OPP_ROW_STRIDE = 34;
-    const OPP_ROW_TOP_Y = 102; // relative to strip center → first row at strip.y + 102 = -304
-    for (let i = 0; i < OPP_ROW_COUNT; i++) {
-        const ry = OPP_ROW_TOP_Y - i * OPP_ROW_STRIDE;
+    for (let i = 0; i < ORW.count; i++) {
+        const ry = ORW.baseY + i * ORW.gapY;
         const rowN = sb.e.length;
         sb.node(`RaceOpponentRow_${i}`, raceOppStripN, [], [rowN + 1, rowN + 2], v3(0, ry, 0));
-        sb.ut(rowN, 640, 30);
+        sb.ut(rowN, ORW.w, ORW.h);
         sb.spr(rowN, 26, 32, 46);
-        // Avatar — UX Phase 2b: empty label; AppUI attaches small IconLibrary robot.
         const avN = sb.e.length;
-        sb.node('AvatarLabel', rowN, [], [avN + 1, avN + 2], v3(-280, 0, 0));
-        sb.ut(avN, 28, 24);
+        sb.node('AvatarLabel', rowN, [], [avN + 1, avN + 2], v3(ORW.avatar.x, ORW.avatar.y, 0));
+        sb.ut(avN, ORW.avatar.w, ORW.avatar.h);
         sb.lbl(avN, '', 18, 255, 255, 255);
-        // Name — "Bot N".
         const nmN = sb.e.length;
-        sb.node('NameLabel', rowN, [], [nmN + 1, nmN + 2], v3(-215, 0, 0));
-        sb.ut(nmN, 70, 22);
+        sb.node('NameLabel', rowN, [], [nmN + 1, nmN + 2], v3(ORW.name.x, ORW.name.y, 0));
+        sb.ut(nmN, ORW.name.w, ORW.name.h);
         const nmL = sb.lbl(nmN, `Bot ${i + 1}`, 13, 220, 225, 240);
         sb.e[nmL]._isBold = true;
-        // Symbols — bot's 3 picks.
         const smN = sb.e.length;
-        sb.node('SymbolsLabel', rowN, [], [smN + 1, smN + 2], v3(-70, 0, 0));
-        sb.ut(smN, 240, 22);
+        sb.node('SymbolsLabel', rowN, [], [smN + 1, smN + 2], v3(ORW.symbols.x, ORW.symbols.y, 0));
+        sb.ut(smN, ORW.symbols.w, ORW.symbols.h);
         sb.lbl(smN, '— · — · —', 12, 160, 170, 190);
-        // Delta — big, colored live.
         const dtN = sb.e.length;
-        sb.node('DeltaLabel', rowN, [], [dtN + 1, dtN + 2], v3(170, 0, 0));
-        sb.ut(dtN, 100, 26);
+        sb.node('DeltaLabel', rowN, [], [dtN + 1, dtN + 2], v3(ORW.delta.x, ORW.delta.y, 0));
+        sb.ut(dtN, ORW.delta.w, ORW.delta.h);
         const dtL = sb.lbl(dtN, '0.00%', 17, 210, 210, 220);
         sb.e[dtL]._isBold = true;
-        // Gap pp — tiny subtitle.
         const gpN = sb.e.length;
-        sb.node('GapLabel', rowN, [], [gpN + 1, gpN + 2], v3(265, 0, 0));
-        sb.ut(gpN, 90, 20);
+        sb.node('GapLabel', rowN, [], [gpN + 1, gpN + 2], v3(ORW.gap.x, ORW.gap.y, 0));
+        sb.ut(gpN, ORW.gap.w, ORW.gap.h);
         sb.lbl(gpN, '', 11, 140, 150, 170);
-        // Stage 5N — monospace the strip's number columns.
         style(sb, dtN, { mono: true });
         style(sb, gpN, { mono: true });
         sb.e[rowN]._children = [rf(avN), rf(nmN), rf(smN), rf(dtN), rf(gpN)];
@@ -1349,16 +1772,13 @@ function generate() {
     }
     sb.e[raceOppStripN]._children = raceOppRowIndices.map(rf);
 
-    // Forfeit / early-exit button (bottom). Moved up from -615 to give room.
-    const raceCancelN = mkBtnXY(sb, 'RaceCancelButton', racePanelN, 'Forfeit', 0, -560, 200, 48, 55, 30, 30);
+    // Forfeit + vignette + mascot.
+    const raceCancelN = mkBtnXY(sb, 'RaceCancelButton', racePanelN, 'Forfeit',
+        RPE.cancelBtn.x, RPE.cancelBtn.y, RPE.cancelBtn.w, RPE.cancelBtn.h, 55, 30, 30);
 
-    // Stage-1C polish: screen-edge vignette. Full-screen Graphics overlay
-    // that AppUI._updateVignette tints emerald (profit) / coral (loss) with
-    // alpha driven by |portfolio delta|. Also used by Stage-1D zero-cross
-    // flash (alpha spike) and Stage-1F last-5s dim (alpha intensify).
     const raceVignetteN = sb.e.length;
-    sb.node('ScreenVignette', racePanelN, [], [raceVignetteN + 1, raceVignetteN + 2], v3(0, 0, 0));
-    const raceVignetteUT = sb.ut(raceVignetteN, 720, 1280);
+    sb.node('ScreenVignette', racePanelN, [], [raceVignetteN + 1, raceVignetteN + 2], v3(RPE.vignette.x, RPE.vignette.y, 0));
+    const raceVignetteUT = sb.ut(raceVignetteN, RPE.vignette.w, RPE.vignette.h);
     sb.e[raceVignetteUT]._anchorPoint = v2(0.5, 0.5);
     sb.add({
         __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -1369,6 +1789,12 @@ function generate() {
         _id: gid(),
     });
 
+    // Mascot container — bottom-right per LAYOUT.RacePanel.elements.mascot.
+    const raceMascotN = sb.e.length;
+    sb.node('RaceMascotContainer', racePanelN, [], [], v3(RPE.mascot.x, RPE.mascot.y, 0));
+    const raceMascotUT = sb.ut(raceMascotN, RPE.mascot.w, RPE.mascot.h);
+    sb.e[raceMascotN]._components = [rf(raceMascotUT)];
+
     sb.e[racePanelN]._children = [
         rf(raceVignetteN),
         rf(raceTimerRingN), rf(raceCountdownN), rf(raceHeroN), rf(raceHeroSubN),
@@ -1376,12 +1802,14 @@ function generate() {
         rf(raceOppCard),
         rf(raceOppStripN),
         rf(raceCancelN),
+        rf(raceMascotN),
     ];
 
     // Session 12: StatusLabel — muted strip at the very bottom.
     // BackButton moved to top-left as a link (tdBackBtn above); nothing else
     // needs a full-width back slab.
-    const tdStatus = mkLabel(sb, 'StatusLabel', tdN, '', 15, -740, 660, 22, 140, 150, 170);
+    const tdStatus = mkLabel(sb, 'StatusLabel', tdN, '', 15,
+        TDE.status.y, TDE.status.w, TDE.status.h, 140, 150, 170);
 
     // ═══════════════════════════════════════════════════════════════
     // Session D Part 2 — ModePickerOverlay (shown on Run Squad tap)
@@ -1411,77 +1839,115 @@ function generate() {
         _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
         _duration: 0.1, _zoomScale: 1, _target: rf(modePickerN), _id: gid(),
     });
-    const mpTitle = mkLabel(sb, 'ModePickerTitleLabel', modePickerN, 'Choose Match', 26, 500, 500, 38, 255, 255, 255);
-    const mpHint = mkLabel(sb, 'ModePickerHintLabel', modePickerN, 'Tap outside to cancel', 12, 460, 600, 18, 140, 150, 170);
-    // Part 9: compressed y's to make room for a TimeWindow chip row.
-    // Modes at 410/330, wagers at 230, windows at 150, paper/real at 90, start at 20.
-    const modeDefs = [
-        { key: 'oneVone', label: '1v1 Duel',     x: -150, y: 410 },
-        { key: '4p',      label: '4p Pot',       x:  150, y: 410 },
-        { key: '8p',      label: '8p Pot',       x: -150, y: 330 },
-        { key: 'br10',    label: 'Battle Royale',x:  150, y: 330 },
-    ];
+    // All positions sourced from LAYOUT.ModePickerOverlay — no literals.
+    const MPE = LAYOUT.ModePickerOverlay.elements;
+    const MPT = LAYOUT.ModePickerOverlay.templates;
+
+    // Phase 23: title bumped 26→32 + gold bold tracked uppercase for hero feel.
+    const mpTitle = mkLabel(sb, 'ModePickerTitleLabel', modePickerN, 'CHOOSE MATCH', 32,
+        MPE.title.y, MPE.title.w, MPE.title.h, 255, 255, 255);
+    style(sb, mpTitle, { bold: true, color: GOLD(), spacing: 1 });
+    const mpHint = mkLabel(sb, 'ModePickerHintLabel', modePickerN, 'Tap outside to cancel', 12,
+        MPE.hint.y, MPE.hint.w, MPE.hint.h, 140, 150, 170);
+
+    // Phase 23 — 4 section headers (UPPERCASE tracked, lo-tier color)
+    // above each row of buttons. Adds scannable visual rhythm.
+    const mpSecMode = mkLabel(sb, 'PickerSectionLabel_Mode', modePickerN, 'MATCH MODE', 16,
+        MPE.sectionMode.y, MPE.sectionMode.w, MPE.sectionMode.h, 140, 150, 170);
+    style(sb, mpSecMode, { spacing: 1 });
+    const mpSecDuration = mkLabel(sb, 'PickerSectionLabel_Duration', modePickerN, 'DURATION', 16,
+        MPE.sectionDuration.y, MPE.sectionDuration.w, MPE.sectionDuration.h, 140, 150, 170);
+    style(sb, mpSecDuration, { spacing: 1 });
+    const mpSecTrack = mkLabel(sb, 'PickerSectionLabel_Track', modePickerN, 'TRACK', 16,
+        MPE.sectionTrack.y, MPE.sectionTrack.w, MPE.sectionTrack.h, 140, 150, 170);
+    style(sb, mpSecTrack, { spacing: 1 });
+    const mpSecDifficulty = mkLabel(sb, 'PickerSectionLabel_Difficulty', modePickerN, 'DIFFICULTY', 16,
+        MPE.sectionDifficulty.y, MPE.sectionDifficulty.w, MPE.sectionDifficulty.h, 140, 150, 170);
+    style(sb, mpSecDifficulty, { spacing: 1 });
+
+    // 4 mode buttons in 2×2 grid (LAYOUT.templates.modeBtn).
     const mpModeIndices = [];
-    for (const d of modeDefs) {
-        const mN = mkBtnXY(sb, `Mode_${d.key}`, modePickerN, d.label, d.x, d.y, 260, 56, 28, 34, 48);
+    for (let i = 0; i < MPT.modeBtn.count; i++) {
+        const key = MPT.modeBtn.keys[i];
+        const label = MPT.modeBtn.labels[i];
+        const pos = MPT.modeBtn.positions[i];
+        const mN = mkBtnXY(sb, `Mode_${key}`, modePickerN, label,
+            pos.x, pos.y, MPT.modeBtn.w, MPT.modeBtn.h, 28, 34, 48);
         mpModeIndices.push(mN);
     }
-    // betting-duel polish: wager lives on TokenDuelPanel (WagerValueButton
-    // dropdown). ModePicker shows a read-only summary of the selected tier
-    // so the user sees what they're confirming. AppUI._refreshModePickerUi
-    // writes the live value into PickerWagerReadout.
+
+    // Wager readout — read-only summary; AppUI._refreshModePickerUi writes
+    // live value (the actual wager picker lives on TokenDuelPanel).
+    // Phase 23: fontSize 14→20 + gold bold for visual weight.
     const pickerWagerReadout = mkLabel(sb, 'PickerWagerReadout', modePickerN,
-        'Wager: 0.05 SOL · tap Start to confirm', 14, 230, 600, 24, 220, 230, 240);
+        'Wager: 0.05 SOL', 20,
+        MPE.wagerReadout.y, MPE.wagerReadout.w, MPE.wagerReadout.h, 255, 210, 74);
+    style(sb, pickerWagerReadout, { bold: true });
     const wagerIndices = [pickerWagerReadout];
-    // Part 9 / betting-duel Phase 5: match-duration chip row at y=150.
-    // 4 buttons, 140 wide, 8px gaps. Keys stay ('1h'|'1d'|'3d'|'7d') for
-    // node-name stability; labels show the new duration semantics.
-    const windowLabels = ['30s', '1m', '5m', '1h'];
-    const windowKeys   = ['1h', '1d', '3d', '7d'];
+
+    // 4 match-duration window chips in a row (LAYOUT.templates.windowBtn).
+    // Keys stay '1h'|'1d'|'3d'|'7d' for node-name stability; user-facing
+    // labels show the new duration semantics ('30s'|'1m'|'5m'|'1h').
+    const windowDisplayLabels = ['30s', '1m', '5m', '1h'];
     const windowIndices = [];
-    const windowW = 140;
-    const windowGap = 8;
-    const windowStartX = -((windowLabels.length - 1) * (windowW + windowGap)) / 2;
-    for (let w = 0; w < windowLabels.length; w++) {
-        const wx = windowStartX + w * (windowW + windowGap);
-        const wN = mkBtnXY(sb, `Window_${windowKeys[w]}`, modePickerN, windowLabels[w], wx, 150, windowW, 40, 28, 34, 48);
+    for (let w = 0; w < MPT.windowBtn.count; w++) {
+        const wx = MPT.windowBtn.baseX + w * MPT.windowBtn.gapX;
+        const wN = mkBtnXY(sb, `Window_${MPT.windowBtn.keys[w]}`, modePickerN,
+            windowDisplayLabels[w], wx, MPT.windowBtn.y,
+            MPT.windowBtn.w, MPT.windowBtn.h, 28, 34, 48);
         windowIndices.push(wN);
     }
+
     // Paper / Real toggle at y=90.
-    const pickerPaperBtn = mkBtnXY(sb, 'PickerPaperToggle', modePickerN, 'Paper', -80, 90, 150, 44, 48, 198, 155);
-    const pickerRealBtn  = mkBtnXY(sb, 'PickerRealToggle',  modePickerN, 'Real',   80, 90, 150, 44, 28, 34, 48);
+    const pickerPaperBtn = mkBtnXY(sb, 'PickerPaperToggle', modePickerN, 'Paper',
+        MPE.paperToggle.x, MPE.paperToggle.y, MPE.paperToggle.w, MPE.paperToggle.h,
+        48, 198, 155);
+    const pickerRealBtn = mkBtnXY(sb, 'PickerRealToggle', modePickerN, 'Real',
+        MPE.realToggle.x, MPE.realToggle.y, MPE.realToggle.w, MPE.realToggle.h,
+        28, 34, 48);
 
-    // Phase E — Bot difficulty toggle at y=40 (Easy/Medium/Hard). Visible
-    // only when track=Paper or after Real-track timeout fallback to bot.
-    // AppUI._refreshModePickerUi tints the active chip.
-    const pickerEasyBtn   = mkBtnXY(sb, 'PickerDifficultyEasy',   modePickerN, 'Easy',   -160, 40, 130, 40, 28, 34, 48);
-    const pickerMediumBtn = mkBtnXY(sb, 'PickerDifficultyMedium', modePickerN, 'Medium',    0, 40, 130, 40, 48, 198, 155);
-    const pickerHardBtn   = mkBtnXY(sb, 'PickerDifficultyHard',   modePickerN, 'Hard',    160, 40, 130, 40, 28, 34, 48);
+    // Difficulty row at y=40 (Easy/Medium/Hard). Visible when track=Paper
+    // or after Real-track timeout fallback to bot.
+    const difficultyDefaultColors = [[28, 34, 48], [48, 198, 155], [28, 34, 48]];
+    const difficultyBtns = [];
+    for (let d = 0; d < MPT.difficultyBtn.count; d++) {
+        const dx = MPT.difficultyBtn.baseX + d * MPT.difficultyBtn.gapX;
+        const [r, g, b] = difficultyDefaultColors[d];
+        const dN = mkBtnXY(sb, MPT.difficultyBtn.names[d], modePickerN, MPT.difficultyBtn.labels[d],
+            dx, MPT.difficultyBtn.y, MPT.difficultyBtn.w, MPT.difficultyBtn.h, r, g, b);
+        difficultyBtns.push(dN);
+    }
+    const [pickerEasyBtn, pickerMediumBtn, pickerHardBtn] = difficultyBtns;
 
-    // Start + Cancel buttons. Bumped Start down y=20 → y=-30 to fit difficulty row.
-    const pickerStartBtn  = mkBtn(sb, 'PickerStartButton',  modePickerN, 'Start Matching', -30, 420, 60, 56, 148, 252);
-    const pickerCancelBtn = mkBtnXY(sb, 'PickerCancelButton', modePickerN, '✕', 300, 500, 40, 40, 55, 30, 30);
-    const pickerStatus = mkLabel(sb, 'PickerStatusLabel', modePickerN, '', 12, -100, 600, 20, 140, 150, 170);
+    // Start + Cancel buttons + status footer.
+    const pickerStartBtn = mkBtn(sb, 'PickerStartButton', modePickerN, 'Start Matching',
+        MPE.startBtn.y, MPE.startBtn.w, MPE.startBtn.h, 56, 148, 252);
+    const pickerCancelBtn = mkBtnXY(sb, 'PickerCancelButton', modePickerN, '✕',
+        MPE.cancelBtn.x, MPE.cancelBtn.y, MPE.cancelBtn.w, MPE.cancelBtn.h, 55, 30, 30);
+    const pickerStatus = mkLabel(sb, 'PickerStatusLabel', modePickerN, '', 12,
+        MPE.statusLbl.y, MPE.statusLbl.w, MPE.statusLbl.h, 140, 150, 170);
 
     sb.e[modePickerN]._components = [rf(mpUT), rf(mpSpr), rf(mpScrimBtn)];
     sb.e[modePickerN]._children = [
         rf(mpTitle), rf(mpHint),
-        ...mpModeIndices.map(rf),
+        rf(mpSecMode),       ...mpModeIndices.map(rf),
+        rf(mpSecDuration),   ...windowIndices.map(rf),
+        rf(mpSecTrack),      rf(pickerPaperBtn), rf(pickerRealBtn),
+        rf(mpSecDifficulty), rf(pickerEasyBtn), rf(pickerMediumBtn), rf(pickerHardBtn),
         ...wagerIndices.map(rf),
-        ...windowIndices.map(rf),
-        rf(pickerPaperBtn), rf(pickerRealBtn),
-        rf(pickerEasyBtn), rf(pickerMediumBtn), rf(pickerHardBtn),
         rf(pickerStartBtn), rf(pickerCancelBtn),
         rf(pickerStatus),
     ];
     sb.e[modePickerN]._active = false;
 
-    // Session 14 B3: SquadDropOverlay — modal that appears when user taps Drop.
-    // Contains a darkened scrim (taps scrim to dismiss) + 3 DropPill nodes
-    // showing current squad members, tap a pill to drop from squad.
+    // SquadDropOverlay — modal that appears when user taps Manage Squad.
+    // Darkened scrim + tap-outside-close + 3 DropPill children from
+    // LAYOUT.TokenDuelPanel.templates.squadDropPill.
+    const SDO = TDE.squadDropOverlay;
+    const SDP = TDT.squadDropPill;
     const dropOverlayN = sb.e.length;
-    sb.node('SquadDropOverlay', tdN, [], [], v3(0, 0, 0));
-    const dropOvUT = sb.ut(dropOverlayN, 720, 1280);
+    sb.node('SquadDropOverlay', tdN, [], [], v3(SDO.x, SDO.y, 0));
+    const dropOvUT = sb.ut(dropOverlayN, SDO.w, SDO.h);
     const dropOvSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(dropOverlayN), _enabled: true, __prefab: null,
@@ -1501,12 +1967,15 @@ function generate() {
         _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
         _duration: 0.1, _zoomScale: 1, _target: rf(dropOverlayN), _id: gid(),
     });
-    const dropModalHeaderN = mkLabel(sb, 'SquadDropTitleLabel', dropOverlayN, 'DROP FROM SQUAD', 14, 200, 400, 22, 100, 110, 130);
-    const dropModalHintN = mkLabel(sb, 'SquadDropHintLabel', dropOverlayN, 'Tap a token to remove · Tap outside to close', 11, 150, 460, 18, 140, 150, 170);
-    const dropPillYs = [60, 0, -60];
+    const dropModalHeaderN = mkLabel(sb, 'SquadDropTitleLabel', dropOverlayN, 'DROP FROM SQUAD', 14,
+        TDE.squadDropTitle.y, TDE.squadDropTitle.w, TDE.squadDropTitle.h, 100, 110, 130);
+    style(sb, dropModalHeaderN, { spacing: 1 });  // Phase 15 (B5)
+    const dropModalHintN = mkLabel(sb, 'SquadDropHintLabel', dropOverlayN, 'Tap a token to remove · Tap outside to close', 11,
+        TDE.squadDropHint.y, TDE.squadDropHint.w, TDE.squadDropHint.h, 140, 150, 170);
     const dropPillIndices = [];
-    for (let d = 0; d < 3; d++) {
-        const pN = mkBtnXY(sb, `DropPill_${d}`, dropOverlayN, '—', 0, dropPillYs[d], 420, 48, 38, 44, 64);
+    for (let d = 0; d < SDP.count; d++) {
+        const pN = mkBtnXY(sb, `DropPill_${d}`, dropOverlayN, '—',
+            0, SDP.ys[d], SDP.w, SDP.h, 38, 44, 64);
         dropPillIndices.push(pN);
         sb.e[pN]._active = false;
     }
@@ -1520,9 +1989,13 @@ function generate() {
     // with delete buttons, bottom Save button, and a PresetNameModal with
     // EditBox for naming a new preset.
     // ═══════════════════════════════════════════════════════════════
+    // SquadPresetsOverlay — manage saved squads. All positions sourced from
+    // LAYOUT.TokenDuelPanel.elements.presets* and templates.presetRow.
+    const SPO = TDE.squadPresetsOverlay;
+    const PR  = TDT.presetRow;
     const presetsOvN = sb.e.length;
-    sb.node('SquadPresetsOverlay', tdN, [], [], v3(0, 0, 0));
-    const presetsOvUT = sb.ut(presetsOvN, 720, 1280);
+    sb.node('SquadPresetsOverlay', tdN, [], [], v3(SPO.x, SPO.y, 0));
+    const presetsOvUT = sb.ut(presetsOvN, SPO.w, SPO.h);
     const presetsOvSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(presetsOvN), _enabled: true, __prefab: null,
@@ -1536,22 +2009,23 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    // Scrim button — covers the full overlay, tap-outside-to-close. Rendered
-    // FIRST so child rows/buttons sit on top and receive taps instead of scrim.
-    const presetsScrimBtn = mkBtnXY(sb, 'PresetsScrim', presetsOvN, '', 0, 0, 720, 1280, 0, 0, 0);
+    // Scrim button — covers the full overlay, tap-outside-to-close.
+    const presetsScrimBtn = mkBtnXY(sb, 'PresetsScrim', presetsOvN, '',
+        TDE.presetsScrim.x, TDE.presetsScrim.y, TDE.presetsScrim.w, TDE.presetsScrim.h, 0, 0, 0);
     // Zero-alpha button bg so the scrim sprite color stays dominant.
     sb.e[sb.e[presetsScrimBtn]._components[1].__id__]._color = cl(0, 0, 0, 0);
-    const presetsTitle = mkLabel(sb, 'PresetsTitleLabel', presetsOvN, 'SQUAD PRESETS', 24, 460, 500, 34, 218, 165, 32);
-    // UX Phase 2b: prose rewritten without emoji.
-    const presetsHint = mkLabel(sb, 'PresetsHintLabel', presetsOvN, 'Tap a preset to load · swipe or tap delete to remove', 11, 425, 520, 18, 140, 150, 170);
+    const presetsTitle = mkLabel(sb, 'PresetsTitleLabel', presetsOvN, 'SQUAD PRESETS', 24,
+        TDE.presetsTitle.y, TDE.presetsTitle.w, TDE.presetsTitle.h, 218, 165, 32);
+    style(sb, presetsTitle, { spacing: 1 });  // Phase 15 (B5)
+    const presetsHint = mkLabel(sb, 'PresetsHintLabel', presetsOvN, 'Tap a preset to load · swipe or tap delete to remove', 11,
+        TDE.presetsHint.y, TDE.presetsHint.w, TDE.presetsHint.h, 140, 150, 170);
 
-    // 5 preset rows — each 600×56 dark card with name + symbols + delete button.
-    const presetRowYs = [360, 290, 220, 150, 80];
+    // 5 preset rows from templates.presetRow.
     const presetRowIndices = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < PR.count; i++) {
         const rN = sb.e.length;
-        sb.node(`PresetRow_${i}`, presetsOvN, [], [], v3(0, presetRowYs[i], 0));
-        const rUT = sb.ut(rN, 600, 56);
+        sb.node(`PresetRow_${i}`, presetsOvN, [], [], v3(0, PR.ys[i], 0));
+        const rUT = sb.ut(rN, PR.w, PR.h);
         const rSpr = sb.spr(rN, 22, 28, 42);
         const rBtn = sb.add({
             __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -1561,35 +2035,45 @@ function generate() {
             _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
             _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
         });
-        const nameL = mkLabel(sb, `PresetNameLabel_${i}`, rN, '—', 18, 0, 360, 26, 220, 230, 240);
-        sb.e[nameL]._lpos = v3(-270, 10, 0);
+        const nameL = mkLabel(sb, `PresetNameLabel_${i}`, rN, '—', 18, 0, PR.name.w, PR.name.h, 220, 230, 240);
+        sb.e[nameL]._lpos = v3(PR.name.x, PR.name.y, 0);
         sb.e[sb.e[nameL]._components[1].__id__]._horizontalAlign = 0;
-        const symbolsL = mkLabel(sb, `PresetSymbolsLabel_${i}`, rN, '', 13, 0, 360, 20, 140, 150, 170);
-        sb.e[symbolsL]._lpos = v3(-270, -12, 0);
+        const symbolsL = mkLabel(sb, `PresetSymbolsLabel_${i}`, rN, '', 13, 0, PR.symbols.w, PR.symbols.h, 140, 150, 170);
+        sb.e[symbolsL]._lpos = v3(PR.symbols.x, PR.symbols.y, 0);
         sb.e[sb.e[symbolsL]._components[1].__id__]._horizontalAlign = 0;
         // UX Phase 2b: empty label; AppUI attaches IconBadge trash.
-        const delBtn = mkBtnXY(sb, `PresetDeleteButton_${i}`, rN, '', 260, 0, 48, 44, 55, 30, 30);
+        const delBtn = mkBtnXY(sb, `PresetDeleteButton_${i}`, rN, '',
+            PR.deleteBtn.x, PR.deleteBtn.y, PR.deleteBtn.w, PR.deleteBtn.h, 55, 30, 30);
         sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
         sb.e[rN]._children = [rf(nameL), rf(symbolsL), rf(delBtn)];
         sb.e[rN]._active = false; // AppUI enables when render finds saved preset
         presetRowIndices.push(rN);
     }
     // Save button — opens the PresetNameModal. Disabled (grayed) when squad not full.
-    // UX Phase 2b: IconBadge save attached by AppUI. Phase 2c: bold.
-    const presetsSaveBtn = mkBtn(sb, 'PresetSaveButton', presetsOvN, 'Save current squad', -100, 420, 56, 218, 165, 32);
+    const presetsSaveBtn = mkBtn(sb, 'PresetSaveButton', presetsOvN, 'Save current squad',
+        TDE.presetsSaveButton.y, TDE.presetsSaveButton.w, TDE.presetsSaveButton.h, 218, 165, 32);
     style(sb, presetsSaveBtn, { bold: true });
-    const presetsEmptyL = mkLabel(sb, 'PresetsEmptyLabel', presetsOvN, 'No saved presets yet — pick 3 tokens and tap Save', 13, -20, 600, 22, 130, 140, 160);
+    const presetsEmptyL = mkLabel(sb, 'PresetsEmptyLabel', presetsOvN, 'No saved presets yet — pick 3 tokens and tap Save', 13,
+        TDE.presetsEmptyLabel.y, TDE.presetsEmptyLabel.w, TDE.presetsEmptyLabel.h, 130, 140, 160);
     sb.e[presetsEmptyL]._active = false;
 
     // PresetNameModal — small card with EditBox + Save/Cancel buttons.
+    const PM = TDE.presetsModal;
     const presetsModalN = sb.e.length;
-    sb.node('PresetNameModal', presetsOvN, [], [], v3(0, -30, 0));
-    const presetsModalUT = sb.ut(presetsModalN, 460, 200);
+    sb.node('PresetNameModal', presetsOvN, [], [], v3(PM.x, PM.y, 0));
+    const presetsModalUT = sb.ut(presetsModalN, PM.w, PM.h);
     const presetsModalSpr = sb.spr(presetsModalN, 28, 34, 52);
-    const presetsModalTitle = mkLabel(sb, 'PresetModalTitleLabel', presetsModalN, 'Name your preset', 16, 70, 420, 24, 200, 210, 230);
-    const presetNameEB = mkEditBox(sb, 'PresetNameEditBox', presetsModalN, 'e.g. "Meme Monday"', 0, 20, 400, 44, 17);
-    const presetModalSave = mkBtnXY(sb, 'PresetSaveConfirmButton', presetsModalN, 'Save', -100, -50, 180, 44, 48, 198, 155);
-    const presetModalCancel = mkBtnXY(sb, 'PresetSaveCancelButton', presetsModalN, 'Cancel', 100, -50, 180, 44, 62, 72, 92);
+    const presetsModalTitle = mkLabel(sb, 'PresetModalTitleLabel', presetsModalN, 'Name your preset', 16,
+        TDE.presetsModalTitle.y, TDE.presetsModalTitle.w, TDE.presetsModalTitle.h, 200, 210, 230);
+    const presetNameEB = mkEditBox(sb, 'PresetNameEditBox', presetsModalN, 'e.g. "Meme Monday"',
+        TDE.presetsModalEditBox.x, TDE.presetsModalEditBox.y,
+        TDE.presetsModalEditBox.w, TDE.presetsModalEditBox.h, 17);
+    const presetModalSave = mkBtnXY(sb, 'PresetSaveConfirmButton', presetsModalN, 'Save',
+        TDE.presetsModalSave.x, TDE.presetsModalSave.y,
+        TDE.presetsModalSave.w, TDE.presetsModalSave.h, 48, 198, 155);
+    const presetModalCancel = mkBtnXY(sb, 'PresetSaveCancelButton', presetsModalN, 'Cancel',
+        TDE.presetsModalCancel.x, TDE.presetsModalCancel.y,
+        TDE.presetsModalCancel.w, TDE.presetsModalCancel.h, 62, 72, 92);
     sb.e[presetsModalN]._components = [rf(presetsModalUT), rf(presetsModalSpr)];
     sb.e[presetsModalN]._children = [rf(presetsModalTitle), rf(presetNameEB), rf(presetModalSave), rf(presetModalCancel)];
     sb.e[presetsModalN]._active = false;
@@ -1604,10 +2088,12 @@ function generate() {
     ];
     sb.e[presetsOvN]._active = false;
 
-    // Session 14 A4: invisible full-panel BackdropButton for tap-outside-close.
+    // Invisible full-panel BackdropButton for tap-outside-close. Position
+    // from LAYOUT.TokenDuelPanel.elements.backdropButton.
+    const BB = TDE.backdropButton;
     const tdBackdrop = sb.e.length;
-    sb.node('BackdropButton', tdN, [], [], v3(0, 0, 0));
-    const tdBackdropUT = sb.ut(tdBackdrop, 720, 1280);
+    sb.node('BackdropButton', tdN, [], [], v3(BB.x, BB.y, 0));
+    const tdBackdropUT = sb.ut(tdBackdrop, BB.w, BB.h);
     const tdBackdropSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(tdBackdrop), _enabled: true, __prefab: null,
@@ -1630,60 +2116,61 @@ function generate() {
     sb.e[tdBackdrop]._components = [rf(tdBackdropUT), rf(tdBackdropSpr), rf(tdBackdropBtn)];
     sb.e[tdBackdrop]._active = false;
 
-    // Session 11: SearchSuggestionPopover — 5 pre-instantiated rows. Rendered
-    // LAST in children order so it overlays the feed when visible. Hidden by
-    // default; AppUI toggles _active via the SearchEditBox text events.
+    // SearchSuggestionPopover — 5 pre-instantiated rows from suggestRow template.
+    // Rendered LAST in children order so it overlays the feed when visible.
+    // Hidden by default; AppUI toggles _active via SearchEditBox text events.
+    const SSP = TDE.searchSuggestionPopover;
     const suggestN = sb.e.length;
-    sb.node('SearchSuggestionPopover', tdN, [], [], v3(-30, 360, 0));
-    const suggUT = sb.ut(suggestN, 560, 300);
+    sb.node('SearchSuggestionPopover', tdN, [], [], v3(SSP.x, SSP.y, 0));
+    const suggUT = sb.ut(suggestN, SSP.w, SSP.h);
     const suggSpr = sb.spr(suggestN, 25, 28, 44);
+    // 5 suggestion rows from LAYOUT.TokenDuelPanel.templates.suggestRow.
+    const SR = TDT.suggestRow;
     const suggestChildIdx = [];
-    const suggRowH = 54;
-    const suggTopY = 115;
-    for (let s = 0; s < 5; s++) {
-        const sY = suggTopY - s * suggRowH;
+    for (let s = 0; s < SR.count; s++) {
+        const sY = SR.baseY - s * SR.rowH;
         const sN = sb.e.length;
         sb.node(`Suggest_${s}`, suggestN, [], [], v3(0, sY, 0));
-        const sUT = sb.ut(sN, 540, suggRowH - 4);
+        const sUT = sb.ut(sN, SR.w, SR.h);
         const sSpr = sb.spr(sN, 38, 40, 58);
         const sBtn = sb.btn(sN, 38, 40, 58);
 
         const sLogoN = sb.e.length;
-        sb.node('LogoSprite', sN, [], [], v3(-240, 0, 0));
-        const sLogoUT = sb.ut(sLogoN, 28, 28);
+        sb.node('LogoSprite', sN, [], [], v3(SR.logo.x, SR.logo.y, 0));
+        const sLogoUT = sb.ut(sLogoN, SR.logo.w, SR.logo.h);
         const sLogoSpr = sb.spr(sLogoN, 255, 255, 255);
         sb.e[sLogoN]._components = [rf(sLogoUT), rf(sLogoSpr)];
 
         const sSymN = sb.e.length;
-        sb.node('SymbolLabel', sN, [], [], v3(-130, 8, 0));
-        const sSymUT = sb.ut(sSymN, 170, 22);
+        sb.node('SymbolLabel', sN, [], [], v3(SR.symbol.x, SR.symbol.y, 0));
+        const sSymUT = sb.ut(sSymN, SR.symbol.w, SR.symbol.h);
         const sSymL  = sb.lbl(sSymN, '—', 18, 255, 255, 255);
         sb.e[sSymL]._horizontalAlign = 0;
         sb.e[sSymL]._isBold = true;
         sb.e[sSymN]._components = [rf(sSymUT), rf(sSymL)];
 
         const sMintN = sb.e.length;
-        sb.node('MintLabel', sN, [], [], v3(-130, -12, 0));
-        const sMintUT = sb.ut(sMintN, 220, 18);
+        sb.node('MintLabel', sN, [], [], v3(SR.mint.x, SR.mint.y, 0));
+        const sMintUT = sb.ut(sMintN, SR.mint.w, SR.mint.h);
         const sMintL  = sb.lbl(sMintN, '', 12, 130, 130, 145);
         sb.e[sMintL]._horizontalAlign = 0;
         sb.e[sMintN]._components = [rf(sMintUT), rf(sMintL)];
 
         const sPriceN = sb.e.length;
-        sb.node('PriceLabel', sN, [], [], v3(150, 8, 0));
-        const sPriceUT = sb.ut(sPriceN, 90, 22);
+        sb.node('PriceLabel', sN, [], [], v3(SR.price.x, SR.price.y, 0));
+        const sPriceUT = sb.ut(sPriceN, SR.price.w, SR.price.h);
         const sPriceL  = sb.lbl(sPriceN, '', 14, 218, 165, 32);
         sb.e[sPriceN]._components = [rf(sPriceUT), rf(sPriceL)];
 
         const sVolN = sb.e.length;
-        sb.node('VolLabel', sN, [], [], v3(240, 8, 0));
-        const sVolUT = sb.ut(sVolN, 60, 22);
+        sb.node('VolLabel', sN, [], [], v3(SR.vol.x, SR.vol.y, 0));
+        const sVolUT = sb.ut(sVolN, SR.vol.w, SR.vol.h);
         const sVolL  = sb.lbl(sVolN, '', 12, 170, 170, 180);
         sb.e[sVolN]._components = [rf(sVolUT), rf(sVolL)];
 
         const sChangeN = sb.e.length;
-        sb.node('ChangeLabel', sN, [], [], v3(200, -12, 0));
-        const sChangeUT = sb.ut(sChangeN, 100, 18);
+        sb.node('ChangeLabel', sN, [], [], v3(SR.change.x, SR.change.y, 0));
+        const sChangeUT = sb.ut(sChangeN, SR.change.w, SR.change.h);
         const sChangeL  = sb.lbl(sChangeN, '', 12, 200, 200, 200);
         sb.e[sChangeN]._components = [rf(sChangeUT), rf(sChangeL)];
 
@@ -1701,7 +2188,8 @@ function generate() {
     // near the end so they cover the feed when active.
     sb.e[tdN]._children = [
         rf(tdBackLink), rf(tdBackBtn),
-        rf(tdTitle), rf(tdLeaderboardBtn), rf(tdPortfolioBtn), rf(tdSettingsBtn),
+        rf(tdTitle), rf(tdLevelChipN),
+        rf(tdLeaderboardBtn), rf(tdPortfolioBtn), rf(tdSettingsBtn),
         rf(tdPresetsBtn), rf(tdSuggestBtn), rf(tdHelpBtn),
         rf(tdBalance),
         rf(tdSearch), rf(tdSearchClear),
@@ -1714,7 +2202,7 @@ function generate() {
         rf(tdStakeHeader), rf(tdStakeValueLabel), rf(tdStakeSlider),
         rf(tdStake001), rf(tdStake010), rf(tdStake100),
         rf(tdCommit), rf(tdStartGame), rf(tdClaim),
-        rf(tdWagerValueBtn), rf(tdWagerStartBtn), rf(tdWagerHint), rf(tdWagerDropdown),
+        rf(tdWagerValueBtn), rf(tdWagerStartGlow), rf(tdWagerStartBtn), rf(tdWagerHint), rf(tdWagerLockChip), rf(tdWagerBotChip), rf(tdWagerDropdown),
         rf(tdHero1), rf(tdHero2), rf(tdHero3),
         rf(h1N), rf(h2N), rf(h3N),
         rf(tdGameArea), rf(tdGameOver), rf(racePanelN),       // betting-duel Phase 3: live race screen
@@ -1742,17 +2230,20 @@ function generate() {
     //   -620  Status line
     // ═══════════════════════════════════════════════════════════════
     const tdetN = sb.e.length;
-    sb.node('TokenDetailPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('TokenDetailPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(tdetN, 720, 1280);
+    sb.spr(tdetN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind chart/stats
 
-    // Back link (mirrors TokenDuelPanel's pattern).
-    const detBackLink = mkLabel(sb, 'BackLinkLabel', tdetN, '← Back', 18, 618, 110, 28, 160, 170, 190);
-    sb.e[detBackLink]._lpos = v3(-280, 618, 0);
+    // Chrome from LAYOUT.TokenDetailPanel.elements.
+    const TDETE = LAYOUT.TokenDetailPanel.elements;
+    const detBackLink = mkLabel(sb, 'BackLinkLabel', tdetN, '← Back', 18,
+        TDETE.backLink.y, TDETE.backLink.w, TDETE.backLink.h, 160, 170, 190);
+    sb.e[detBackLink]._lpos = v3(TDETE.backLink.x, TDETE.backLink.y, 0);
     const detBackLinkL = sb.e[detBackLink]._components[1].__id__;
     sb.e[detBackLinkL]._horizontalAlign = 0;
     const detBackBtn = sb.e.length;
-    sb.node('BackButton', tdetN, [], [], v3(-280, 618, 0));
-    const detBackBtnUT = sb.ut(detBackBtn, 140, 36);
+    sb.node('BackButton', tdetN, [], [], v3(TDETE.backBtn.x, TDETE.backBtn.y, 0));
+    const detBackBtnUT = sb.ut(detBackBtn, TDETE.backBtn.w, TDETE.backBtn.h);
     const detBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(detBackBtn), _enabled: true, __prefab: null,
@@ -1763,66 +2254,61 @@ function generate() {
     });
     sb.e[detBackBtn]._components = [rf(detBackBtnUT), rf(detBackBtnBtn)];
 
-    // Symbol + name + mint.
-    const detSymbol = mkLabel(sb, 'DetailSymbolLabel', tdetN, '$—', 26, 600, 380, 36, 255, 255, 255);
+    // Symbol + name. 9c: shifted right + shrunk to clear back chrome.
+    const detSymbol = mkLabel(sb, 'DetailSymbolLabel', tdetN, '$—', 26,
+        TDETE.symbolLabel.y, TDETE.symbolLabel.w, TDETE.symbolLabel.h, 255, 255, 255);
     const detSymbolL = sb.e[detSymbol]._components[1].__id__;
     sb.e[detSymbolL]._horizontalAlign = 0;
     sb.e[detSymbolL]._isBold = true;
-    sb.e[detSymbol]._lpos = v3(-140, 600, 0);
+    sb.e[detSymbol]._lpos = v3(TDETE.symbolLabel.x, TDETE.symbolLabel.y, 0);
 
-    const detName = mkLabel(sb, 'DetailNameLabel', tdetN, '', 13, 572, 400, 22, 140, 145, 165);
+    const detName = mkLabel(sb, 'DetailNameLabel', tdetN, '', 13,
+        TDETE.nameLabel.y, TDETE.nameLabel.w, TDETE.nameLabel.h, 140, 145, 165);
     const detNameL = sb.e[detName]._components[1].__id__;
     sb.e[detNameL]._horizontalAlign = 0;
-    sb.e[detName]._lpos = v3(-140, 572, 0);
+    sb.e[detName]._lpos = v3(TDETE.nameLabel.x, TDETE.nameLabel.y, 0);
 
-    const detMintChip = mkBtnXY(sb, 'DetailMintChip', tdetN, 'mint…', 200, 572, 200, 28, 28, 34, 48);
+    const detMintChip = mkBtnXY(sb, 'DetailMintChip', tdetN, 'mint…',
+        TDETE.mintChip.x, TDETE.mintChip.y, TDETE.mintChip.w, TDETE.mintChip.h, 28, 34, 48);
 
     // Pick/Unpick CTA.
-    const detPickBtn = mkBtn(sb, 'DetailPickUnpickButton', tdetN, '+ Pick', 525, 620, 48, 48, 198, 155);
+    const detPickBtn = mkBtn(sb, 'DetailPickUnpickButton', tdetN, '+ Pick',
+        TDETE.pickBtn.y, TDETE.pickBtn.w, TDETE.pickBtn.h, 48, 198, 155);
 
-    // Safety chips row.
-    const safetyY = 465;
-    const safetyDefs = [
-        { key: 'mint',  label: '◎ Mint' },
-        { key: 'auth',  label: '◎ Auth' },
-        { key: 'lp',    label: '◎ LP' },
-        { key: 'top10', label: '◎ Top10' },
-    ];
+    // Safety chips row from LAYOUT.TokenDetailPanel.templates.safetyChip.
+    const SC = LAYOUT.TokenDetailPanel.templates.safetyChip;
     const safetyIndices = [];
-    for (let s = 0; s < safetyDefs.length; s++) {
-        const sx = -240 + s * 155;
-        const sN = mkBtnXY(sb, `SafetyChip_${safetyDefs[s].key}`, tdetN, safetyDefs[s].label, sx, safetyY, 140, 32, 28, 34, 48);
+    for (let s = 0; s < SC.count; s++) {
+        const sx = SC.baseX + s * SC.gapX;
+        const sN = mkBtnXY(sb, `SafetyChip_${SC.defs[s].key}`, tdetN, SC.defs[s].label,
+            sx, SC.y, SC.w, SC.h, 28, 34, 48);
         safetyIndices.push(sN);
     }
 
-    // Timeframe row.
-    const tfY = 415;
-    const tfDefs = [
-        { key: '1m',  label: '1m'  },
-        { key: '5m',  label: '5m'  },
-        { key: '15m', label: '15m' },
-        { key: '1H',  label: '1H'  },
-        { key: '4H',  label: '4H'  },
-        { key: '1D',  label: '1D'  },
-    ];
+    // Timeframe row from LAYOUT.TokenDetailPanel.templates.timeframeBtn.
+    const TF = LAYOUT.TokenDetailPanel.templates.timeframeBtn;
     const tfIndices = [];
-    for (let t = 0; t < tfDefs.length; t++) {
-        const tx = -275 + t * 90;
-        const tN = mkBtnXY(sb, `TF_${tfDefs[t].key}`, tdetN, tfDefs[t].label, tx, tfY, 80, 32, 28, 34, 48);
+    for (let t = 0; t < TF.count; t++) {
+        const tx = TF.baseX + t * TF.gapX;
+        const tN = mkBtnXY(sb, `TF_${TF.defs[t].key}`, tdetN, TF.defs[t].label,
+            tx, TF.y, TF.w, TF.h, 28, 34, 48);
         tfIndices.push(tN);
     }
 
-    // Denom row: Price/MCap | USD/SOL (with a visual divider).
-    const denomY = 378;
-    const denomPriceBtn = mkBtnXY(sb, 'Denom_price', tdetN, 'Price', -210, denomY, 90, 28, 28, 34, 48);
-    const denomMcapBtn  = mkBtnXY(sb, 'Denom_mcap',  tdetN, 'MCap',  -110, denomY, 90, 28, 28, 34, 48);
-    const denomUsdBtn   = mkBtnXY(sb, 'Denom_usd',   tdetN, 'USD',    110, denomY, 90, 28, 28, 34, 48);
-    const denomSolBtn   = mkBtnXY(sb, 'Denom_sol',   tdetN, 'SOL',    210, denomY, 90, 28, 28, 34, 48);
+    // Denom row from LAYOUT.TokenDetailPanel.templates.denomBtn (Price/MCap | USD/SOL).
+    const DB = LAYOUT.TokenDetailPanel.templates.denomBtn;
+    const denomBtnIndices = [];
+    for (const d of DB.defs) {
+        const dN = mkBtnXY(sb, `Denom_${d.key}`, tdetN, d.label,
+            d.x, DB.y, DB.w, DB.h, 28, 34, 48);
+        denomBtnIndices.push(dN);
+    }
+    const [denomPriceBtn, denomMcapBtn, denomUsdBtn, denomSolBtn] = denomBtnIndices;
 
     // Chart area — cc.Graphics renders candles here.
     const chartN = sb.e.length;
-    sb.node('ChartArea', tdetN, [], [], v3(0, 40, 0));
-    const chartUT = sb.ut(chartN, 680, 640);
+    sb.node('ChartArea', tdetN, [], [], v3(TDETE.chartArea.x, TDETE.chartArea.y, 0));
+    const chartUT = sb.ut(chartN, TDETE.chartArea.w, TDETE.chartArea.h);
     const chartSpr = sb.spr(chartN, 14, 18, 28);
     const chartGfx = sb.add({
         __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -1836,45 +2322,38 @@ function generate() {
     sb.e[chartN]._components = [rf(chartUT), rf(chartSpr), rf(chartGfx)];
 
     // Chart placeholder label (shown while loading).
-    const chartLoadLbl = mkLabel(sb, 'ChartStatusLabel', chartN, 'Loading chart…', 14, 0, 300, 22, 140, 150, 170);
+    const chartLoadLbl = mkLabel(sb, 'ChartStatusLabel', chartN, 'Loading chart…', 14,
+        TDETE.chartLoadLabel.y, TDETE.chartLoadLabel.w, TDETE.chartLoadLabel.h, 140, 150, 170);
 
-    // Stats grid: 6 cards in 3×2 arrangement (y=-340 / y=-420).
-    const statsTopY = -340;
-    const statsBotY = -420;
-    const statDefs = [
-        { key: 'price',   label: 'PRICE',    x: -225, y: statsTopY },
-        { key: 'liq',     label: 'LIQ',      x: 0,    y: statsTopY },
-        { key: 'mcap',    label: 'MCAP',     x: 225,  y: statsTopY },
-        { key: 'vol24h',  label: 'VOL 24H',  x: -225, y: statsBotY },
-        { key: 'change',  label: '24H',      x: 0,    y: statsBotY },
-        { key: 'holders', label: 'HOLDERS',  x: 225,  y: statsBotY },
-    ];
+    // Stats grid: 6 cards from LAYOUT.TokenDetailPanel.templates.detailStatCard.
+    const DSC = LAYOUT.TokenDetailPanel.templates.detailStatCard;
     const statIndices = [];
-    for (const d of statDefs) {
+    for (const d of DSC.defs) {
         const cardN = sb.e.length;
         sb.node(`StatCard_${d.key}`, tdetN, [], [], v3(d.x, d.y, 0));
-        const cardUT = sb.ut(cardN, 210, 70);
+        const cardUT = sb.ut(cardN, DSC.w, DSC.h);
         const cardSpr = sb.spr(cardN, 18, 22, 32);
-        // Label header (top of card).
         const lblN = sb.e.length;
-        sb.node('Label', cardN, [], [], v3(0, 16, 0));
-        const lblUT = sb.ut(lblN, 200, 22);
+        sb.node('Label', cardN, [], [], v3(DSC.header.x, DSC.header.y, 0));
+        const lblUT = sb.ut(lblN, DSC.header.w, DSC.header.h);
         const lblL  = sb.lbl(lblN, d.label, 10, 100, 110, 130);
         sb.e[lblL]._spacingX = 1;
         sb.e[lblN]._components = [rf(lblUT), rf(lblL)];
-        // Value (bottom of card).
         const valN = sb.e.length;
-        sb.node('Value', cardN, [], [], v3(0, -14, 0));
-        const valUT = sb.ut(valN, 200, 28);
+        sb.node('Value', cardN, [], [], v3(DSC.value.x, DSC.value.y, 0));
+        const valUT = sb.ut(valN, DSC.value.w, DSC.value.h);
         const valL  = sb.lbl(valN, '—', 20, 255, 255, 255);
         sb.e[valL]._isBold = true;
         sb.e[valN]._components = [rf(valUT), rf(valL)];
+        // Phase 14 (B4): blue edge accent — data/price column.
+        const detEdge = mkCardEdge(sb, cardN, DSC.w, DSC.h, 56, 148, 252);
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
-        sb.e[cardN]._children = [rf(lblN), rf(valN)];
+        sb.e[cardN]._children = [rf(lblN), rf(valN), rf(detEdge)];
         statIndices.push(cardN);
     }
 
-    const detStatus = mkLabel(sb, 'DetailStatusLabel', tdetN, '', 13, -625, 660, 22, 140, 150, 170);
+    const detStatus = mkLabel(sb, 'DetailStatusLabel', tdetN, '', 13,
+        TDETE.status.y, TDETE.status.w, TDETE.status.h, 140, 150, 170);
 
     sb.e[tdetN]._children = [
         rf(detBackLink), rf(detBackBtn),
@@ -1892,19 +2371,23 @@ function generate() {
     // ═══════════════════════════════════════════════════════════════
     // Session 14 C2 — LEADERBOARD PANEL (full-screen list of top 10)
     // ═══════════════════════════════════════════════════════════════
+    // All LeaderboardPanel positions sourced from LAYOUT.LeaderboardPanel.
+    const LP = LAYOUT.LeaderboardPanel.elements;
+    const LPT = LAYOUT.LeaderboardPanel.templates;
+
     const lbN = sb.e.length;
-    sb.node('LeaderboardPanel', canvas, [], [], v3(0, 0, 0));
-    sb.ut(lbN, 720, 1280);
-    // betting-duel polish: widen Y spread from [-620,+618] → [-740,+720]
-    // so leaderboard uses the full visible viewport on device (1602px) not
-    // just design (1280px).
-    const lbBackLink = mkLabel(sb, 'BackLinkLabel', lbN, '← Back', 18, 720, 110, 28, 160, 170, 190);
-    sb.e[lbBackLink]._lpos = v3(-280, 720, 0);
+    sb.node('LeaderboardPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.ut(lbN, LAYOUT.LeaderboardPanel.canvas.w, LAYOUT.LeaderboardPanel.canvas.h);
+    sb.spr(lbN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind rank rows
+
+    const lbBackLink = mkLabel(sb, 'BackLinkLabel', lbN, '← Back', 18,
+        LP.backLink.y, LP.backLink.w, LP.backLink.h, 160, 170, 190);
+    sb.e[lbBackLink]._lpos = v3(LP.backLink.x, LP.backLink.y, 0);
     const lbBackLinkL = sb.e[lbBackLink]._components[1].__id__;
     sb.e[lbBackLinkL]._horizontalAlign = 0;
     const lbBackBtn = sb.e.length;
-    sb.node('BackButton', lbN, [], [], v3(-280, 720, 0));
-    const lbBackBtnUT = sb.ut(lbBackBtn, 140, 36);
+    sb.node('BackButton', lbN, [], [], v3(LP.backBtn.x, LP.backBtn.y, 0));
+    const lbBackBtnUT = sb.ut(lbBackBtn, LP.backBtn.w, LP.backBtn.h);
     const lbBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(lbBackBtn), _enabled: true, __prefab: null,
@@ -1914,43 +2397,43 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(lbBackBtn), _id: gid(),
     });
     sb.e[lbBackBtn]._components = [rf(lbBackBtnUT), rf(lbBackBtnBtn)];
-    // UX Phase 2b: IconBadge trophy on LeaderboardTitleLabel attached by AppUI. Phase 2c: bold.
-    const lbTitle = mkLabel(sb, 'LeaderboardTitleLabel', lbN, 'Leaderboard', 30, 680, 400, 44, 218, 165, 32);
+    const lbTitle = mkLabel(sb, 'LeaderboardTitleLabel', lbN, 'Leaderboard', 30,
+        LP.title.y, LP.title.w, LP.title.h, 218, 165, 32);
     style(sb, lbTitle, { bold: true });
-    const lbTabDefs = [
-        { key: '1v1',    label: '1v1',          x: -292 },
-        { key: '4p',     label: '4p',           x: -146 },
-        { key: '8p',     label: '8p',           x:    0 },
-        { key: 'br10',   label: 'BR10',         x:  146 },
-        { key: 'season', label: 'This Week', x:  292 },
-    ];
+
+    // 5 mode tabs from LAYOUT.LeaderboardPanel.templates.lbTab.
     const lbTabIndices = [];
-    for (const t of lbTabDefs) {
-        const active = t.key === '1v1';
+    for (let i = 0; i < LPT.lbTab.count; i++) {
+        const active = i === LPT.lbTab.activeIdx;
         const bg = active ? [48, 198, 155] : [38, 44, 64];
-        const btn = mkBtnXY(sb, `LBTab_${t.key}`, lbN, t.label, t.x, 600, 130, 44, bg[0], bg[1], bg[2]);
+        const btn = mkBtnXY(sb, `LBTab_${LPT.lbTab.keys[i]}`, lbN, LPT.lbTab.labels[i],
+            LPT.lbTab.xs[i], LPT.lbTab.y, LPT.lbTab.w, LPT.lbTab.h, bg[0], bg[1], bg[2]);
         lbTabIndices.push(btn);
     }
-    // 10 rank rows at y=+540 down, 64px stride — more breathing room.
+
+    // 10 rank rows from LAYOUT.LeaderboardPanel.templates.lbRow.
     const lbRowIndices = [];
-    const lbStartY = 540;
-    const lbRowStride = 64;
-    for (let r = 0; r < 10; r++) {
-        const ry = lbStartY - r * lbRowStride;
+    const LR = LPT.lbRow;
+    for (let r = 0; r < LR.count; r++) {
+        const ry = LR.baseY + r * LR.gapY;
         const rN = sb.e.length;
         sb.node(`LBRow_${r}`, lbN, [], [], v3(0, ry, 0));
-        const rUT = sb.ut(rN, 660, 54);
+        const rUT = sb.ut(rN, LR.w, LR.h);
         const rSpr = sb.spr(rN, 18, 22, 32);
-        const rankN = mkLabel(sb, 'RankLabel', rN, `${r + 1}.`, 18, 0, 50, 30, 200, 200, 210);
-        sb.e[rankN]._lpos = v3(-300, 0, 0);
-        const playerN = mkLabel(sb, 'PlayerLabel', rN, '—', 16, 0, 280, 28, 200, 210, 230);
-        sb.e[playerN]._lpos = v3(-110, 6, 0);
+        const rankN = mkLabel(sb, 'RankLabel', rN, `${r + 1}.`, 18,
+            LR.rank.y, LR.rank.w, LR.rank.h, 200, 200, 210);
+        sb.e[rankN]._lpos = v3(LR.rank.x, LR.rank.y, 0);
+        const playerN = mkLabel(sb, 'PlayerLabel', rN, '—', 16,
+            LR.player.y, LR.player.w, LR.player.h, 200, 210, 230);
+        sb.e[playerN]._lpos = v3(LR.player.x, LR.player.y, 0);
         const playerL = sb.e[playerN]._components[1].__id__;
         sb.e[playerL]._horizontalAlign = 0;
-        const heightN = mkLabel(sb, 'HeightLabel', rN, '—', 16, 0, 120, 28, 218, 165, 32);
-        sb.e[heightN]._lpos = v3(180, 6, 0);
-        const elapsedN = mkLabel(sb, 'ElapsedLabel', rN, '', 11, 0, 280, 18, 130, 140, 160);
-        sb.e[elapsedN]._lpos = v3(-110, -14, 0);
+        const heightN = mkLabel(sb, 'HeightLabel', rN, '—', 16,
+            LR.height.y, LR.height.w, LR.height.h, 218, 165, 32);
+        sb.e[heightN]._lpos = v3(LR.height.x, LR.height.y, 0);
+        const elapsedN = mkLabel(sb, 'ElapsedLabel', rN, '', 11,
+            LR.elapsed.y, LR.elapsed.w, LR.elapsed.h, 130, 140, 160);
+        sb.e[elapsedN]._lpos = v3(LR.elapsed.x, LR.elapsed.y, 0);
         const elapsedL = sb.e[elapsedN]._components[1].__id__;
         sb.e[elapsedL]._horizontalAlign = 0;
         sb.e[rN]._components = [rf(rUT), rf(rSpr)];
@@ -1958,27 +2441,28 @@ function generate() {
         sb.e[rN]._active = false;
         lbRowIndices.push(rN);
     }
-    const lbStatus = mkLabel(sb, 'LeaderboardStatusLabel', lbN, '', 14, -740, 600, 22, 140, 150, 170);
+    const lbStatus = mkLabel(sb, 'LeaderboardStatusLabel', lbN, '', 14,
+        LP.status.y, LP.status.w, LP.status.h, 140, 150, 170);
 
-    // Session D Part 8: personal rank footer card below the 10 rows.
-    // Since the on-chain leaderboard only stores top-10, this card gives every
-    // user a self-locating signal: "you're #3" or "not yet ranked".
-    const prcY = lbStartY - 10 * lbRowStride - 30; // ~-150 below last row
+    // Personal rank footer card. AppUI enables once a pubkey is connected.
+    const PRC = LP.personalRankCard.children;
     const prcN = sb.e.length;
-    sb.node('PersonalRankCard', lbN, [], [], v3(0, prcY, 0));
-    const prcUT = sb.ut(prcN, 660, 100);
+    sb.node('PersonalRankCard', lbN, [], [], v3(LP.personalRankCard.x, LP.personalRankCard.y, 0));
+    const prcUT = sb.ut(prcN, LP.personalRankCard.w, LP.personalRankCard.h);
     const prcSpr = sb.spr(prcN, 28, 36, 52);
-    // UX Phase 2b: IconBadge user attached by AppUI.
-    const prcHeader = mkLabel(sb, 'HeaderLabel', prcN, 'YOU', 13, 32, 120, 18, 140, 220, 180);
-    sb.e[prcHeader]._lpos = v3(-290, 32, 0);
+    const prcHeader = mkLabel(sb, 'HeaderLabel', prcN, 'YOU', 13,
+        PRC.header.y, PRC.header.w, PRC.header.h, 140, 220, 180);
+    sb.e[prcHeader]._lpos = v3(PRC.header.x, PRC.header.y, 0);
     sb.e[sb.e[prcHeader]._components[1].__id__]._horizontalAlign = 0;
-    const prcRank = mkLabel(sb, 'RankLabel', prcN, 'Not ranked yet', 16, 6, 600, 24, 220, 230, 240);
-    sb.e[prcRank]._lpos = v3(0, 6, 0);
-    const prcStats = mkLabel(sb, 'StatsLabel', prcN, 'W–L —  ·  Level —  ·  P/L —', 12, -22, 600, 20, 160, 170, 190);
-    sb.e[prcStats]._lpos = v3(0, -22, 0);
+    const prcRank = mkLabel(sb, 'RankLabel', prcN, 'Not ranked yet', 16,
+        PRC.rank.y, PRC.rank.w, PRC.rank.h, 220, 230, 240);
+    sb.e[prcRank]._lpos = v3(PRC.rank.x, PRC.rank.y, 0);
+    const prcStats = mkLabel(sb, 'StatsLabel', prcN, 'W–L —  ·  Level —  ·  P/L —', 12,
+        PRC.stats.y, PRC.stats.w, PRC.stats.h, 160, 170, 190);
+    sb.e[prcStats]._lpos = v3(PRC.stats.x, PRC.stats.y, 0);
     sb.e[prcN]._components = [rf(prcUT), rf(prcSpr)];
     sb.e[prcN]._children = [rf(prcHeader), rf(prcRank), rf(prcStats)];
-    sb.e[prcN]._active = false; // AppUI enables once a pubkey is connected
+    sb.e[prcN]._active = false;
 
     sb.e[lbN]._children = [rf(lbBackLink), rf(lbBackBtn), rf(lbTitle), ...lbTabIndices.map(rf), ...lbRowIndices.map(rf), rf(prcN), rf(lbStatus)];
     sb.e[lbN]._active = false;
@@ -1989,15 +2473,18 @@ function generate() {
     // from UserStats + DailyChallenge + Season RPCs.
     // ═══════════════════════════════════════════════════════════════
     const dcN = sb.e.length;
-    sb.node('DailyChallengePanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('DailyChallengePanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(dcN, 720, 1280);
     sb.spr(dcN, 10, 14, 22);
-    const dcBackLink = mkLabel(sb, 'BackLinkLabel', dcN, '← Back', 18, 618, 110, 28, 160, 170, 190);
-    sb.e[dcBackLink]._lpos = v3(-280, 618, 0);
+    // Chrome from LAYOUT.DailyChallengePanel.elements.
+    const DCE = LAYOUT.DailyChallengePanel.elements;
+    const dcBackLink = mkLabel(sb, 'BackLinkLabel', dcN, '← Back', 18,
+        DCE.backLink.y, DCE.backLink.w, DCE.backLink.h, 160, 170, 190);
+    sb.e[dcBackLink]._lpos = v3(DCE.backLink.x, DCE.backLink.y, 0);
     sb.e[sb.e[dcBackLink]._components[1].__id__]._horizontalAlign = 0;
     const dcBackBtn = sb.e.length;
-    sb.node('BackButton', dcN, [], [], v3(-280, 618, 0));
-    const dcBackBtnUT = sb.ut(dcBackBtn, 140, 36);
+    sb.node('BackButton', dcN, [], [], v3(DCE.backBtn.x, DCE.backBtn.y, 0));
+    const dcBackBtnUT = sb.ut(dcBackBtn, DCE.backBtn.w, DCE.backBtn.h);
     const dcBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(dcBackBtn), _enabled: true, __prefab: null,
@@ -2008,65 +2495,86 @@ function generate() {
     });
     sb.e[dcBackBtn]._components = [rf(dcBackBtnUT), rf(dcBackBtnBtn)];
     // UX Phase 2b: IconBadge flame attached by AppUI. Phase 2c: bold.
-    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "Today's Challenges", 26, 600, 600, 40, 218, 165, 32);
+    // 9c: title w 600→400 to clear BackButton bbox right x=-210.
+    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "Today's Challenges", 26,
+        DCE.title.y, DCE.title.w, DCE.title.h, 218, 165, 32);
     style(sb, dcTitle, { bold: true });
 
-    // Streak card (y=440, 600×100).
+    // Streak card from LAYOUT.DailyChallengePanel.elements.streakCard + internals.
     const streakCardN = sb.e.length;
-    sb.node('DailyStreakCard', dcN, [], [], v3(0, 440, 0));
-    const streakCardUT = sb.ut(streakCardN, 600, 100);
+    sb.node('DailyStreakCard', dcN, [], [], v3(DCE.streakCard.x, DCE.streakCard.y, 0));
+    const streakCardUT = sb.ut(streakCardN, DCE.streakCard.w, DCE.streakCard.h);
     const streakCardSpr = sb.spr(streakCardN, 22, 28, 42);
-    const streakHeader = mkLabel(sb, 'HeaderLabel', streakCardN, 'STREAK', 11, 34, 200, 16, 140, 150, 170);
-    sb.e[streakHeader]._lpos = v3(-260, 34, 0);
+    const streakHeader = mkLabel(sb, 'HeaderLabel', streakCardN, 'STREAK', 11,
+        DCE.streakHeader.y, DCE.streakHeader.w, DCE.streakHeader.h, 140, 150, 170);
+    sb.e[streakHeader]._lpos = v3(DCE.streakHeader.x, DCE.streakHeader.y, 0);
     sb.e[sb.e[streakHeader]._components[1].__id__]._horizontalAlign = 0;
-    const streakDay = mkLabel(sb, 'StreakDayLabel', streakCardN, 'Day 0', 36, 0, 560, 46, 255, 255, 255);
-    sb.e[streakDay]._lpos = v3(0, 2, 0);
-    const streakBest = mkLabel(sb, 'StreakBestLabel', streakCardN, 'Best: 0', 14, -28, 560, 22, 160, 170, 190);
-    sb.e[streakBest]._lpos = v3(0, -28, 0);
+    style(sb, streakHeader, { spacing: 1 });  // Phase 15 (B5): tracked uppercase
+    // 9c: streakDay h 46→38 so its bbox bottom y=-17 touches StreakBest top y=-17 (no overlap).
+    const streakDay = mkLabel(sb, 'StreakDayLabel', streakCardN, 'Day 0', 36,
+        0, DCE.streakDayLabel.w, DCE.streakDayLabel.h, 255, 255, 255);
+    sb.e[streakDay]._lpos = v3(DCE.streakDayLabel.x, DCE.streakDayLabel.y, 0);
+    style(sb, streakDay, { bold: true, mono: true });  // Phase 15 (B5): hero streak number
+    const streakBest = mkLabel(sb, 'StreakBestLabel', streakCardN, 'Best: 0', 14,
+        -28, DCE.streakBestLabel.w, DCE.streakBestLabel.h, 160, 170, 190);
+    sb.e[streakBest]._lpos = v3(DCE.streakBestLabel.x, DCE.streakBestLabel.y, 0);
+    // Phase 14 (B4): amber edge accent — warm achievement card.
+    const streakEdge = mkCardEdge(sb, streakCardN, DCE.streakCard.w, DCE.streakCard.h, 255, 210, 74);
     sb.e[streakCardN]._components = [rf(streakCardUT), rf(streakCardSpr)];
-    sb.e[streakCardN]._children = [rf(streakHeader), rf(streakDay), rf(streakBest)];
+    sb.e[streakCardN]._children = [rf(streakHeader), rf(streakDay), rf(streakBest), rf(streakEdge)];
 
-    // 3 challenge rows (y=280/180/80, 600×80).
-    const challengeRowYs = [280, 180, 80];
+    // 3 challenge rows from LAYOUT.DailyChallengePanel.templates.challengeRow.
+    const CR = LAYOUT.DailyChallengePanel.templates.challengeRow;
     const challengeRowIndices = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < CR.count; i++) {
         const rN = sb.e.length;
-        sb.node(`ChallengeRow_${i}`, dcN, [], [], v3(0, challengeRowYs[i], 0));
-        const rUT = sb.ut(rN, 600, 80);
+        sb.node(`ChallengeRow_${i}`, dcN, [], [], v3(0, CR.ys[i], 0));
+        const rUT = sb.ut(rN, CR.w, CR.h);
         const rSpr = sb.spr(rN, 22, 28, 42);
-        const descL = mkLabel(sb, `ChallengeDescriptionLabel_${i}`, rN, '—', 17, 0, 360, 28, 220, 230, 240);
-        sb.e[descL]._lpos = v3(-250, 14, 0);
+        const descL = mkLabel(sb, `ChallengeDescriptionLabel_${i}`, rN, '—', 17, 0, CR.description.w, CR.description.h, 220, 230, 240);
+        sb.e[descL]._lpos = v3(CR.description.x, CR.description.y, 0);
         sb.e[sb.e[descL]._components[1].__id__]._horizontalAlign = 0;
-        const subL = mkLabel(sb, `ChallengeProgressLabel_${i}`, rN, '', 13, 0, 360, 20, 140, 150, 170);
-        sb.e[subL]._lpos = v3(-250, -14, 0);
+        const subL = mkLabel(sb, `ChallengeProgressLabel_${i}`, rN, '', 13, 0, CR.progress.w, CR.progress.h, 140, 150, 170);
+        sb.e[subL]._lpos = v3(CR.progress.x, CR.progress.y, 0);
         sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
-        const rewardL = mkLabel(sb, `ChallengeRewardLabel_${i}`, rN, '+0 XP', 15, 0, 120, 22, 218, 165, 32);
-        sb.e[rewardL]._lpos = v3(150, 0, 0);
-        const checkL = mkLabel(sb, `ChallengeCheckmark_${i}`, rN, '·', 28, 0, 48, 36, 90, 100, 120);
-        sb.e[checkL]._lpos = v3(260, 0, 0);
+        const rewardL = mkLabel(sb, `ChallengeRewardLabel_${i}`, rN, '+0 XP', 15, 0, CR.reward.w, CR.reward.h, 218, 165, 32);
+        sb.e[rewardL]._lpos = v3(CR.reward.x, CR.reward.y, 0);
+        const checkL = mkLabel(sb, `ChallengeCheckmark_${i}`, rN, '·', 28, 0, CR.checkmark.w, CR.checkmark.h, 90, 100, 120);
+        sb.e[checkL]._lpos = v3(CR.checkmark.x, CR.checkmark.y, 0);
+        // Phase 14 (B4): violet edge accent — daily action card.
+        const cEdge = mkCardEdge(sb, rN, CR.w, CR.h, 153, 69, 255);
         sb.e[rN]._components = [rf(rUT), rf(rSpr)];
-        sb.e[rN]._children = [rf(descL), rf(subL), rf(rewardL), rf(checkL)];
+        sb.e[rN]._children = [rf(descL), rf(subL), rf(rewardL), rf(checkL), rf(cEdge)];
         challengeRowIndices.push(rN);
     }
 
-    // Season summary card (y=-60, 600×120).
+    // Season summary card from LAYOUT.DailyChallengePanel.elements.season*.
     const seasonSumN = sb.e.length;
-    sb.node('SeasonSummaryCard', dcN, [], [], v3(0, -60, 0));
-    const seasonSumUT = sb.ut(seasonSumN, 600, 120);
+    sb.node('SeasonSummaryCard', dcN, [], [], v3(DCE.seasonCard.x, DCE.seasonCard.y, 0));
+    const seasonSumUT = sb.ut(seasonSumN, DCE.seasonCard.w, DCE.seasonCard.h);
     const seasonSumSpr = sb.spr(seasonSumN, 22, 28, 42);
-    const seasonHeader = mkLabel(sb, 'SeasonHeaderLabel', seasonSumN, 'THIS WEEK', 11, 42, 200, 16, 140, 150, 170);
-    sb.e[seasonHeader]._lpos = v3(-260, 42, 0);
+    const seasonHeader = mkLabel(sb, 'SeasonHeaderLabel', seasonSumN, 'THIS WEEK', 11,
+        DCE.seasonHeader.y, DCE.seasonHeader.w, DCE.seasonHeader.h, 140, 150, 170);
+    sb.e[seasonHeader]._lpos = v3(DCE.seasonHeader.x, DCE.seasonHeader.y, 0);
     sb.e[sb.e[seasonHeader]._components[1].__id__]._horizontalAlign = 0;
-    const seasonRank = mkLabel(sb, 'SeasonRankLabel', seasonSumN, 'Rank: —  ·  Wins: 0', 17, 14, 560, 26, 220, 230, 240);
-    sb.e[seasonRank]._lpos = v3(0, 14, 0);
-    const seasonPodium = mkLabel(sb, 'SeasonPodiumLabel', seasonSumN, 'Podium: —', 13, -18, 560, 22, 160, 170, 190);
-    sb.e[seasonPodium]._lpos = v3(0, -18, 0);
-    const seasonPrize = mkLabel(sb, 'SeasonPrizeLabel', seasonSumN, '', 12, -42, 560, 18, 130, 140, 160);
-    sb.e[seasonPrize]._lpos = v3(0, -42, 0);
+    style(sb, seasonHeader, { spacing: 1 });  // Phase 15 (B5)
+    const seasonRank = mkLabel(sb, 'SeasonRankLabel', seasonSumN, 'Rank: —  ·  Wins: 0', 17,
+        DCE.seasonRank.y, DCE.seasonRank.w, DCE.seasonRank.h, 220, 230, 240);
+    sb.e[seasonRank]._lpos = v3(DCE.seasonRank.x, DCE.seasonRank.y, 0);
+    style(sb, seasonRank, { mono: true });  // Phase 15 (B5): live rank/wins
+    const seasonPodium = mkLabel(sb, 'SeasonPodiumLabel', seasonSumN, 'Podium: —', 13,
+        DCE.seasonPodium.y, DCE.seasonPodium.w, DCE.seasonPodium.h, 160, 170, 190);
+    sb.e[seasonPodium]._lpos = v3(DCE.seasonPodium.x, DCE.seasonPodium.y, 0);
+    const seasonPrize = mkLabel(sb, 'SeasonPrizeLabel', seasonSumN, '', 12,
+        DCE.seasonPrize.y, DCE.seasonPrize.w, DCE.seasonPrize.h, 130, 140, 160);
+    sb.e[seasonPrize]._lpos = v3(DCE.seasonPrize.x, DCE.seasonPrize.y, 0);
+    // Phase 14 (B4): teal edge accent — weekly progress card.
+    const seasonEdge = mkCardEdge(sb, seasonSumN, DCE.seasonCard.w, DCE.seasonCard.h, 20, 241, 149);
     sb.e[seasonSumN]._components = [rf(seasonSumUT), rf(seasonSumSpr)];
-    sb.e[seasonSumN]._children = [rf(seasonHeader), rf(seasonRank), rf(seasonPodium), rf(seasonPrize)];
+    sb.e[seasonSumN]._children = [rf(seasonHeader), rf(seasonRank), rf(seasonPodium), rf(seasonPrize), rf(seasonEdge)];
 
-    const dcStatus = mkLabel(sb, 'DailyChallengeStatusLabel', dcN, '', 13, -540, 600, 20, 140, 150, 170);
+    const dcStatus = mkLabel(sb, 'DailyChallengeStatusLabel', dcN, '', 13,
+        DCE.status.y, DCE.status.w, DCE.status.h, 140, 150, 170);
 
     sb.e[dcN]._children = [
         rf(dcBackLink), rf(dcBackBtn), rf(dcTitle),
@@ -2081,8 +2589,9 @@ function generate() {
     // Session 14 C3 — PORTFOLIO PANEL (user stats — Paper / Real tabs)
     // ═══════════════════════════════════════════════════════════════
     const pfN = sb.e.length;
-    sb.node('PortfolioPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('PortfolioPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(pfN, 720, 1280);
+    sb.spr(pfN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind stats/history/trophies
     // betting-duel polish: stretch the panel to fill the Canvas on any device
     // aspect ratio. Without a Widget, tall-screen devices shrink the panel to
     // a fraction of the viewport. Inner labels use absolute Y offsets so they
@@ -2090,13 +2599,16 @@ function generate() {
     sb.widget(pfN);
     // betting-duel polish (FIXED_WIDTH spread): Y range stretched from
     // [-620, +620] → [-760, +720] to use the full 1602px viewport on device.
-    const pfBackLink = mkLabel(sb, 'BackLinkLabel', pfN, '← Back', 18, 720, 110, 28, 160, 170, 190);
-    sb.e[pfBackLink]._lpos = v3(-280, 720, 0);
+    // Chrome from LAYOUT.PortfolioPanel.elements (9c addition).
+    const PFE = LAYOUT.PortfolioPanel.elements;
+    const pfBackLink = mkLabel(sb, 'BackLinkLabel', pfN, '← Back', 18,
+        PFE.backLink.y, PFE.backLink.w, PFE.backLink.h, 160, 170, 190);
+    sb.e[pfBackLink]._lpos = v3(PFE.backLink.x, PFE.backLink.y, 0);
     const pfBackLinkL = sb.e[pfBackLink]._components[1].__id__;
     sb.e[pfBackLinkL]._horizontalAlign = 0;
     const pfBackBtn = sb.e.length;
-    sb.node('BackButton', pfN, [], [], v3(-280, 720, 0));
-    const pfBackBtnUT = sb.ut(pfBackBtn, 140, 36);
+    sb.node('BackButton', pfN, [], [], v3(PFE.backBtn.x, PFE.backBtn.y, 0));
+    const pfBackBtnUT = sb.ut(pfBackBtn, PFE.backBtn.w, PFE.backBtn.h);
     const pfBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(pfBackBtn), _enabled: true, __prefab: null,
@@ -2107,50 +2619,53 @@ function generate() {
     });
     sb.e[pfBackBtn]._components = [rf(pfBackBtnUT), rf(pfBackBtnBtn)];
     // UX Phase 2b: IconBadge user attached by AppUI. Phase 2c: bold + gold.
-    const pfTitle = mkLabel(sb, 'PortfolioTitleLabel', pfN, 'Portfolio', 30, 680, 400, 44, 255, 255, 255);
+    const pfTitle = mkLabel(sb, 'PortfolioTitleLabel', pfN, 'Portfolio', 30,
+        PFE.title.y, PFE.title.w, PFE.title.h, 255, 255, 255);
     style(sb, pfTitle, { bold: true, color: GOLD() });
-    const pfPubkeyLabel = mkLabel(sb, 'PortfolioPubkeyLabel', pfN, 'not connected', 16, 630, 460, 24, 140, 220, 180);
+    const pfPubkeyLabel = mkLabel(sb, 'PortfolioPubkeyLabel', pfN, 'not connected', 16,
+        PFE.pubkeyLabel.y, PFE.pubkeyLabel.w, PFE.pubkeyLabel.h, 140, 220, 180);
     // Stats / History / Trophies switch.
-    const pfStatsTab    = mkBtnXY(sb, 'PortfolioStatsTab',    pfN, 'Stats',     -180, 580, 170, 44, 48, 198, 155);
-    const pfHistoryTab  = mkBtnXY(sb, 'PortfolioHistoryTab',  pfN, 'History',      0, 580, 170, 44, 28, 34, 48);
-    // UX Phase 2b: IconBadge trophy attached by AppUI.
-    const pfTrophiesTab = mkBtnXY(sb, 'PortfolioTrophiesTab', pfN, 'Trophies',180, 580, 170, 44, 28, 34, 48);
-    // Paper / Real sub-tabs (for the Stats view).
-    const pfPaperTab = mkBtnXY(sb, 'PortfolioPaperTab', pfN, 'Paper',  -90, 520, 170, 44, 48, 198, 155);
-    const pfRealTab  = mkBtnXY(sb, 'PortfolioRealTab',  pfN, 'Real',    90, 520, 170, 44, 28, 34, 48);
-    // 6 stat cards 3×2 — spread to use vertical space (was y=380/290 gap 90 → y=420/300 gap 120).
-    const pfStatDefs = [
-        { key: 'games',   label: 'GAMES',    x: -225, y: 420 },
-        { key: 'wins',    label: 'WINS',     x: 0,    y: 420 },
-        { key: 'losses',  label: 'LOSSES',   x: 225,  y: 420 },
-        { key: 'winrate', label: 'WIN %',    x: -225, y: 300 },
-        { key: 'pnl',     label: 'P/L SOL',  x: 0,    y: 300 },
-        { key: 'xp',      label: 'XP',       x: 225,  y: 300 },
-    ];
+    const pfStatsTab    = mkBtnXY(sb, 'PortfolioStatsTab',    pfN, 'Stats',
+        PFE.statsTab.x, PFE.statsTab.y, PFE.statsTab.w, PFE.statsTab.h, 48, 198, 155);
+    const pfHistoryTab  = mkBtnXY(sb, 'PortfolioHistoryTab',  pfN, 'History',
+        PFE.historyTab.x, PFE.historyTab.y, PFE.historyTab.w, PFE.historyTab.h, 28, 34, 48);
+    const pfTrophiesTab = mkBtnXY(sb, 'PortfolioTrophiesTab', pfN, 'Trophies',
+        PFE.trophiesTab.x, PFE.trophiesTab.y, PFE.trophiesTab.w, PFE.trophiesTab.h, 28, 34, 48);
+    // Paper / Real sub-tabs.
+    const pfPaperTab = mkBtnXY(sb, 'PortfolioPaperTab', pfN, 'Paper',
+        PFE.paperTab.x, PFE.paperTab.y, PFE.paperTab.w, PFE.paperTab.h, 48, 198, 155);
+    const pfRealTab  = mkBtnXY(sb, 'PortfolioRealTab',  pfN, 'Real',
+        PFE.realTab.x, PFE.realTab.y, PFE.realTab.w, PFE.realTab.h, 28, 34, 48);
+    // 6 stat cards from LAYOUT.PortfolioPanel.templates.statCard.
+    const PSC = LAYOUT.PortfolioPanel.templates.statCard;
     const pfStatIndices = [];
-    for (const d of pfStatDefs) {
+    for (const d of PSC.defs) {
         const cardN = sb.e.length;
         sb.node(`PFStatCard_${d.key}`, pfN, [], [], v3(d.x, d.y, 0));
-        const cardUT = sb.ut(cardN, 220, 96);
+        const cardUT = sb.ut(cardN, PSC.w, PSC.h);
         const cardSpr = sb.spr(cardN, 18, 22, 32);
         const lblN = sb.e.length;
-        sb.node('Label', cardN, [], [], v3(0, 26, 0));
-        const lblUT = sb.ut(lblN, 210, 22);
+        sb.node('Label', cardN, [], [], v3(PSC.header.x, PSC.header.y, 0));
+        const lblUT = sb.ut(lblN, PSC.header.w, PSC.header.h);
         const lblL = sb.lbl(lblN, d.label, 11, 100, 110, 130);
         sb.e[lblL]._spacingX = 1;
         sb.e[lblN]._components = [rf(lblUT), rf(lblL)];
         const valN = sb.e.length;
-        sb.node('Value', cardN, [], [], v3(0, -18, 0));
-        const valUT = sb.ut(valN, 210, 36);
+        sb.node('Value', cardN, [], [], v3(PSC.value.x, PSC.value.y, 0));
+        const valUT = sb.ut(valN, PSC.value.w, PSC.value.h);
         const valL = sb.lbl(valN, '—', 26, 255, 255, 255);
         sb.e[valL]._isBold = true;
         sb.e[valN]._components = [rf(valUT), rf(valL)];
+        // Phase 14 (B4): violet edge accent — Portfolio brand-aligned set.
+        const pfStatEdge = mkCardEdge(sb, cardN, PSC.w, PSC.h, 153, 69, 255);
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
-        sb.e[cardN]._children = [rf(lblN), rf(valN)];
+        sb.e[cardN]._children = [rf(lblN), rf(valN), rf(pfStatEdge)];
         pfStatIndices.push(cardN);
     }
-    const pfHint = mkLabel(sb, 'PortfolioHintLabel', pfN, 'Real stats come online after Session D (on-chain UserStats PDA).', 12, 160, 620, 20, 140, 150, 170);
-    const pfStatus = mkLabel(sb, 'PortfolioStatusLabel', pfN, '', 14, -740, 640, 22, 140, 150, 170);
+    const pfHint = mkLabel(sb, 'PortfolioHintLabel', pfN, 'Real stats come online after Session D (on-chain UserStats PDA).', 12,
+        PFE.hint.y, PFE.hint.w, PFE.hint.h, 140, 150, 170);
+    const pfStatus = mkLabel(sb, 'PortfolioStatusLabel', pfN, '', 14,
+        PFE.status.y, PFE.status.w, PFE.status.h, 140, 150, 170);
 
     // Part 9: MatchHistory view — hidden when Stats tab is active.
     // Container anchors label + scrollview + load-more button as a unit.
@@ -2159,68 +2674,78 @@ function generate() {
     sb.ut(pfHistoryViewN, 720, 1280);
     const pfHistoryEmpty = mkLabel(sb, 'PortfolioHistoryEmptyLabel', pfHistoryViewN,
         'No matches yet — play a Real match to see history.',
-        14, 0, 0, 22, 140, 150, 170);
-    const pfHistorySV = mkScrollView(sb, 'PortfolioHistoryScroll', pfHistoryViewN, 0, 40, 660, 780);
-    // Pre-instantiate 30 MatchHistoryRow nodes as a pool. AppUI toggles active
-    // + updates their labels as entries arrive from MatchHistoryRpc.
+        14, PFE.historyEmpty.y, PFE.historyEmpty.w, PFE.historyEmpty.h, 140, 150, 170);
+    const pfHistorySV = mkScrollView(sb, 'PortfolioHistoryScroll', pfHistoryViewN,
+        PFE.historyScroll.x, PFE.historyScroll.y, PFE.historyScroll.w, PFE.historyScroll.h);
+    // 30-row pool from LAYOUT.PortfolioPanel.templates.matchHistoryRow.
+    // AppUI toggles _active per row + writes 5 labels (Date/Mode/Wager/
+    // Placement/Payout) as MatchHistoryRpc entries arrive (AppUI.ts:9310).
+    const MHR = LAYOUT.PortfolioPanel.templates.matchHistoryRow;
     const pfHistoryRows = [];
-    const rowH = 72;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < MHR.count; i++) {
+        const ry = MHR.baseY + i * MHR.gapY;
         const rowN = sb.e.length;
-        const ry = -i * rowH - rowH / 2; // top-down cascade beneath content anchor (0.5, 1)
         sb.node(`MatchHistoryRow_${i}`, pfHistorySV.content, [], [], v3(0, ry, 0));
-        const rowUT = sb.ut(rowN, 600, rowH - 8);
+        const rowUT = sb.ut(rowN, MHR.w, MHR.h);
         const rowSpr = sb.spr(rowN, 22, 28, 44);
-        // 5 labels per row: date · mode/window badge · wager · placement · payout
-        const dateL = mkLabel(sb, 'Date',      rowN, '—', 12, 0, 560, 18, 160, 170, 190);
-        sb.e[dateL]._lpos = v3(-270, 16, 0);
-        const modeL = mkLabel(sb, 'Mode',      rowN, '—', 12, 0, 560, 18, 255, 255, 255);
-        sb.e[modeL]._lpos = v3(-90, 16, 0);
-        const wagerL = mkLabel(sb, 'Wager',    rowN, '—', 12, 0, 560, 18, 200, 210, 220);
-        sb.e[wagerL]._lpos = v3(90, 16, 0);
-        const placeL = mkLabel(sb, 'Placement',rowN, '—', 12, 0, 560, 18, 255, 255, 255);
-        sb.e[placeL]._lpos = v3(-90, -14, 0);
-        const payoutL = mkLabel(sb, 'Payout',  rowN, '—', 14, 0, 560, 20, 48, 198, 155);
-        sb.e[payoutL]._lpos = v3(200, -14, 0);
+        const dateL = mkLabel(sb, 'Date', rowN, '—', 12, 0, MHR.date.w, MHR.date.h,
+            MHR.date.color[0], MHR.date.color[1], MHR.date.color[2]);
+        sb.e[dateL]._lpos = v3(MHR.date.x, MHR.date.y, 0);
+        const modeL = mkLabel(sb, 'Mode', rowN, '—', 12, 0, MHR.mode.w, MHR.mode.h,
+            MHR.mode.color[0], MHR.mode.color[1], MHR.mode.color[2]);
+        sb.e[modeL]._lpos = v3(MHR.mode.x, MHR.mode.y, 0);
+        const wagerL = mkLabel(sb, 'Wager', rowN, '—', 12, 0, MHR.wager.w, MHR.wager.h,
+            MHR.wager.color[0], MHR.wager.color[1], MHR.wager.color[2]);
+        sb.e[wagerL]._lpos = v3(MHR.wager.x, MHR.wager.y, 0);
+        const placeL = mkLabel(sb, 'Placement', rowN, '—', 12, 0, MHR.placement.w, MHR.placement.h,
+            MHR.placement.color[0], MHR.placement.color[1], MHR.placement.color[2]);
+        sb.e[placeL]._lpos = v3(MHR.placement.x, MHR.placement.y, 0);
+        const payoutL = mkLabel(sb, 'Payout', rowN, '—', 14, 0, MHR.payout.w, MHR.payout.h,
+            MHR.payout.color[0], MHR.payout.color[1], MHR.payout.color[2]);
+        sb.e[payoutL]._lpos = v3(MHR.payout.x, MHR.payout.y, 0);
         sb.e[rowN]._components = [rf(rowUT), rf(rowSpr)];
         sb.e[rowN]._children = [rf(dateL), rf(modeL), rf(wagerL), rf(placeL), rf(payoutL)];
         sb.e[rowN]._active = false;
         pfHistoryRows.push(rowN);
     }
-    // Attach pool to content.
     sb.e[pfHistorySV.content]._children = pfHistoryRows.map(rf);
-    const pfHistoryLoadMore = mkBtn(sb, 'PortfolioHistoryLoadMoreButton', pfHistoryViewN, 'Load more', -260, 400, 48, 48, 70, 90);
-    sb.e[pfHistoryLoadMore]._lpos = v3(0, -260, 0);
+    const pfHistoryLoadMore = mkBtn(sb, 'PortfolioHistoryLoadMoreButton', pfHistoryViewN, 'Load more',
+        PFE.historyLoadMore.y, PFE.historyLoadMore.w, PFE.historyLoadMore.h, 48, 70, 90);
+    sb.e[pfHistoryLoadMore]._lpos = v3(PFE.historyLoadMore.x, PFE.historyLoadMore.y, 0);
     sb.e[pfHistoryLoadMore]._active = false;
 
     sb.e[pfHistoryViewN]._children = [rf(pfHistoryEmpty), rf(pfHistorySV.root), rf(pfHistoryLoadMore)];
     sb.e[pfHistoryViewN]._active = false;
 
-    // Part 11 B: Trophies view — 3×2 grid of 200×200 cNFT tiles.
-    // Hidden until user taps PortfolioTrophiesTab.
+    // Part 11 B: Trophies view — 3×2 grid of cNFT tiles from
+    // LAYOUT.PortfolioPanel.templates.trophyTile.
     const pfTrophiesViewN = sb.e.length;
-    sb.node('PortfolioTrophiesView', pfN, [], [], v3(0, 0, 0));
-    sb.ut(pfTrophiesViewN, 720, 1280);
+    sb.node('PortfolioTrophiesView', pfN, [], [], v3(PFE.trophiesView.x, PFE.trophiesView.y, 0));
+    sb.ut(pfTrophiesViewN, PFE.trophiesView.w, PFE.trophiesView.h);
     const pfTrophiesEmpty = mkLabel(sb, 'PortfolioTrophiesEmptyLabel', pfTrophiesViewN,
         'No trophies yet — win a weekly season to earn your first',
-        14, 0, 540, 24, 140, 150, 170);
+        14, PFE.trophiesEmpty.y, PFE.trophiesEmpty.w, PFE.trophiesEmpty.h, 140, 150, 170);
+    const PTT = LAYOUT.PortfolioPanel.templates.trophyTile;
     const pfTrophyTileIndices = [];
-    const tileW = 200, tileH = 200, tileGap = 20;
-    for (let row = 0; row < 2; row++) {
-        for (let col = 0; col < 3; col++) {
-            const i = row * 3 + col;
-            const tx = (col - 1) * (tileW + tileGap);
-            const ty = 220 - row * (tileH + tileGap);
+    for (let row = 0; row < PTT.rows; row++) {
+        for (let col = 0; col < PTT.cols; col++) {
+            const i = row * PTT.cols + col;
+            const tx = (col + PTT.gridXOffset) * (PTT.w + PTT.gap);
+            const ty = PTT.gridYBase + row * PTT.gridYStride;
             const tN = sb.e.length;
             sb.node(`TrophyTile_${i}`, pfTrophiesViewN, [], [], v3(tx, ty, 0));
-            const tUT = sb.ut(tN, tileW, tileH);
+            const tUT = sb.ut(tN, PTT.w, PTT.h);
             const tSpr = sb.spr(tN, 22, 28, 44);
-            // UX Phase 2b: empty label; AppUI attaches IconLibrary via rankIcon per tile.
-            const emojiLbl = mkLabel(sb, 'Emoji', tN, '', 56, 50, tileW, 70, 255, 255, 255);
-            const titleLbl = mkLabel(sb, 'Title', tN, 'Week #0', 14, -10, tileW, 20, 220, 200, 140);
-            const winsLbl = mkLabel(sb, 'Wins', tN, '0 wins', 12, -40, tileW, 18, 140, 150, 170);
+            const emojiLbl = mkLabel(sb, 'Emoji', tN, '', 56,
+                PTT.emoji.y, PTT.emoji.w, PTT.emoji.h, 255, 255, 255);
+            const titleLbl = mkLabel(sb, 'Title', tN, 'Week #0', 14,
+                PTT.title.y, PTT.title.w, PTT.title.h, 220, 200, 140);
+            const winsLbl = mkLabel(sb, 'Wins', tN, '0 wins', 12,
+                PTT.wins.y, PTT.wins.w, PTT.wins.h, 140, 150, 170);
+            // Phase 14 (B4): gold edge accent — rank tile.
+            const tEdge = mkCardEdge(sb, tN, PTT.w, PTT.h, 255, 210, 74);
             sb.e[tN]._components = [rf(tUT), rf(tSpr)];
-            sb.e[tN]._children = [rf(emojiLbl), rf(titleLbl), rf(winsLbl)];
+            sb.e[tN]._children = [rf(emojiLbl), rf(titleLbl), rf(winsLbl), rf(tEdge)];
             sb.e[tN]._active = false;
             pfTrophyTileIndices.push(tN);
         }
@@ -2243,33 +2768,42 @@ function generate() {
     // Session D Part 3 — WAITING PANEL
     // Shown during real-mode matchmaking + as a brief transition for paper.
     // ═══════════════════════════════════════════════════════════════
+    // All WaitingPanel positions sourced from LAYOUT.WaitingPanel.
+    const WPE = LAYOUT.WaitingPanel.elements;
     const wpN = sb.e.length;
     sb.node('WaitingPanel', canvas, [], [], v3(0, 0, 0));
-    sb.ut(wpN, 720, 1280);
+    sb.ut(wpN, LAYOUT.WaitingPanel.canvas.w, LAYOUT.WaitingPanel.canvas.h);
     sb.spr(wpN, 10, 14, 22);
 
-    const wpTitle = mkLabel(sb, 'WaitingTitleLabel', wpN, 'Finding opponent…', 28, 300, 600, 40, 255, 255, 255);
-    const wpMode = mkLabel(sb, 'WaitingModeLabel', wpN, '1v1 · 0.05 SOL · Real', 16, 250, 600, 24, 140, 220, 180);
-    // Part 13: rake preview. AppUI populates with "Rake: X.X% · pot: Y.Y SOL" on show.
-    const wpRake = mkLabel(sb, 'WaitingRakeLabel', wpN, '', 13, 220, 600, 22, 160, 170, 190);
-    const wpProgress = mkLabel(sb, 'WaitingProgressLabel', wpN, '0/2 players · 0:00 / 2:00', 18, 180, 600, 28, 180, 190, 210);
-    const wpSpinner = mkLabel(sb, 'WaitingSpinnerLabel', wpN, '·  ·  ·', 28, 80, 300, 40, 48, 198, 155);
-    const wpCancelBtn = mkBtn(sb, 'WaitingCancelButton', wpN, 'Cancel', -100, 380, 56, 55, 75, 95);
-    const wpBotBtn = mkBtn(sb, 'WaitingPlayBotButton', wpN, '▶ Play vs Bot', -180, 380, 56, 48, 198, 155);
+    const wpTitle    = mkLabel(sb, 'WaitingTitleLabel', wpN, 'Finding opponent…', 28,
+        WPE.title.y, WPE.title.w, WPE.title.h, 255, 255, 255);
+    const wpMode     = mkLabel(sb, 'WaitingModeLabel', wpN, '1v1 · 0.05 SOL · Real', 16,
+        WPE.mode.y, WPE.mode.w, WPE.mode.h, 140, 220, 180);
+    style(sb, wpMode, { mono: true });  // Phase 15 (B5): mixed numeric/mode line
+    const wpRake     = mkLabel(sb, 'WaitingRakeLabel', wpN, '', 13,
+        WPE.rake.y, WPE.rake.w, WPE.rake.h, 160, 170, 190);
+    const wpProgress = mkLabel(sb, 'WaitingProgressLabel', wpN, '0/2 players · 0:00 / 2:00', 18,
+        WPE.progress.y, WPE.progress.w, WPE.progress.h, 180, 190, 210);
+    style(sb, wpProgress, { mono: true });  // Phase 15 (B5): live timer + count
+    const wpSpinner  = mkLabel(sb, 'WaitingSpinnerLabel', wpN, '·  ·  ·', 28,
+        WPE.spinner.y, WPE.spinner.w, WPE.spinner.h, 48, 198, 155);
+    const wpCancelBtn = mkBtn(sb, 'WaitingCancelButton', wpN, 'Cancel',
+        WPE.cancelBtn.y, WPE.cancelBtn.w, WPE.cancelBtn.h, 55, 75, 95);
+    const wpBotBtn    = mkBtn(sb, 'WaitingPlayBotButton', wpN, '▶ Play vs Bot',
+        WPE.botBtn.y, WPE.botBtn.w, WPE.botBtn.h, 48, 198, 155);
     sb.e[wpBotBtn]._active = false; // revealed after timeout or immediately on paper
-    // Part 9: Force-settle button — only revealed after the match has been
-    // Active for 5+ minutes with fewer than required_players submissions.
-    // Any signer can call force_settle on-chain; AFK players forfeit to 0.
+    // Force-settle: revealed after match active 5+ min with missing players.
     // UX Phase 2b: IconBadge bolt attached by AppUI. Phase 2c: bold.
-    const wpForceBtn = mkBtn(sb, 'WaitingForceSettleButton', wpN, 'Force Settle (AFK)', -260, 420, 56, 202, 140, 60);
+    const wpForceBtn  = mkBtn(sb, 'WaitingForceSettleButton', wpN, 'Force Settle (AFK)',
+        WPE.forceBtn.y, WPE.forceBtn.w, WPE.forceBtn.h, 202, 140, 60);
     style(sb, wpForceBtn, { bold: true });
     sb.e[wpForceBtn]._active = false;
-    // Part 11 D3: streak bonus banner. Hidden unless stats.current_streak ≥ 3.
-    // Display-only (no payout multiplier yet — that's Part 12).
-    // UX Phase 2b: IconBadge flame attached by AppUI.
-    const wpStreakBanner = mkLabel(sb, 'WaitingStreakBanner', wpN, 'Day 3 streak — keep the fire going', 16, 480, 620, 36, 218, 165, 32);
+    // Streak banner: hidden unless current_streak ≥ 3. UX Phase 2b: IconBadge flame attached by AppUI.
+    const wpStreakBanner = mkLabel(sb, 'WaitingStreakBanner', wpN, 'Day 3 streak — keep the fire going', 16,
+        WPE.streakBanner.y, WPE.streakBanner.w, WPE.streakBanner.h, 218, 165, 32);
     sb.e[wpStreakBanner]._active = false;
-    const wpStatus = mkLabel(sb, 'WaitingStatusLabel', wpN, '', 12, -600, 640, 20, 140, 150, 170);
+    const wpStatus = mkLabel(sb, 'WaitingStatusLabel', wpN, '', 12,
+        WPE.status.y, WPE.status.w, WPE.status.h, 140, 150, 170);
 
     sb.e[wpN]._children = [rf(wpTitle), rf(wpMode), rf(wpRake), rf(wpProgress), rf(wpSpinner), rf(wpStreakBanner), rf(wpCancelBtn), rf(wpBotBtn), rf(wpForceBtn), rf(wpStatus)];
     sb.e[wpN]._active = false;
@@ -2279,83 +2813,89 @@ function generate() {
     // Shown after settle (paper or real). Title + 4 stat cards + Back.
     // ═══════════════════════════════════════════════════════════════
     const pmN = sb.e.length;
-    sb.node('PostMatchPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('PostMatchPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(pmN, 720, 1280);
     sb.spr(pmN, 10, 14, 22);
 
-    // betting-duel polish: Y range spread from [-620, +600] → [-740, +720].
-    const pmBackBtn = mkBtn(sb, 'PostMatchBackButton', pmN, '← Back', 700, 160, 44, 55, 65, 85);
-    sb.e[pmBackBtn]._lpos = v3(-260, 700, 0);
-    const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'Match Result', 34, 620, 620, 52, 255, 255, 255);
+    // All PostMatchPanel positions sourced from LAYOUT.PostMatchPanel.
+    const PME = LAYOUT.PostMatchPanel.elements;
+    const PMC = LAYOUT.PostMatchPanel.templates.pmCard;
+    const PMCO = LAYOUT.PostMatchPanel.templates.confetti;
+    const pmBackBtn = mkBtn(sb, 'PostMatchBackButton', pmN, '← Back',
+        PME.backBtn.y, PME.backBtn.w, PME.backBtn.h, 55, 65, 85);
+    sb.e[pmBackBtn]._lpos = v3(PME.backBtn.x, PME.backBtn.y, 0);
+    const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'Match Result', 34,
+        PME.title.y, PME.title.w, PME.title.h, 255, 255, 255);
     style(sb, pmTitle, { bold: true, color: GOLD() });
-    const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 14, 560, 600, 22, 140, 150, 170);
-    // Payout — moved up so trophy no longer sits on top of it.
-    const pmPayout = mkLabel(sb, 'PostMatchPayoutLabel', pmN, '', 44, 470, 620, 64, 48, 198, 155);
-    const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 14, 400, 600, 22, 180, 190, 210);
-    const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 12, 376, 600, 20, 150, 160, 180);
+    const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 14,
+        PME.track.y, PME.track.w, PME.track.h, 140, 150, 170);
+    const pmPayout = mkLabel(sb, 'PostMatchPayoutLabel', pmN, '', 44,
+        PME.payoutLabel.y, PME.payoutLabel.w, PME.payoutLabel.h, 48, 198, 155);
+    const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 14,
+        PME.subtitle.y, PME.subtitle.w, PME.subtitle.h, 180, 190, 210);
+    const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 12,
+        PME.rake.y, PME.rake.w, PME.rake.h, 150, 160, 180);
     // Stage 5N — mono payout + rake for aligned digits through the ticker roll.
     style(sb, pmPayout, { mono: true });
     style(sb, pmRake, { mono: true });
 
-    // 4 stat cards 2×2: YOUR · OPP · XP · LEVEL — shifted down to give trophy
-    // its own slot above (y=-80) and CTA buttons more room below.
-    const pmCardDefs = [
-        { key: 'you', label: 'YOUR DELTA', x: -160, y: 220 },
-        { key: 'opp', label: 'BEST OPP',   x:  160, y: 220 },
-        { key: 'xp',  label: 'XP EARNED',  x: -160, y: 100 },
-        { key: 'lvl', label: 'LEVEL',      x:  160, y: 100 },
-    ];
+    // 4 stat cards from LAYOUT.PostMatchPanel.templates.pmCard.
     const pmCardIndices = [];
-    for (const d of pmCardDefs) {
+    for (const d of PMC.defs) {
         const cardN = sb.e.length;
         sb.node(`PMCard_${d.key}`, pmN, [], [], v3(d.x, d.y, 0));
-        const cardUT = sb.ut(cardN, 300, 92);
+        const cardUT = sb.ut(cardN, PMC.w, PMC.h);
         const cardSpr = sb.spr(cardN, 18, 22, 32);
         const lblN = sb.e.length;
-        sb.node('Label', cardN, [], [], v3(0, 24, 0));
-        const lblUT = sb.ut(lblN, 280, 22);
+        sb.node('Label', cardN, [], [], v3(PMC.header.x, PMC.header.y, 0));
+        const lblUT = sb.ut(lblN, PMC.header.w, PMC.header.h);
         const lblL = sb.lbl(lblN, d.label, 11, 100, 110, 130);
         sb.e[lblL]._spacingX = 1;
         sb.e[lblN]._components = [rf(lblUT), rf(lblL)];
         const valN = sb.e.length;
-        sb.node('Value', cardN, [], [], v3(0, -18, 0));
-        const valUT = sb.ut(valN, 280, 36);
+        sb.node('Value', cardN, [], [], v3(PMC.value.x, PMC.value.y, 0));
+        const valUT = sb.ut(valN, PMC.value.w, PMC.value.h);
         const valL = sb.lbl(valN, '—', 26, 255, 255, 255);
         sb.e[valL]._isBold = true;
-        // Stage 5N — mono PMCard values so numbers stay column-aligned.
         style(sb, valN, { mono: true });
         sb.e[valN]._components = [rf(valUT), rf(valL)];
+        // Phase 14 (B4): teal edge accent — game-stats set (uniform within panel).
+        const cardEdge = mkCardEdge(sb, cardN, PMC.w, PMC.h, 20, 241, 149);
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
-        sb.e[cardN]._children = [rf(lblN), rf(valN)];
+        sb.e[cardN]._children = [rf(lblN), rf(valN), rf(cardEdge)];
         pmCardIndices.push(cardN);
     }
 
-    // CTAs at y=-260 (was -180). Dropped with the stat grid spread.
-    const pmSameSquadBtn = mkBtnXY(sb, 'PostMatchSameSquadButton', pmN, '▶ Same Squad', -170, -260, 320, 60, 48, 198, 155);
+    // CTAs. Phase 13 (B3): SameSquad gets the teal hero halo (replay-loop primary).
+    const { glow: pmSameSquadGlow, btn: pmSameSquadBtn } = mkBtnHero(sb,
+        'PostMatchSameSquadButton', pmN, '▶ Same Squad',
+        PME.sameSquadBtn.x, PME.sameSquadBtn.y, PME.sameSquadBtn.w, PME.sameSquadBtn.h, 48, 198, 155);
     style(sb, pmSameSquadBtn, { bold: true });
-    const pmAgainBtn = mkBtnXY(sb, 'PostMatchAgainButton', pmN, 'Pick New Squad', 170, -260, 320, 60, 56, 148, 252);
+    const pmAgainBtn = mkBtnXY(sb, 'PostMatchAgainButton', pmN, 'Pick New Squad',
+        PME.againBtn.x, PME.againBtn.y, PME.againBtn.w, PME.againBtn.h, 56, 148, 252);
     style(sb, pmAgainBtn, { bold: true });
 
-    // Share-to-X button — top-left, away from the Payout/Trophy cluster.
-    const pmShareBtn = mkBtn(sb, 'PostMatchShareButton', pmN, 'Share · 𝕏', -350, 520, 56, 29, 161, 242);
-    sb.e[pmShareBtn]._lpos = v3(-260, 520, 0);
+    // Share-to-X button — 9c: relocated below CTAs to clear Payout/Track/Subtitle.
+    const pmShareBtn = mkBtn(sb, 'PostMatchShareButton', pmN, 'Share · 𝕏',
+        PME.shareButton.y, PME.shareButton.w, PME.shareButton.h, 29, 161, 242);
+    sb.e[pmShareBtn]._lpos = v3(PME.shareButton.x, PME.shareButton.y, 0);
 
-    const pmStatus = mkLabel(sb, 'PostMatchStatusLabel', pmN, '', 12, -740, 640, 20, 140, 150, 170);
+    const pmStatus = mkLabel(sb, 'PostMatchStatusLabel', pmN, '', 12,
+        PME.status.y, PME.status.w, PME.status.h, 140, 150, 170);
 
-    // Trophy — moved to y=-80 (between stat cards at y=100 and CTAs at y=-260)
-    // so it no longer overlaps the Payout label at y=470.
-    // UX Phase 2b: empty label; AppUI attaches procedural trophy/medal via rankIcon at show time.
-    const pmTrophy = mkLabel(sb, 'TrophyLabel', pmN, '', 72, -80, 200, 100, 255, 255, 255);
+    // Trophy — UX Phase 2b: empty label; AppUI attaches rankIcon at show time.
+    const pmTrophy = mkLabel(sb, 'TrophyLabel', pmN, '', 72,
+        PME.trophy.y, PME.trophy.w, PME.trophy.h, 255, 255, 255);
     sb.e[pmTrophy]._active = false;
 
     // Session D Part 8: confetti particles around the trophy on 1st-place.
     // UX Phase 2b: 12 empty Node shells (no Label); AppUI attaches IconLibrary shapes
     // per-slot (sparkle/star/starBurst/circle/triangle) with palette-accent tints.
     const pmConfettiIndices = [];
-    for (let c = 0; c < 12; c++) {
+    for (let c = 0; c < PMCO.count; c++) {
         const confN = sb.e.length;
-        sb.node(`Confetti_${c}`, pmTrophy, [], [], v3(0, 0, 0));
-        const confUT = sb.ut(confN, 60, 60);
+        sb.node(`Confetti_${c}`, pmTrophy, [], [], v3(PMCO.x, PMCO.y, 0));
+        const confUT = sb.ut(confN, PMCO.w, PMCO.h);
         sb.e[confN]._components = [rf(confUT)];
         sb.e[confN]._active = false;
         pmConfettiIndices.push(confN);
@@ -2366,11 +2906,11 @@ function generate() {
     // UX Phase 2b: PostMatchMascotContainer — second MascotController lives here so
     // the celebrate/lose animation fires on the panel the user is looking at.
     const pmMascotN = sb.e.length;
-    sb.node('PostMatchMascotContainer', pmN, [], [], v3(250, 180, 0));
-    const pmMascotUT = sb.ut(pmMascotN, 140, 180);
+    sb.node('PostMatchMascotContainer', pmN, [], [], v3(PME.mascotContainer.x, PME.mascotContainer.y, 0));
+    const pmMascotUT = sb.ut(pmMascotN, PME.mascotContainer.w, PME.mascotContainer.h);
     sb.e[pmMascotN]._components = [rf(pmMascotUT)];
 
-    sb.e[pmN]._children = [rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmPayout), rf(pmSubtitle), rf(pmRake), rf(pmTrophy), ...pmCardIndices.map(rf), rf(pmSameSquadBtn), rf(pmAgainBtn), rf(pmShareBtn), rf(pmStatus), rf(pmMascotN)];
+    sb.e[pmN]._children = [rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmPayout), rf(pmSubtitle), rf(pmRake), rf(pmTrophy), ...pmCardIndices.map(rf), rf(pmSameSquadGlow), rf(pmSameSquadBtn), rf(pmAgainBtn), rf(pmShareBtn), rf(pmStatus), rf(pmMascotN)];
     sb.e[pmN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
@@ -2378,17 +2918,22 @@ function generate() {
     // Accessible from HomePanel (⚙) and TokenDuelPanel (⚙) top-right.
     // Sections: WALLET info · PROFILE (local username) · ACTIONS (reconnect/disconnect/delete)
     // ═══════════════════════════════════════════════════════════════
+    // All SettingsPanel positions sourced from LAYOUT.SettingsPanel.
+    const SP = LAYOUT.SettingsPanel.elements;
+    const SPT = LAYOUT.SettingsPanel.templates;
+
     const stN = sb.e.length;
-    sb.node('SettingsPanel', canvas, [], [], v3(0, 0, 0));
-    sb.ut(stN, 720, 1280);
+    sb.node('SettingsPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.ut(stN, LAYOUT.SettingsPanel.canvas.w, LAYOUT.SettingsPanel.canvas.h);
     sb.spr(stN, 10, 14, 22);
 
-    const stBackLink = mkLabel(sb, 'BackLinkLabel', stN, '← Back', 18, 618, 110, 28, 160, 170, 190);
-    sb.e[stBackLink]._lpos = v3(-280, 618, 0);
+    const stBackLink = mkLabel(sb, 'BackLinkLabel', stN, '← Back', 18,
+        SP.backLink.y, SP.backLink.w, SP.backLink.h, 160, 170, 190);
+    sb.e[stBackLink]._lpos = v3(SP.backLink.x, SP.backLink.y, 0);
     sb.e[sb.e[stBackLink]._components[1].__id__]._horizontalAlign = 0;
     const stBackBtn = sb.e.length;
-    sb.node('BackButton', stN, [], [], v3(-280, 618, 0));
-    const stBackBtnUT = sb.ut(stBackBtn, 140, 36);
+    sb.node('BackButton', stN, [], [], v3(SP.backBtn.x, SP.backBtn.y, 0));
+    const stBackBtnUT = sb.ut(stBackBtn, SP.backBtn.w, SP.backBtn.h);
     const stBackBtnBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(stBackBtn), _enabled: true, __prefab: null,
@@ -2398,116 +2943,215 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(stBackBtn), _id: gid(),
     });
     sb.e[stBackBtn]._components = [rf(stBackBtnUT), rf(stBackBtnBtn)];
-    // UX Phase 2b: IconBadge cog attached by AppUI. Phase 2c: bold.
-    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, 'Settings', 28, 600, 400, 40, 218, 165, 32);
+    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, 'Settings', 28,
+        SP.title.y, SP.title.w, SP.title.h, 218, 165, 32);
     style(sb, stTitle, { bold: true });
 
-    // WALLET section card (y=440, 660×130).
+    // WALLET card.
+    const WC = SP.walletCard.children;
     const stWalletCard = sb.e.length;
-    sb.node('WalletCard', stN, [], [], v3(0, 440, 0));
-    const stWalletCardUT = sb.ut(stWalletCard, 660, 130);
+    sb.node('WalletCard', stN, [], [], v3(SP.walletCard.x, SP.walletCard.y, 0));
+    const stWalletCardUT = sb.ut(stWalletCard, SP.walletCard.w, SP.walletCard.h);
     const stWalletCardSpr = sb.spr(stWalletCard, 22, 28, 42);
-    const stWalletHeader = mkLabel(sb, 'HeaderLabel', stWalletCard, 'WALLET', 11, 44, 200, 16, 140, 150, 170);
-    sb.e[stWalletHeader]._lpos = v3(-290, 44, 0);
+    const stWalletHeader = mkLabel(sb, 'HeaderLabel', stWalletCard, 'WALLET', 11,
+        WC.header.y, WC.header.w, WC.header.h, 140, 150, 170);
+    sb.e[stWalletHeader]._lpos = v3(WC.header.x, WC.header.y, 0);
     sb.e[sb.e[stWalletHeader]._components[1].__id__]._horizontalAlign = 0;
-    const stWalletName = mkLabel(sb, 'WalletNameLabel', stWalletCard, 'Not connected', 18, 14, 600, 28, 220, 230, 240);
-    const stWalletPubkey = mkLabel(sb, 'WalletPubkeyLabel', stWalletCard, '—', 13, -20, 600, 22, 160, 170, 190);
-    const stWalletBal = mkLabel(sb, 'WalletBalanceLabel', stWalletCard, '', 12, -44, 600, 18, 140, 220, 180);
+    style(sb, stWalletHeader, { spacing: 1 });  // Phase 15 (B5)
+    const stWalletName = mkLabel(sb, 'WalletNameLabel', stWalletCard, 'Not connected', 18,
+        WC.walletName.y, WC.walletName.w, WC.walletName.h, 220, 230, 240);
+    const stWalletPubkey = mkLabel(sb, 'WalletPubkeyLabel', stWalletCard, '—', 13,
+        WC.walletPubkey.y, WC.walletPubkey.w, WC.walletPubkey.h, 160, 170, 190);
+    const stWalletBal = mkLabel(sb, 'WalletBalanceLabel', stWalletCard, '', 12,
+        WC.walletBalance.y, WC.walletBalance.w, WC.walletBalance.h, 140, 220, 180);
+    // Phase 14 (B4): teal edge accent — connection-status card.
+    const stWalletEdge = mkCardEdge(sb, stWalletCard, SP.walletCard.w, SP.walletCard.h, 20, 241, 149);
     sb.e[stWalletCard]._components = [rf(stWalletCardUT), rf(stWalletCardSpr)];
-    sb.e[stWalletCard]._children = [rf(stWalletHeader), rf(stWalletName), rf(stWalletPubkey), rf(stWalletBal)];
+    sb.e[stWalletCard]._children = [rf(stWalletHeader), rf(stWalletName), rf(stWalletPubkey), rf(stWalletBal), rf(stWalletEdge)];
 
-    // PROFILE section card (y=280, 660×150, username EditBox).
+    // PROFILE card.
+    const PC = SP.profileCard.children;
     const stProfileCard = sb.e.length;
-    sb.node('ProfileCard', stN, [], [], v3(0, 280, 0));
-    const stProfileCardUT = sb.ut(stProfileCard, 660, 150);
+    sb.node('ProfileCard', stN, [], [], v3(SP.profileCard.x, SP.profileCard.y, 0));
+    const stProfileCardUT = sb.ut(stProfileCard, SP.profileCard.w, SP.profileCard.h);
     const stProfileCardSpr = sb.spr(stProfileCard, 22, 28, 42);
-    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 11, 54, 200, 16, 140, 150, 170);
-    sb.e[stProfileHeader]._lpos = v3(-290, 54, 0);
+    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 11,
+        PC.header.y, PC.header.w, PC.header.h, 140, 150, 170);
+    sb.e[stProfileHeader]._lpos = v3(PC.header.x, PC.header.y, 0);
     sb.e[sb.e[stProfileHeader]._components[1].__id__]._horizontalAlign = 0;
-    const stUsername = mkEditBox(sb, 'UsernameEditBox', stProfileCard, 'Username (stored locally)', 0, 16, 600, 44, 17);
-    const stUsernameSaved = mkLabel(sb, 'UsernameSaveLabel', stProfileCard, '', 12, -26, 600, 18, 48, 198, 155);
-    const stUsernameHelp = mkLabel(sb, 'UsernameHelpLabel', stProfileCard, 'Displayed on your PostMatch + Portfolio screens.', 11, -50, 600, 16, 130, 140, 160);
+    style(sb, stProfileHeader, { spacing: 1 });  // Phase 15 (B5)
+    const stUsername = mkEditBox(sb, 'UsernameEditBox', stProfileCard, 'Username (stored locally)',
+        PC.username.x, PC.username.y, PC.username.w, PC.username.h, 17);
+    const stUsernameSaved = mkLabel(sb, 'UsernameSaveLabel', stProfileCard, '', 12,
+        PC.usernameSaved.y, PC.usernameSaved.w, PC.usernameSaved.h, 48, 198, 155);
+    const stUsernameHelp = mkLabel(sb, 'UsernameHelpLabel', stProfileCard, 'Displayed on your PostMatch + Portfolio screens.', 11,
+        PC.usernameHelp.y, PC.usernameHelp.w, PC.usernameHelp.h, 130, 140, 160);
+    // Phase 14 (B4): violet edge accent — identity card.
+    const stProfileEdge = mkCardEdge(sb, stProfileCard, SP.profileCard.w, SP.profileCard.h, 153, 69, 255);
     sb.e[stProfileCard]._components = [rf(stProfileCardUT), rf(stProfileCardSpr)];
-    sb.e[stProfileCard]._children = [rf(stProfileHeader), rf(stUsername), rf(stUsernameSaved), rf(stUsernameHelp)];
+    sb.e[stProfileCard]._children = [rf(stProfileHeader), rf(stUsername), rf(stUsernameSaved), rf(stUsernameHelp), rf(stProfileEdge)];
 
-    // Part 10 pt2: QUICK PLAY DEFAULTS card (y=80, 660×200).
-    // 4 radio rows (mode / window / wager / track). Active tint (48,198,155),
-    // inactive (28,34,48) — mirrors _refreshModePickerUi.
+    // QUICK PLAY DEFAULTS card — Phase 27 redesign.
+    // 13-button strip → 3 dropdown rows + 1 pill toggle.
+    const QPC = SP.quickPlayCard.children;
     const stQpCardN = sb.e.length;
-    sb.node('QuickPlayDefaultsCard', stN, [], [], v3(0, 80, 0));
-    const stQpUT = sb.ut(stQpCardN, 660, 200);
+    sb.node('QuickPlayDefaultsCard', stN, [], [], v3(SP.quickPlayCard.x, SP.quickPlayCard.y, 0));
+    const stQpUT = sb.ut(stQpCardN, SP.quickPlayCard.w, SP.quickPlayCard.h);
     const stQpSpr = sb.spr(stQpCardN, 22, 28, 42);
-    const stQpHeader = mkLabel(sb, 'HeaderLabel', stQpCardN, 'QUICK PLAY DEFAULTS', 11, 82, 400, 16, 140, 150, 170);
-    sb.e[stQpHeader]._lpos = v3(-290, 82, 0);
+    const stQpHeader = mkLabel(sb, 'HeaderLabel', stQpCardN, 'QUICK PLAY DEFAULTS', 11,
+        QPC.header.y, QPC.header.w, QPC.header.h, 140, 150, 170);
+    sb.e[stQpHeader]._lpos = v3(QPC.header.x, QPC.header.y, 0);
     sb.e[sb.e[stQpHeader]._components[1].__id__]._horizontalAlign = 0;
-    // Mode row (y=+50): 4 buttons 140×34.
-    const qpModeKeys = [['1v1','1v1'],['4p','4p'],['8p','8p'],['br10','BR10']];
-    const qpModeXs = [-240, -80, 80, 240];
-    const qpModeBtns = [];
-    for (let i = 0; i < 4; i++) {
-        const [key, lbl] = qpModeKeys[i];
-        const active = key === '1v1';
-        const bg = active ? [48, 198, 155] : [28, 34, 48];
-        qpModeBtns.push(mkBtnXY(sb, `QPMode_${key}`, stQpCardN, lbl, qpModeXs[i], 50, 140, 34, bg[0], bg[1], bg[2]));
-    }
-    // Window row (y=+14): 4 buttons 140×32.
-    const qpWindowKeys = [['1h','1h'],['1d','1d'],['3d','3d'],['7d','7d']];
-    const qpWindowBtns = [];
-    for (let i = 0; i < 4; i++) {
-        const [key, lbl] = qpWindowKeys[i];
-        const active = key === '1d';
-        const bg = active ? [48, 198, 155] : [28, 34, 48];
-        qpWindowBtns.push(mkBtnXY(sb, `QPWindow_${key}`, stQpCardN, lbl, qpModeXs[i], 14, 140, 32, bg[0], bg[1], bg[2]));
-    }
-    // Wager row (y=-22): 5 chips 112×32 at x=-240/-120/0/120/240.
-    const qpWagerDefs = [['001','0.01'],['005','0.05'],['01','0.1'],['025','0.25'],['05','0.5']];
-    const qpWagerXs = [-240, -120, 0, 120, 240];
-    const qpWagerBtns = [];
-    for (let i = 0; i < 5; i++) {
-        const [key, lbl] = qpWagerDefs[i];
-        const active = key === '01';
-        const bg = active ? [48, 198, 155] : [28, 34, 48];
-        qpWagerBtns.push(mkBtnXY(sb, `QPWager_${key}`, stQpCardN, lbl, qpWagerXs[i], -22, 112, 32, bg[0], bg[1], bg[2]));
-    }
-    // Track row (y=-62): 2 buttons 150×34.
-    const qpTrackPaper = mkBtnXY(sb, 'QPTrack_paper', stQpCardN, 'Paper', -80, -62, 150, 34, 48, 198, 155);
-    const qpTrackReal  = mkBtnXY(sb, 'QPTrack_real',  stQpCardN, 'Real',   80, -62, 150, 34, 28, 34, 48);
+    style(sb, stQpHeader, { spacing: 1 });  // Phase 15 (B5)
+
+    // Phase 27 — Dropdown row builder. Creates a Node with sprite bg + button +
+    // 2 child labels (key on left muted-gray, value+chevron on right white).
+    // AppUI updates the value label string when an option is picked.
+    const buildQPDropdownRow = (name, rowSpec, keyText, valueText) => {
+        const rowN = sb.e.length;
+        sb.node(name, stQpCardN, [], [], v3(rowSpec.x, rowSpec.y, 0));
+        const ut = sb.ut(rowN, rowSpec.w, rowSpec.h);
+        const spr = sb.spr(rowN, 28, 34, 48);
+        const btn = sb.btn(rowN, 28, 34, 48);
+        const keySp = rowSpec.children.keyLabel;
+        const keyN = mkLabel(sb, `${name}KeyLabel`, rowN, keyText, 13,
+            keySp.y, keySp.w, keySp.h, 140, 150, 170);
+        sb.e[keyN]._lpos = v3(keySp.x, keySp.y, 0);
+        sb.e[sb.e[keyN]._components[1].__id__]._horizontalAlign = 0;
+        style(sb, keyN, { spacing: 1 });
+        const valSp = rowSpec.children.valueLabel;
+        const valN = mkLabel(sb, `${name}ValueLabel`, rowN, valueText, 16,
+            valSp.y, valSp.w, valSp.h, 230, 235, 245);
+        sb.e[valN]._lpos = v3(valSp.x, valSp.y, 0);
+        sb.e[sb.e[valN]._components[1].__id__]._horizontalAlign = 2;
+        sb.e[rowN]._components = [rf(ut), rf(spr), rf(btn)];
+        sb.e[rowN]._children = [rf(keyN), rf(valN)];
+        return rowN;
+    };
+    const stQpModeRow   = buildQPDropdownRow('QPModeRow',   QPC.qpModeRow,   'MODE',      '1v1  ▾');
+    const stQpWindowRow = buildQPDropdownRow('QPWindowRow', QPC.qpWindowRow, 'TIMEFRAME', '1d  ▾');
+    const stQpWagerRow  = buildQPDropdownRow('QPWagerRow',  QPC.qpWagerRow,  'WAGER',     '0.1 SOL  ▾');
+
+    // TRACK row — sibling key label + pill toggle. The toggle is a 320×44 group
+    // with a sliding indicator behind Paper/Real labels + invisible hit areas.
+    const trkSpc = QPC.qpTrackRow;
+    const stQpTrackKey = mkLabel(sb, 'QPTrackKeyLabel', stQpCardN, 'TRACK', 13,
+        trkSpc.y, trkSpc.w, trkSpc.h, 140, 150, 170);
+    sb.e[stQpTrackKey]._lpos = v3(trkSpc.x, trkSpc.y, 0);
+    sb.e[sb.e[stQpTrackKey]._components[1].__id__]._horizontalAlign = 0;
+    style(sb, stQpTrackKey, { spacing: 1 });
+
+    const tt = QPC.qpTrackToggle;
+    const stQpTrackToggle = sb.e.length;
+    sb.node('QPTrackToggle', stQpCardN, [], [], v3(tt.x, tt.y, 0));
+    const ttUT = sb.ut(stQpTrackToggle, tt.w, tt.h);
+    const ttSpr = sb.spr(stQpTrackToggle, 22, 28, 42);
+    // Indicator — semi-transparent teal sprite, slides x=-78 ↔ x=78 on tap.
+    const ttIc = tt.children.indicator;
+    const stQpTrackIndicator = sb.e.length;
+    sb.node('QPTrackIndicator', stQpTrackToggle, [], [], v3(ttIc.x, ttIc.y, 0));
+    const ttIcUT = sb.ut(stQpTrackIndicator, ttIc.w, ttIc.h);
+    const ttIcSprIdx = sb.spr(stQpTrackIndicator, 48, 198, 155);
+    sb.e[ttIcSprIdx]._color = cl(48, 198, 155, 200);
+    sb.e[stQpTrackIndicator]._components = [rf(ttIcUT), rf(ttIcSprIdx)];
+    // Labels. Active label is white+bold; inactive is muted (set by runtime).
+    const ttPL = tt.children.paperLabel;
+    const stQpTrackPaperLbl = mkLabel(sb, 'QPTrackPaperLabel', stQpTrackToggle, 'Paper', 16,
+        ttPL.y, ttPL.w, ttPL.h, 255, 255, 255);
+    sb.e[stQpTrackPaperLbl]._lpos = v3(ttPL.x, ttPL.y, 0);
+    style(sb, stQpTrackPaperLbl, { bold: true });
+    const ttRL = tt.children.realLabel;
+    const stQpTrackRealLbl = mkLabel(sb, 'QPTrackRealLabel', stQpTrackToggle, 'Real', 16,
+        ttRL.y, ttRL.w, ttRL.h, 160, 170, 190);
+    sb.e[stQpTrackRealLbl]._lpos = v3(ttRL.x, ttRL.y, 0);
+    // Invisible hit areas overlaying each half. Transparent buttons handle taps.
+    const mkInvisHit = (name, parent, hSpc) => {
+        const hN = sb.e.length;
+        sb.node(name, parent, [], [], v3(hSpc.x, hSpc.y, 0));
+        const hUT = sb.ut(hN, hSpc.w, hSpc.h);
+        const hBtn = sb.add({
+            __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(hN), _enabled: true, __prefab: null,
+            _interactable: true, _transition: 0,
+            _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+            _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+            _duration: 0.1, _zoomScale: 1.0, _target: rf(hN), _id: gid(),
+        });
+        sb.e[hN]._components = [rf(hUT), rf(hBtn)];
+        return hN;
+    };
+    const stQpTrackPaperHit = mkInvisHit('QPTrackPaperHit', stQpTrackToggle, tt.children.paperHit);
+    const stQpTrackRealHit  = mkInvisHit('QPTrackRealHit',  stQpTrackToggle, tt.children.realHit);
+    sb.e[stQpTrackToggle]._components = [rf(ttUT), rf(ttSpr)];
+    sb.e[stQpTrackToggle]._children = [
+        rf(stQpTrackIndicator), rf(stQpTrackPaperLbl), rf(stQpTrackRealLbl),
+        rf(stQpTrackPaperHit), rf(stQpTrackRealHit),
+    ];
+
+    // Phase 14 (B4): warm amber edge accent — action/defaults card.
+    const stQpEdge = mkCardEdge(sb, stQpCardN, SP.quickPlayCard.w, SP.quickPlayCard.h, 255, 180, 84);
     sb.e[stQpCardN]._components = [rf(stQpUT), rf(stQpSpr)];
     sb.e[stQpCardN]._children = [
         rf(stQpHeader),
-        ...qpModeBtns.map(rf),
-        ...qpWindowBtns.map(rf),
-        ...qpWagerBtns.map(rf),
-        rf(qpTrackPaper), rf(qpTrackReal),
+        rf(stQpModeRow), rf(stQpWindowRow), rf(stQpWagerRow),
+        rf(stQpTrackKey), rf(stQpTrackToggle),
+        rf(stQpEdge),
     ];
 
-    // Part 11 C: AudioSettingsCard at y=-80, 660×70. Two toggle buttons.
-    // Labels flip between "ON"/"OFF" at runtime via _refreshAudioCard().
+    // Phase 27 — QP dropdown popovers. Direct children of SettingsPanel
+    // (NOT QPCard) so they render on top of all panel content. Hidden by
+    // default; AppUI activates on dropdown row tap.
+    const buildQPPopover = (name, popSpec, optTemplate) => {
+        const popN = sb.e.length;
+        sb.node(name, stN, [], [], v3(popSpec.x, popSpec.y, 0));
+        const ut = sb.ut(popN, popSpec.w, popSpec.h);
+        const spr = sb.spr(popN, 18, 24, 36);
+        const optIdxs = [];
+        for (let p = 0; p < optTemplate.count; p++) {
+            const oN = mkBtnXY(sb, `${name}_${optTemplate.keys[p]}`, popN, optTemplate.labels[p],
+                0, optTemplate.ys[p], optTemplate.w, optTemplate.h, 28, 34, 48);
+            optIdxs.push(oN);
+        }
+        sb.e[popN]._components = [rf(ut), rf(spr)];
+        sb.e[popN]._children = optIdxs.map(rf);
+        sb.e[popN]._active = false;
+        return popN;
+    };
+    const stQpModePopover   = buildQPPopover('QPModePopover',   SP.qpModePopover,   SPT.qpModeOption);
+    const stQpWindowPopover = buildQPPopover('QPWindowPopover', SP.qpWindowPopover, SPT.qpWindowOption);
+    const stQpWagerPopover  = buildQPPopover('QPWagerPopover',  SP.qpWagerPopover,  SPT.qpWagerOption);
+
+    // AUDIO + HAPTICS card.
+    const AC = SP.audioCard.children;
     const stAudioCardN = sb.e.length;
-    sb.node('AudioSettingsCard', stN, [], [], v3(0, -80, 0));
-    const stAudioUT = sb.ut(stAudioCardN, 660, 70);
+    sb.node('AudioSettingsCard', stN, [], [], v3(SP.audioCard.x, SP.audioCard.y, 0));
+    const stAudioUT = sb.ut(stAudioCardN, SP.audioCard.w, SP.audioCard.h);
     const stAudioSpr = sb.spr(stAudioCardN, 22, 28, 42);
-    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'AUDIO + HAPTICS', 11, 20, 400, 16, 140, 150, 170);
-    sb.e[stAudioHeader]._lpos = v3(-290, 20, 0);
+    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'AUDIO + HAPTICS', 11,
+        AC.header.y, AC.header.w, AC.header.h, 140, 150, 170);
+    sb.e[stAudioHeader]._lpos = v3(AC.header.x, AC.header.y, 0);
     sb.e[sb.e[stAudioHeader]._components[1].__id__]._horizontalAlign = 0;
-    // UX Phase 2b: state-driven IconBadges (speaker/speakerMuted, vibration/hand) attached by AppUI.
-    const stSoundToggle   = mkBtnXY(sb, 'SoundToggleButton',   stAudioCardN, 'Sound: ON',   -150, -10, 260, 38, 48, 198, 155);
-    const stHapticsToggle = mkBtnXY(sb, 'HapticsToggleButton', stAudioCardN, 'Haptics: ON',  150, -10, 260, 38, 48, 198, 155);
+    style(sb, stAudioHeader, { spacing: 1 });  // Phase 15 (B5)
+    const stSoundToggle = mkBtnXY(sb, 'SoundToggleButton', stAudioCardN, 'Sound: ON',
+        AC.soundToggle.x, AC.soundToggle.y, AC.soundToggle.w, AC.soundToggle.h, 48, 198, 155);
+    const stHapticsToggle = mkBtnXY(sb, 'HapticsToggleButton', stAudioCardN, 'Haptics: ON',
+        AC.hapticsToggle.x, AC.hapticsToggle.y, AC.hapticsToggle.w, AC.hapticsToggle.h, 48, 198, 155);
+    // Phase 14 (B4): slate edge accent — utility/settings card.
+    const stAudioEdge = mkCardEdge(sb, stAudioCardN, SP.audioCard.w, SP.audioCard.h, 93, 100, 133);
     sb.e[stAudioCardN]._components = [rf(stAudioUT), rf(stAudioSpr)];
-    sb.e[stAudioCardN]._children = [rf(stAudioHeader), rf(stSoundToggle), rf(stHapticsToggle)];
+    sb.e[stAudioCardN]._children = [rf(stAudioHeader), rf(stSoundToggle), rf(stHapticsToggle), rf(stAudioEdge)];
 
-    // Part 13 D: public fee-schedule link. Opens `/fees` page on backend
-    // in external browser so judges can see the level-tiered rake breakdown.
-    // UX Phase 2b: IconBadge chart attached by AppUI.
-    const stFeesBtn = mkBtn(sb, 'FeesLinkButton', stN, 'Fee schedule', -360, 560, 52, 48, 108, 180);
-
-    // ACTIONS section — shifted further down to make room for the QP card
-    // above + FeesLinkButton. (Pre-pt2: y=120 / y=40 / y=-40.)
-    const stReconnectBtn = mkBtn(sb, 'ReconnectSettingsButton', stN, 'Reconnect', -440, 660, 48, 48, 108, 180);
-    const stDisconnectBtn = mkBtn(sb, 'DisconnectSettingsButton', stN, 'Disconnect', -500, 660, 48, 62, 72, 92);
-    const stDeleteBtn = mkBtn(sb, 'DeleteAccountSettingsButton', stN, 'Delete Account', -560, 660, 48, 180, 60, 60);
-
-    const stStatus = mkLabel(sb, 'SettingsStatusLabel', stN, '', 12, -610, 640, 20, 140, 150, 170);
+    // Fees link + actions + status.
+    const stFeesBtn = mkBtn(sb, 'FeesLinkButton', stN, 'Fee schedule',
+        SP.feesLink.y, SP.feesLink.w, SP.feesLink.h, 48, 108, 180);
+    const stReconnectBtn = mkBtn(sb, 'ReconnectSettingsButton', stN, 'Reconnect',
+        SP.reconnectBtn.y, SP.reconnectBtn.w, SP.reconnectBtn.h, 48, 108, 180);
+    const stDisconnectBtn = mkBtn(sb, 'DisconnectSettingsButton', stN, 'Disconnect',
+        SP.disconnectBtn.y, SP.disconnectBtn.w, SP.disconnectBtn.h, 62, 72, 92);
+    const stDeleteBtn = mkBtn(sb, 'DeleteAccountSettingsButton', stN, 'Delete Account',
+        SP.deleteBtn.y, SP.deleteBtn.w, SP.deleteBtn.h, 180, 60, 60);
+    const stStatus = mkLabel(sb, 'SettingsStatusLabel', stN, '', 12,
+        SP.status.y, SP.status.w, SP.status.h, 140, 150, 170);
 
     sb.e[stN]._children = [
         rf(stBackLink), rf(stBackBtn), rf(stTitle),
@@ -2517,6 +3161,8 @@ function generate() {
         rf(stFeesBtn),
         rf(stReconnectBtn), rf(stDisconnectBtn), rf(stDeleteBtn),
         rf(stStatus),
+        // Phase 27 — popovers added LAST for z-order (render on top of cards).
+        rf(stQpModePopover), rf(stQpWindowPopover), rf(stQpWagerPopover),
     ];
     sb.e[stN]._active = false;
 
@@ -2547,38 +3193,132 @@ function generate() {
         _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
         _duration: 0.1, _zoomScale: 1, _target: rf(tutN), _id: gid(),
     });
-    const tutBubbleDefs = [
-        { name: 'TutorialBubble_0', y: 400, text: 'Pick 3 tokens you think will pump\nthe most over the match window.' },
-        { name: 'TutorialBubble_1', y: 160, text: 'Stake some SOL. Matchups pit your\nsquad\'s % change vs your opponent\'s.' },
-        { name: 'TutorialBubble_2', y: -80, text: 'Watch your portfolio tick live.\nBiggest % gain (or smallest loss) wins.' },
-        { name: 'TutorialBubble_3', y: -320, text: 'First match is on the house —\ntap a token, pick a squad, Run Squad.' },
-    ];
-    const tutBubbleIndices = [];
-    for (const d of tutBubbleDefs) {
-        const bN = sb.e.length;
-        sb.node(d.name, tutN, [], [], v3(0, d.y, 0));
-        const bUT = sb.ut(bN, 440, 140);
-        const bSpr = sb.add({
+    // Phase 28 — gamified tutorial cards. 4 themed cards (one visible at
+    // a time), each with accent halo, accent bar, icon, title, divider,
+    // body, mascot, progress dots, hint. AppUI handles slide-carousel
+    // transitions between cards.
+    const TCT = LAYOUT.TutorialOverlay.templates.tutorialCard;
+    const TCC = TCT.children;
+    const tutCardIndices = [];
+    const tutGlowIndices = [];
+    for (let i = 0; i < TCT.count; i++) {
+        const accent = TCT.accents[i];
+        const isFirst = i === 0;
+        // Glow halo — sibling of card, rendered FIRST in TutorialOverlay's
+        // _children array → renders behind the card.
+        const glowN = sb.e.length;
+        sb.node(TCT.glowNames[i], tutN, [], [], v3(0, 0, 0));
+        const glowUT = sb.ut(glowN, TCC.glow.w, TCC.glow.h);
+        const glowSpr = sb.add({
             __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-            node: rf(bN), _enabled: true, __prefab: null,
+            node: rf(glowN), _enabled: true, __prefab: null,
             _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-            _color: cl(28, 34, 48, 240),
+            _color: cl(accent[0], accent[1], accent[2], 80),
             _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
             _type: 1, _fillType: 0, _sizeMode: 0,
             _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
             _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
             _id: gid(),
         });
-        const bL = mkLabel(sb, 'Text', bN, d.text, 16, 0, 420, 120, 255, 255, 255);
-        sb.e[bN]._components = [rf(bUT), rf(bSpr)];
-        sb.e[bN]._children = [rf(bL)];
-        sb.e[bN]._active = false;
-        tutBubbleIndices.push(bN);
+        sb.e[glowN]._components = [rf(glowUT), rf(glowSpr)];
+        sb.e[glowN]._active = isFirst;
+        tutGlowIndices.push(glowN);
+
+        // Card frame (the dark slate container).
+        const cardN = sb.e.length;
+        sb.node(TCT.names[i], tutN, [], [], v3(0, 0, 0));
+        const cardUT = sb.ut(cardN, TCT.w, TCT.h);
+        const cardSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(cardN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(22, 28, 42, 245),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+
+        // Accent bar — slim colored strip at top edge of card.
+        const accentN = sb.e.length;
+        sb.node(`${TCT.names[i]}_AccentBar`, cardN, [], [], v3(TCC.accentBar.x, TCC.accentBar.y, 0));
+        const accentUT = sb.ut(accentN, TCC.accentBar.w, TCC.accentBar.h);
+        const accentSpr = sb.spr(accentN, accent[0], accent[1], accent[2]);
+        sb.e[accentN]._components = [rf(accentUT), rf(accentSpr)];
+
+        // Topic icon — large emoji glyph (AppUI may upgrade to PNG via IconLibrary).
+        const iconN = mkLabel(sb, `${TCT.names[i]}_Icon`, cardN, TCT.iconGlyphs[i], 64,
+            TCC.icon.y, TCC.icon.w, TCC.icon.h, accent[0], accent[1], accent[2]);
+        sb.e[iconN]._lpos = v3(TCC.icon.x, TCC.icon.y, 0);
+
+        // Title — big bold accent-colored.
+        const titleN = mkLabel(sb, `${TCT.names[i]}_Title`, cardN, TCT.titles[i], 32,
+            TCC.title.y, TCC.title.w, TCC.title.h, accent[0], accent[1], accent[2]);
+        sb.e[titleN]._lpos = v3(TCC.title.x, TCC.title.y, 0);
+        style(sb, titleN, { bold: true, spacing: 2 });
+
+        // Divider — slim mid-gray rule below title.
+        const divN = sb.e.length;
+        sb.node(`${TCT.names[i]}_Divider`, cardN, [], [], v3(TCC.divider.x, TCC.divider.y, 0));
+        const divUT = sb.ut(divN, TCC.divider.w, TCC.divider.h);
+        const divSpr = sb.spr(divN, 90, 100, 130);
+        sb.e[divN]._components = [rf(divUT), rf(divSpr)];
+
+        // Body — multi-line tip text.
+        const bodyN = mkLabel(sb, `${TCT.names[i]}_Body`, cardN, TCT.bodies[i], 24,
+            TCC.body.y, TCC.body.w, TCC.body.h, 230, 235, 245);
+        sb.e[bodyN]._lpos = v3(TCC.body.x, TCC.body.y, 0);
+
+        // Mascot container — empty Node + UITransform; AppUI adds
+        // MascotController + setSpriteSheet at runtime.
+        const mascN = sb.e.length;
+        sb.node(`${TCT.names[i]}_Mascot`, cardN, [], [], v3(TCC.mascot.x, TCC.mascot.y, 0));
+        const mascUT = sb.ut(mascN, TCC.mascot.w, TCC.mascot.h);
+        sb.e[mascN]._components = [rf(mascUT)];
+
+        // Progress dots — 4 small circles, current+past = accent-filled,
+        // future = hollow gray. AppUI paints active state.
+        const dotsN = sb.e.length;
+        sb.node(`${TCT.names[i]}_DotsGroup`, cardN, [], [], v3(TCC.dotsGroup.x, TCC.dotsGroup.y, 0));
+        const dotsUT = sb.ut(dotsN, TCC.dotsGroup.w, TCC.dotsGroup.h);
+        const dotIdxs = [];
+        for (let d = 0; d < TCT.count; d++) {
+            const dotN = sb.e.length;
+            sb.node(`Dot_${d}`, dotsN, [], [], v3(d * TCC.dot.stride, 0, 0));
+            const dotUT = sb.ut(dotN, TCC.dot.w, TCC.dot.h);
+            const dotSpr = sb.spr(dotN,
+                d <= i ? accent[0] : 90,
+                d <= i ? accent[1] : 100,
+                d <= i ? accent[2] : 130);
+            sb.e[dotN]._components = [rf(dotUT), rf(dotSpr)];
+            dotIdxs.push(dotN);
+        }
+        sb.e[dotsN]._components = [rf(dotsUT)];
+        sb.e[dotsN]._children = dotIdxs.map(rf);
+
+        // Hint label — "Tap to continue" muted.
+        const hintN = mkLabel(sb, `${TCT.names[i]}_Hint`, cardN, 'Tap to continue', 14,
+            TCC.hint.y, TCC.hint.w, TCC.hint.h, 140, 150, 170);
+        sb.e[hintN]._lpos = v3(TCC.hint.x, TCC.hint.y, 0);
+        sb.e[sb.e[hintN]._components[1].__id__]._horizontalAlign = 2;
+
+        sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
+        sb.e[cardN]._children = [
+            rf(accentN), rf(iconN), rf(titleN), rf(divN),
+            rf(bodyN), rf(mascN), rf(dotsN), rf(hintN),
+        ];
+        sb.e[cardN]._active = isFirst;
+        tutCardIndices.push(cardN);
     }
-    const tutIndex = mkLabel(sb, 'TutorialBubbleIndex', tutN, '1 / 4', 14, -440, 200, 20, 140, 150, 170);
-    const tutHint = mkLabel(sb, 'TutorialHintLabel', tutN, 'Tap anywhere to continue', 12, -490, 300, 18, 180, 190, 210);
     sb.e[tutN]._components = [rf(tutUT), rf(tutSpr), rf(tutBtn)];
-    sb.e[tutN]._children = [...tutBubbleIndices.map(rf), rf(tutIndex), rf(tutHint)];
+    // Render order: each glow first, then its card on top. Pair them.
+    const tutChildren = [];
+    for (let i = 0; i < TCT.count; i++) {
+        tutChildren.push(rf(tutGlowIndices[i]));
+        tutChildren.push(rf(tutCardIndices[i]));
+    }
+    sb.e[tutN]._children = tutChildren;
     sb.e[tutN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
@@ -2588,33 +3328,41 @@ function generate() {
     // event feed + optional "Join this match" button when Waiting.
     // ═══════════════════════════════════════════════════════════════
     const specN = sb.e.length;
-    sb.node('SpectatorPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('SpectatorPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(specN, 720, 1280);
     sb.spr(specN, 10, 14, 22);
 
-    const specBackBtn = mkBtn(sb, 'SpectatorBackButton', specN, '← Back', 600, 160, 44, 55, 65, 85);
-    sb.e[specBackBtn]._lpos = v3(-260, 600, 0);
+    // Chrome from LAYOUT.SpectatorPanel.elements.
+    const SPE = LAYOUT.SpectatorPanel.elements;
+    const specBackBtn = mkBtn(sb, 'SpectatorBackButton', specN, '← Back',
+        SPE.backBtn.y, SPE.backBtn.w, SPE.backBtn.h, 55, 65, 85);
+    sb.e[specBackBtn]._lpos = v3(SPE.backBtn.x, SPE.backBtn.y, 0);
     // UX Phase 2b: IconBadge eye attached by AppUI. Phase 2c: bold.
-    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 28, 600, 460, 40, 255, 255, 255);
+    // 9c: title w 460→300 to clear BackButton bbox right x=-180.
+    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 28,
+        SPE.title.y, SPE.title.w, SPE.title.h, 255, 255, 255);
     style(sb, specTitle, { bold: true });
-    const specMatchLabel = mkLabel(sb, 'SpectatorMatchLabel', specN, 'match —', 13, 558, 500, 20, 140, 150, 170);
-    const specStatusLabel = mkLabel(sb, 'SpectatorStatusLabel', specN, 'Connecting…', 14, 520, 500, 22, 140, 220, 180);
+    const specMatchLabel = mkLabel(sb, 'SpectatorMatchLabel', specN, 'match —', 13,
+        SPE.matchLabel.y, SPE.matchLabel.w, SPE.matchLabel.h, 140, 150, 170);
+    const specStatusLabel = mkLabel(sb, 'SpectatorStatusLabel', specN, 'Connecting…', 14,
+        SPE.statusLabel.y, SPE.statusLabel.w, SPE.statusLabel.h, 140, 220, 180);
 
-    // Player list: 10 pooled rows (one per potential player — matches MATCH_MAX_PLAYERS).
+    // Player list: 10 pooled rows from LAYOUT.SpectatorPanel.templates.playerRow.
+    const SPL = LAYOUT.SpectatorPanel.templates.playerRow;
     const specPlayerListN = sb.e.length;
-    sb.node('SpectatorPlayerList', specN, [], [], v3(0, 240, 0));
-    sb.ut(specPlayerListN, 620, 380);
+    sb.node('SpectatorPlayerList', specN, [], [], v3(SPE.playerList.x, SPE.playerList.y, 0));
+    sb.ut(specPlayerListN, SPE.playerList.w, SPE.playerList.h);
     const specPlayerRowIdx = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < SPL.count; i++) {
         const rN = sb.e.length;
-        const ry = 170 - i * 38;
+        const ry = SPL.baseY + i * SPL.gapY;
         sb.node(`SpectatorPlayerRow_${i}`, specPlayerListN, [], [], v3(0, ry, 0));
-        const rUT = sb.ut(rN, 600, 34);
+        const rUT = sb.ut(rN, SPL.w, SPL.h);
         const rSpr = sb.spr(rN, 22, 28, 42);
-        const pkLbl = mkLabel(sb, 'Pubkey', rN, '—', 14, 0, 280, 22, 220, 230, 240);
-        sb.e[pkLbl]._lpos = v3(-240, 0, 0);
-        const hLbl = mkLabel(sb, 'Height', rN, 'H:—', 14, 0, 200, 22, 48, 198, 155);
-        sb.e[hLbl]._lpos = v3(220, 0, 0);
+        const pkLbl = mkLabel(sb, 'Pubkey', rN, '—', 14, 0, SPL.pubkey.w, SPL.pubkey.h, 220, 230, 240);
+        sb.e[pkLbl]._lpos = v3(SPL.pubkey.x, SPL.pubkey.y, 0);
+        const hLbl = mkLabel(sb, 'Height', rN, 'H:—', 14, 0, SPL.height.w, SPL.height.h, 48, 198, 155);
+        sb.e[hLbl]._lpos = v3(SPL.height.x, SPL.height.y, 0);
         sb.e[rN]._components = [rf(rUT), rf(rSpr)];
         sb.e[rN]._children = [rf(pkLbl), rf(hLbl)];
         sb.e[rN]._active = false;
@@ -2622,20 +3370,23 @@ function generate() {
     }
     sb.e[specPlayerListN]._children = specPlayerRowIdx.map(rf);
 
-    // Event feed: 10 rows, most-recent-on-top.
+    // Event feed: 10 rows from templates.eventRow, most-recent-on-top.
+    const SER = LAYOUT.SpectatorPanel.templates.eventRow;
     const specEventListN = sb.e.length;
-    sb.node('SpectatorEventList', specN, [], [], v3(0, -170, 0));
-    sb.ut(specEventListN, 620, 260);
-    const specEventHeaderL = mkLabel(sb, 'HeaderLabel', specEventListN, 'LIVE EVENTS', 11, 110, 300, 18, 140, 150, 170);
-    sb.e[specEventHeaderL]._lpos = v3(-270, 110, 0);
+    sb.node('SpectatorEventList', specN, [], [], v3(SPE.eventList.x, SPE.eventList.y, 0));
+    sb.ut(specEventListN, SPE.eventList.w, SPE.eventList.h);
+    const specEventHeaderL = mkLabel(sb, 'HeaderLabel', specEventListN, 'LIVE EVENTS', 11,
+        SPE.eventListHeader.y, SPE.eventListHeader.w, SPE.eventListHeader.h, 140, 150, 170);
+    sb.e[specEventHeaderL]._lpos = v3(SPE.eventListHeader.x, SPE.eventListHeader.y, 0);
     sb.e[sb.e[specEventHeaderL]._components[1].__id__]._horizontalAlign = 0;
+    style(sb, specEventHeaderL, { spacing: 1 });  // Phase 15 (B5)
     const specEventRowIdx = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < SER.count; i++) {
         const rN = sb.e.length;
-        const ry = 80 - i * 20;
+        const ry = SER.baseY + i * SER.gapY;
         sb.node(`SpectatorEventRow_${i}`, specEventListN, [], [], v3(0, ry, 0));
-        const rUT = sb.ut(rN, 600, 18);
-        const rL = mkLabel(sb, 'Text', rN, '—', 13, 0, 600, 18, 180, 190, 210);
+        const rUT = sb.ut(rN, SER.w, SER.h);
+        const rL = mkLabel(sb, 'Text', rN, '—', 13, 0, SER.text.w, SER.text.h, 180, 190, 210);
         sb.e[rN]._components = [rf(rUT)];
         sb.e[rN]._children = [rf(rL)];
         sb.e[rN]._active = false;
@@ -2644,13 +3395,17 @@ function generate() {
     sb.e[specEventListN]._children = [rf(specEventHeaderL), ...specEventRowIdx.map(rf)];
 
     // Join button — shown by AppUI only when match.status == Waiting + free slot.
-    const specJoinBtn = mkBtn(sb, 'SpectatorJoinButton', specN, '▶ Join this match', -440, 620, 56, 48, 198, 155);
+    // Phase 13 (B3): hero halo — teal join CTA.
+    const { glow: specJoinGlow, btn: specJoinBtn } = mkBtnHero(sb,
+        'SpectatorJoinButton', specN, '▶ Join this match',
+        SPE.joinBtn.x, SPE.joinBtn.y, SPE.joinBtn.w, SPE.joinBtn.h, 48, 198, 155);
     style(sb, specJoinBtn, { bold: true });
     sb.e[specJoinBtn]._active = false;
+    sb.e[specJoinGlow]._active = false;
 
     sb.e[specN]._children = [
         rf(specBackBtn), rf(specTitle), rf(specMatchLabel), rf(specStatusLabel),
-        rf(specPlayerListN), rf(specEventListN), rf(specJoinBtn),
+        rf(specPlayerListN), rf(specEventListN), rf(specJoinGlow), rf(specJoinBtn),
     ];
     sb.e[specN]._active = false;
 
@@ -2661,36 +3416,47 @@ function generate() {
     // subscribe (poll every 3s + backend WS).
     // ═══════════════════════════════════════════════════════════════
     const tourN = sb.e.length;
-    sb.node('TournamentPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('TournamentPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     sb.ut(tourN, 720, 1280);
     sb.spr(tourN, 18, 12, 26); // slight purple tint vs spectator's slate
 
-    const tourBackBtn = mkBtn(sb, 'TournamentBackButton', tourN, '← Back', 600, 160, 44, 55, 65, 85);
-    sb.e[tourBackBtn]._lpos = v3(-260, 600, 0);
+    // Chrome from LAYOUT.TournamentPanel.elements.
+    const TPE = LAYOUT.TournamentPanel.elements;
+    const tourBackBtn = mkBtn(sb, 'TournamentBackButton', tourN, '← Back',
+        TPE.backBtn.y, TPE.backBtn.w, TPE.backBtn.h, 55, 65, 85);
+    sb.e[tourBackBtn]._lpos = v3(TPE.backBtn.x, TPE.backBtn.y, 0);
     // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
-    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 28, 600, 460, 40, 230, 210, 255);
+    // 9c: title w 460→300 to clear BackButton bbox right x=-180.
+    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 28,
+        TPE.title.y, TPE.title.w, TPE.title.h, 230, 210, 255);
     style(sb, tourTitle, { bold: true });
-    const tourMatchLabel = mkLabel(sb, 'TournamentMatchLabel', tourN, 'match —', 13, 558, 500, 20, 160, 150, 200);
-    const tourStatusLabel = mkLabel(sb, 'TournamentStatusLabel', tourN, 'Connecting…', 14, 520, 500, 22, 220, 200, 240);
-    const tourPrizeLabel = mkLabel(sb, 'TournamentPrizePoolLabel', tourN, 'Prize pool: — · top-3 payout', 14, 485, 600, 22, 140, 220, 180);
+    const tourMatchLabel  = mkLabel(sb, 'TournamentMatchLabel', tourN, 'match —', 13,
+        TPE.matchLabel.y, TPE.matchLabel.w, TPE.matchLabel.h, 160, 150, 200);
+    const tourStatusLabel = mkLabel(sb, 'TournamentStatusLabel', tourN, 'Connecting…', 14,
+        TPE.statusLabel.y, TPE.statusLabel.w, TPE.statusLabel.h, 220, 200, 240);
+    const tourPrizeLabel  = mkLabel(sb, 'TournamentPrizePoolLabel', tourN, 'Prize pool: — · top-3 payout', 14,
+        TPE.prizeLabel.y, TPE.prizeLabel.w, TPE.prizeLabel.h, 140, 220, 180);
 
-    // 10-slot roster. Each slot has Pubkey (left), Height (right), Medal (far right).
+    // 10-slot roster from LAYOUT.TournamentPanel. Each slot has Pubkey (left),
+    // Height (mid-right), Medal (far right).
+    const TR  = LAYOUT.TournamentPanel.elements.roster;
+    const TST = LAYOUT.TournamentPanel.templates.tournamentSlot;
     const tourRosterN = sb.e.length;
-    sb.node('TournamentRoster', tourN, [], [], v3(0, 150, 0));
-    sb.ut(tourRosterN, 640, 440);
+    sb.node('TournamentRoster', tourN, [], [], v3(TR.x, TR.y, 0));
+    sb.ut(tourRosterN, TR.w, TR.h);
     const tourSlotIdx = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < TST.count; i++) {
         const rN = sb.e.length;
-        const ry = 200 - i * 42;
+        const ry = TST.baseY + i * TST.gapY;
         sb.node(`TournamentSlot_${i}`, tourRosterN, [], [], v3(0, ry, 0));
-        const rUT = sb.ut(rN, 620, 36);
+        const rUT = sb.ut(rN, TST.w, TST.h);
         const rSpr = sb.spr(rN, 28, 22, 44);
-        const pkLbl = mkLabel(sb, 'Pubkey', rN, '—', 14, 0, 300, 22, 220, 220, 240);
-        sb.e[pkLbl]._lpos = v3(-240, 0, 0);
-        const hLbl = mkLabel(sb, 'Height', rN, 'H:—', 14, 0, 180, 22, 140, 220, 180);
-        sb.e[hLbl]._lpos = v3(180, 0, 0);
-        const medalLbl = mkLabel(sb, 'Medal', rN, '', 20, 0, 80, 28, 255, 220, 120);
-        sb.e[medalLbl]._lpos = v3(280, 0, 0);
+        const pkLbl = mkLabel(sb, 'Pubkey', rN, '—', 14, 0, TST.pubkey.w, TST.pubkey.h, 220, 220, 240);
+        sb.e[pkLbl]._lpos = v3(TST.pubkey.x, TST.pubkey.y, 0);
+        const hLbl = mkLabel(sb, 'Height', rN, 'H:—', 14, 0, TST.height.w, TST.height.h, 140, 220, 180);
+        sb.e[hLbl]._lpos = v3(TST.height.x, TST.height.y, 0);
+        const medalLbl = mkLabel(sb, 'Medal', rN, '', 20, 0, TST.medal.w, TST.medal.h, 255, 220, 120);
+        sb.e[medalLbl]._lpos = v3(TST.medal.x, TST.medal.y, 0);
         sb.e[rN]._components = [rf(rUT), rf(rSpr)];
         sb.e[rN]._children = [rf(pkLbl), rf(hLbl), rf(medalLbl)];
         sb.e[rN]._active = false;
@@ -2700,13 +3466,17 @@ function generate() {
 
     // Join button — shown only when status=Waiting AND a slot is free AND player not already in.
     // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
-    const tourJoinBtn = mkBtn(sb, 'TournamentJoinButton', tourN, 'Join tournament', -460, 620, 58, 140, 80, 200);
+    // Phase 13 (B3): hero halo — violet join CTA.
+    const { glow: tourJoinGlow, btn: tourJoinBtn } = mkBtnHero(sb,
+        'TournamentJoinButton', tourN, 'Join tournament',
+        TPE.joinBtn.x, TPE.joinBtn.y, TPE.joinBtn.w, TPE.joinBtn.h, 140, 80, 200);
     style(sb, tourJoinBtn, { bold: true });
     sb.e[tourJoinBtn]._active = false;
+    sb.e[tourJoinGlow]._active = false;
 
     sb.e[tourN]._children = [
         rf(tourBackBtn), rf(tourTitle), rf(tourMatchLabel), rf(tourStatusLabel), rf(tourPrizeLabel),
-        rf(tourRosterN), rf(tourJoinBtn),
+        rf(tourRosterN), rf(tourJoinGlow), rf(tourJoinBtn),
     ];
     sb.e[tourN]._active = false;
 
@@ -2717,133 +3487,476 @@ function generate() {
     //          Host New Match CTA at bottom opens ModePickerOverlay in
     //          host mode (forceCreate=true).
     // ═══════════════════════════════════════════════════════════════
+    // All FindMatchPanel positions sourced from LAYOUT.FindMatchPanel.
+    const FME = LAYOUT.FindMatchPanel.elements;
+    const FMT = LAYOUT.FindMatchPanel.templates;
+
     const fmN = sb.e.length;
-    sb.node('FindMatchPanel', canvas, [], [], v3(0, 0, 0));
-    sb.ut(fmN, 720, 1280);
+    sb.node('FindMatchPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.ut(fmN, LAYOUT.FindMatchPanel.canvas.w, LAYOUT.FindMatchPanel.canvas.h);
     sb.spr(fmN, 10, 14, 22);
 
     // Header: back, title, refresh.
-    const fmBackBtn = mkBtn(sb, 'FindMatchBackButton', fmN, '← Back', 700, 160, 44, 55, 65, 85);
-    sb.e[fmBackBtn]._lpos = v3(-260, 700, 0);
-    const fmTitle = mkLabel(sb, 'FindMatchTitleLabel', fmN, 'Find a Match', 30, 700, 460, 42, 218, 165, 32);
+    const fmBackBtn = mkBtn(sb, 'FindMatchBackButton', fmN, '← Back',
+        FME.backBtn.y, FME.backBtn.w, FME.backBtn.h, 55, 65, 85);
+    sb.e[fmBackBtn]._lpos = v3(FME.backBtn.x, FME.backBtn.y, 0);
+    const fmTitle = mkLabel(sb, 'FindMatchTitleLabel', fmN, 'Find a Match', 30,
+        FME.title.y, FME.title.w, FME.title.h, 218, 165, 32);
     style(sb, fmTitle, { bold: true });
-    const fmRefreshBtn = mkBtnXY(sb, 'FindMatchRefreshButton', fmN, '↻', 280, 700, 56, 56, 38, 44, 64);
-    const fmCountLabel = mkLabel(sb, 'FindMatchCountLabel', fmN, '— open lobbies', 12, 660, 600, 18, 140, 150, 170);
+    const fmRefreshBtn = mkBtnXY(sb, 'FindMatchRefreshButton', fmN, '↻',
+        FME.refreshBtn.x, FME.refreshBtn.y, FME.refreshBtn.w, FME.refreshBtn.h,
+        38, 44, 64);
+    const fmCountLabel = mkLabel(sb, 'FindMatchCountLabel', fmN, '— open lobbies', 14,
+        FME.countLabel.y, FME.countLabel.w, FME.countLabel.h, 218, 165, 32);
+    style(sb, fmCountLabel, { bold: true });
 
-    // Phase H2 — Mode tab row (Open Lobbies / Live Now). Bumps the filters
-    // down by 50px to fit at y=640. Selected tab tinted teal by AppUI.
-    const fmTabOpen = mkBtnXY(sb, 'FindMatchTabOpen', fmN, 'Open Lobbies', -100, 640, 200, 38, 48, 198, 155);
-    const fmTabLive = mkBtnXY(sb, 'FindMatchTabLive', fmN, 'Live Now',      100, 640, 200, 38, 28, 34, 48);
+    // Phase A2 — Lv/XP chip top-left of header. Pulled from UserStats by AppUI.
+    const fmLvXpChipN = sb.e.length;
+    sb.node('FindMatchLvXpChip', fmN, [], [], v3(FME.lvxpChip.x, FME.lvxpChip.y, 0));
+    const fmLvXpChipUT = sb.ut(fmLvXpChipN, FME.lvxpChip.w, FME.lvxpChip.h);
+    const fmLvXpChipSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(fmLvXpChipN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(28, 34, 48, 220),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const fmLvXpChipLbl = mkLabel(sb, 'FindMatchLvXpChipLabel', fmLvXpChipN, 'Lv 1 · 0 XP', 14, 0,
+        FME.lvxpChip.w - 16, FME.lvxpChip.h - 6, 218, 165, 32);
+    sb.e[sb.e[fmLvXpChipLbl]._components[1].__id__]._isBold = true;
+    sb.e[fmLvXpChipN]._components = [rf(fmLvXpChipUT), rf(fmLvXpChipSpr)];
+    sb.e[fmLvXpChipN]._children = [rf(fmLvXpChipLbl)];
+    sb.e[fmLvXpChipN]._active = false; // hidden until UserStats loads
 
-    // Filter rows.
-    // Row 1 — Mode chips at y=600. 5 chips at ~125px each (5*125 + 4*8 = 657 < 720).
-    const fmModeKeys = ['all', 'oneVone', '4p', '8p', 'br10'];
-    const fmModeLabels = ['All', '1v1', '4p', '8p', 'BR'];
-    const fmModeIndices = [];
-    {
-        const w = 125, gap = 8;
-        const startX = -((fmModeKeys.length - 1) * (w + gap)) / 2;
-        for (let i = 0; i < fmModeKeys.length; i++) {
-            const x = startX + i * (w + gap);
-            const bN = mkBtnXY(sb, `FilterMode_${fmModeKeys[i]}`, fmN, fmModeLabels[i], x, 600, w, 38, 28, 34, 48);
-            fmModeIndices.push(bN);
+    // Mode tabs from LAYOUT.FindMatchPanel.templates.fmTab.
+    const buildFmRow = (template, namePrefix, activeBg, inactiveBg) => {
+        const out = [];
+        for (let i = 0; i < template.count; i++) {
+            const bg = i === (template.activeIdx ?? -1) ? activeBg : inactiveBg;
+            const x = template.xs ? template.xs[i] : (template.baseX + i * template.gapX);
+            const bN = mkBtnXY(sb, `${namePrefix}_${template.keys[i]}`, fmN, template.labels[i],
+                x, template.y, template.w, template.h, bg[0], bg[1], bg[2]);
+            out.push(bN);
         }
-    }
-    // Row 2 — Window chips at y=550. Same layout.
-    const fmWindowKeys = ['all', '1h', '1d', '3d', '7d'];
-    const fmWindowLabels = ['All', '30s', '1m', '5m', '1h'];
-    const fmWindowIndices = [];
-    {
-        const w = 125, gap = 8;
-        const startX = -((fmWindowKeys.length - 1) * (w + gap)) / 2;
-        for (let i = 0; i < fmWindowKeys.length; i++) {
-            const x = startX + i * (w + gap);
-            const bN = mkBtnXY(sb, `FilterWindow_${fmWindowKeys[i]}`, fmN, fmWindowLabels[i], x, 550, w, 38, 28, 34, 48);
-            fmWindowIndices.push(bN);
-        }
-    }
-    // Row 3 — Wager bucket chips at y=500. Bucketed for less visual noise:
-    //   All / Low (0.001 + 0.01) / Mid (0.05 + 0.1) / High (0.25 + 0.5) / Whale (1 + 5)
-    const fmWagerKeys = ['all', 'low', 'mid', 'high', 'whale'];
-    const fmWagerLabels = ['All', 'Low', 'Mid', 'High', 'Whale'];
-    const fmWagerIndices = [];
-    {
-        const w = 125, gap = 8;
-        const startX = -((fmWagerKeys.length - 1) * (w + gap)) / 2;
-        for (let i = 0; i < fmWagerKeys.length; i++) {
-            const x = startX + i * (w + gap);
-            const bN = mkBtnXY(sb, `FilterWager_${fmWagerKeys[i]}`, fmN, fmWagerLabels[i], x, 500, w, 38, 28, 34, 48);
-            fmWagerIndices.push(bN);
-        }
-    }
-    // Hide-full toggle (small chip, right side at y=450).
-    const fmHideFullBtn = mkBtnXY(sb, 'FilterHideFullToggle', fmN, 'Hide full ✓', 0, 450, 220, 36, 48, 198, 155);
+        return out;
+    };
+    const ACTIVE_TAB = [48, 198, 155];
+    const INACTIVE_TAB = [28, 34, 48];
 
-    // 8 reusable MatchCardRow_0..7 templates. Each row 660×80, rendered y=380..-280 (8 * 88 stride).
+    // Phase 2b — segmented-control container cards. One per filter row, sits
+    // BEFORE its chips in the children array so the chips render on top.
+    // Each container has a 1px brand-color edge accent via mkCardEdge.
+    const makeRowContainer = (nodeName, spec, edgeColor) => {
+        const cN = sb.e.length;
+        sb.node(nodeName, fmN, [], [], v3(spec.x, spec.y, 0));
+        const cUT = sb.ut(cN, spec.w, spec.h);
+        const cSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(cN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(21, 25, 41, 220), // Palette.bg.surface @ 86% — visually floats above panel
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        const eN = mkCardEdge(sb, cN, spec.w, spec.h, edgeColor[0], edgeColor[1], edgeColor[2]);
+        sb.e[cN]._components = [rf(cUT), rf(cSpr)];
+        sb.e[cN]._children = [rf(eN)];
+        return cN;
+    };
+    const fmTabContainer    = makeRowContainer('TabRowContainer',    FME.tabRowContainer,    [48, 198, 155]);  // teal — tabs
+    const fmModeContainer   = makeRowContainer('ModeRowContainer',   FME.modeRowContainer,   [153, 69, 255]);  // violet — Solana brand
+    const fmWindowContainer = makeRowContainer('WindowRowContainer', FME.windowRowContainer, [40, 180, 140]);  // teal-dim — duration
+    const fmWagerContainer  = makeRowContainer('WagerRowContainer',  FME.wagerRowContainer,  [255, 180, 84]);  // amber-dim — wager/stake
+
+    const [fmTabOpen, fmTabLive] = buildFmRow(FMT.fmTab, 'FindMatchTab', ACTIVE_TAB, INACTIVE_TAB);
+
+    // 3 filter rows (Mode / Window / Wager) — same template pattern.
+    const fmModeIndices = buildFmRow(FMT.fmModeFilter, 'FilterMode', ACTIVE_TAB, INACTIVE_TAB);
+    const fmWindowIndices = buildFmRow(FMT.fmWindowFilter, 'FilterWindow', ACTIVE_TAB, INACTIVE_TAB);
+    const fmWagerIndices = buildFmRow(FMT.fmWagerFilter, 'FilterWager', ACTIVE_TAB, INACTIVE_TAB);
+
+    // Phase 2b — emit a glow sibling per chip. Same position as the chip,
+    // 14px larger on each side. AppUI._refreshFindMatchFilterChips toggles
+    // _active per chip-row's active selection.
+    const makeChipGlow = (parentN, chipName, x, y, w, h, edgeColor) => {
+        const gN = sb.e.length;
+        sb.node(`ChipGlow_${chipName}`, parentN, [], [], v3(x, y, 0));
+        const gUT = sb.ut(gN, w + 14, h + 14);
+        const gSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(gN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(edgeColor[0], edgeColor[1], edgeColor[2], 90),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[gN]._components = [rf(gUT), rf(gSpr)];
+        sb.e[gN]._active = false;
+        return gN;
+    };
+    const buildChipGlows = (template, namePrefix, color) => {
+        const out = [];
+        for (let i = 0; i < template.count; i++) {
+            const x = template.xs ? template.xs[i] : (template.baseX + i * template.gapX);
+            out.push(makeChipGlow(fmN, `${namePrefix}_${template.keys[i]}`, x, template.y, template.w, template.h, color));
+        }
+        return out;
+    };
+    const fmTabGlows    = buildChipGlows(FMT.fmTab,           'FindMatchTab', [48, 198, 155]);
+    const fmModeGlows   = buildChipGlows(FMT.fmModeFilter,    'FilterMode',   [153, 69, 255]);
+    const fmWindowGlows = buildChipGlows(FMT.fmWindowFilter,  'FilterWindow', [40, 180, 140]);
+    const fmWagerGlows  = buildChipGlows(FMT.fmWagerFilter,   'FilterWager',  [255, 180, 84]);
+
+    // Hide-full toggle.
+    const fmHideFullBtn = mkBtnXY(sb, 'FilterHideFullToggle', fmN, 'Hide full ✓',
+        FME.hideFullToggle.x, FME.hideFullToggle.y, FME.hideFullToggle.w, FME.hideFullToggle.h,
+        48, 198, 155);
+
+    // 8 reusable MatchCardRow_0..7 templates from templates.matchRow.
+    // Phase A2 redesign: each card now has a mode-color edge stripe, a bold
+    // gold wager hero, a REAL/PAPER track chip, and a capacity progress bar
+    // that AppUI tweens scale-X based on playerCount/required.
+    const MR = FMT.matchRow;
     const fmRowIndices = [];
-    {
-        const rowW = 660, rowH = 80;
-        const stride = 88;
-        const topY = 380;
-        for (let i = 0; i < 8; i++) {
-            const rN = sb.e.length;
-            const ry = topY - i * stride;
-            sb.node(`MatchCardRow_${i}`, fmN, [], [], v3(0, ry, 0));
-            const rUT = sb.ut(rN, rowW, rowH);
-            const rSpr = sb.spr(rN, 22, 28, 42);
-            const rBtn = sb.add({
-                __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
-                node: rf(rN), _enabled: true, __prefab: null,
-                _interactable: true, _transition: 0,
-                _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
-                _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
-                _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
-            });
-            // Mode (left).
-            const modeL = mkLabel(sb, `MatchCardModeLabel_${i}`, rN, '1v1', 18, 0, 120, 24, 220, 230, 240);
-            sb.e[modeL]._lpos = v3(-280, 18, 0);
-            sb.e[sb.e[modeL]._components[1].__id__]._horizontalAlign = 0;
-            // Wager (left-mid).
-            const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 16, 0, 160, 22, 218, 165, 32);
-            sb.e[wagerL]._lpos = v3(-160, 18, 0);
-            sb.e[sb.e[wagerL]._components[1].__id__]._horizontalAlign = 0;
-            // Window (right-mid).
-            const winL = mkLabel(sb, `MatchCardWindowLabel_${i}`, rN, '30s race', 14, 0, 160, 20, 140, 220, 180);
-            sb.e[winL]._lpos = v3(40, 18, 0);
-            sb.e[sb.e[winL]._components[1].__id__]._horizontalAlign = 0;
-            // Players + age (subtitle line).
-            const subL = mkLabel(sb, `MatchCardSubLabel_${i}`, rN, '1/2 players · 0:42 ago', 13, 0, 540, 18, 160, 170, 190);
-            sb.e[subL]._lpos = v3(-280, -16, 0);
-            sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
-            // Join button (far right).
-            const joinL = mkBtnXY(sb, `MatchCardJoinButton_${i}`, rN, 'Join', 250, 0, 130, 50, 56, 148, 252);
-            sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
-            sb.e[rN]._children = [rf(modeL), rf(wagerL), rf(winL), rf(subL), rf(joinL)];
-            sb.e[rN]._active = false; // AppUI activates filled rows
-            fmRowIndices.push(rN);
-        }
+    const fmRowChildArrays = [];  // [{ rN, edgeN, capFillN }] for AppUI runtime tinting
+    for (let i = 0; i < MR.count; i++) {
+        const ry = MR.baseY + i * MR.gapY;
+        const rN = sb.e.length;
+        sb.node(`MatchCardRow_${i}`, fmN, [], [], v3(0, ry, 0));
+        const rUT = sb.ut(rN, MR.w, MR.h);
+        const rSpr = sb.spr(rN, 22, 28, 42);
+        const rBtn = sb.add({
+            __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(rN), _enabled: true, __prefab: null,
+            _interactable: true, _transition: 0,
+            _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+            _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+            _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
+        });
+        // Edge stripe — mode-coded color (AppUI retints in _renderMatchList).
+        const edgeN = sb.e.length;
+        sb.node(`MatchCardEdgeStripe_${i}`, rN, [], [], v3(MR.edgeStripe.x, MR.edgeStripe.y, 0));
+        const edgeUT = sb.ut(edgeN, MR.edgeStripe.w, MR.edgeStripe.h);
+        const edgeSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(edgeN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(153, 69, 255, 255), // violet default; AppUI retints
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[edgeN]._components = [rf(edgeUT), rf(edgeSpr)];
+
+        const modeL = mkLabel(sb, `MatchCardModeLabel_${i}`, rN, '1v1', 18,
+            MR.mode.y, MR.mode.w, MR.mode.h, 220, 230, 240);
+        sb.e[modeL]._lpos = v3(MR.mode.x, MR.mode.y, 0);
+        sb.e[sb.e[modeL]._components[1].__id__]._horizontalAlign = 0;
+        sb.e[sb.e[modeL]._components[1].__id__]._isBold = true;
+        // Bold gold wager hero — center-prominent.
+        const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 20,
+            MR.wager.y, MR.wager.w, MR.wager.h, 218, 165, 32);
+        sb.e[wagerL]._lpos = v3(MR.wager.x, MR.wager.y, 0);
+        style(sb, wagerL, { mono: true, bold: true });
+        sb.e[sb.e[wagerL]._components[1].__id__]._horizontalAlign = 0;
+        // Track chip — tiny REAL/PAPER pill, AppUI tints rose/teal.
+        const trackChipN = sb.e.length;
+        sb.node(`MatchCardTrackChip_${i}`, rN, [], [], v3(MR.trackChip.x, MR.trackChip.y, 0));
+        const trackChipUT = sb.ut(trackChipN, MR.trackChip.w, MR.trackChip.h);
+        const trackChipSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(trackChipN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(255, 92, 138, 220), // rose — REAL by default
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        const trackChipLbl = mkLabel(sb, `MatchCardTrackChipLabel_${i}`, trackChipN, 'REAL', 12, 0,
+            MR.trackChip.w - 8, MR.trackChip.h - 4, 255, 255, 255);
+        sb.e[sb.e[trackChipLbl]._components[1].__id__]._isBold = true;
+        sb.e[trackChipN]._components = [rf(trackChipUT), rf(trackChipSpr)];
+        sb.e[trackChipN]._children = [rf(trackChipLbl)];
+
+        const winL = mkLabel(sb, `MatchCardWindowLabel_${i}`, rN, '⏱  30s race', 14,
+            MR.window.y, MR.window.w, MR.window.h, 140, 220, 180);
+        sb.e[winL]._lpos = v3(MR.window.x, MR.window.y, 0);
+        sb.e[sb.e[winL]._components[1].__id__]._horizontalAlign = 0;
+        const subL = mkLabel(sb, `MatchCardSubLabel_${i}`, rN, '1/2 players · 0:42 ago', 13,
+            MR.sub.y, MR.sub.w, MR.sub.h, 160, 170, 190);
+        sb.e[subL]._lpos = v3(MR.sub.x, MR.sub.y, 0);
+        sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
+        // Capacity progress bar — track + tween-fill.
+        const capBarN = sb.e.length;
+        sb.node(`MatchCardCapBar_${i}`, rN, [], [], v3(MR.capBar.x, MR.capBar.y, 0));
+        const capBarUT = sb.ut(capBarN, MR.capBar.w, MR.capBar.h);
+        const capBarSpr = sb.spr(capBarN, 38, 44, 64);
+        sb.e[capBarN]._components = [rf(capBarUT), rf(capBarSpr)];
+        const capFillN = sb.e.length;
+        sb.node(`MatchCardCapBarFill_${i}`, rN, [], [], v3(MR.capBarFill.x, MR.capBarFill.y, 0));
+        const capFillUT = sb.ut(capFillN, MR.capBarFill.w, MR.capBarFill.h);
+        const capFillSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(capFillN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(20, 241, 149, 255),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[capFillN]._components = [rf(capFillUT), rf(capFillSpr)];
+
+        const joinL = mkBtnXY(sb, `MatchCardJoinButton_${i}`, rN, 'Join',
+            MR.join.x, MR.join.y, MR.join.w, MR.join.h, 20, 241, 149);
+        style(sb, joinL, { bold: true });
+        sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
+        sb.e[rN]._children = [
+            rf(edgeN),
+            rf(modeL), rf(wagerL), rf(trackChipN), rf(winL), rf(subL),
+            rf(capBarN), rf(capFillN),
+            rf(joinL),
+        ];
+        sb.e[rN]._active = false;
+        fmRowIndices.push(rN);
+        fmRowChildArrays.push({ edgeN, capFillN, trackChipN });
     }
 
-    // Empty state — shown when no rows pass the filter.
-    const fmEmptyL = mkLabel(sb, 'FindMatchEmptyLabel', fmN, 'No open lobbies match these filters — host one or play a bot.', 14, -340, 660, 22, 140, 150, 170);
+    // Legacy empty state — kept for fallback. _active=false by default.
+    const fmEmptyL = mkLabel(sb, 'FindMatchEmptyLabel', fmN, 'No open lobbies match these filters — host one or play a bot.', 14,
+        FME.emptyLabel.y, FME.emptyLabel.w, FME.emptyLabel.h, 140, 150, 170);
     sb.e[fmEmptyL]._active = false;
 
-    // Host CTA at bottom.
-    const fmHostBtn = mkBtn(sb, 'FindMatchHostButton', fmN, 'Host New Match', -440, 540, 64, VAR('warn').r, VAR('warn').g, VAR('warn').b);
+    // Phase A2 — gamified empty-state cluster (mascot + dual CTAs).
+    const fmEmptyMascotN = sb.e.length;
+    sb.node('FindMatchEmptyMascot', fmN, [], [], v3(FME.emptyMascot.x, FME.emptyMascot.y, 0));
+    const fmEmptyMascotUT = sb.ut(fmEmptyMascotN, FME.emptyMascot.w, FME.emptyMascot.h);
+    sb.e[fmEmptyMascotN]._components = [rf(fmEmptyMascotUT)];
+    sb.e[fmEmptyMascotN]._active = false;
+    const fmEmptyTitle = mkLabel(sb, 'FindMatchEmptyTitle', fmN, 'No matches yet', 24,
+        FME.emptyTitle.y, FME.emptyTitle.w, FME.emptyTitle.h, 218, 165, 32);
+    style(sb, fmEmptyTitle, { bold: true });
+    sb.e[fmEmptyTitle]._active = false;
+    const fmEmptySubtitle = mkLabel(sb, 'FindMatchEmptySubtitle', fmN,
+        'Be the first to host — others will join in seconds.', 14,
+        FME.emptySubtitle.y, FME.emptySubtitle.w, FME.emptySubtitle.h, 168, 174, 201);
+    sb.e[fmEmptySubtitle]._active = false;
+    const fmEmptyHostBtn = mkBtnXY(sb, 'FindMatchEmptyHostButton', fmN, 'Host New Match',
+        FME.emptyHostBtn.x, FME.emptyHostBtn.y, FME.emptyHostBtn.w, FME.emptyHostBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b);
+    style(sb, fmEmptyHostBtn, { bold: true });
+    sb.e[fmEmptyHostBtn]._active = false;
+    const fmEmptyBotBtn = mkBtnXY(sb, 'FindMatchEmptyBotButton', fmN, 'Play a Bot',
+        FME.emptyBotBtn.x, FME.emptyBotBtn.y, FME.emptyBotBtn.w, FME.emptyBotBtn.h,
+        VAR('warn').r, VAR('warn').g, VAR('warn').b);
+    style(sb, fmEmptyBotBtn, { bold: true });
+    sb.e[fmEmptyBotBtn]._active = false;
+
+    // Legacy Host CTA — superseded by FindMatchEmptyHostButton; kept for back-compat
+    // binding. Hidden by default.
+    const fmHostBtn = mkBtn(sb, 'FindMatchHostButton', fmN, 'Host New Match',
+        FME.hostBtn.y, FME.hostBtn.w, FME.hostBtn.h,
+        VAR('warn').r, VAR('warn').g, VAR('warn').b);
     style(sb, fmHostBtn, { bold: true });
-    const fmStatus = mkLabel(sb, 'FindMatchStatusLabel', fmN, '', 12, -700, 660, 20, 140, 150, 170);
+    sb.e[fmHostBtn]._active = false;
+    const fmStatus = mkLabel(sb, 'FindMatchStatusLabel', fmN, '', 12,
+        FME.status.y, FME.status.w, FME.status.h, 140, 150, 170);
 
     sb.e[fmN]._children = [
         rf(fmBackBtn), rf(fmTitle), rf(fmRefreshBtn), rf(fmCountLabel),
+        rf(fmLvXpChipN),
+        // Phase 2b — containers FIRST so they render behind the chips that follow.
+        rf(fmTabContainer), rf(fmModeContainer), rf(fmWindowContainer), rf(fmWagerContainer),
+        // Then chip glows — sit between the container and the chip itself.
+        ...fmTabGlows.map(rf), ...fmModeGlows.map(rf), ...fmWindowGlows.map(rf), ...fmWagerGlows.map(rf),
+        // Finally the chips themselves on top.
         rf(fmTabOpen), rf(fmTabLive),
         ...fmModeIndices.map(rf),
         ...fmWindowIndices.map(rf),
         ...fmWagerIndices.map(rf),
         rf(fmHideFullBtn),
         ...fmRowIndices.map(rf),
+        rf(fmEmptyMascotN), rf(fmEmptyTitle), rf(fmEmptySubtitle),
+        rf(fmEmptyHostBtn), rf(fmEmptyBotBtn),
         rf(fmEmptyL), rf(fmHostBtn), rf(fmStatus),
     ];
     sb.e[fmN]._active = false;
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase A — JOIN MATCH CONFIRM OVERLAY
+    // Shown when user taps a match card in FindMatchPanel. Full-screen
+    // scrim + violet-edged hero card showing the lobby's mode/wager/window
+    // /capacity/host/age. Cancel returns to lobby; Go locks _pickerJoinTarget
+    // and routes to TokenDuelPanel in join-mode (locked wager + Join CTA).
+    // ═══════════════════════════════════════════════════════════════
+    const JCE = LAYOUT.JoinMatchConfirmOverlay.elements;
+    const jcN = sb.e.length;
+    sb.node('JoinMatchConfirmOverlay', canvas, [], [], v3(0, 0, 0));
+    sb.ut(jcN, LAYOUT.JoinMatchConfirmOverlay.canvas.w, LAYOUT.JoinMatchConfirmOverlay.canvas.h);
+    // Full-canvas scrim (alpha 220) — blocks taps to the lobby beneath.
+    const jcScrimN = sb.e.length;
+    sb.node('JoinConfirmScrim', jcN, [], [], v3(JCE.scrim.x, JCE.scrim.y, 0));
+    const jcScrimUT = sb.ut(jcScrimN, JCE.scrim.w, JCE.scrim.h);
+    const jcScrimSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(jcScrimN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(8, 10, 18, 220),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    // Block-tap button on scrim — tapping outside the card cancels.
+    const jcScrimBtn = sb.add({
+        __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(jcScrimN), _enabled: true, __prefab: null,
+        _interactable: true, _transition: 0,
+        _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+        _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+        _duration: 0.1, _zoomScale: 1, _target: rf(jcScrimN), _id: gid(),
+    });
+    sb.e[jcScrimN]._components = [rf(jcScrimUT), rf(jcScrimSpr), rf(jcScrimBtn)];
+
+    // Hero card — Solana-violet edged.
+    const jcCardN = sb.e.length;
+    sb.node('JoinConfirmCard', jcN, [], [], v3(JCE.card.x, JCE.card.y, 0));
+    const jcCardUT = sb.ut(jcCardN, JCE.card.w, JCE.card.h);
+    const jcCardSpr = sb.spr(jcCardN, 18, 22, 36); // app-bg deep
+    sb.e[jcCardN]._components = [rf(jcCardUT), rf(jcCardSpr)];
+
+    // Title + subtitle.
+    const jcTitle = mkLabel(sb, 'JoinConfirmTitleLabel', jcCardN, 'Confirm Join', 28,
+        JCE.title.y, JCE.title.w, JCE.title.h, 218, 165, 32);
+    style(sb, jcTitle, { bold: true });
+    const jcSubtitle = mkLabel(sb, 'JoinConfirmSubtitleLabel', jcCardN, 'Review the lobby — then Join.', 14,
+        JCE.subtitle.y, JCE.subtitle.w, JCE.subtitle.h, 168, 174, 201);
+
+    // Mode badge — violet chip top-left of card.
+    const jcModeBadge = sb.e.length;
+    sb.node('JoinConfirmModeBadge', jcCardN, [], [], v3(JCE.modeBadge.x, JCE.modeBadge.y, 0));
+    const jcModeBadgeUT = sb.ut(jcModeBadge, JCE.modeBadge.w, JCE.modeBadge.h);
+    const jcModeBadgeSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(jcModeBadge), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(153, 69, 255, 200), // violet — AppUI retints by mode
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const jcModeLbl = mkLabel(sb, 'JoinConfirmModeBadgeLabel', jcModeBadge, '1v1', 18,
+        JCE.modeBadgeLabel.y, JCE.modeBadgeLabel.w, JCE.modeBadgeLabel.h, 255, 255, 255);
+    sb.e[sb.e[jcModeLbl]._components[1].__id__]._isBold = true;
+    sb.e[jcModeBadge]._components = [rf(jcModeBadgeUT), rf(jcModeBadgeSpr)];
+    sb.e[jcModeBadge]._children = [rf(jcModeLbl)];
+
+    // Track chip — REAL (rose) or PAPER (teal). AppUI retints + relabels.
+    const jcTrackChip = sb.e.length;
+    sb.node('JoinConfirmTrackChip', jcCardN, [], [], v3(JCE.trackChip.x, JCE.trackChip.y, 0));
+    const jcTrackChipUT = sb.ut(jcTrackChip, JCE.trackChip.w, JCE.trackChip.h);
+    const jcTrackChipSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(jcTrackChip), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(255, 92, 138, 220), // rose — REAL by default
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const jcTrackLbl = mkLabel(sb, 'JoinConfirmTrackChipLabel', jcTrackChip, 'REAL', 14,
+        JCE.trackChipLabel.y, JCE.trackChipLabel.w, JCE.trackChipLabel.h, 255, 255, 255);
+    sb.e[sb.e[jcTrackLbl]._components[1].__id__]._isBold = true;
+    sb.e[jcTrackChip]._components = [rf(jcTrackChipUT), rf(jcTrackChipSpr)];
+    sb.e[jcTrackChip]._children = [rf(jcTrackLbl)];
+
+    // Wager hero — big gold center.
+    const jcWagerHero = mkLabel(sb, 'JoinConfirmWagerHeroLabel', jcCardN, '0.05 SOL', 36,
+        JCE.wagerHero.y, JCE.wagerHero.w, JCE.wagerHero.h, 218, 165, 32);
+    style(sb, jcWagerHero, { bold: true, mono: true });
+
+    // Window + capacity meta row.
+    const jcWindowL = mkLabel(sb, 'JoinConfirmWindowLabel', jcCardN, '30s race', 16,
+        JCE.windowLabel.y, JCE.windowLabel.w, JCE.windowLabel.h, 168, 174, 201);
+    sb.e[jcWindowL]._lpos = v3(JCE.windowLabel.x, JCE.windowLabel.y, 0);
+    const jcCapacityL = mkLabel(sb, 'JoinConfirmCapacityLabel', jcCardN, '1/2 players', 16,
+        JCE.capacityLabel.y, JCE.capacityLabel.w, JCE.capacityLabel.h, 168, 174, 201);
+    sb.e[jcCapacityL]._lpos = v3(JCE.capacityLabel.x, JCE.capacityLabel.y, 0);
+
+    // Host + age row.
+    const jcHostL = mkLabel(sb, 'JoinConfirmHostLabel', jcCardN, 'Host: 5Ksq…sDst', 14,
+        JCE.hostLabel.y, JCE.hostLabel.w, JCE.hostLabel.h, 140, 150, 170);
+    sb.e[jcHostL]._lpos = v3(JCE.hostLabel.x, JCE.hostLabel.y, 0);
+    const jcAgeL = mkLabel(sb, 'JoinConfirmAgeLabel', jcCardN, '0:42 ago', 14,
+        JCE.ageLabel.y, JCE.ageLabel.w, JCE.ageLabel.h, 140, 150, 170);
+    sb.e[jcAgeL]._lpos = v3(JCE.ageLabel.x, JCE.ageLabel.y, 0);
+
+    // Capacity progress bar — track + tween-fill.
+    const jcCapBar = sb.e.length;
+    sb.node('JoinConfirmCapacityBar', jcCardN, [], [], v3(JCE.capacityBar.x, JCE.capacityBar.y, 0));
+    const jcCapBarUT = sb.ut(jcCapBar, JCE.capacityBar.w, JCE.capacityBar.h);
+    const jcCapBarSpr = sb.spr(jcCapBar, 38, 44, 64);
+    sb.e[jcCapBar]._components = [rf(jcCapBarUT), rf(jcCapBarSpr)];
+    const jcCapFill = sb.e.length;
+    sb.node('JoinConfirmCapacityBarFill', jcCardN, [], [], v3(JCE.capacityBarFill.x, JCE.capacityBarFill.y, 0));
+    const jcCapFillUT = sb.ut(jcCapFill, JCE.capacityBarFill.w, JCE.capacityBarFill.h);
+    const jcCapFillSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(jcCapFill), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 241, 149, 255),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[jcCapFill]._components = [rf(jcCapFillUT), rf(jcCapFillSpr)];
+
+    // CTA buttons.
+    const jcCancelBtn = mkBtnXY(sb, 'JoinConfirmCancelButton', jcCardN, '✕  Cancel',
+        JCE.cancelBtn.x, JCE.cancelBtn.y, JCE.cancelBtn.w, JCE.cancelBtn.h, 55, 65, 85);
+    style(sb, jcCancelBtn, { bold: true });
+    const { glow: jcGoGlow, btn: jcGoBtn } = mkBtnHero(sb,
+        'JoinConfirmGoButton', jcCardN, '▶  Join Match',
+        JCE.goBtn.x, JCE.goBtn.y, JCE.goBtn.w, JCE.goBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b);
+    style(sb, jcGoBtn, { bold: true });
+    const jcHint = mkLabel(sb, 'JoinConfirmHintLabel', jcCardN, 'You\'ll pick 3 tokens next.', 12,
+        JCE.hint.y, JCE.hint.w, JCE.hint.h, 140, 150, 170);
+
+    sb.e[jcCardN]._children = [
+        rf(jcTitle), rf(jcSubtitle),
+        rf(jcModeBadge), rf(jcTrackChip),
+        rf(jcWagerHero),
+        rf(jcWindowL), rf(jcCapacityL),
+        rf(jcHostL), rf(jcAgeL),
+        rf(jcCapBar), rf(jcCapFill),
+        rf(jcCancelBtn), rf(jcGoGlow), rf(jcGoBtn),
+        rf(jcHint),
+    ];
+    sb.e[jcN]._children = [rf(jcScrimN), rf(jcCardN)];
+    sb.e[jcN]._active = false;
 
     // AppUI component on Canvas
     const appUI = sb.custom(canvas, UUIDS.AppUI);
@@ -2854,28 +3967,61 @@ function generate() {
     // Shown briefly between ModePicker-Start and RacePanel activation to
     // build tension. AppUI drives the animation with a tween chain.
     // ═══════════════════════════════════════════════════════════════
+    const COE = LAYOUT.CountdownOverlay.elements;
     const countdownN = sb.e.length;
     sb.node('CountdownOverlay', canvas, [], [countdownN+1, countdownN+2], v3(0, 0, 0));
-    sb.ut(countdownN, 720, 1280);
+    sb.ut(countdownN, LAYOUT.CountdownOverlay.canvas.w, LAYOUT.CountdownOverlay.canvas.h);
     sb.spr(countdownN, 8, 12, 20);
     sb.e[countdownN]._active = false;
-    const countdownBigN = mkLabel(sb, 'CountdownBigLabel', countdownN, '3', 160, 40, 400, 240, 218, 165, 32);
-    const countdownSquadN = mkLabel(sb, 'CountdownSquadPreviewLabel', countdownN, 'Your squad', 24, -140, 620, 36, 180, 190, 210);
-    const countdownHintN = mkLabel(sb, 'CountdownHintLabel', countdownN, 'Match starting…', 18, -210, 600, 24, 140, 150, 170);
+    const countdownBigN = mkLabel(sb, 'CountdownBigLabel', countdownN, '3', 160,
+        COE.bigLabel.y, COE.bigLabel.w, COE.bigLabel.h, 218, 165, 32);
+    const countdownSquadN = mkLabel(sb, 'CountdownSquadPreviewLabel', countdownN, 'Your squad', 24,
+        COE.squadLabel.y, COE.squadLabel.w, COE.squadLabel.h, 180, 190, 210);
+    const countdownHintN = mkLabel(sb, 'CountdownHintLabel', countdownN, 'Match starting…', 18,
+        COE.hintLabel.y, COE.hintLabel.w, COE.hintLabel.h, 140, 150, 170);
     sb.e[countdownN]._children = [rf(countdownBigN), rf(countdownSquadN), rf(countdownHintN)];
 
     // ═══════════════════════════════════════════════════════════════
     // betting-duel Block 8 — SigningOverlay (wallet wait spinner)
     // ═══════════════════════════════════════════════════════════════
+    const SOE = LAYOUT.SigningOverlay.elements;
     const signingN = sb.e.length;
     sb.node('SigningOverlay', canvas, [], [signingN+1, signingN+2], v3(0, 0, 0));
-    sb.ut(signingN, 720, 1280);
+    sb.ut(signingN, LAYOUT.SigningOverlay.canvas.w, LAYOUT.SigningOverlay.canvas.h);
     sb.spr(signingN, 4, 6, 12);
     sb.e[signingN]._active = false;
-    const signingSpinnerN = mkLabel(sb, 'SigningSpinnerLabel', signingN, '⟳', 80, 80, 200, 120, 218, 165, 32);
-    const signingStatusN = mkLabel(sb, 'SigningStatusLabel', signingN, 'Awaiting wallet approval…', 24, -40, 680, 36, 230, 230, 240);
-    const signingHintN = mkLabel(sb, 'SigningHintLabel', signingN, 'Check your wallet app — sign to continue.', 16, -90, 620, 24, 140, 150, 170);
+    const signingSpinnerN = mkLabel(sb, 'SigningSpinnerLabel', signingN, '⟳', 80,
+        SOE.spinner.y, SOE.spinner.w, SOE.spinner.h, 218, 165, 32);
+    const signingStatusN = mkLabel(sb, 'SigningStatusLabel', signingN, 'Awaiting wallet approval…', 24,
+        SOE.statusLabel.y, SOE.statusLabel.w, SOE.statusLabel.h, 230, 230, 240);
+    const signingHintN = mkLabel(sb, 'SigningHintLabel', signingN, 'Check your wallet app — sign to continue.', 16,
+        SOE.hintLabel.y, SOE.hintLabel.w, SOE.hintLabel.h, 140, 150, 170);
     sb.e[signingN]._children = [rf(signingSpinnerN), rf(signingStatusN), rf(signingHintN)];
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase 19 — LoadingOverlay (post-connect / reconnect gap polish).
+    // Mirrors SigningOverlay structure + adds MascotContainer for greeter.
+    // ═══════════════════════════════════════════════════════════════
+    const LOE = LAYOUT.LoadingOverlay.elements;
+    const loadingN = sb.e.length;
+    sb.node('LoadingOverlay', canvas, [], [], v3(0, 0, 0));
+    sb.ut(loadingN, LAYOUT.LoadingOverlay.canvas.w, LAYOUT.LoadingOverlay.canvas.h);
+    sb.spr(loadingN, 4, 6, 12);
+    sb.e[loadingN]._active = false;
+
+    const loadingMascotN = sb.e.length;
+    sb.node('LoadingMascotContainer', loadingN, [], [], v3(LOE.mascotContainer.x, LOE.mascotContainer.y, 0));
+    sb.ut(loadingMascotN, LOE.mascotContainer.w, LOE.mascotContainer.h);
+
+    const loadingSpinnerN = mkLabel(sb, 'LoadingSpinnerLabel', loadingN, '⟳', 80,
+        LOE.spinner.y, LOE.spinner.w, LOE.spinner.h, 218, 165, 32);
+    const loadingStatusN  = mkLabel(sb, 'LoadingStatusLabel',  loadingN, 'Loading…', 24,
+        LOE.statusLabel.y, LOE.statusLabel.w, LOE.statusLabel.h, 230, 230, 240);
+    const loadingTipN     = mkLabel(sb, 'LoadingTipLabel',     loadingN, '', 16,
+        LOE.tipLabel.y, LOE.tipLabel.w, LOE.tipLabel.h, 140, 150, 170);
+    style(sb, loadingTipN, { spacing: 1 });
+
+    sb.e[loadingN]._children = [rf(loadingMascotN), rf(loadingSpinnerN), rf(loadingStatusN), rf(loadingTipN)];
 
     // ═══════════════════════════════════════════════════════════════
     // Phase H4 — LevelUpOverlay (full-screen XP celebration cinematic)
@@ -2883,9 +4029,10 @@ function generate() {
     // Shows: scrim · "LEVEL UP" · big level number · rake-discount callout.
     // Auto-dismisses after 2.8s; also tap-to-dismiss anywhere.
     // ═══════════════════════════════════════════════════════════════
+    const LUE = LAYOUT.LevelUpOverlay.elements;
     const luN = sb.e.length;
     sb.node('LevelUpOverlay', canvas, [], [], v3(0, 0, 0));
-    const luUT = sb.ut(luN, 720, 1280);
+    const luUT = sb.ut(luN, LAYOUT.LevelUpOverlay.canvas.w, LAYOUT.LevelUpOverlay.canvas.h);
     const luBgSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(luN), _enabled: true, __prefab: null,
@@ -2908,17 +4055,22 @@ function generate() {
     });
     sb.e[luN]._components = [rf(luUT), rf(luBgSpr), rf(luDismissBtn)];
     // Title.
-    const luTitle = mkLabel(sb, 'LevelUpTitleLabel', luN, 'LEVEL UP', 64, 200, 600, 100, 218, 165, 32);
+    const luTitle = mkLabel(sb, 'LevelUpTitleLabel', luN, 'LEVEL UP', 64,
+        LUE.title.y, LUE.title.w, LUE.title.h, 218, 165, 32);
     style(sb, luTitle, { bold: true });
     // Big level number with count-up tween at runtime.
-    const luBigLevel = mkLabel(sb, 'LevelUpBigLevel', luN, '5', 180, 30, 600, 240, 255, 240, 200);
+    const luBigLevel = mkLabel(sb, 'LevelUpBigLevel', luN, '5', 180,
+        LUE.bigLevel.y, LUE.bigLevel.w, LUE.bigLevel.h, 255, 240, 200);
     style(sb, luBigLevel, { bold: true });
     // Caption (e.g. "Level 5 reached").
-    const luCaption = mkLabel(sb, 'LevelUpCaptionLabel', luN, 'Level 5 reached', 26, -190, 600, 36, 220, 230, 240);
-    // Rake discount callout (color = teal accent).
-    const luRake = mkLabel(sb, 'LevelUpRakeLabel', luN, 'Your rake: 4.5% (was 5.0%)', 22, -260, 600, 32, 48, 198, 155);
+    const luCaption = mkLabel(sb, 'LevelUpCaptionLabel', luN, 'Level 5 reached', 26,
+        LUE.caption.y, LUE.caption.w, LUE.caption.h, 220, 230, 240);
+    // Rake discount callout (teal accent).
+    const luRake = mkLabel(sb, 'LevelUpRakeLabel', luN, 'Your rake: 4.5% (was 5.0%)', 22,
+        LUE.rake.y, LUE.rake.w, LUE.rake.h, 48, 198, 155);
     // Hint at the bottom.
-    const luHint = mkLabel(sb, 'LevelUpHintLabel', luN, 'tap to continue', 14, -560, 400, 22, 140, 150, 170);
+    const luHint = mkLabel(sb, 'LevelUpHintLabel', luN, 'tap to continue', 14,
+        LUE.hint.y, LUE.hint.w, LUE.hint.h, 140, 150, 170);
     sb.e[luN]._children = [rf(luTitle), rf(luBigLevel), rf(luCaption), rf(luRake), rf(luHint)];
     sb.e[luN]._active = false;
 
@@ -2929,7 +4081,7 @@ function generate() {
     // empty state label centered when no rows visible.
     // ═══════════════════════════════════════════════════════════════
     const npN = sb.e.length;
-    sb.node('NotificationPanel', canvas, [], [], v3(0, 0, 0));
+    sb.node('NotificationPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     const npUT = sb.ut(npN, 720, 1280);
     // Full-panel backdrop sprite — tap-outside-to-dismiss surface, semi-transparent.
     const npBackdropBtn = sb.add({
@@ -2969,11 +4121,17 @@ function generate() {
     });
     sb.e[npCardN]._components = [rf(npCardUT), rf(npCardSpr)];
 
-    // Header.
-    const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 26, 580, 360, 36, 218, 165, 32);
+    // Header — 9c: w 360→320 to clear NotifCloseButton bbox left x=176.
+    const NPE = LAYOUT.NotificationPanel.elements;
+    const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 26,
+        NPE.cardHeaderLabel.y, NPE.cardHeaderLabel.w, NPE.cardHeaderLabel.h, 218, 165, 32);
     style(sb, npHeader, { bold: true });
-    const npCloseBtn = mkBtnXY(sb, 'NotifCloseButton', npCardN, '✕', 200, 580, 48, 48, 30, 36, 52);
-    const npMarkAllBtn = mkBtnXY(sb, 'NotifMarkAllReadButton', npCardN, 'Mark all read', -100, 530, 200, 36, 38, 44, 64);
+    const npCloseBtn = mkBtnXY(sb, 'NotifCloseButton', npCardN, '✕',
+        NPE.cardCloseButton.x, NPE.cardCloseButton.y,
+        NPE.cardCloseButton.w, NPE.cardCloseButton.h, 30, 36, 52);
+    const npMarkAllBtn = mkBtnXY(sb, 'NotifMarkAllReadButton', npCardN, 'Mark all read',
+        NPE.cardMarkAllReadButton.x, NPE.cardMarkAllReadButton.y,
+        NPE.cardMarkAllReadButton.w, NPE.cardMarkAllReadButton.h, 38, 44, 64);
 
     // 8 row pool. Rows stack top→bottom inside a "list area" Node positioned
     // below the header. We don't use a ScrollView here — 8 rows fit comfortably
@@ -2986,13 +4144,14 @@ function generate() {
 
     const npRowIndices = [];
     {
-        const rowW = 460, rowH = 92, gap = 8;
-        const topY = 480; // first row's y (relative to listN center 0,-60)
-        for (let i = 0; i < 8; i++) {
+        // 8 reusable rows from LAYOUT.NotificationPanel.templates.notifRow.
+        // Phase 9b: Body y/h fixed (-8/32 → -10/30) so its top edge clears Title's bottom.
+        const NR = LAYOUT.NotificationPanel.templates.notifRow;
+        for (let i = 0; i < NR.count; i++) {
             const rN = sb.e.length;
-            const ry = topY - i * (rowH + gap);
+            const ry = NR.baseY + i * NR.gapY;
             sb.node(`NotifRow_${i}`, npListN, [], [], v3(0, ry, 0));
-            const rUT = sb.ut(rN, rowW, rowH);
+            const rUT = sb.ut(rN, NR.w, NR.h);
             const rSpr = sb.spr(rN, 22, 28, 42); // dark slate card
             const rBtn = sb.add({
                 __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -3002,10 +4161,10 @@ function generate() {
                 _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
                 _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
             });
-            // Color stripe — 6×rowH on the left edge.
+            // Color stripe — left edge.
             const stripeN = sb.e.length;
-            sb.node(`NotifRowStripe_${i}`, rN, [], [], v3(-227, 0, 0));
-            const stripeUT = sb.ut(stripeN, 6, rowH);
+            sb.node(`NotifRowStripe_${i}`, rN, [], [], v3(NR.stripe.x, NR.stripe.y, 0));
+            const stripeUT = sb.ut(stripeN, NR.stripe.w, NR.stripe.h);
             const stripeSpr = sb.add({
                 __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
                 node: rf(stripeN), _enabled: true, __prefab: null,
@@ -3018,28 +4177,28 @@ function generate() {
                 _id: gid(),
             });
             sb.e[stripeN]._components = [rf(stripeUT), rf(stripeSpr)];
-            // Icon container — 40×40 to the right of stripe.
+            // Icon container — to the right of stripe.
             const iconN = sb.e.length;
-            sb.node(`NotifRowIcon_${i}`, rN, [], [], v3(-185, 0, 0));
-            const iconUT = sb.ut(iconN, 40, 40);
+            sb.node(`NotifRowIcon_${i}`, rN, [], [], v3(NR.icon.x, NR.icon.y, 0));
+            const iconUT = sb.ut(iconN, NR.icon.w, NR.icon.h);
             sb.e[iconN]._components = [rf(iconUT)];
             // Title — bold 16pt.
-            const titleN = mkLabel(sb, `NotifRowTitleLabel_${i}`, rN, 'Title', 16, 18, 280, 22, 244, 245, 249);
-            sb.e[titleN]._lpos = v3(-15, 18, 0);
+            const titleN = mkLabel(sb, `NotifRowTitleLabel_${i}`, rN, 'Title', 16, 18, NR.title.w, NR.title.h, 244, 245, 249);
+            sb.e[titleN]._lpos = v3(NR.title.x, NR.title.y, 0);
             sb.e[sb.e[titleN]._components[1].__id__]._horizontalAlign = 0;
             sb.e[sb.e[titleN]._components[1].__id__]._isBold = true;
             // Body — 13pt, two lines.
-            const bodyN = mkLabel(sb, `NotifRowBodyLabel_${i}`, rN, 'Body', 13, -10, 280, 32, 168, 174, 201);
-            sb.e[bodyN]._lpos = v3(-15, -8, 0);
+            const bodyN = mkLabel(sb, `NotifRowBodyLabel_${i}`, rN, 'Body', 13, -10, NR.body.w, NR.body.h, 168, 174, 201);
+            sb.e[bodyN]._lpos = v3(NR.body.x, NR.body.y, 0);
             sb.e[sb.e[bodyN]._components[1].__id__]._horizontalAlign = 0;
             sb.e[sb.e[bodyN]._components[1].__id__]._overflow = 2;
-            // Time-ago — 11pt muted, bottom-right corner.
-            const timeN = mkLabel(sb, `NotifRowTimeLabel_${i}`, rN, '2m ago', 11, -32, 100, 16, 130, 140, 160);
-            sb.e[timeN]._lpos = v3(170, -32, 0);
-            // Unread dot — 8x8 teal circle, top-right, visible only when unread.
+            // Time-ago — 11pt muted, bottom-right.
+            const timeN = mkLabel(sb, `NotifRowTimeLabel_${i}`, rN, '2m ago', 11, -32, NR.time.w, NR.time.h, 130, 140, 160);
+            sb.e[timeN]._lpos = v3(NR.time.x, NR.time.y, 0);
+            // Unread dot — top-right, visible only when unread.
             const dotN = sb.e.length;
-            sb.node(`NotifRowUnreadDot_${i}`, rN, [], [], v3(210, 32, 0));
-            const dotUT = sb.ut(dotN, 8, 8);
+            sb.node(`NotifRowUnreadDot_${i}`, rN, [], [], v3(NR.dot.x, NR.dot.y, 0));
+            const dotUT = sb.ut(dotN, NR.dot.w, NR.dot.h);
             const dotSpr = sb.add({
                 __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
                 node: rf(dotN), _enabled: true, __prefab: null,
@@ -3078,16 +4237,20 @@ function generate() {
     // Each slot is a 640×96 card with: color stripe · icon · title · body ·
     // dismiss · progress bar. AppUI's NotificationToastQueue paints + animates.
     // ═══════════════════════════════════════════════════════════════
+    // Toast overlay + 3 slots from LAYOUT.NotificationToastOverlay.
+    // Phase 9b: Title/Body labels shrunk + shifted to clear icon (left), dismiss
+    // (right), and each other (top/bottom).
+    const TO  = LAYOUT.NotificationToastOverlay.elements.overlay;
+    const TS  = LAYOUT.NotificationToastOverlay.templates.toastSlot;
     const toastOvN = sb.e.length;
-    sb.node('NotificationToastOverlay', canvas, [], [], v3(0, 0, 0));
-    sb.ut(toastOvN, 720, 360);
-    // No backdrop sprite — fully transparent so taps fall through to anything below.
+    sb.node('NotificationToastOverlay', canvas, [], [], v3(TO.x, TO.y, 0));
+    sb.ut(toastOvN, TO.w, TO.h);
+    // No backdrop sprite — fully transparent so taps fall through.
     const toastSlotIndices = [];
-    const SLOT_YS = [600, 490, 380];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < TS.count; i++) {
         const slotN = sb.e.length;
-        sb.node(`NotificationToastSlot_${i}`, toastOvN, [], [], v3(0, SLOT_YS[i], 0));
-        const slotUT = sb.ut(slotN, 640, 96);
+        sb.node(`NotificationToastSlot_${i}`, toastOvN, [], [], v3(0, TS.ys[i], 0));
+        const slotUT = sb.ut(slotN, TS.w, TS.h);
         // Card background — dark slate with subtle border feel via opacity.
         const slotBg = sb.add({
             __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
@@ -3100,15 +4263,15 @@ function generate() {
             _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
             _id: gid(),
         });
-        // Color stripe — 8×96 left edge. AppUI tints per kind.
+        // Color stripe — left edge. AppUI tints per kind.
         const stripeN = sb.e.length;
-        sb.node(`ToastColorStripe_${i}`, slotN, [], [], v3(-316, 0, 0));
-        const stripeUT = sb.ut(stripeN, 8, 96);
+        sb.node(`ToastColorStripe_${i}`, slotN, [], [], v3(TS.stripe.x, TS.stripe.y, 0));
+        const stripeUT = sb.ut(stripeN, TS.stripe.w, TS.stripe.h);
         const stripeSpr = sb.add({
             __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
             node: rf(stripeN), _enabled: true, __prefab: null,
             _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-            _color: cl(153, 69, 255, 255), // default = violet (Solana brand); AppUI overwrites
+            _color: cl(153, 69, 255, 255), // default violet; AppUI overwrites per kind
             _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
             _type: 1, _fillType: 0, _sizeMode: 0,
             _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
@@ -3118,25 +4281,26 @@ function generate() {
         sb.e[stripeN]._components = [rf(stripeUT), rf(stripeSpr)];
         // Icon container — empty Node; IconLibrary.attach injects a Graphics + Label sibling.
         const iconN = sb.e.length;
-        sb.node(`ToastIconContainer_${i}`, slotN, [], [], v3(-260, 0, 0));
-        const iconUT = sb.ut(iconN, 56, 56);
+        sb.node(`ToastIconContainer_${i}`, slotN, [], [], v3(TS.icon.x, TS.icon.y, 0));
+        const iconUT = sb.ut(iconN, TS.icon.w, TS.icon.h);
         sb.e[iconN]._components = [rf(iconUT)];
         // Title — bold 18pt, single line.
-        const titleN = mkLabel(sb, `ToastTitleLabel_${i}`, slotN, 'Title', 18, 18, 380, 26, 244, 245, 249);
-        sb.e[titleN]._lpos = v3(-160, 18, 0);
+        const titleN = mkLabel(sb, `ToastTitleLabel_${i}`, slotN, 'Title', 18, 18, TS.title.w, TS.title.h, 244, 245, 249);
+        sb.e[titleN]._lpos = v3(TS.title.x, TS.title.y, 0);
         sb.e[sb.e[titleN]._components[1].__id__]._horizontalAlign = 0;
         sb.e[sb.e[titleN]._components[1].__id__]._isBold = true;
         // Body — regular 13pt, two-line.
-        const bodyN = mkLabel(sb, `ToastBodyLabel_${i}`, slotN, 'Body line', 13, -10, 380, 38, 168, 174, 201);
-        sb.e[bodyN]._lpos = v3(-160, -8, 0);
+        const bodyN = mkLabel(sb, `ToastBodyLabel_${i}`, slotN, 'Body line', 13, -10, TS.body.w, TS.body.h, 168, 174, 201);
+        sb.e[bodyN]._lpos = v3(TS.body.x, TS.body.y, 0);
         sb.e[sb.e[bodyN]._components[1].__id__]._horizontalAlign = 0;
         sb.e[sb.e[bodyN]._components[1].__id__]._overflow = 2; // ENABLE_RESIZE_HEIGHT
-        // Dismiss button — full right-edge tap area with × glyph.
-        const dismissN = mkBtnXY(sb, `ToastDismissButton_${i}`, slotN, '✕', 290, 0, 50, 96, 30, 36, 52);
-        // Progress bar — 632×4 at the bottom, scaleX shrinks 1→0 over duration.
+        // Dismiss button — full right-edge tap area.
+        const dismissN = mkBtnXY(sb, `ToastDismissButton_${i}`, slotN, '✕',
+            TS.dismiss.x, TS.dismiss.y, TS.dismiss.w, TS.dismiss.h, 30, 36, 52);
+        // Progress bar — bottom strip, scaleX shrinks 1→0 over duration.
         const progN = sb.e.length;
-        sb.node(`ToastProgressBar_${i}`, slotN, [], [], v3(0, -46, 0));
-        const progUT = sb.ut(progN, 632, 4);
+        sb.node(`ToastProgressBar_${i}`, slotN, [], [], v3(TS.progress.x, TS.progress.y, 0));
+        const progUT = sb.ut(progN, TS.progress.w, TS.progress.h);
         const progSpr = sb.add({
             __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
             node: rf(progN), _enabled: true, __prefab: null,
@@ -3157,7 +4321,7 @@ function generate() {
     sb.e[toastOvN]._children = toastSlotIndices.map(rf);
     // _active stays true — overlay container is always on, individual slots toggle.
 
-    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(countdownN), rf(signingN), rf(luN), rf(npN), rf(toastOvN)];
+    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(fxN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(jcN), rf(countdownN), rf(signingN), rf(loadingN), rf(luN), rf(npN), rf(toastOvN)];
     sb.e[canvas]._components = [rf(cUT), rf(cCV), rf(cWG), rf(appUI)];
 
     // Scene Globals

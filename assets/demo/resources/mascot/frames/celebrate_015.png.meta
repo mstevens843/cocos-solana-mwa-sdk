@@ -42,11 +42,11 @@
         "trimThreshold": 1,
         "rotated": false,
         "offsetX": 0,
-        "offsetY": 0,
-        "trimX": 0,
-        "trimY": 0,
-        "width": 384,
-        "height": 384,
+        "offsetY": 0.5,
+        "trimX": 108,
+        "trimY": 93,
+        "width": 168,
+        "height": 197,
         "rawWidth": 384,
         "rawHeight": 384,
         "borderTop": 0,
@@ -60,17 +60,17 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -192,
-            -192,
+            -84,
+            -98.5,
             0,
-            192,
-            -192,
+            84,
+            -98.5,
             0,
-            -192,
-            192,
+            -84,
+            98.5,
             0,
-            192,
-            192,
+            84,
+            98.5,
             0
           ],
           "indexes": [
@@ -82,33 +82,33 @@
             3
           ],
           "uv": [
-            0,
-            384,
-            384,
-            384,
-            0,
-            0,
-            384,
-            0
+            108,
+            291,
+            276,
+            291,
+            108,
+            94,
+            276,
+            94
           ],
           "nuv": [
-            0,
-            0,
-            1,
-            0,
-            0,
-            1,
-            1,
-            1
+            0.28125,
+            0.24479166666666666,
+            0.71875,
+            0.24479166666666666,
+            0.28125,
+            0.7578125,
+            0.71875,
+            0.7578125
           ],
           "minPos": [
-            -192,
-            -192,
+            -84,
+            -98.5,
             0
           ],
           "maxPos": [
-            192,
-            192,
+            84,
+            98.5,
             0
           ]
         },
@@ -128,7 +128,7 @@
   "userData": {
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
-    "hasAlpha": false,
+    "hasAlpha": true,
     "redirect": "22befa13-0d31-4b01-9868-e3970fb46257@6c48a"
   }
 }

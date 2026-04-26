@@ -54,6 +54,34 @@ export const Palette = {
         subtleHex: '#FFFFFF14',  // 8% alpha
         strongHex: '#FFFFFF29',  // 16% alpha
     },
+    // Phase 14 (B4) — card edge-accent palette.
+    cardEdge: {
+        amber:    [255, 210, 74],
+        amberW:   [255, 180, 84],
+        teal:     [20, 241, 149],
+        violet:   [153, 69, 255],
+        gold:     [255, 210, 74],
+        blue:     [56, 148, 252],
+        slate:    [93, 100, 133],
+        edgeAlpha:        255,
+        edgeThicknessPx:  4,
+    },
+    // Phase 13 (B3) — premium button bevel + halo alphas.
+    btn: {
+        bevelTopAlpha:    52,
+        bevelBottomAlpha: 46,
+        glowAlpha:        80,
+        glowPaddingPx:    12,
+    },
+    // Phase 12 (B1+B2) — neon-trading background polish.
+    glow: {
+        violet:   '#9945FF3C',
+        teal:     '#14F19532',
+        amber:    '#FFB45416',
+        starFar:  '#FFFFFF40',
+        starMid:  '#FFFFFF96',
+        starNear: '#FFFFFFC8',
+    },
 } as const;
 
 /* ── Spacing / Radii ──────────────────────────────────────────────────── */

@@ -91,17 +91,14 @@ export class IconLibrary {
             return;
         }
 
-        // Phase 1 path: procedural draw via cc.Graphics.
-        try {
-            removeAll(node, [Sprite, Label]);
-            const g = node.getComponent(Graphics) ?? node.addComponent(Graphics);
-            g.clear();
-            const tint = colorFromHex(opts.tintHex ?? def.tintHex);
-            def.draw(g, size, tint);
-        } catch (e) {
-            console.log(`${TAG} attach | DRAW_FAIL icon=${name} err=${e} → fallback emoji`);
-            attachEmoji(node, opts.fallbackEmoji ?? def.emoji, size);
-        }
+        // Phase 1 path: SKIP runtime-added cc.Graphics. Cocos 3.8.8 native
+        // renderer SIGSEGVs at offset 0x28 in UIModelProxy::activeSubModels
+        // when a Graphics is added to a Node at runtime and the first DRAW
+        // walk hits it before the RenderEntity userData is populated. Phase 3
+        // re-calls _attachStaticIconBadges once PNG SpriteFrames are loaded
+        // (~100ms after launch); icons render via Sprite path then. Until
+        // then, the badge node stays empty (no render component → no crash).
+        console.log(`${TAG} attach | NO_PNG_YET icon=${name} — skipping Graphics fallback (Phase 3 will swap to Sprite)`);
     }
 
     /** Phase 3 hook: register a PNG sprite frame for `name`. */

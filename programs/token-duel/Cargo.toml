@@ -1,6 +1,6 @@
 [package]
 name = "token-duel"
-version = "0.1.0"
+version = "0.2.0"
 description = "Token Duel — Anchor program for the Cocos Solana MWA demo"
 edition = "2021"
 
