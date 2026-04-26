@@ -31,6 +31,10 @@ ENV NODE_ENV=production
 COPY backend/package.json backend/package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/backend/dist ./dist
+# DB Stage 1 — ship migration SQL files so runMigrations() can read them on
+# startup. resolveMigrationsDir() in src/migrate.ts looks at $cwd/migrations
+# first, which is /app/backend/migrations once WORKDIR is set.
+COPY backend/migrations ./migrations
 
 # Render sets $PORT; default 3000 for local docker run.
 EXPOSE 3000
