@@ -89,10 +89,10 @@ export async function postPaperXpDelta(
             console.log(`${TAG} postPaperXpDelta | HTTP ${res.status} body="${txt.slice(0, 120)}"`);
             return;
         }
-        const body = (await res.json()) as PaperXpResponse;
+        const parsed = (await res.json()) as PaperXpResponse;
         // Refresh local cache so chip picks up the new total on next read.
-        cache.set(pubkey, { value: body, expires: Date.now() + TTL_MS });
-        console.log(`${TAG} postPaperXpDelta | OK pubkey=${pubkey.slice(0, 8)}… +${deltaXp} XP track=${track} total=${body.totalXp}`);
+        cache.set(pubkey, { value: parsed, expires: Date.now() + TTL_MS });
+        console.log(`${TAG} postPaperXpDelta | OK pubkey=${pubkey.slice(0, 8)}… +${deltaXp} XP track=${track} total=${parsed.totalXp}`);
     } catch (e) {
         console.log(`${TAG} postPaperXpDelta | NET_ERR ${e}`);
     }

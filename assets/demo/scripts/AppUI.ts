@@ -7662,7 +7662,13 @@ export class AppUI extends Component {
 
             // Logo.
             const logo = this._feedRowLogoSprites[i];
-            if (logo?.node) logo.node.active = true;
+            if (logo?.node) {
+                logo.node.active = true;
+                // Defensive: re-assert 2.5x hero size in case scene cache lags.
+                // Mirrors LayoutSpec.cjs feedRow.logo.{w,h}.
+                const logoUT = logo.node.getComponent(UITransform);
+                if (logoUT) logoUT.setContentSize(220, 220);
+            }
             this._loadLogoInto(logo, row.logoUri);
 
             // Top line: ticker bold.
