@@ -3484,7 +3484,7 @@ export class AppUI extends Component {
      * named procedural icon. Used to replace emoji prefixes on persistent UI
      * labels (Daily Streak, Tournament Badge, Wager value, etc.). Idempotent.
      */
-    private _ensureIconBadge(parentNode: Node | null, iconName: IconName, opts: { size?: number; offsetX?: number; offsetY?: number } = {}): Node | null {
+    private _ensureIconBadge(parentNode: Node | null, iconName: IconName, opts: { size?: number; offsetX?: number; offsetY?: number; tintHex?: string } = {}): Node | null {
         if (!parentNode) return null;
         const size = opts.size ?? 22;
         let badge = parentNode.getChildByName('IconBadge');
@@ -3493,7 +3493,7 @@ export class AppUI extends Component {
             badge.parent = parentNode;
         }
         badge.setPosition(opts.offsetX ?? 0, opts.offsetY ?? 0, 0);
-        IconLibrary.attach(badge, iconName, { size });
+        IconLibrary.attach(badge, iconName, { size, tintHex: opts.tintHex });
         return badge;
     }
 
@@ -3733,14 +3733,21 @@ export class AppUI extends Component {
             }
         }
 
-        // Feed tab dropdown rows (6 rows) — per-row icons.
-        const tabIcon: Record<string, IconName> = {
-            new: 'bolt', trending: 'flame', gainers: 'chart',
-            volume: 'chart', smart: 'brain', watchlist: 'star',
+        // Feed tab dropdown rows (6 rows) — per-row icons. solpulse parity:
+        // FEED_OPTIONS in solpulse/.../NewPairsFeed.jsx:102-107 maps each tab
+        // to a Lucide icon + Tailwind text-* color. Mirror those colors here.
+        const tabIconSpec: Record<string, { icon: IconName; tintHex: string }> = {
+            new:       { icon: 'bolt',    tintHex: '#34D399' }, // emerald-400 (Zap)
+            trending:  { icon: 'flame',   tintHex: '#FB923C' }, // orange-400 (Flame)
+            gainers:   { icon: 'arrowUp', tintHex: '#FBBF24' }, // amber-400 (TrendingUp)
+            volume:    { icon: 'chart',   tintHex: '#A78BFA' }, // violet-400 (BarChart3)
+            smart:     { icon: 'brain',   tintHex: '#22D3EE' }, // cyan-400 (Brain)
+            watchlist: { icon: 'star',    tintHex: '#FBBF24' }, // amber-400 (Star)
         };
-        for (const key of Object.keys(tabIcon)) {
+        for (const key of Object.keys(tabIconSpec)) {
             const optN = this._tokenDuelPanel?.getChildByName(`FeedTabOption_${key}`);
-            if (optN) this._ensureIconBadge(optN, tabIcon[key], { size: 22, offsetX: -90 });
+            const spec = tabIconSpec[key];
+            if (optN) this._ensureIconBadge(optN, spec.icon, { size: 44, offsetX: -90, tintHex: spec.tintHex });
         }
 
         console.log(`${TAG} _attachStaticIconBadges | bound ${defs.length} + preset 5 + feed_tab 6`);
