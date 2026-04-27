@@ -4717,7 +4717,7 @@ function generate() {
     const stWalletCardUT = sb.ut(stWalletCard, SP.walletCard.w, SP.walletCard.h);
     const stWalletCardSpr = sb.spr(stWalletCard, 24, 30, 48);
 
-    const stWalletHeader = mkLabel(sb, 'HeaderLabel', stWalletCard, 'WALLET', 11,
+    const stWalletHeader = mkLabel(sb, 'HeaderLabel', stWalletCard, 'WALLET', 14,
         WC.header.y, WC.header.w, WC.header.h, 140, 150, 170);
     sb.e[stWalletHeader]._lpos = v3(WC.header.x, WC.header.y, 0);
     sb.e[sb.e[stWalletHeader]._components[1].__id__]._horizontalAlign = 0;
@@ -4730,7 +4730,7 @@ function generate() {
     sb.e[stWalletDotN]._components = [rf(stWalletDotUT), rf(stWalletDotSpr)];
 
     // Secondary "Connected · {wallet}" — 12px mid-text.
-    const stWalletName = mkLabel(sb, 'WalletNameLabel', stWalletCard, 'Not connected', 12,
+    const stWalletName = mkLabel(sb, 'WalletNameLabel', stWalletCard, 'Not connected', 14,
         WC.walletName.y, WC.walletName.w, WC.walletName.h, 168, 174, 201);
     sb.e[stWalletName]._lpos = v3(WC.walletName.x, WC.walletName.y, 0);
     sb.e[sb.e[stWalletName]._components[1].__id__]._horizontalAlign = 0;
@@ -4784,13 +4784,13 @@ function generate() {
     sb.node('ProfileCard', stN, [], [], v3(SP.profileCard.x, SP.profileCard.y, 0));
     const stProfileCardUT = sb.ut(stProfileCard, SP.profileCard.w, SP.profileCard.h);
     const stProfileCardSpr = sb.spr(stProfileCard, 24, 30, 48);
-    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 11,
+    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 14,
         PC.header.y, PC.header.w, PC.header.h, 140, 150, 170);
     sb.e[stProfileHeader]._lpos = v3(PC.header.x, PC.header.y, 0);
     sb.e[sb.e[stProfileHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stProfileHeader, { spacing: 1 });
 
-    const stUsernameLabel = mkLabel(sb, 'UsernameLabel', stProfileCard, 'Username', 11,
+    const stUsernameLabel = mkLabel(sb, 'UsernameLabel', stProfileCard, 'Username', 14,
         PC.usernameLabel.y, PC.usernameLabel.w, PC.usernameLabel.h, 168, 174, 201);
     sb.e[stUsernameLabel]._lpos = v3(PC.usernameLabel.x, PC.usernameLabel.y, 0);
     sb.e[sb.e[stUsernameLabel]._components[1].__id__]._horizontalAlign = 0;
@@ -4811,10 +4811,10 @@ function generate() {
     sb.e[stUsernameFocusRing]._components.push(rf(focusRingOpacityIdx));
 
     const stUsername = mkEditBox(sb, 'UsernameEditBox', stProfileCard, 'Enter username',
-        PC.username.x, PC.username.y, PC.username.w, PC.username.h, 17);
+        PC.username.x, PC.username.y, PC.username.w, PC.username.h, 22);
     const stUsernameSaved = mkLabel(sb, 'UsernameSaveLabel', stProfileCard, '', 12,
         PC.usernameSaved.y, PC.usernameSaved.w, PC.usernameSaved.h, 48, 198, 155);
-    const stUsernameHelp = mkLabel(sb, 'UsernameHelpLabel', stProfileCard, 'Displayed on leaderboard and results.', 11,
+    const stUsernameHelp = mkLabel(sb, 'UsernameHelpLabel', stProfileCard, 'Displayed on leaderboard and results.', 13,
         PC.usernameHelp.y, PC.usernameHelp.w, PC.usernameHelp.h, 130, 140, 160);
     const stProfileEdge = mkCardTopHairline(stProfileCard, SP.profileCard.w, SP.profileCard.h);
     sb.e[stProfileCard]._components = [rf(stProfileCardUT), rf(stProfileCardSpr)];
@@ -4833,7 +4833,7 @@ function generate() {
     sb.node('QuickPlayDefaultsCard', stN, [], [], v3(SP.quickPlayCard.x, SP.quickPlayCard.y, 0));
     const stQpUT = sb.ut(stQpCardN, SP.quickPlayCard.w, SP.quickPlayCard.h);
     const stQpSpr = sb.spr(stQpCardN, 24, 30, 48);
-    const stQpHeader = mkLabel(sb, 'HeaderLabel', stQpCardN, 'DEFAULT MATCH SETTINGS', 11,
+    const stQpHeader = mkLabel(sb, 'HeaderLabel', stQpCardN, 'DEFAULT MATCH SETTINGS', 14,
         QPC.header.y, QPC.header.w, QPC.header.h, 140, 150, 170);
     sb.e[stQpHeader]._lpos = v3(QPC.header.x, QPC.header.y, 0);
     sb.e[sb.e[stQpHeader]._components[1].__id__]._horizontalAlign = 0;
@@ -4849,13 +4849,13 @@ function generate() {
         const spr = sb.spr(rowN, 28, 34, 48);
         const btn = sb.btn(rowN, 28, 34, 48);
         const keySp = rowSpec.children.keyLabel;
-        const keyN = mkLabel(sb, `${name}KeyLabel`, rowN, keyText, 13,
+        const keyN = mkLabel(sb, `${name}KeyLabel`, rowN, keyText, 16,
             keySp.y, keySp.w, keySp.h, 140, 150, 170);
         sb.e[keyN]._lpos = v3(keySp.x, keySp.y, 0);
         sb.e[sb.e[keyN]._components[1].__id__]._horizontalAlign = 0;
         style(sb, keyN, { spacing: 1 });
         const valSp = rowSpec.children.valueLabel;
-        const valN = mkLabel(sb, `${name}ValueLabel`, rowN, valueText, 16,
+        const valN = mkLabel(sb, `${name}ValueLabel`, rowN, valueText, 18,
             valSp.y, valSp.w, valSp.h, 230, 235, 245);
         sb.e[valN]._lpos = v3(valSp.x, valSp.y, 0);
         sb.e[sb.e[valN]._components[1].__id__]._horizontalAlign = 2;
@@ -4876,7 +4876,7 @@ function generate() {
     // a 320×44 group with a sliding indicator behind Paper/Real labels +
     // invisible hit areas. Phase 29: TRACK → TRADING MODE.
     const trkSpc = QPC.qpTrackRow;
-    const stQpTrackKey = mkLabel(sb, 'QPTrackKeyLabel', stQpCardN, 'TRADING MODE', 13,
+    const stQpTrackKey = mkLabel(sb, 'QPTrackKeyLabel', stQpCardN, 'TRADING MODE', 16,
         trkSpc.y, trkSpc.w, trkSpc.h, 140, 150, 170);
     sb.e[stQpTrackKey]._lpos = v3(trkSpc.x, trkSpc.y, 0);
     sb.e[sb.e[stQpTrackKey]._components[1].__id__]._horizontalAlign = 0;
@@ -4983,7 +4983,7 @@ function generate() {
     sb.node('AudioSettingsCard', stN, [], [], v3(SP.audioCard.x, SP.audioCard.y, 0));
     const stAudioUT = sb.ut(stAudioCardN, SP.audioCard.w, SP.audioCard.h);
     const stAudioSpr = sb.spr(stAudioCardN, 24, 30, 48);
-    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'PREFERENCES', 11,
+    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'PREFERENCES', 14,
         AC.header.y, AC.header.w, AC.header.h, 140, 150, 170);
     sb.e[stAudioHeader]._lpos = v3(AC.header.x, AC.header.y, 0);
     sb.e[sb.e[stAudioHeader]._components[1].__id__]._horizontalAlign = 0;
@@ -5067,19 +5067,19 @@ function generate() {
     sb.node('AccountSettingsCard', stN, [], [], v3(SP.accountCard.x, SP.accountCard.y, 0));
     const stAccountUT = sb.ut(stAccountCardN, SP.accountCard.w, SP.accountCard.h);
     const stAccountSpr = sb.spr(stAccountCardN, 24, 30, 48);
-    const stAccountHeader = mkLabel(sb, 'HeaderLabel', stAccountCardN, 'ACCOUNT', 11,
+    const stAccountHeader = mkLabel(sb, 'HeaderLabel', stAccountCardN, 'ACCOUNT', 14,
         ACC.header.y, ACC.header.w, ACC.header.h, 140, 150, 170);
     sb.e[stAccountHeader]._lpos = v3(ACC.header.x, ACC.header.y, 0);
     sb.e[sb.e[stAccountHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stAccountHeader, { spacing: 1 });
 
-    const stAccountGeneral = mkLabel(sb, 'AccountGeneralGroupLabel', stAccountCardN, 'GENERAL', 10,
+    const stAccountGeneral = mkLabel(sb, 'AccountGeneralGroupLabel', stAccountCardN, 'GENERAL', 12,
         ACC.generalGroupLabel.y, ACC.generalGroupLabel.w, ACC.generalGroupLabel.h, 93, 100, 133);
     sb.e[stAccountGeneral]._lpos = v3(ACC.generalGroupLabel.x, ACC.generalGroupLabel.y, 0);
     sb.e[sb.e[stAccountGeneral]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stAccountGeneral, { spacing: 1 });
 
-    const stAccountSession = mkLabel(sb, 'AccountSessionGroupLabel', stAccountCardN, 'SESSION', 10,
+    const stAccountSession = mkLabel(sb, 'AccountSessionGroupLabel', stAccountCardN, 'SESSION', 12,
         ACC.sessionGroupLabel.y, ACC.sessionGroupLabel.w, ACC.sessionGroupLabel.h, 93, 100, 133);
     sb.e[stAccountSession]._lpos = v3(ACC.sessionGroupLabel.x, ACC.sessionGroupLabel.y, 0);
     sb.e[sb.e[stAccountSession]._components[1].__id__]._horizontalAlign = 0;

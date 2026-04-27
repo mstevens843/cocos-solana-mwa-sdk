@@ -1849,9 +1849,14 @@ const LayoutSpec = {
             //   Top line (y=36):    [Avatar 150x150] [SYMBOL bold]   [Score]   [+24H% color]
             //   Bottom line (y=-30):                  [name·mint muted]  [Liq] [Vol]   [Price]
             feedRow: {
-                count: 20, w: 688, h: 240,
-                baseY: -120, gapY: -244,
-                selectedEdge: { x: -334, y: 0,   w: 5,   h: 232, notes: 'left teal stripe' },
+                // 2026-04-27 — row height +25% (240 → 300) per user request.
+                // baseY shifted so first row TOP stays at content origin
+                // y=0; gapY adjusted to preserve the 4-px between-row gap.
+                // Child y values inside the row are unchanged — extra 60
+                // units distribute as padding above + below the content.
+                count: 20, w: 688, h: 300,
+                baseY: -150, gapY: -304,
+                selectedEdge: { x: -334, y: 0,   w: 5,   h: 292, notes: 'left teal stripe — h scales with row' },
                 checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
                 checkmark:    { x: 0,    y: 1,   w: 22,  h: 22 },
                 logo:         { x: -253, y: 0,   w: 220, h: 220, notes: '2.5x hero icon — was 90×90' },
