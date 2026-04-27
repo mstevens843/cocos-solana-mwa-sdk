@@ -4493,6 +4493,16 @@ export class AppUI extends Component {
     private _onGameOver(height: number, deltas: Record<string, number>): void {
         console.log(`${TAG} onGameOver | height=${height} deltas=${JSON.stringify(deltas)}`);
         this._sessionDeltas = deltas;
+        // 2026-04-27 (DB Stage 8) — Snapshot the in-flight local match BEFORE
+        // _clearCurrentLocalMatch() drops the entry, so the paper-bot branch
+        // below can POST a paper_match_history row using its synthetic id +
+        // started_at + final heights. Saved fields are read at most once
+        // by the history POST closure and ignored otherwise.
+        const savedLocalPda = this._currentLocalMatchPda;
+        const savedLocal = savedLocalPda
+            ? this._localActiveMatches.find((m) => m.pda === savedLocalPda) ?? null
+            : null;
+        const savedTrack: 'bot' | 'paper-real' = this._pickerBotMode ? 'bot' : 'paper-real';
         // 2026-04-27 — Local race ended (settle / forfeit / natural finish).
         // Drop it from MIP. No-op for real matches (no local entry was registered).
         this._clearCurrentLocalMatch();
@@ -4691,6 +4701,43 @@ export class AppUI extends Component {
                         await postPaperXpDelta(myPubkey, outcome.xpGained, 'bot', outcome.playerWon);
                     } catch (e) {
                         console.log(`${TAG} paper_xp_post_err | ${e}`);
+                    }
+                })();
+            }
+            // 2026-04-27 (DB Stage 8) — persist per-match history for signed-in
+            // users so a future "Match History" UI can list every paper / bot
+            // match they've finished. Synthetic id matches the paper_match_active
+            // row we just deleted, so a single id traces both states.
+            if (myPubkey && !this._isGuest() && savedLocalPda && savedLocal) {
+                const finalHeights = savedLocal.heights;
+                const winnerIdx = finalHeights.indexOf(Math.max(...finalHeights));
+                const winnerPubkey = winnerIdx >= 0 && finalHeights[winnerIdx] > 0
+                    ? savedLocal.players[winnerIdx]
+                    : null;
+                const startedAtIso = new Date(Number(savedLocal.startedAt) * 1000).toISOString();
+                (async () => {
+                    try {
+                        const { postPaperMatchHistory } = await import('../../token-duel/scripts/PaperMatchHistoryRpc');
+                        await postPaperMatchHistory({
+                            id: savedLocalPda,
+                            pubkey: myPubkey,
+                            modeU8: MODES[modeId as keyof typeof MODES]?.modeU8 ?? 0,
+                            timeWindow: TIME_WINDOWS[this._pickerSelectedWindow]?.windowU8 ?? 0,
+                            requiredPlayers: MODES[modeId as keyof typeof MODES]?.requiredPlayers ?? 2,
+                            track: savedTrack,
+                            players: savedLocal.players.slice(),
+                            heights: finalHeights.slice(),
+                            myHeight: height,
+                            winnerPubkey,
+                            placement: outcome.placement ?? 0,
+                            totalPlayers: outcome.totalPlayers ?? (MODES[modeId as keyof typeof MODES]?.requiredPlayers ?? 2),
+                            won: outcome.playerWon,
+                            xpGained: outcome.xpGained,
+                            startedAt: startedAtIso,
+                            settledAt: new Date().toISOString(),
+                        });
+                    } catch (e) {
+                        console.log(`${TAG} paper_match_history_post_err | ${e}`);
                     }
                 })();
             }
@@ -11159,16 +11206,19 @@ export class AppUI extends Component {
             }
             // DB Stage 3 — paper/bot XP from backend table; falls back to local
             // Stats when backend unreachable (offline play, network blip).
+            // Local Stats is the per-device source of truth (see PaperXpRpc.ts
+            // header comment). The backend mirror lags by one fire-and-forget
+            // POST, so we must never let a stale remote value pull the
+            // displayed total backwards on a freshly-completed match.
+            const localStatsXp = Stats.load('paper').xp ?? 0;
             try {
                 const { fetchPaperXp } = await import('../../token-duel/scripts/PaperXpRpc');
                 const remote = await fetchPaperXp(pubkey);
-                if (remote) {
-                    localXp = remote.totalXp;
-                } else {
-                    localXp = Stats.load('paper').xp ?? 0;
-                }
+                localXp = remote
+                    ? Math.max(localStatsXp, Number(remote.totalXp) || 0)
+                    : localStatsXp;
             } catch (e) {
-                localXp = Stats.load('paper').xp ?? 0;
+                localXp = localStatsXp;
                 console.log(`${TAG} _refreshLevelChip | paper_xp_read_err ${e} — using local fallback`);
             }
         }

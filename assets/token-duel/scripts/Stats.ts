@@ -1,7 +1,7 @@
 /**
  * Stats.ts — per-mode game statistics.
  *
- * Paper mode → localStorage (key: `tokenduel:paper-stats`).
+ * Paper mode → sys.localStorage (key: `tokenduel:paper-stats`).
  * Real  mode → stub for Session D on-chain UserStats PDA.
  *
  * Schema:
@@ -13,6 +13,8 @@
  *   Stats.clear(mode)
  */
 
+import { sys } from 'cc';
+
 export type StatsMode = 'paper' | 'real';
 
 export interface StatsRecord {
@@ -23,12 +25,28 @@ export interface StatsRecord {
     xp: number;
 }
 
+interface KVStorage {
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
+    removeItem(key: string): void;
+}
+
 const TAG = '[Stats]';
 const EMPTY: StatsRecord = { games: 0, wins: 0, losses: 0, profitLamports: 0, xp: 0 };
 const PAPER_KEY = 'tokenduel:paper-stats';
 
-function safeStorage(): Storage | null {
-    try { if (typeof localStorage !== 'undefined') return localStorage; } catch (_) { /* blocked */ }
+// Cocos sys.localStorage is SQLite-backed on native (Android/iOS) and
+// LocalStorage on Web. Plain `localStorage` is undefined on native, which
+// is why every paper-stats write was silently lost — see AuthCache.ts:5.
+function safeStorage(): KVStorage | null {
+    try {
+        const s = (sys as any)?.localStorage as KVStorage | undefined;
+        if (s && typeof s.getItem === 'function') return s;
+    } catch (_) { /* native shim not yet ready */ }
+    try {
+        const g = (globalThis as any).localStorage as KVStorage | undefined;
+        if (g && typeof g.getItem === 'function') return g;
+    } catch (_) { /* blocked */ }
     return null;
 }
 

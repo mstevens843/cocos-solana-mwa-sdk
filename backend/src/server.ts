@@ -42,6 +42,11 @@ import {
     deleteActive as deletePaperMatch,
     listActiveForUser as listPaperMatchesForUser,
 } from './paper_match_active';
+import {
+    recordPaperMatch as recordPaperMatchHistory,
+    listForUser as listPaperMatchHistoryForUser,
+    type PaperMatchHistoryRecord,
+} from './paper_match_history';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { PROGRAM_ID } from '../../assets/token-duel/scripts/constants';
 import * as path from 'path';
@@ -362,6 +367,86 @@ app.get('/paper-match/active/:pubkey', async (req: Request, res: Response) => {
         return res.json({ rows });
     } catch (e: any) {
         console.log(`${TAG} GET /paper-match/active/:pubkey error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 8 — paper / bot finished match per-match history. Signed-in users
+// post here on settle / forfeit so a "Match History" UI can show their full
+// off-chain history (mode, window, track, placement, XP earned). Guests skip.
+app.post('/paper-match/history', async (req: Request, res: Response) => {
+    try {
+        const body = req.body as Partial<PaperMatchHistoryRecord>;
+        if (!body || typeof body.id !== 'string' || body.id.length < 4) {
+            return res.status(400).json({ error: 'id required' });
+        }
+        if (typeof body.pubkey !== 'string' || body.pubkey.length < 32) {
+            return res.status(400).json({ error: 'pubkey required' });
+        }
+        try { new PublicKey(body.pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        if (typeof body.modeU8 !== 'number' || body.modeU8 < 0 || body.modeU8 > 3) {
+            return res.status(400).json({ error: 'modeU8 must be 0..3' });
+        }
+        if (typeof body.timeWindow !== 'number' || body.timeWindow < 0 || body.timeWindow > 5) {
+            return res.status(400).json({ error: 'timeWindow must be 0..5' });
+        }
+        if (typeof body.requiredPlayers !== 'number' || body.requiredPlayers < 2 || body.requiredPlayers > 8) {
+            return res.status(400).json({ error: 'requiredPlayers must be 2..8' });
+        }
+        if (body.track !== 'bot' && body.track !== 'paper-real') {
+            return res.status(400).json({ error: "track must be 'bot' or 'paper-real'" });
+        }
+        if (!Array.isArray(body.players) || !Array.isArray(body.heights)) {
+            return res.status(400).json({ error: 'players[] and heights[] required' });
+        }
+        if (body.players.length !== body.heights.length) {
+            return res.status(400).json({ error: 'players/heights length mismatch' });
+        }
+        if (typeof body.myHeight !== 'number' || typeof body.placement !== 'number'
+            || typeof body.totalPlayers !== 'number' || typeof body.won !== 'boolean'
+            || typeof body.xpGained !== 'number') {
+            return res.status(400).json({ error: 'myHeight/placement/totalPlayers/won/xpGained required' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+
+        const result = await recordPaperMatchHistory({
+            id: body.id,
+            pubkey: body.pubkey,
+            modeU8: body.modeU8,
+            timeWindow: body.timeWindow,
+            requiredPlayers: body.requiredPlayers,
+            track: body.track,
+            players: body.players,
+            heights: body.heights,
+            myHeight: body.myHeight,
+            winnerPubkey: body.winnerPubkey ?? null,
+            placement: body.placement,
+            totalPlayers: body.totalPlayers,
+            won: body.won,
+            xpGained: body.xpGained,
+            startedAt: body.startedAt ?? new Date().toISOString(),
+            settledAt: body.settledAt ?? new Date().toISOString(),
+        });
+        return res.json({ ok: true, ...result });
+    } catch (e: any) {
+        console.log(`${TAG} POST /paper-match/history error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.get('/paper-match/history/:pubkey', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey ?? '';
+        try { new PublicKey(pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        const limit = Number.parseInt(String(req.query.limit ?? '50'), 10);
+        const offset = Number.parseInt(String(req.query.offset ?? '0'), 10);
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const rows = await listPaperMatchHistoryForUser(pubkey, limit, offset);
+        return res.json({ rows });
+    } catch (e: any) {
+        console.log(`${TAG} GET /paper-match/history/:pubkey error | ${e?.message ?? e}`);
         return res.status(500).json({ error: e?.message ?? 'internal error' });
     }
 });
