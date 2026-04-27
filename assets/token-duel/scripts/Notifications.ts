@@ -291,7 +291,13 @@ export class NotificationStore {
                     // dismissed is currently device-local (no server column for it on this route);
                     // preserve local value if any.
                     dismissedAt: existing?.dismissedAt ?? null,
-                    quietToast: existing?.quietToast,
+                    // Hydrated entries are historical by definition — silence their
+                    // toast so they don't fire over the home on every reconnect.
+                    // The backend doesn't persist quietToast (no column), so we'd
+                    // otherwise re-toast every level_up / payout / match_settled
+                    // every cold start. Local entries (still-fresh toast in flight)
+                    // keep whatever flag they had.
+                    quietToast: existing?.quietToast ?? true,
                 };
                 localById.set(ev.id, merged);
             }

@@ -4653,8 +4653,13 @@ export class AppUI extends Component {
             (async () => {
                 const pubkey = MWAManager.instance?.connectedPubkey ?? '';
                 const preStats = pubkey ? await loadRealStats(this._tdRpc, pubkey) : null;
-                const previousLevel = preStats?.level ?? 0;
-                const previousXp = preStats?.xp ?? 0;
+                // Keep these undefined when preStats is null so _readRealMatchResult's
+                // `previousLevel ?? stats.level` fallback (AppUI.ts:10714) kicks in and
+                // suppresses a phantom level-up cinematic. Falling back to 0 here would
+                // make `leveledUp = (stats.level > 0) = true` for any user with any
+                // level, even on their first real match.
+                const previousLevel: number | undefined = preStats?.level;
+                const previousXp: number | undefined = preStats?.xp;
 
                 const ok = await this._submitSettleMatch(matchPda, height);
                 if (!ok) {
@@ -4667,14 +4672,16 @@ export class AppUI extends Component {
                 const result = await this._readRealMatchResult(matchPda, previousLevel, previousXp);
                 if (!result) {
                     // Other player hasn't settled yet. Show a partial PostMatchPanel.
+                    const fallbackLevel = previousLevel ?? 1;
+                    const fallbackXp = previousXp ?? 0;
                     this._showPostMatchPanel({
                         won: false,
                         playerHeight: height,
                         opponentHeight: 0,
                         xpGained: 0,
-                        newLevel: previousLevel,
-                        previousLevel,
-                        totalXp: previousXp,
+                        newLevel: fallbackLevel,
+                        previousLevel: fallbackLevel,
+                        totalXp: fallbackXp,
                         payoutLamports: 0,
                         track: 'real',
                     });
@@ -8114,7 +8121,7 @@ export class AppUI extends Component {
                 symLbl.color = targeted
                     ? new Color(48, 198, 155, 255)   // bright emerald when targeted
                     : new Color(168, 230, 200, 255); // mint when idle
-                symLbl.fontSize = 18;
+                symLbl.fontSize = 32;
                 if (dltLbl) { dltLbl.string = ''; dltLbl.node.active = false; }
                 if (logo) { logo.spriteFrame = null; logo.node.active = false; }
                 if (removeBtn) removeBtn.active = false;
@@ -8131,7 +8138,7 @@ export class AppUI extends Component {
                 const pctStr = Number.isFinite(d) && d !== 0 ? `${sign}${d.toFixed(1)}%` : '—';
                 symLbl.string = slot.symbol ?? '?';
                 symLbl.color = new Color(240, 242, 250, 255);
-                symLbl.fontSize = 18;
+                symLbl.fontSize = 32;
                 if (dltLbl) {
                     dltLbl.string = pctStr;
                     dltLbl.color = d > 0

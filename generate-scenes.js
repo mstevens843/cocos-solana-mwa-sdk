@@ -6082,7 +6082,11 @@ function generate() {
     const npN = sb.e.length;
     sb.node('NotificationPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     const npUT = sb.ut(npN, 720, 1280);
-    // Full-panel backdrop sprite — tap-outside-to-dismiss surface, semi-transparent.
+    // Full-panel backdrop sprite — tap-outside-to-dismiss surface, fully
+    // opaque (matches NotifPanelCard color so the whole panel reads as one
+    // solid dark-slate surface). 2026-04-27: bumped from cl(0,0,0,140) scrim
+    // to solid Palette.bg.primary after device-test feedback that the home
+    // bleeding through the left ~33% looked broken.
     const npBackdropBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(npN), _enabled: true, __prefab: null,
@@ -6095,7 +6099,7 @@ function generate() {
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(npN), _enabled: true, __prefab: null,
         _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(0, 0, 0, 140),
+        _color: cl(11, 14, 26, 255), // Palette.bg.primary — match NotifPanelCard
         _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
         _type: 1, _fillType: 0, _sizeMode: 0,
         _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
