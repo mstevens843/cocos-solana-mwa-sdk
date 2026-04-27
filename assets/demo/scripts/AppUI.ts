@@ -725,6 +725,24 @@ export class AppUI extends Component {
     /** Home-screen FindMatch button live count badge + label + 2nd subscription. */
     private _findMatchCountBadge: Node | null = null;
     private _findMatchCountBadgeLabel: Label | null = null;
+
+    // 2026-04-27 — Matches In Progress panel + HomePanel CTA bindings.
+    private _mipPanel: Node = null!;
+    private _mipRowNodes: Node[] = [];
+    private _mipRingGraphics: Graphics[] = [];
+    private _mipWinLineLabels: Label[] = [];
+    private _mipWindowLineLabels: Label[] = [];
+    private _mipStakeChipLabels: Label[] = [];
+    private _mipOpponentChipLabels: Label[] = [];
+    private _mipTimeLabels: Label[] = [];
+    private _mipTapButtons: Button[] = [];
+    private _mipEmptyState: Node | null = null;
+    private _mipSubtitleLabel: Label | null = null;
+    private _mipMatches: MatchState[] = [];
+    private _mipTickHandle: number | null = null;
+    private _matchesInProgressCountBadge: Node | null = null;
+    private _matchesInProgressCountLabel: Label | null = null;
+    private _matchesInProgressSubtitleLabel: Label | null = null;
     private _findMatchCountUnsubscribe: (() => void) | null = null;
     private _findMatchCountLastValue: number = 0;
     /** Phase A2 — FindMatchPanel polish: Lv/XP chip + empty-state cluster + per-row edge stripes + capacity bars. */
@@ -939,6 +957,7 @@ export class AppUI extends Component {
         this._landingPanel = this.node.getChildByName('LandingPanel')!;
         this._homePanel = this.node.getChildByName('HomePanel')!;
         this._tokenDuelPanel = this.node.getChildByName('TokenDuelPanel')!;
+        this._mipPanel = this.node.getChildByName('MatchesInProgressPanel')!;
 
         if (!this._landingPanel || !this._homePanel || !this._tokenDuelPanel) {
             console.log(`${TAG} start | FAIL panels not found landing=${!!this._landingPanel} home=${!!this._homePanel} tokenDuel=${!!this._tokenDuelPanel}`);
@@ -987,11 +1006,13 @@ export class AppUI extends Component {
         const homeBtnNames = [
             'StartMatchButton',
             'FindMatchButton',
+            'MatchesInProgressButton',
             'BotMatchButton',
         ];
         const homeHandlers = [
             this._onStartMatch,
             this._showFindMatchPanel,
+            this._showMatchesInProgressPanel,
             this._onBotMatch,
         ];
 
@@ -2376,6 +2397,55 @@ export class AppUI extends Component {
             console.log(`${TAG} start | FindMatchButton wired=true count_badge=true`);
         }
 
+        // ── 2026-04-27 — MatchesInProgress count badge + subtitle on Home ──
+        this._matchesInProgressCountBadge = this._homePanel?.getChildByName('MatchesInProgressCountBadge') ?? null;
+        if (this._matchesInProgressCountBadge) {
+            this._matchesInProgressCountLabel = this._matchesInProgressCountBadge.getChildByName('MatchesInProgressCountLabel')?.getComponent(Label) ?? null;
+            this._matchesInProgressCountBadge.active = false;
+        }
+        const mipBtnNode = this._homePanel?.getChildByName('MatchesInProgressButton');
+        this._matchesInProgressSubtitleLabel = mipBtnNode?.getChildByName('MatchesInProgressSubtitle')?.getComponent(Label) ?? null;
+
+        // ── 2026-04-27 — MatchesInProgressPanel + 30-row pool bindings ──
+        if (this._mipPanel) {
+            this._mipSubtitleLabel = this._mipPanel.getChildByName('MatchesInProgressSubtitleLabel')?.getComponent(Label) ?? null;
+            this._mipEmptyState = this._mipPanel.getChildByName('MIPEmptyState') ?? null;
+            const mipBackBtn = this._mipPanel.getChildByName('BackButton')?.getComponent(Button);
+            mipBackBtn?.node.on(Button.EventType.CLICK, () => this._setActivePanel('home'), this);
+            const emptyCta = this._mipEmptyState?.getChildByName('MIPEmptyCtaButton')?.getComponent(Button);
+            emptyCta?.node.on(Button.EventType.CLICK, () => this._showFindMatchPanel(), this);
+            const mipScrollSV = this._mipPanel.getChildByName('MIPScrollView')?.getComponent(ScrollView);
+            const mipContent = mipScrollSV?.content;
+            if (mipContent) {
+                for (let i = 0; i < 30; i++) {
+                    const rowN = mipContent.getChildByName(`MIPRow_${i}`);
+                    if (!rowN) continue;
+                    this._mipRowNodes.push(rowN);
+                    const ringG = rowN.getChildByName(`MIPRing_${i}`)?.getComponent(Graphics);
+                    if (ringG) this._mipRingGraphics.push(ringG);
+                    const winL = rowN.getChildByName(`MIPWinLine_${i}`)?.getComponent(Label);
+                    if (winL) this._mipWinLineLabels.push(winL);
+                    const windowL = rowN.getChildByName(`MIPWindowLine_${i}`)?.getComponent(Label);
+                    if (windowL) this._mipWindowLineLabels.push(windowL);
+                    const stakeL = rowN.getChildByName(`MIPStakeChip_${i}`)?.getComponent(Label);
+                    if (stakeL) this._mipStakeChipLabels.push(stakeL);
+                    const oppL = rowN.getChildByName(`MIPOpponentChip_${i}`)?.getComponent(Label);
+                    if (oppL) this._mipOpponentChipLabels.push(oppL);
+                    const timeL = rowN.getChildByName(`MIPTimeLabel_${i}`)?.getComponent(Label);
+                    if (timeL) this._mipTimeLabels.push(timeL);
+                    const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
+                    if (tap) {
+                        this._mipTapButtons.push(tap);
+                        const idx = i;
+                        tap.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
+                    }
+                }
+            }
+            console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/30`);
+        } else {
+            console.log(`${TAG} start | WARN MatchesInProgressPanel missing — regenerate scene`);
+        }
+
         // ── Phase A — JoinMatchConfirmOverlay bindings ──────────────────
         this._joinConfirmOverlay = this.node.getChildByName('JoinMatchConfirmOverlay') ?? null;
         if (this._joinConfirmOverlay) {
@@ -2928,22 +2998,247 @@ export class AppUI extends Component {
         console.log(`${TAG} _offerHeroPickIfSupported | DONE path=shown source=${source} tiles_shown=${shown} tiles_empty=${empty} bindings_missing=${missingBindings} symbols=[${symbols.join(',')}]`);
     }
 
-    private _setActivePanel(which: 'landing' | 'home' | 'tokenDuel'): void {
+    private _setActivePanel(which: 'landing' | 'home' | 'tokenDuel' | 'mip'): void {
         // UX overhaul Phase 1F: smooth fade+scale swap instead of instant
         // active-toggle. swapPanel handles UIOpacity setup + tween cleanup.
         const target = which === 'landing' ? this._landingPanel
                      : which === 'home'    ? this._homePanel
+                     : which === 'mip'     ? this._mipPanel
                                            : this._tokenDuelPanel;
-        const others = [this._landingPanel, this._homePanel, this._tokenDuelPanel].filter((p) => p !== target);
-        const wasActive = others.find((p) => p.active) ?? null;
+        const others = [this._landingPanel, this._homePanel, this._tokenDuelPanel, this._mipPanel]
+            .filter((p) => p && p !== target);
+        const wasActive = others.find((p) => p && p.active) ?? null;
         // Hide siblings instantly (no double-fade), then transition target in.
-        for (const p of others) if (p !== wasActive) p.active = false;
+        for (const p of others) if (p && p !== wasActive) p.active = false;
         swapPanel(wasActive, target, 'forward');
         // Part 12 C: stop ticker timers when Home is not the active panel.
         if (which !== 'home') this._stopMatchTicker();
         // Part 14: stop tournament countdown when leaving Home.
         if (which !== 'home') this._stopTournamentCountdown();
+        // 2026-04-27 — stop MIP 1-s tick when leaving the MIP panel.
+        if (which !== 'mip') this._stopMipTick();
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
+    }
+
+    /* ── 2026-04-27 — Matches In Progress ─────────────────────────────── */
+
+    /**
+     * Open the MatchesInProgressPanel, fetch user's active matches, populate
+     * rows, and start the 1-s ring/time refresh tick.
+     */
+    private async _showMatchesInProgressPanel(): Promise<void> {
+        if (!this._mipPanel) return;
+        this._setActivePanel('mip');
+        await this._refreshMipMatches();
+        this._startMipTick();
+    }
+
+    /**
+     * Fetch all status=Active matches and filter to ones the connected pubkey
+     * is a participant in. Sort by remaining time ascending (most urgent first).
+     */
+    private async _refreshMipMatches(): Promise<void> {
+        const me = MWAManager.instance?.connectedPubkey;
+        if (!me || !this._tdRpc) {
+            this._mipMatches = [];
+            this._renderMipRows();
+            return;
+        }
+        try {
+            const all = await (await import('../../token-duel/scripts/MatchRpc'))
+                .findActiveMatchesUnfiltered(this._tdRpc);
+            this._mipMatches = all
+                .filter((m) => m.players.includes(me))
+                .sort((a, b) => Number(this._mipRemainingMs(a) - this._mipRemainingMs(b)));
+        } catch (e) {
+            console.log(`${TAG} _refreshMipMatches | ERR ${e}`);
+            this._mipMatches = [];
+        }
+        this._renderMipRows();
+        this._renderMipHomeBadge();
+    }
+
+    /**
+     * Repaint all 30 row nodes from the current `_mipMatches` snapshot.
+     * Activates rows up to N, deactivates the rest.
+     */
+    private _renderMipRows(): void {
+        const n = this._mipMatches.length;
+        if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
+        if (this._mipSubtitleLabel) {
+            this._mipSubtitleLabel.string = n === 0 ? 'All clear' : `${n} game${n > 1 ? 's' : ''} running`;
+        }
+        const me = MWAManager.instance?.connectedPubkey ?? '';
+        for (let i = 0; i < this._mipRowNodes.length; i++) {
+            const m = this._mipMatches[i];
+            const row = this._mipRowNodes[i];
+            if (!row) continue;
+            if (!m) { row.active = false; continue; }
+            row.active = true;
+
+            // Win line (delta + sign vs leader)
+            const myIdx = m.players.indexOf(me);
+            const myHeight = myIdx >= 0 ? (m.heights[myIdx] ?? 0) : 0;
+            const leaderHeight = Math.max(...m.heights);
+            const isWinning = myHeight === leaderHeight && myHeight > 0;
+            const myDeltaPct = decodeScore(myHeight);
+            const winLbl = this._mipWinLineLabels[i];
+            if (winLbl) {
+                if (myHeight === 0 && leaderHeight === 0) {
+                    winLbl.string = 'Round just started';
+                    winLbl.color = new Color(168, 174, 201, 255);
+                } else if (isWinning) {
+                    winLbl.string = `YOU ${myDeltaPct >= 0 ? '+' : ''}${myDeltaPct.toFixed(2)}%`;
+                    winLbl.color = new Color(48, 198, 155, 255);
+                } else {
+                    const leaderDeltaPct = decodeScore(leaderHeight);
+                    winLbl.string = `OPP ${leaderDeltaPct >= 0 ? '+' : ''}${leaderDeltaPct.toFixed(2)}%`;
+                    winLbl.color = new Color(236, 88, 122, 255);
+                }
+            }
+
+            // Window / age line
+            const wndLbl = this._mipWindowLineLabels[i];
+            if (wndLbl) wndLbl.string = this._mipFormatWindow(m);
+
+            // Stake chip
+            const stakeLbl = this._mipStakeChipLabels[i];
+            if (stakeLbl) {
+                const isPaper = m.wagerLamports === 0n;
+                if (isPaper) {
+                    stakeLbl.string = 'PAPER';
+                    stakeLbl.color = new Color(48, 198, 155, 255);
+                } else {
+                    const sol = Number(m.wagerLamports) / 1e9;
+                    stakeLbl.string = `${sol < 0.01 ? sol.toFixed(4) : sol.toFixed(2)} SOL`;
+                    stakeLbl.color = new Color(255, 210, 74, 255);
+                }
+            }
+
+            // Opponent chip
+            const oppLbl = this._mipOpponentChipLabels[i];
+            if (oppLbl) {
+                const oppPubkey = m.players.find((p) => p !== me) ?? '';
+                const isBot = !oppPubkey || oppPubkey.endsWith('BOT') || /bot/i.test(oppPubkey);
+                if (isBot || !oppPubkey) {
+                    oppLbl.string = 'vs BOT';
+                    oppLbl.color = new Color(232, 176, 70, 255);
+                } else {
+                    const display = this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`;
+                    oppLbl.string = `vs ${display}`;
+                    oppLbl.color = new Color(244, 245, 249, 255);
+                }
+            }
+
+            // Ring + time
+            const remainingMs = this._mipRemainingMs(m);
+            const totalMs = this._mipWindowDurationMs(m.timeWindow);
+            this._updateMipRing(i, totalMs > 0 ? remainingMs / totalMs : 0);
+            const timeLbl = this._mipTimeLabels[i];
+            if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
+        }
+    }
+
+    /** Re-paint home button subtitle + count badge based on _mipMatches. */
+    private _renderMipHomeBadge(): void {
+        const n = this._mipMatches.length;
+        if (this._matchesInProgressSubtitleLabel) {
+            this._matchesInProgressSubtitleLabel.string = n === 0 ? '0 games running' : `${n} game${n > 1 ? 's' : ''} running`;
+        }
+        if (this._matchesInProgressCountBadge) {
+            this._matchesInProgressCountBadge.active = n > 0;
+            if (n > 0 && this._matchesInProgressCountLabel) {
+                this._matchesInProgressCountLabel.string = String(n);
+            }
+        }
+    }
+
+    /** Draw the time-remaining arc on row `idx`. fraction ∈ [0,1]. */
+    private _updateMipRing(idx: number, fraction: number): void {
+        const g = this._mipRingGraphics[idx];
+        if (!g) return;
+        const f = Math.max(0, Math.min(1, fraction));
+        const col = f > 0.5 ? new Color(48, 198, 155, 255)
+                  : f > 0.2 ? new Color(232, 176, 70, 255)
+                            : new Color(236, 88, 122, 255);
+        g.clear();
+        g.lineWidth = 5;
+        g.strokeColor = new Color(col.r, col.g, col.b, 60);
+        g.circle(0, 0, 22);
+        g.stroke();
+        if (f > 0) {
+            g.strokeColor = col;
+            const start = -Math.PI / 2;
+            const end = start + f * Math.PI * 2;
+            g.arc(0, 0, 22, start, end, false);
+            g.stroke();
+        }
+    }
+
+    /** Format remaining ms as "Xd Yh left", "Yh Zm left", "Zm Ws left", "Ws left". */
+    private _formatRemainingTime(ms: number): string {
+        if (ms <= 0) return '0s left';
+        const totalSec = Math.floor(ms / 1000);
+        const d = Math.floor(totalSec / 86400);
+        const h = Math.floor((totalSec % 86400) / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (d > 0) return `${d}d ${h}h left`;
+        if (h > 0) return `${h}h ${m}m left`;
+        if (m > 0) return `${m}m ${s}s left`;
+        return `${s}s left`;
+    }
+
+    /** Window duration in ms based on the on-chain timeWindow byte. */
+    private _mipWindowDurationMs(window: number): number {
+        return window === 0 ? 3_600_000
+             : window === 1 ? 86_400_000
+             : window === 2 ? 259_200_000
+             :                604_800_000;
+    }
+
+    /** Compute remaining ms for a match given its startedAt + timeWindow. */
+    private _mipRemainingMs(m: MatchState): number {
+        const startedMs = Number(m.startedAt) * 1000;
+        return Math.max(0, startedMs + this._mipWindowDurationMs(m.timeWindow) - Date.now());
+    }
+
+    /** "24h match · started 12m ago" */
+    private _mipFormatWindow(m: MatchState): string {
+        const windowLabel = m.timeWindow === 0 ? '1h'
+                          : m.timeWindow === 1 ? '24h'
+                          : m.timeWindow === 2 ? '3d' : '7d';
+        const elapsedMs = Date.now() - Number(m.startedAt) * 1000;
+        const ageStr = elapsedMs < 60_000   ? `${Math.floor(elapsedMs / 1000)}s ago`
+                     : elapsedMs < 3_600_000 ? `${Math.floor(elapsedMs / 60_000)}m ago`
+                     : elapsedMs < 86_400_000 ? `${Math.floor(elapsedMs / 3_600_000)}h ago`
+                     : `${Math.floor(elapsedMs / 86_400_000)}d ago`;
+        return `${windowLabel} match · started ${ageStr}`;
+    }
+
+    /** Start the 1-s tick that re-paints rows + rings. Idempotent. */
+    private _startMipTick(): void {
+        if (this._mipTickHandle != null) return;
+        this._mipTickHandle = setInterval(() => {
+            this._renderMipRows();
+        }, 1000) as unknown as number;
+    }
+
+    /** Stop the 1-s tick. */
+    private _stopMipTick(): void {
+        if (this._mipTickHandle != null) {
+            clearInterval(this._mipTickHandle as unknown as ReturnType<typeof setInterval>);
+            this._mipTickHandle = null;
+        }
+    }
+
+    /** Tap a row → log the match PDA. (Routing to RacePanel needs follow-up:
+     *  RacePanel is currently singleton-tied to one active match handle. We'd
+     *  need to refactor RacePanel + PortfolioRace to accept a match parameter.) */
+    private _onMipRowTap(idx: number): void {
+        const m = this._mipMatches[idx];
+        if (!m) return;
+        console.log(`${TAG} _onMipRowTap | TODO route to RacePanel pda=${m.pda} mode=${m.mode} window=${m.timeWindow}`);
     }
 
     /* ── UX overhaul Phase 1: helpers ───────────────────────────────── */
