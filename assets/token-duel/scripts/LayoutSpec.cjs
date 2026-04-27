@@ -139,6 +139,45 @@ const home = {
     LEGACY_SIGNOUT_Y: -940,
 };
 
+// 2026-04-27 — RacePanel deterministic Y anchors.
+// The live gameplay / portfolio-race screen. Layout is locked — every Y
+// on the page derives from this block; do NOT hand-tune element y values.
+// Panel root is offset by (0, -RACE_SAFE_AREA_EXTRA, 0) where
+// RACE_SAFE_AREA_EXTRA = 90 (defined in generate-scenes.js); panel-local y
+// maps to world y - 90. Canvas is oversized 720×1800.
+const race = {
+    // Top header row: Lv chip + circular countdown ring + hero delta.
+    TOP_HEADER_Y:        720,
+
+    // Player-side token row (3 cards side-by-side, duel layout).
+    PLAYER_TOKEN_ROW_Y:  540,
+
+    // Lead-state subtitle ("YOU LEAD" / "DEAD HEAT" / "YOU TRAIL").
+    LEAD_STATE_Y:        410,
+
+    // Center tug-of-war duel bar (track + fill + glow + tick + tags).
+    DUEL_BAR_Y:          300,
+
+    // Opponent's hero delta (big 80pt portfolio %).
+    OPP_HERO_DELTA_Y:    140,
+
+    // Opponent identity card ("BOT · Lv N").
+    OPP_IDENTITY_Y:      40,
+
+    // Opponent-side token row (3 cards side-by-side, duel layout).
+    OPP_TOKEN_ROW_Y:     -90,
+
+    // Forfeit button (small, low-emphasis).
+    FORFEIT_BTN_Y:       -260,
+
+    // 4p/8p multi-player surfaces — mutually exclusive with duel layout.
+    OPP_CARD_Y:          -400,   // 1v1 legacy big opponent card (hidden in duel)
+    OPP_STRIP_Y:         -406,   // 7-bot opponent leaderboard strip (4p/8p)
+
+    // Mascot bottom-right corner.
+    MASCOT_Y:            -460,
+};
+
 const LayoutSpec = {
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
@@ -546,27 +585,27 @@ const LayoutSpec = {
             // Player identity card (wallet truncation) is dropped — wallet
             // shows in post-match summary instead. Lv pill stays small/low-
             // emphasis on the left; hero delta moves to the right side.
-            racePlayerLevelChip: { x: -260, y: 720, w: 120, h: 40, type: 'chip',
+            racePlayerLevelChip: { x: -260, y: race.TOP_HEADER_Y, w: 120, h: 40, type: 'chip',
                 notes: 'small Lv pill, top-left of duel battle UI' },
 
             // Timer + countdown (centered top row)
-            timerRing:        { x: 0,    y: 720,  w: 132, h: 132, type: 'graphics' },
+            timerRing:        { x: 0,    y: race.TOP_HEADER_Y, w: 132, h: 132, type: 'graphics' },
             timerPulse:       { x: 0,    y: 0,    w: 100, h: 100, type: 'graphics', notes: 'inside ring; coords relative to ring' },
-            countdownLabel:   { x: 0,    y: 720,  w: 100, h: 32,  type: 'label' },
+            countdownLabel:   { x: 0,    y: race.TOP_HEADER_Y, w: 100, h: 32,  type: 'label' },
 
             // Hero portfolio delta — right-aligned in top row, bold/primary.
-            heroDelta:        { x: 240,  y: 720,  w: 220, h: 80,  type: 'label' },
+            heroDelta:        { x: 240,  y: race.TOP_HEADER_Y, w: 220, h: 80,  type: 'label' },
 
             // Player token row container — 3 horizontal cards (tightened spacing)
-            playerTokenRow:   { x: 0,    y: 540,  w: 696, h: 110, type: 'group' },
+            playerTokenRow:   { x: 0,    y: race.PLAYER_TOKEN_ROW_Y, w: 696, h: 110, type: 'group' },
 
             // Lead-state copy ("YOU LEAD / YOU TRAIL / DEAD HEAT") — promoted
             // from a tiny subtitle to a 2-line emphasis line above the bar.
-            opponentSubtitle: { x: 0,    y: 410,  w: 620, h: 64,  type: 'label',
+            opponentSubtitle: { x: 0,    y: race.LEAD_STATE_Y, w: 620, h: 64,  type: 'label',
                 notes: 'lead-state line above duel bar (replaces "you +X.XX pp ahead")' },
 
             // Duel bar — center tug-of-war (tightened up)
-            duelBarContainer: { x: 0,    y: 300,  w: 680, h: 80,  type: 'group' },
+            duelBarContainer: { x: 0,    y: race.DUEL_BAR_Y, w: 680, h: 80,  type: 'group' },
             duelBarTrack:     { x: 0,    y: 0,    w: 640, h: 8,   type: 'graphics', notes: 'relative to container' },
             duelBarFill:      { x: 0,    y: 0,    w: 640, h: 12,  type: 'graphics', notes: 'relative to container' },
             duelBarGlow:      { x: 0,    y: 0,    w: 640, h: 40,  type: 'graphics', notes: 'leading-tip pulse + trail' },
@@ -577,24 +616,24 @@ const LayoutSpec = {
 
             // Opponent hero delta — slightly LARGER than player (80pt vs 56pt)
             // for symmetry of stake when losing the duel.
-            opponentDelta:    { x: 0,    y: 140,  w: 680, h: 96,  type: 'label' },
+            opponentDelta:    { x: 0,    y: race.OPP_HERO_DELTA_Y, w: 680, h: 96,  type: 'label' },
 
             // Opponent identity card — moved ABOVE opponent tokens. Internals
             // via templates.identityCard. Single combined "BOT · Lv 3" copy.
-            opponentIdentityCard:  { x: 0,   y: 40,  w: 280, h: 44, type: 'sprite' },
+            opponentIdentityCard:  { x: 0,   y: race.OPP_IDENTITY_Y, w: 280, h: 44, type: 'sprite' },
 
             // Opponent token row container — 3 horizontal cards (mirror player)
-            opponentTokenRow: { x: 0,    y: -90,  w: 696, h: 110, type: 'group' },
+            opponentTokenRow: { x: 0,    y: race.OPP_TOKEN_ROW_Y, w: 696, h: 110, type: 'group' },
 
             // Legacy 1v1 opponent card (HIDDEN in duel layout — gated in AppUI).
-            opponentCard:     { x: 0,    y: -400, w: 640, h: 110, type: 'sprite' },
+            opponentCard:     { x: 0,    y: race.OPP_CARD_Y,  w: 640, h: 110, type: 'sprite' },
             // 4p/8p multi-bot strip (still used when requiredPlayers > 2)
-            opponentStrip:    { x: 0,    y: -406, w: 640, h: 260, type: 'group' },
+            opponentStrip:    { x: 0,    y: race.OPP_STRIP_Y, w: 640, h: 260, type: 'group' },
 
             // Forfeit (smaller, dimmer, below opponent section) + mascot + vignette
-            cancelBtn:        { x: 0,    y: -260, w: 140, h: 36,  type: 'btn',
+            cancelBtn:        { x: 0,    y: race.FORFEIT_BTN_Y, w: 140, h: 36,  type: 'btn',
                 notes: 'duel layout: small/recessed gray surface, low emphasis' },
-            mascot:           { x: 260,  y: -460, w: 120, h: 160, type: 'mascot',
+            mascot:           { x: 260,  y: race.MASCOT_Y, w: 120, h: 160, type: 'mascot',
                 notes: 'duel layout: dimmed to ~55% via UIOpacity (decorative)' },
             vignette:         { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics', notes: 'full-screen alpha overlay' },
         },
