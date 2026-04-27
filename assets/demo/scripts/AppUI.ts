@@ -4569,11 +4569,9 @@ export class AppUI extends Component {
             console.log(`${TAG} _showRacePanel | ABORT_NO_PANEL tokens=${holdings.length} — scene binding missing, race screen will not render`);
             return;
         }
-        // 2026-04-27 — switch RacePanel layout based on requiredPlayers.
-        // 1v1 (n=2) keeps existing layout; ≥3 shows the new multi-opp grid.
-        const reqPlayers = this._pickerJoinTarget?.requiredPlayers
-            ?? (MODES[this._pickerSelectedMode as keyof typeof MODES]?.requiredPlayers ?? 2);
-        this._setRaceLayoutForRequiredPlayers(reqPlayers);
+        // 2026-04-27 — _setRaceLayoutForRequiredPlayers call moved BELOW the
+        // duel-layout-setup block so the layout switcher gets the final word
+        // on opponent-side visibility (was being overwritten by lines ~4635+).
         // Coming back from a background-runaway state: clear flag.
         this._raceRunningInBackground = false;
         // UX overhaul Phase 2: mascot starts thinking when race begins.
@@ -4618,8 +4616,12 @@ export class AppUI extends Component {
         const modeDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
         const botCount = Math.max(0, modeDef.requiredPlayers - 1);
 
-        // Phase 22 — 1v1 ⇒ duel layout; 4p/8p ⇒ legacy stack + strip.
-        this._isDuelLayout = modeDef.requiredPlayers === 2;
+        // 2026-04-27 — Duel layout (Lv chip + player 3-token row + duel bar +
+        // lead-state subtitle) now always on. Opponent-side nodes are toggled
+        // by _setRaceLayoutForRequiredPlayers (1v1 = show 3 opp tokens;
+        // multi-collapsed = show MultiOppGrid; multi-expanded = show 3 opp
+        // tokens of tapped opp). Was: requiredPlayers === 2.
+        this._isDuelLayout = true;
         // Reset duel bar state on every race start.
         this._duelBarPos = 0;
         this._duelBarVel = 0;
@@ -4631,14 +4633,20 @@ export class AppUI extends Component {
         this._lastRenderedOpponentDeltaPct = 0;
         this._opponentPerTokenDeltas = {};
 
-        // Toggle duel-layout surfaces.
-        if (this._racePlayerLevelChip)  this._racePlayerLevelChip.active  = this._isDuelLayout;
-        if (this._opponentIdentityCard) this._opponentIdentityCard.active = this._isDuelLayout;
-        if (this._playerTokenRow)       this._playerTokenRow.active       = this._isDuelLayout;
-        if (this._opponentTokenRow)     this._opponentTokenRow.active     = this._isDuelLayout;
-        if (this._duelBarContainer)     this._duelBarContainer.active     = this._isDuelLayout;
-        if (this._opponentHeroDeltaLabel)   this._opponentHeroDeltaLabel.node.active   = this._isDuelLayout;
-        if (this._opponentSubtitleGapLabel) this._opponentSubtitleGapLabel.node.active = this._isDuelLayout;
+        // 2026-04-27 — Player-side duel surfaces always on (Lv chip, player
+        // token row, duel bar, subtitle gap). Opponent-side surfaces
+        // (opponentIdentityCard, opponentTokenRow, opponentHeroDeltaLabel)
+        // are owned by _setRaceLayoutForRequiredPlayers below.
+        if (this._racePlayerLevelChip)      this._racePlayerLevelChip.active      = true;
+        if (this._playerTokenRow)           this._playerTokenRow.active           = true;
+        if (this._duelBarContainer)         this._duelBarContainer.active         = true;
+        if (this._opponentSubtitleGapLabel) this._opponentSubtitleGapLabel.node.active = true;
+
+        // Run AFTER the duel-layout-setup block so it gets the final word
+        // on opponent-side visibility for 1v1 vs multi-collapsed vs multi-expanded.
+        const reqPlayers = this._pickerJoinTarget?.requiredPlayers
+            ?? (MODES[this._pickerSelectedMode as keyof typeof MODES]?.requiredPlayers ?? 2);
+        this._setRaceLayoutForRequiredPlayers(reqPlayers);
 
         // Clear prior bot state on every race start.
         this._liveSquadBot = null;
@@ -5198,11 +5206,13 @@ export class AppUI extends Component {
                     this._raceOpponentGap.color = new Color(200, 200, 210);
                 }
             }
-        } else if (this._pickerSelectedTrack === 'paper' && this._raceMultiGrid?.active && this._liveSquadBots.length > 1) {
-            // 2026-04-27 — 4p / 8p multi-card grid. Write each bot's data to
-            // the corresponding MultiOppCard_i. Compute ranks (me + bots
-            // sorted by delta desc), then per-card: rank chip + name +
-            // delta % + horizontal PnL-vs-me bar.
+        } else if (this._pickerSelectedTrack === 'paper' && this._liveSquadBots.length > 1) {
+            // 2026-04-27 — 4p / 8p multi-bot. Compute ranks once, then dispatch
+            // on which surface is currently visible: collapsed grid → render
+            // per-card data; expanded → pull tapped bot's snapshot into the
+            // 1v1 duel-format vars (oppDeltaForDuel/oppPerTokenForDuel/
+            // oppSymbolsForDuel) so the existing block at line ~5274 drives
+            // the hero delta / token row / lead-state subtitle / duel bar.
             const neutral = new Color(140, 150, 170);
             const players: { idx: number; delta: number }[] = [];
             players.push({ idx: -1, delta: deltaPct });   // me
@@ -5214,37 +5224,56 @@ export class AppUI extends Component {
             for (let r = 0; r < players.length; r++) rankOf.set(players[r].idx, r + 1);
             const myRank = rankOf.get(-1) ?? 1;
             const ranksuffix = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
-            for (let i = 0; i < this._liveSquadBots.length && i < this._raceMultiCardNodes.length; i++) {
-                const card = this._raceMultiCardNodes[i];
-                if (!card.active) continue;
-                const botSnap = this._liveSquadBots[i].deltaAt(snap.elapsedMs);
-                const r = rankOf.get(i) ?? 0;
-                if (this._raceMultiCardRankLabels[i]) this._raceMultiCardRankLabels[i].string = ranksuffix(r);
-                if (this._raceMultiCardNameLabels[i]) this._raceMultiCardNameLabels[i].string = `Bot ${i + 1}`;
-                const deltaLbl = this._raceMultiCardDeltaLabels[i];
-                if (deltaLbl) {
-                    const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
-                    deltaLbl.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
-                    deltaLbl.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
+
+            if (this._raceMultiGrid?.active) {
+                // Collapsed grid: per-card data + RANK subtitle.
+                for (let i = 0; i < this._liveSquadBots.length && i < this._raceMultiCardNodes.length; i++) {
+                    const card = this._raceMultiCardNodes[i];
+                    if (!card.active) continue;
+                    const botSnap = this._liveSquadBots[i].deltaAt(snap.elapsedMs);
+                    const r = rankOf.get(i) ?? 0;
+                    if (this._raceMultiCardRankLabels[i]) this._raceMultiCardRankLabels[i].string = ranksuffix(r);
+                    if (this._raceMultiCardNameLabels[i]) this._raceMultiCardNameLabels[i].string = `Bot ${i + 1}`;
+                    const deltaLbl = this._raceMultiCardDeltaLabels[i];
+                    if (deltaLbl) {
+                        const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
+                        deltaLbl.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
+                        deltaLbl.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
+                    }
+                    const bar = this._raceMultiCardPnlBars[i];
+                    if (bar) {
+                        // Color: green if I'm BEHIND this bot, rose if I'm AHEAD.
+                        const gap = deltaPct - botSnap.portfolioDeltaPct;
+                        bar.color = gap < -0.05 ? green : gap > 0.05 ? red : neutral;
+                    }
                 }
-                const bar = this._raceMultiCardPnlBars[i];
-                if (bar) {
-                    // Color: green if I'm BEHIND this bot, rose if I'm AHEAD.
-                    const gap = deltaPct - botSnap.portfolioDeltaPct;
-                    bar.color = gap < -0.05 ? green : gap > 0.05 ? red : neutral;
+                // Subtitle "RANK X OF N · ±Y.YY pp behind/ahead" — adaptive bar shows
+                // me vs leader (or vs runner-up if I'm 1st). Reuses opponentSubtitleGapLabel
+                // since it's the central lead-state subtitle in 1v1 too.
+                const N = players.length;
+                const targetIdx = myRank === 1 ? 1 : 0;  // runner-up if I'm 1st, else leader
+                const targetDelta = players[targetIdx].delta;
+                const pp = deltaPct - targetDelta;
+                if (this._opponentSubtitleGapLabel) {
+                    const dir = pp >= 0 ? 'ahead' : 'behind';
+                    this._opponentSubtitleGapLabel.string = `RANK ${myRank} OF ${N} · ${pp >= 0 ? '+' : ''}${pp.toFixed(2)} pp ${dir}`;
+                    this._opponentSubtitleGapLabel.color = pp >= 0 ? green : red;
                 }
-            }
-            // Subtitle "RANK X OF N · ±Y.YY pp behind/ahead" — adaptive bar shows
-            // me vs leader (or vs runner-up if I'm 1st). Reuses opponentSubtitleGapLabel
-            // since it's the central lead-state subtitle in 1v1 too.
-            const N = players.length;
-            const targetIdx = myRank === 1 ? 1 : 0;  // runner-up if I'm 1st, else leader
-            const targetDelta = players[targetIdx].delta;
-            const pp = deltaPct - targetDelta;
-            if (this._opponentSubtitleGapLabel) {
-                const dir = pp >= 0 ? 'ahead' : 'behind';
-                this._opponentSubtitleGapLabel.string = `RANK ${myRank} OF ${N} · ${pp >= 0 ? '+' : ''}${pp.toFixed(2)} pp ${dir}`;
-                this._opponentSubtitleGapLabel.color = pp >= 0 ? green : red;
+            } else if (this._raceMultiExpandedIdx != null) {
+                // Expanded view → surface tapped bot through the 1v1 duel-format pipe.
+                // The block at ~line 5274 reads oppDeltaForDuel/oppPerTokenForDuel/
+                // oppSymbolsForDuel and drives hero delta, token row, YOU LEAD
+                // subtitle, and duel bar.
+                const idx = this._raceMultiExpandedIdx;
+                const bot = this._liveSquadBots[idx];
+                if (bot) {
+                    const botSnap = bot.deltaAt(snap.elapsedMs);
+                    oppDeltaForDuel = botSnap.portfolioDeltaPct;
+                    oppPerTokenForDuel = botSnap.perTokenDeltas;
+                    oppSymbolsForDuel = bot.getSquad().map((s) => s.symbol);
+                    if (this._opponentIdentityName)  this._opponentIdentityName.string  = `Bot ${idx + 1}`;
+                    if (this._opponentIdentityLevel) this._opponentIdentityLevel.string = `${ranksuffix(rankOf.get(idx) ?? 0)} of ${players.length}`;
+                }
             }
         }
 
