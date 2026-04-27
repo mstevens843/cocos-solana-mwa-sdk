@@ -112,6 +112,33 @@ const pm = {
     STATUS_Y:         -580,
 };
 
+// 2026-04-27 — HomePanel deterministic Y anchors.
+// The post-sign-in lobby. Layout is locked — every Y on the page derives
+// from this block; do NOT hand-tune element y values. Panel root is offset
+// by (0, -SAFE_AREA_TOP, 0) so panel-local y maps to world y - 110.
+const home = {
+    // Header band — 5-icon bar (bell · trophy · wallet · cog · disconnect).
+    HEADER_Y:         620,
+    HEADER_BADGE_Y:   638,   // notification badge top-right offset (bell.y + 18)
+
+    // Content stack — top → bottom of the lobby.
+    XP_CHIP_Y:        540,   // homeLevelChip (Lv N + XP progress card)
+    RECENT_CARD_Y:    420,   // homeMatchTicker / homeTournamentBadge (mutually exclusive slot)
+    SECONDARY_Y:      320,   // dailyStreakStrip (DAY / CHALLENGES / POOL / RAKE)
+    SECTION_LBL_Y:    260,   // "CHOOSE MATCH TYPE" eyebrow label
+    START_CTA_Y:      196,   // Start Match (violet hero, h=104)
+    FIND_CTA_Y:       80,    // Find Match (teal,   h=92)
+    FIND_BADGE_Y:     102,   // live count pill — sibling of FindMatchBtn
+    BOT_CTA_Y:        -28,   // Bot Match (warn amber, h=84)
+    TRAINING_Y:       -200,  // homeTrainingCard (mascot + glow + copy)
+
+    // Legacy off-flow nodes — pinned below safe area, kept ONLY for AppUI
+    // binding compat after Phase N4 collapsed them into SettingsPanel.
+    LEGACY_RAKE_Y:    -820,
+    LEGACY_DELETE_Y:  -880,
+    LEGACY_SIGNOUT_Y: -940,
+};
+
 const LayoutSpec = {
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
@@ -308,24 +335,24 @@ const LayoutSpec = {
             // ── BACKGROUND SCRIM (full panel, behind everything) ──
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite', notes: 'dim overlay behind content column — reduces starfield contrast' },
             // ── HUD HEADER (y=620) — bell · WalletPill · 3 chrome icons ──
-            notificationBell:    { x: -330, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'Phase N4: far-left of 5-icon bar; bell icon attached at runtime' },
-            notificationBadge:   { x: -308, y: 638,  w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
-            walletPill:          { x: 0,    y: 620,  w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
-            walletPillGlow:      { x: 0,    y: 620,  w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
+            notificationBell:    { x: -330, y: home.HEADER_Y,       w: 56,  h: 56,  type: 'btnGhost', notes: 'Phase N4: far-left of 5-icon bar; bell icon attached at runtime' },
+            notificationBadge:   { x: -308, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
+            walletPill:          { x: 0,    y: home.HEADER_Y,       w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
+            walletPillGlow:      { x: 0,    y: home.HEADER_Y,       w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge',    notes: 'green status dot at left edge of pill (relative to pill)' },
             pubkeyLabel:         { x: -30,  y: 6,    w: 280, h: 24,  type: 'label',    notes: 'short address inside WalletPill (relative to pill)' },
             walletNameLabel:     { x: 0,    y: -16,  w: 280, h: 14,  type: 'label',    notes: 'wallet brand line under address (relative to pill)' },
             // Phase N4: openPortfolioBtn removed (Portfolio collapsed into Leaderboard hub).
             // 5-icon bar reordered to [bell | trophy | wallet | cog | disconnect] with wallet centered.
-            openLeaderboardBtn:  { x: -250, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'left of WalletPill — opens Portfolio+Leaderboard hub' },
-            openSettingsBtn:     { x:  250, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'right of WalletPill — settings' },
-            // ── XP MODULE (y=540, h=80) — real progression bar, animated ──
-            homeLevelChip:       { x: 0,    y: 540,  w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
+            openLeaderboardBtn:  { x: -250, y: home.HEADER_Y, w: 56,  h: 56,  type: 'btnGhost', notes: 'left of WalletPill — opens Portfolio+Leaderboard hub' },
+            openSettingsBtn:     { x:  250, y: home.HEADER_Y, w: 56,  h: 56,  type: 'btnGhost', notes: 'right of WalletPill — settings' },
+            // ── XP MODULE — real progression bar, animated ──
+            homeLevelChip:       { x: 0,    y: home.XP_CHIP_Y, w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
             homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite',   notes: 'rounded track 640x14 (relative to card)' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite',   notes: 'gold fill, left-anchored, width tweens on load (relative to track)' },
-            // ── RECENT MATCH CARD (y=420, h=140) — 2-row chip grid ──
-            homeMatchTicker:     { x: 0,    y: 420,  w: 680, h: 140, type: 'chip',     notes: 'recent-matches card with header + 2 rows of chips; tap → SpectatorPanel' },
+            // ── RECENT MATCH CARD — 2-row chip grid ──
+            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 140, type: 'chip',     notes: 'recent-matches card with header + 2 rows of chips; tap → SpectatorPanel' },
             homeMatchTickerHeader: { x: 0,  y: 58,   w: 660, h: 16,  type: 'label',    notes: '"RECENT MATCH" header (relative to card)' },
             homeMatchChipDivider: { x: 0,   y: -7,   w: 600, h: 1,   type: 'sprite',   notes: 'subtle 1-px divider between row 1 and row 2 (relative to card)' },
             homeMatchChip:       { keys: ['mode', 'players', 'stake', 'duration', 'created'],
@@ -337,37 +364,37 @@ const LayoutSpec = {
                                    keyFs: 10, valFs: 14,
                                    notes: '5 chips: row 1 (mode/players/stake), row 2 (duration/created)' },
             // Tournament alternate — same slot as ticker, mutually exclusive.
-            homeTournamentBadge: { x: 0,    y: 420,  w: 680, h: 140, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active' },
+            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 140, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active' },
             // Off-flow placeholders — superseded by SettingsPanel + homeChalChip
             // 'rake' key. Nodes pinned below safe-area so they never collide.
-            homeRakeChip:        { x: 0,    y: -820, w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
-            disconnectBtn:       { x:  330, y: 620,  w: 56,  h: 56,  type: 'btnGhost',  notes: 'Phase N4: Home top-bar far-right; one-tap wallet/guest disconnect (drawDisconnect icon)' },
-            deleteBtn:           { x: 180,  y: -880, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
-            signOutGuestBtn:     { x: 0,    y: -940, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
-            // ── SECONDARY STATS CARD (y=320, h=64) — 4 chips, no SEASON ──
+            homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
+            disconnectBtn:       { x:  330, y: home.HEADER_Y,         w: 56,  h: 56,  type: 'btnGhost',  notes: 'Phase N4: Home top-bar far-right; one-tap wallet/guest disconnect (drawDisconnect icon)' },
+            deleteBtn:           { x: 180,  y: home.LEGACY_DELETE_Y,  w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
+            signOutGuestBtn:     { x: 0,    y: home.LEGACY_SIGNOUT_Y, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
+            // ── SECONDARY STATS CARD — 4 chips, no SEASON ──
             // Node name "DailyStreakStrip" preserved for AppUI binding stability;
             // semantically this is now the SecondaryStats card.
-            dailyStreakStrip:    { x: 0,    y: 320,  w: 680, h: 64,  type: 'chip',     notes: '4 chips (DAY/CHALLENGES/POOL/RAKE); tap → DailyChallengePanel' },
+            dailyStreakStrip:    { x: 0,    y: home.SECONDARY_Y, w: 680, h: 64,  type: 'chip',     notes: '4 chips (DAY/CHALLENGES/POOL/RAKE); tap → DailyChallengePanel' },
             homeChalChip:        { keys: ['day', 'challenges', 'pool', 'rake'],
                                    labels: ['DAY', 'CHALLENGES', 'POOL', 'RAKE'],
                                    xs: [-240, -80, 80, 240], y: 0, w: 130, h: 52,
                                    keyFs: 10, valFs: 14,
                                    notes: 'inline 4 chip groups inside SecondaryStats card (SEASON dropped)' },
-            // ── SECTION TITLE (y=260) ──
-            homeChooseMatchLabel: { x: 0,   y: 260,  w: 680, h: 24,  type: 'label',    notes: '"CHOOSE MATCH TYPE" tracked uppercase muted lo-tier' },
+            // ── SECTION TITLE ──
+            homeChooseMatchLabel: { x: 0,   y: home.SECTION_LBL_Y, w: 680, h: 24,  type: 'label',    notes: '"CHOOSE MATCH TYPE" tracked uppercase muted lo-tier' },
             // ── PRIMARY CTA TRIO (tiered hierarchy: Start > Find > Bot) ──
-            startMatchBtn:       { x: 0,    y: 196,  w: 680, h: 104, type: 'btnPrimary', notes: 'Hero violet — host real match (TALLEST + brightest glow)' },
-            startMatchSubtitle:  { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
-            startMatchChevron:   { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
-            findMatchBtn:        { x: 0,    y: 80,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Hero teal — browse open lobbies (mid)' },
-            findMatchSubtitle:   { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
-            findMatchChevron:    { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
-            findMatchCountBadge: { x: 244,  y: 102,  w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
-            botMatchBtn:         { x: 0,    y: -28,  w: 680, h: 84,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free practice (smallest, muted)' },
+            startMatchBtn:       { x: 0,    y: home.START_CTA_Y, w: 680, h: 104, type: 'btnPrimary', notes: 'Hero violet — host real match (TALLEST + brightest glow)' },
+            startMatchSubtitle:  { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
+            startMatchChevron:   { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
+            findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Hero teal — browse open lobbies (mid)' },
+            findMatchSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
+            findMatchChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
+            findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
+            botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 680, h: 84,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free practice (smallest, muted)' },
             botMatchSubtitle:    { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton' },
             botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton' },
-            // ── TRAINING HERO CARD (y=-200, h=196) — mascot + glow + CTA hint ──
-            homeTrainingCard:    { x: 0,    y: -200, w: 680, h: 196, type: 'card',      notes: 'hero card with mascot (left) + copy (right); subtle gradient feel' },
+            // ── TRAINING HERO CARD — mascot + glow + CTA hint ──
+            homeTrainingCard:    { x: 0,    y: home.TRAINING_Y, w: 680, h: 196, type: 'card',      notes: 'hero card with mascot (left) + copy (right); subtle gradient feel' },
             trainingMascotGlow:  { x: -220, y: 0,    w: 200, h: 200, type: 'sprite',    notes: 'soft amber glow halo BEHIND mascot (relative to card)' },
             mascot:              { x: -220, y: 0,    w: 160, h: 180, type: 'mascot',    notes: 'mascot inside training card (relative to card)' },
             homeTrainingTitleLabel: { x: 40, y: 60,  w: 440, h: 24,  type: 'label',     notes: '"TRAINING MODE" gold bold tracked, anchor-left (relative to card)' },
