@@ -285,6 +285,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             gameArea:          { x: 0,    y: 0,    w: 720, h: 1000,type: 'group' },
             gameOverLabel:     { x: 0,    y: 0,    w: 680, h: 180, type: 'label' },
             status:            { x: 0,    y: -537, w: 688, h: 26,  type: 'label' },
+            rowActionPopover:  { x: 0,    y: 0,    w: 260, h: 110, type: 'group' },
+            rowActionPickBtn:  { x: 0,    y:  26,  w: 240, h: 44,  type: 'btnPrimary' },
+            rowActionChartBtn: { x: 0,    y: -26,  w: 240, h: 44,  type: 'btnGhost' },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],

@@ -218,7 +218,13 @@ export function streakBonusFor(currentStreak: number): number {
 //   (getSpotPrices consumes `priceUsd`, independent of delta window).
 // ═══════════════════════════════════════════════════════════════════
 
-export type TimeWindowId = '1h' | '1d' | '3d' | '7d';
+// 2026-04-27 — TimeWindowId re-keyed + extended 4→6. Labels now match real
+// durations (was confusingly compressed: id '1h' had label '30s', etc.).
+// New entries 24h (windowU8=4) and 7d (windowU8=5) for longer-running matches.
+// NOTE: on-chain Anchor program currently bounds-checks windowU8 ≤ 3 — using
+// 4 or 5 for REAL track will fail tx submission until program is updated.
+// PAPER track + bot mode work freely with any windowU8.
+export type TimeWindowId = '30s' | '1m' | '5m' | '1h' | '24h' | '7d';
 
 export interface TimeWindowDef {
     id: TimeWindowId;
@@ -231,20 +237,24 @@ export interface TimeWindowDef {
 }
 
 export const TIME_WINDOWS: Record<TimeWindowId, TimeWindowDef> = {
-    '1h': { id: '1h', windowU8: 0, label: '30s', birdeyeTypeParam: '1h',  durationMs:    30_000 },
-    '1d': { id: '1d', windowU8: 1, label: '1m',  birdeyeTypeParam: '24h', durationMs:    60_000 },
-    '3d': { id: '3d', windowU8: 2, label: '5m',  birdeyeTypeParam: '3d',  durationMs:   300_000 },
-    '7d': { id: '7d', windowU8: 3, label: '1h',  birdeyeTypeParam: '7d',  durationMs: 3_600_000 },
+    '30s': { id: '30s', windowU8: 0, label: '30s', birdeyeTypeParam: '1h',  durationMs:        30_000 },
+    '1m':  { id: '1m',  windowU8: 1, label: '1m',  birdeyeTypeParam: '24h', durationMs:        60_000 },
+    '5m':  { id: '5m',  windowU8: 2, label: '5m',  birdeyeTypeParam: '3d',  durationMs:       300_000 },
+    '1h':  { id: '1h',  windowU8: 3, label: '1h',  birdeyeTypeParam: '7d',  durationMs:     3_600_000 },
+    '24h': { id: '24h', windowU8: 4, label: '24h', birdeyeTypeParam: '7d',  durationMs:    86_400_000 },
+    '7d':  { id: '7d',  windowU8: 5, label: '7d',  birdeyeTypeParam: '7d',  durationMs:   604_800_000 },
 };
 
 /** Default to the shortest race for rapid iteration during testing. */
-export const DEFAULT_TIME_WINDOW: TimeWindowId = '1h';
+export const DEFAULT_TIME_WINDOW: TimeWindowId = '30s';
 
 /** Reverse lookup — resolve windowU8 byte → TimeWindowDef. */
 export function timeWindowFromU8(b: number): TimeWindowDef {
-    if (b === 0) return TIME_WINDOWS['1h'];
-    if (b === 1) return TIME_WINDOWS['1d'];
-    if (b === 2) return TIME_WINDOWS['3d'];
-    if (b === 3) return TIME_WINDOWS['7d'];
-    return TIME_WINDOWS['1d'];
+    if (b === 0) return TIME_WINDOWS['30s'];
+    if (b === 1) return TIME_WINDOWS['1m'];
+    if (b === 2) return TIME_WINDOWS['5m'];
+    if (b === 3) return TIME_WINDOWS['1h'];
+    if (b === 4) return TIME_WINDOWS['24h'];
+    if (b === 5) return TIME_WINDOWS['7d'];
+    return TIME_WINDOWS['30s'];
 }

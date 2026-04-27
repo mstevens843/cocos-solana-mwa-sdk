@@ -168,6 +168,21 @@ export class AppUI extends Component {
     private _raceTokenCurrentLabels: Label[] = [];
     private _raceTokenDeltaLabels: Label[] = [];
     private _raceCancelButton: Button | null = null;
+    // 2026-04-27 — Multi-player condensed-card grid (RacePanel hybrid layout).
+    private _raceMultiGrid: Node | null = null;
+    private _raceMultiCardNodes: Node[] = [];
+    private _raceMultiCardRankLabels: Label[] = [];
+    private _raceMultiCardNameLabels: Label[] = [];
+    private _raceMultiCardDeltaLabels: Label[] = [];
+    private _raceMultiCardPnlBars: Sprite[] = [];
+    private _raceMultiCardTapBtns: Button[] = [];
+    private _raceMultiBackBtn: Button | null = null;
+    private _raceMultiExpandedIdx: number | null = null;
+    // 2026-04-27 — Home-from-race button (non-destructive escape).
+    private _raceHomeButton: Button | null = null;
+    // True while a race is running in the BACKGROUND (RacePanel hidden but
+    // PortfolioRace still ticking). Set when user taps Home from race.
+    private _raceRunningInBackground: boolean = false;
     private _raceLastDeltaSign: 1 | -1 | 0 = 0; // tracks zero-crossings for haptic/sound cues
     private _raceActiveHoldings: Holding[] = [];
     private _raceTickBindingGapLogged = false;    // log TICK_BINDING_GAP at most once per race
@@ -423,6 +438,12 @@ export class AppUI extends Component {
     // Session 14 A4: tap-outside-close backdrop.
     private _backdropButton: Button | null = null;
     private _backdropNode: Node | null = null;
+
+    // 2026-04-27 — Row-tap popover (Pick + / View Chart).
+    private _rowActionPopover: Node | null = null;
+    private _rowActionPickBtn: Button | null = null;
+    private _rowActionChartBtn: Button | null = null;
+    private _rowActionPendingRow: TokenRow | null = null;
 
     // Session 14 B1-B5: squad action buttons + pick mode state.
     private _squadPickButton: Button | null = null;
@@ -1303,7 +1324,38 @@ export class AppUI extends Component {
                 this._duelBarLeadingPpLabel      = this._duelBarContainer.getChildByName('DuelBarLeadingPpLabel')?.getComponent(Label) ?? null;
                 this._duelBarOppTagLabel         = this._duelBarContainer.getChildByName('DuelBarOppTagLabel')?.getComponent(Label) ?? null;
             }
-            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard} opp_strip=${!!this._raceOpponentStrip} opp_rows=${this._raceOpponentRows.length}/7 duel_bar=${!!this._duelBarContainer} duel_player_cards=${this._playerDuelTokenCards.length} duel_opp_cards=${this._opponentDuelTokenCards.length} duel_player_chip=${!!this._racePlayerLevelChip} duel_opp_id=${!!this._opponentIdentityCard}`);
+            // 2026-04-27 — Multi-player condensed grid + 7 card pool + back btn.
+            this._raceMultiGrid = this._racePanel.getChildByName('RaceMultiOppGrid') ?? null;
+            if (this._raceMultiGrid) {
+                for (let i = 0; i < 7; i++) {
+                    const card = this._raceMultiGrid.getChildByName(`MultiOppCard_${i}`);
+                    if (!card) continue;
+                    this._raceMultiCardNodes.push(card);
+                    const rankL = card.getChildByName(`MultiOppRankChip_${i}`)?.getComponent(Label);
+                    const nameL = card.getChildByName(`MultiOppName_${i}`)?.getComponent(Label);
+                    const deltaL = card.getChildByName(`MultiOppDelta_${i}`)?.getComponent(Label);
+                    const barS = card.getChildByName(`MultiOppPnlBar_${i}`)?.getComponent(Sprite);
+                    if (rankL) this._raceMultiCardRankLabels.push(rankL);
+                    if (nameL) this._raceMultiCardNameLabels.push(nameL);
+                    if (deltaL) this._raceMultiCardDeltaLabels.push(deltaL);
+                    if (barS) this._raceMultiCardPnlBars.push(barS);
+                    const tap = card.getChildByName(`MultiOppCardTap_${i}`)?.getComponent(Button);
+                    if (tap) {
+                        this._raceMultiCardTapBtns.push(tap);
+                        const idx = i;
+                        tap.node.on(Button.EventType.CLICK, () => this._onMultiOppCardTap(idx), this);
+                    }
+                }
+            }
+            this._raceMultiBackBtn = this._racePanel.getChildByName('RaceMultiBackButton')?.getComponent(Button) ?? null;
+            this._raceMultiBackBtn?.node.on(Button.EventType.CLICK, () => this._onMultiOppBackTap(), this);
+            // 2026-04-27 — Home-from-race button (non-destructive escape).
+            this._raceHomeButton = this._racePanel.getChildByName('RaceHomeButton')?.getComponent(Button) ?? null;
+            this._raceHomeButton?.node.on(Button.EventType.CLICK, () => this._onRaceHomeTap(), this);
+            // 2026-04-27 — Force-hide legacy 7-row opponent strip (replaced by MultiOppGrid).
+            if (this._raceOpponentStrip) this._raceOpponentStrip.active = false;
+
+            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard} opp_strip=${!!this._raceOpponentStrip} opp_rows=${this._raceOpponentRows.length}/7 duel_bar=${!!this._duelBarContainer} duel_player_cards=${this._playerDuelTokenCards.length} duel_opp_cards=${this._opponentDuelTokenCards.length} duel_player_chip=${!!this._racePlayerLevelChip} duel_opp_id=${!!this._opponentIdentityCard} multi_grid=${!!this._raceMultiGrid} multi_cards=${this._raceMultiCardNodes.length}/7 home_btn=${!!this._raceHomeButton}`);
         }
 
         // Phase E: Claim Payout button (revealed on game-over).
@@ -1623,6 +1675,13 @@ export class AppUI extends Component {
             this._backdropButton.node.on(Button.EventType.CLICK, () => this._onBackdropTap(), this);
         }
 
+        // 2026-04-27 — Row-tap popover (Pick + / View Chart) bindings.
+        this._rowActionPopover = this._tokenDuelPanel.getChildByName('RowActionPopover') ?? null;
+        this._rowActionPickBtn = this._rowActionPopover?.getChildByName('RowActionPickButton')?.getComponent(Button) ?? null;
+        this._rowActionChartBtn = this._rowActionPopover?.getChildByName('RowActionChartButton')?.getComponent(Button) ?? null;
+        this._rowActionPickBtn?.node.on(Button.EventType.CLICK, () => this._onRowActionPick(), this);
+        this._rowActionChartBtn?.node.on(Button.EventType.CLICK, () => this._onRowActionChart(), this);
+
         // 2026-04-26 — Global Pick / Manage Squad bindings REMOVED.
         // Each empty squad slot now shows "Pick +" and acts as the pick
         // affordance (see _onSquadSlotTap → _pickTargetSlot). The per-slot
@@ -1869,7 +1928,7 @@ export class AppUI extends Component {
                     }
                 }
                 // Window options.
-                for (const w of ['1h','1d','3d','7d']) {
+                for (const w of ['30s','1m','5m','1h','24h','7d']) {
                     const b = this._qpWindowPopover?.getChildByName(`QPWindowPopover_${w}`)?.getComponent(Button);
                     if (b) {
                         this._qpWindowOptionButtons.set(w, b);
@@ -2019,7 +2078,7 @@ export class AppUI extends Component {
                 }
             }
             // Part 9: TimeWindow chip row
-            const windowKeys: TimeWindowId[] = ['1h', '1d', '3d', '7d'];
+            const windowKeys: TimeWindowId[] = ['30s', '1m', '5m', '1h', '24h', '7d'];
             for (const wk of windowKeys) {
                 const n = this._modePickerOverlay.getChildByName(`Window_${wk}`);
                 const b = n?.getComponent(Button);
@@ -2316,7 +2375,7 @@ export class AppUI extends Component {
                     b.node.on(Button.EventType.CLICK, () => this._onFilterModeClick(k), this);
                 }
             }
-            const winKeys = ['all', '1h', '1d', '3d', '7d'];
+            const winKeys = ['all', '30s', '1m', '5m', '1h', '24h', '7d'];
             for (const k of winKeys) {
                 const b = this._findMatchPanel.getChildByName(`FilterWindow_${k}`)?.getComponent(Button);
                 if (b) {
@@ -2405,6 +2464,10 @@ export class AppUI extends Component {
         }
         const mipBtnNode = this._homePanel?.getChildByName('MatchesInProgressButton');
         this._matchesInProgressSubtitleLabel = mipBtnNode?.getChildByName('MatchesInProgressSubtitle')?.getComponent(Label) ?? null;
+        // 2026-04-27 — guarantee MIP button is interactable regardless of count.
+        // Tap always opens panel; empty state renders when 0 matches.
+        const mipBtnComp = mipBtnNode?.getComponent(Button);
+        if (mipBtnComp) mipBtnComp.interactable = true;
 
         // ── 2026-04-27 — MatchesInProgressPanel + 30-row pool bindings ──
         if (this._mipPanel) {
@@ -3027,7 +3090,11 @@ export class AppUI extends Component {
      * rows, and start the 1-s ring/time refresh tick.
      */
     private async _showMatchesInProgressPanel(): Promise<void> {
-        if (!this._mipPanel) return;
+        console.log(`${TAG} _showMatchesInProgressPanel | TAP_RECEIVED matches=${this._mipMatches.length}`);
+        if (!this._mipPanel) {
+            console.log(`${TAG} _showMatchesInProgressPanel | ABORT_NO_PANEL`);
+            return;
+        }
         this._setActivePanel('mip');
         await this._refreshMipMatches();
         this._startMipTick();
@@ -3191,9 +3258,12 @@ export class AppUI extends Component {
 
     /** Window duration in ms based on the on-chain timeWindow byte. */
     private _mipWindowDurationMs(window: number): number {
-        return window === 0 ? 3_600_000
-             : window === 1 ? 86_400_000
-             : window === 2 ? 259_200_000
+        // 2026-04-27 — 6-window scheme: 0=30s, 1=1m, 2=5m, 3=1h, 4=24h, 5=7d.
+        return window === 0 ? 30_000
+             : window === 1 ? 60_000
+             : window === 2 ? 300_000
+             : window === 3 ? 3_600_000
+             : window === 4 ? 86_400_000
              :                604_800_000;
     }
 
@@ -3205,9 +3275,11 @@ export class AppUI extends Component {
 
     /** "24h match · started 12m ago" */
     private _mipFormatWindow(m: MatchState): string {
-        const windowLabel = m.timeWindow === 0 ? '1h'
-                          : m.timeWindow === 1 ? '24h'
-                          : m.timeWindow === 2 ? '3d' : '7d';
+        const windowLabel = m.timeWindow === 0 ? '30s'
+                          : m.timeWindow === 1 ? '1m'
+                          : m.timeWindow === 2 ? '5m'
+                          : m.timeWindow === 3 ? '1h'
+                          : m.timeWindow === 4 ? '24h' : '7d';
         const elapsedMs = Date.now() - Number(m.startedAt) * 1000;
         const ageStr = elapsedMs < 60_000   ? `${Math.floor(elapsedMs / 1000)}s ago`
                      : elapsedMs < 3_600_000 ? `${Math.floor(elapsedMs / 60_000)}m ago`
@@ -3996,9 +4068,8 @@ export class AppUI extends Component {
      * so they can choose tokens like a real match.
      */
     private _onBotMatch(): void {
-        console.log(`${TAG} _onBotMatch | open_picker track=paper`);
-        // Read user's last-used Bot defaults so the mode chip + window default
-        // sensibly. Wager tier is irrelevant in bot mode (free practice).
+        console.log(`${TAG} _onBotMatch | open_token_picker bot_mode=true`);
+        // Read user's last-used Bot defaults.
         const ls = this._readLocalStorage();
         const modeId = (ls?.getItem?.('tokenduel:qp.mode') as keyof typeof MODES) ?? 'oneVone';
         const windowId = (ls?.getItem?.('tokenduel:qp.window') as TimeWindowId) ?? DEFAULT_TIME_WINDOW;
@@ -4010,6 +4081,9 @@ export class AppUI extends Component {
         this._pickerSelectedWindow = windowId;
         this._pickerBotMode = true;
 
+        // 2026-04-27 — Bot Match opens TokenDuelPanel (token picker) FIRST.
+        // The ModePicker is opened later by _onWagerStartTap when the user
+        // has picked 3 tokens and tapped "▶ Start Duel".
         this._showTokenDuel();
         this._refreshWagerControlRow();
     }
@@ -4055,7 +4129,7 @@ export class AppUI extends Component {
         try {
             this._ensureBirdeye();
             const rows = await this._birdeye!.getTrending('gainers', 10);
-            const filtered = this._pickerSelectedWindow === '3d' || this._pickerSelectedWindow === '7d'
+            const filtered = this._pickerSelectedWindow === '24h' || this._pickerSelectedWindow === '7d'
                 ? rows.filter((r) => r.liquidity > 50_000)
                 : rows;
             const picks = filtered.slice(0, 3);
@@ -4495,6 +4569,13 @@ export class AppUI extends Component {
             console.log(`${TAG} _showRacePanel | ABORT_NO_PANEL tokens=${holdings.length} — scene binding missing, race screen will not render`);
             return;
         }
+        // 2026-04-27 — switch RacePanel layout based on requiredPlayers.
+        // 1v1 (n=2) keeps existing layout; ≥3 shows the new multi-opp grid.
+        const reqPlayers = this._pickerJoinTarget?.requiredPlayers
+            ?? (MODES[this._pickerSelectedMode as keyof typeof MODES]?.requiredPlayers ?? 2);
+        this._setRaceLayoutForRequiredPlayers(reqPlayers);
+        // Coming back from a background-runaway state: clear flag.
+        this._raceRunningInBackground = false;
         // UX overhaul Phase 2: mascot starts thinking when race begins.
         // The HomePanel mascot is inactive during the race, so the 'think'
         // animation needs to land on the RacePanel mascot to be visible.
@@ -4610,8 +4691,10 @@ export class AppUI extends Component {
                 }
             }).catch((e) => console.log(`${TAG} _showRacePanel | squadbot_import_error ${e}`));
         } else if (isPaper && botCount > 1) {
-            // 4p / 8p — leaderboard strip with N-1 bots.
-            if (this._raceOpponentStrip) this._raceOpponentStrip.active = true;
+            // 4p / 8p — bot match. 2026-04-27 — legacy strip is force-hidden
+            // (replaced by RaceMultiOppGrid + tap-to-expand wired earlier).
+            // Just spawn the LiveSquadBot instances; tick handler renders
+            // them to the multi-cards.
             const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
             const visibleRows = Math.min(botCount, this._raceOpponentRows.length);
             for (let i = 0; i < visibleRows; i++) {
@@ -5115,32 +5198,53 @@ export class AppUI extends Component {
                     this._raceOpponentGap.color = new Color(200, 200, 210);
                 }
             }
-        } else if (this._pickerSelectedTrack === 'paper' && this._raceOpponentStrip?.active && this._liveSquadBots.length > 1) {
-            // 4p / 8p leaderboard strip — update each row from its LiveSquadBot.
+        } else if (this._pickerSelectedTrack === 'paper' && this._raceMultiGrid?.active && this._liveSquadBots.length > 1) {
+            // 2026-04-27 — 4p / 8p multi-card grid. Write each bot's data to
+            // the corresponding MultiOppCard_i. Compute ranks (me + bots
+            // sorted by delta desc), then per-card: rank chip + name +
+            // delta % + horizontal PnL-vs-me bar.
             const neutral = new Color(140, 150, 170);
-            for (let i = 0; i < this._liveSquadBots.length && i < this._raceOpponentRows.length; i++) {
+            const players: { idx: number; delta: number }[] = [];
+            players.push({ idx: -1, delta: deltaPct });   // me
+            for (let i = 0; i < this._liveSquadBots.length; i++) {
+                players.push({ idx: i, delta: this._liveSquadBots[i].deltaAt(snap.elapsedMs).portfolioDeltaPct });
+            }
+            players.sort((a, b) => b.delta - a.delta);
+            const rankOf = new Map<number, number>();
+            for (let r = 0; r < players.length; r++) rankOf.set(players[r].idx, r + 1);
+            const myRank = rankOf.get(-1) ?? 1;
+            const ranksuffix = (n: number) => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
+            for (let i = 0; i < this._liveSquadBots.length && i < this._raceMultiCardNodes.length; i++) {
+                const card = this._raceMultiCardNodes[i];
+                if (!card.active) continue;
                 const botSnap = this._liveSquadBots[i].deltaAt(snap.elapsedMs);
-                const deltaLbl = this._raceOpponentRowDeltas[i];
-                const gapLbl = this._raceOpponentRowGaps[i];
+                const r = rankOf.get(i) ?? 0;
+                if (this._raceMultiCardRankLabels[i]) this._raceMultiCardRankLabels[i].string = ranksuffix(r);
+                if (this._raceMultiCardNameLabels[i]) this._raceMultiCardNameLabels[i].string = `Bot ${i + 1}`;
+                const deltaLbl = this._raceMultiCardDeltaLabels[i];
                 if (deltaLbl) {
                     const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
                     deltaLbl.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
                     deltaLbl.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
                 }
-                if (gapLbl) {
+                const bar = this._raceMultiCardPnlBars[i];
+                if (bar) {
+                    // Color: green if I'm BEHIND this bot, rose if I'm AHEAD.
                     const gap = deltaPct - botSnap.portfolioDeltaPct;
-                    const abs = Math.abs(gap).toFixed(2);
-                    if (gap > 0.05) {
-                        gapLbl.string = `+${abs}pp`;
-                        gapLbl.color = green;
-                    } else if (gap < -0.05) {
-                        gapLbl.string = `-${abs}pp`;
-                        gapLbl.color = red;
-                    } else {
-                        gapLbl.string = '≈';
-                        gapLbl.color = neutral;
-                    }
+                    bar.color = gap < -0.05 ? green : gap > 0.05 ? red : neutral;
                 }
+            }
+            // Subtitle "RANK X OF N · ±Y.YY pp behind/ahead" — adaptive bar shows
+            // me vs leader (or vs runner-up if I'm 1st). Reuses opponentSubtitleGapLabel
+            // since it's the central lead-state subtitle in 1v1 too.
+            const N = players.length;
+            const targetIdx = myRank === 1 ? 1 : 0;  // runner-up if I'm 1st, else leader
+            const targetDelta = players[targetIdx].delta;
+            const pp = deltaPct - targetDelta;
+            if (this._opponentSubtitleGapLabel) {
+                const dir = pp >= 0 ? 'ahead' : 'behind';
+                this._opponentSubtitleGapLabel.string = `RANK ${myRank} OF ${N} · ${pp >= 0 ? '+' : ''}${pp.toFixed(2)} pp ${dir}`;
+                this._opponentSubtitleGapLabel.color = pp >= 0 ? green : red;
             }
         }
 
@@ -6336,6 +6440,106 @@ export class AppUI extends Component {
         this._onGameOver(0, {});
     }
 
+    /**
+     * 2026-04-27 — Non-destructive escape from RacePanel. Activates HomePanel
+     * but does NOT stop PortfolioRace. The match keeps ticking in the
+     * background; user can resume via MatchesInProgressPanel or a future
+     * background-match toast. Only behavior change vs Forfeit: no settle.
+     */
+    private _onRaceHomeTap(): void {
+        const lastDelta = this._raceLatestSnapshot?.portfolioDeltaPct;
+        const lastRemaining = this._raceLatestSnapshot?.remainingMs;
+        console.log(`${TAG} _onRaceHomeTap | LEAVE_TO_HOME (race continues in background) last_delta=${lastDelta?.toFixed(2) ?? 'null'}% remaining=${lastRemaining ?? 'null'}ms`);
+        this._raceRunningInBackground = true;
+        if (this._racePanel) this._racePanel.active = false;
+        this._setActivePanel('home');
+    }
+
+    /**
+     * 2026-04-27 — Tap a condensed multi-opponent card → expand into the
+     * 1v1-style opponent view (their hero delta + identity + 3 tokens).
+     * Reuses existing 1v1 opponent nodes; just toggles visibility.
+     */
+    private _onMultiOppCardTap(idx: number): void {
+        if (!this._raceMultiGrid) return;
+        console.log(`${TAG} _onMultiOppCardTap | EXPAND idx=${idx}`);
+        this._raceMultiExpandedIdx = idx;
+        this._raceMultiGrid.active = false;
+        if (this._raceMultiBackBtn) this._raceMultiBackBtn.node.active = true;
+        // Show 1v1 opponent nodes; tick handler will populate them with the
+        // tapped opp's data on the next snapshot.
+        if (this._opponentHeroDeltaLabel?.node) this._opponentHeroDeltaLabel.node.active = true;
+        if (this._opponentIdentityCard) this._opponentIdentityCard.active = true;
+        if (this._opponentTokenRow) this._opponentTokenRow.active = true;
+    }
+
+    /** 2026-04-27 — Return from expanded opponent view to the condensed grid. */
+    private _onMultiOppBackTap(): void {
+        if (!this._raceMultiGrid) return;
+        console.log(`${TAG} _onMultiOppBackTap | COLLAPSE`);
+        this._raceMultiExpandedIdx = null;
+        this._raceMultiGrid.active = true;
+        if (this._raceMultiBackBtn) this._raceMultiBackBtn.node.active = false;
+        if (this._opponentHeroDeltaLabel?.node) this._opponentHeroDeltaLabel.node.active = false;
+        if (this._opponentIdentityCard) this._opponentIdentityCard.active = false;
+        if (this._opponentTokenRow) this._opponentTokenRow.active = false;
+    }
+
+    /**
+     * 2026-04-27 — Switch RacePanel layout between 1v1 (existing) and
+     * multi-player (condensed-card grid). Called once when a race starts.
+     */
+    private _setRaceLayoutForRequiredPlayers(n: number): void {
+        const isMulti = n > 2;
+        console.log(`${TAG} _setRaceLayoutForRequiredPlayers | n=${n} isMulti=${isMulti}`);
+        const oppDelta    = this._opponentHeroDeltaLabel?.node ?? null;
+        const oppIdentity = this._opponentIdentityCard ?? null;
+        const oppTokenRow = this._opponentTokenRow ?? null;
+        if (!isMulti) {
+            // 1v1: 1v1 opp nodes ON, multi grid OFF.
+            if (oppDelta) oppDelta.active = true;
+            if (oppIdentity) oppIdentity.active = true;
+            if (oppTokenRow) oppTokenRow.active = true;
+            if (this._raceMultiGrid) this._raceMultiGrid.active = false;
+            if (this._raceMultiBackBtn) this._raceMultiBackBtn.node.active = false;
+            this._raceMultiExpandedIdx = null;
+            return;
+        }
+        // Multi: collapsed by default — 1v1 opp nodes OFF, multi grid ON.
+        if (oppDelta) oppDelta.active = false;
+        if (oppIdentity) oppIdentity.active = false;
+        if (oppTokenRow) oppTokenRow.active = false;
+        if (this._raceMultiGrid) this._raceMultiGrid.active = true;
+        if (this._raceMultiBackBtn) this._raceMultiBackBtn.node.active = false;
+        this._raceMultiExpandedIdx = null;
+        this._layoutMultiOppCards(n);
+    }
+
+    /** 2026-04-27 — Position the visible subset of the 7-card pool per mode. */
+    private _layoutMultiOppCards(n: number): void {
+        const oppCount = n - 1;
+        const layouts: Record<number, { x: number; row: 1 | 2 }[]> = {
+            2: [{ x: -86, row: 1 }, { x: 86, row: 1 }],
+            3: [{ x: -172, row: 1 }, { x: 0, row: 1 }, { x: 172, row: 1 }],
+            7: [
+                { x: -258, row: 1 }, { x: -86, row: 1 }, { x: 86, row: 1 }, { x: 258, row: 1 },
+                { x: -172, row: 2 }, { x: 0, row: 2 }, { x: 172, row: 2 },
+            ],
+        };
+        const cfg = layouts[oppCount] ?? layouts[7];
+        for (let i = 0; i < this._raceMultiCardNodes.length; i++) {
+            const card = this._raceMultiCardNodes[i];
+            if (i < oppCount && i < cfg.length) {
+                const { x, row } = cfg[i];
+                const y = row === 1 ? 60 : -60;
+                card.setPosition(x, y, 0);
+                card.active = true;
+            } else {
+                card.active = false;
+            }
+        }
+    }
+
     private async _onClaim(): Promise<void> {
         console.log(`${TAG} onClaim | START height=${this._lastGameHeight}`);
         const mwa = MWAManager.instance;
@@ -7298,12 +7502,62 @@ export class AppUI extends Component {
             this._renderFeedRows(this._currentFeedRows);
             return;
         }
-        // 2026-04-26 — default tap behavior is now TOGGLE_SQUAD_MEMBERSHIP.
-        // Token detail is no longer reachable from the feed list; it remains
-        // accessible via the search popover suggest rows.
+        // 2026-04-27 — default tap behavior:
+        //   • If row already in squad → just unpick (no popover).
+        //   • If user pre-selected an empty squad slot via "Pick +" → drop
+        //     directly into that slot, skip the popover.
+        //   • Otherwise → open the [+ Pick] / [View Chart] popover anchored
+        //     to the right of the tapped row's checkbox.
         const existingIdx = this._squad.slots.findIndex((s) => !!s && s.address === row.address);
         if (existingIdx >= 0) {
-            console.log(`${TAG} _onFeedRowTap | TOGGLE_OFF symbol="${row.symbol}" slot=${existingIdx}`);
+            console.log(`${TAG} _onFeedRowTap | UNPICK symbol="${row.symbol}" slot=${existingIdx}`);
+            this._squad.clearAt(existingIdx);
+            this._renderFeedRows(this._currentFeedRows);
+            return;
+        }
+        if (this._pickTargetSlot != null && !this._squad.slots[this._pickTargetSlot]) {
+            const targetSlot = this._pickTargetSlot;
+            this._squad.setAt(targetSlot, row);
+            this._pickTargetSlot = null;
+            console.log(`${TAG} _onFeedRowTap | PICK_TARGET_DROP symbol="${row.symbol}" slot=${targetSlot}`);
+            this._renderFeedRows(this._currentFeedRows);
+            return;
+        }
+        this._rowActionPendingRow = row;
+        if (this._rowActionPopover) {
+            // Reposition popover next to the tapped row's checkbox. Row world-y
+            // → TokenDuelPanel-local-y; x = checkbox right edge + half-popover-w + gap.
+            const rowNode = this._feedRowNodes[i];
+            const tdUT = this._tokenDuelPanel?.getComponent(UITransform);
+            if (rowNode && tdUT) {
+                const wp = rowNode.worldPosition;
+                const local = new Vec3();
+                tdUT.convertToNodeSpaceAR(wp, local);
+                // Checkbox sits at row local x=-320, w=22 (half=11). Popover
+                // w=260 (half=130). Anchor popover so its left edge sits 10 px
+                // right of the checkbox's right edge:
+                //   popLeft = checkboxRight + 10
+                //   popCenter = popLeft + popHalfW = checkboxX + checkboxHalfW + 10 + popHalfW
+                const popX = local.x + (-320) + 11 + 10 + 130;
+                const popY = local.y;
+                this._rowActionPopover.setPosition(new Vec3(popX, popY, 0));
+            }
+            this._rowActionPopover.active = true;
+            this._syncBackdrop();
+            console.log(`${TAG} _onFeedRowTap | ROW_ACTION_POPOVER symbol="${row.symbol}" idx=${i}`);
+        }
+    }
+
+    /** Pick + on the row-action popover — toggle squad membership for the cached row. */
+    private _onRowActionPick(): void {
+        const row = this._rowActionPendingRow;
+        if (this._rowActionPopover) this._rowActionPopover.active = false;
+        this._syncBackdrop();
+        this._rowActionPendingRow = null;
+        if (!row) return;
+        const existingIdx = this._squad.slots.findIndex((s) => !!s && s.address === row.address);
+        if (existingIdx >= 0) {
+            console.log(`${TAG} _onRowActionPick | TOGGLE_OFF symbol="${row.symbol}" slot=${existingIdx}`);
             this._squad.clearAt(existingIdx);
         } else {
             let placedAt = -1;
@@ -7314,13 +7568,23 @@ export class AppUI extends Component {
             } else {
                 placedAt = this._squad.add(row);
             }
-            console.log(`${TAG} _onFeedRowTap | TOGGLE_ON symbol="${row.symbol}" slot=${placedAt}`);
+            console.log(`${TAG} _onRowActionPick | TOGGLE_ON symbol="${row.symbol}" slot=${placedAt}`);
             if (placedAt < 0) {
                 showToast('Squad full — tap × to remove first');
             }
         }
-        // Re-render rows so the checkbox state reflects the new squad.
         this._renderFeedRows(this._currentFeedRows);
+    }
+
+    /** View Chart on the row-action popover — open the existing TokenDetail panel. */
+    private _onRowActionChart(): void {
+        const row = this._rowActionPendingRow;
+        if (this._rowActionPopover) this._rowActionPopover.active = false;
+        this._syncBackdrop();
+        this._rowActionPendingRow = null;
+        if (!row) return;
+        console.log(`${TAG} _onRowActionChart | symbol="${row.symbol}"`);
+        this._showTokenDetail(row);
     }
 
     private _onSquadSlotTap(i: number): void {
@@ -9421,8 +9685,8 @@ export class AppUI extends Component {
             const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
             this._pickerSelectedMode = modeIdMap[joinTarget.mode] ?? 'oneVone';
             this._pickerSelectedWagerIndex = joinTarget.wagerTier;
-            const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
-            this._pickerSelectedWindow = winIdMap[joinTarget.timeWindow] ?? '1h';
+            const winIdMap: Record<number, TimeWindowId> = { 0: '30s', 1: '1m', 2: '5m', 3: '1h', 4: '24h', 5: '7d' };
+            this._pickerSelectedWindow = winIdMap[joinTarget.timeWindow] ?? '30s';
             this._pickerSelectedTrack = 'real';
         }
         const wager = WAGER_TIERS_LAMPORTS[this._pickerSelectedWagerIndex];
@@ -9530,6 +9794,8 @@ export class AppUI extends Component {
         this._syncStakeValueLabel(solVal);
         (this as any)._pendingPaperBotMatch = true;
         const modePaperDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
+        // 2026-04-27 — log selected config so multi-bot dispatch can be verified at runtime.
+        console.log(`${TAG} _onPickerStart | paper_bot mode=${this._pickerSelectedMode} requiredPlayers=${modePaperDef.requiredPlayers} window=${this._pickerSelectedWindow} difficulty=${this._pickerSelectedDifficulty}`);
         this._showWaitingPanel({
             mode: modePaperDef.label,
             wagerSol: solVal,
@@ -10267,7 +10533,7 @@ export class AppUI extends Component {
 
     private _onFilterWindowClick(key: string): void {
         const map: Record<string, number | null> = {
-            all: null, '1h': 0, '1d': 1, '3d': 2, '7d': 3,
+            all: null, '30s': 0, '1m': 1, '5m': 2, '1h': 3, '24h': 4, '7d': 5,
         };
         const v = key in map ? map[key] : null;
         this._matchBrowser?.setFilter({ window: v ?? null });
@@ -10344,7 +10610,7 @@ export class AppUI extends Component {
             all: null, oneVone: 0, trio: 1, '4p': 2, '8p': 3,
         };
         const sceneToWindow: Record<string, number | null> = {
-            all: null, '1h': 0, '1d': 1, '3d': 2, '7d': 3,
+            all: null, '30s': 0, '1m': 1, '5m': 2, '1h': 3, '24h': 4, '7d': 5,
         };
         // Resolve "which key is active per row".
         const modeActiveKey = (() => {
@@ -10522,7 +10788,7 @@ export class AppUI extends Component {
             if (modeL) modeL.string = modeMap[m.mode] ?? `mode ${m.mode}`;
             const wagerL = node.getChildByName(`MatchCardWagerLabel_${i}`)?.getComponent(Label);
             if (wagerL) wagerL.string = WAGER_TIERS_LABELS[m.wagerTier] ?? `tier ${m.wagerTier}`;
-            const winLbl = ['30s', '1m', '5m', '1h'][m.timeWindow] ?? '?';
+            const winLbl = ['30s', '1m', '5m', '1h', '24h', '7d'][m.timeWindow] ?? '?';
             const winL = node.getChildByName(`MatchCardWindowLabel_${i}`)?.getComponent(Label);
             if (winL) winL.string = `⏱  ${winLbl} race`;
             const subL = node.getChildByName(`MatchCardSubLabel_${i}`)?.getComponent(Label);
@@ -10719,7 +10985,7 @@ export class AppUI extends Component {
         const modeIdMap: Record<number, 'oneVone' | 'trio' | 'fourPlayer' | 'eightPlayer'> = {
             0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer',
         };
-        const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
+        const winIdMap: Record<number, TimeWindowId> = { 0: '30s', 1: '1m', 2: '5m', 3: '1h', 4: '24h', 5: '7d' };
         const modeKey = modeIdMap[m.mode] ?? 'oneVone';
         this._pickerSelectedMode = modeKey;
         this._pickerSelectedWagerIndex = m.wagerTier;
@@ -10796,7 +11062,7 @@ export class AppUI extends Component {
         if (this._joinConfirmTrackLabel) this._joinConfirmTrackLabel.string = 'REAL';
         const wagerLabel = WAGER_TIERS_LABELS[target.wagerTier] ?? `tier ${target.wagerTier}`;
         if (this._joinConfirmWagerHero) this._joinConfirmWagerHero.string = wagerLabel;
-        const winLabel = ['30s race', '1m race', '5m race', '1h race'][target.timeWindow] ?? '? race';
+        const winLabel = ['30s race', '1m race', '5m race', '1h race', '24h race', '7d race'][target.timeWindow] ?? '? race';
         if (this._joinConfirmWindowLabel) this._joinConfirmWindowLabel.string = `⏱  ${winLabel}`;
         if (this._joinConfirmCapacityLabel) this._joinConfirmCapacityLabel.string = `${target.playerCount}/${target.requiredPlayers} players`;
         const hostName = this._getDisplayName(target.players[0]);
@@ -10852,8 +11118,8 @@ export class AppUI extends Component {
         const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
         this._pickerSelectedMode = modeIdMap[target.mode] ?? 'oneVone';
         this._pickerSelectedWagerIndex = target.wagerTier;
-        const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
-        this._pickerSelectedWindow = winIdMap[target.timeWindow] ?? '1h';
+        const winIdMap: Record<number, TimeWindowId> = { 0: '30s', 1: '1m', 2: '5m', 3: '1h', 4: '24h', 5: '7d' };
+        this._pickerSelectedWindow = winIdMap[target.timeWindow] ?? '30s';
         this._pickerSelectedTrack = 'real';
         this._hideJoinConfirmOverlay();
         this._hideFindMatchPanel();
@@ -10881,20 +11147,48 @@ export class AppUI extends Component {
     }
 
     private _refreshModePickerUi(): void {
-        // Guest mode — lock track to paper, hide track + wager rows entirely.
-        if (this._isGuest()) {
+        // 2026-04-27 — Guest OR bot mode hides Paper/Real toggle (always paper).
+        // Bot mode keeps the Wager readout visible (shows "FREE · Bot Match"
+        // via _refreshWagerControlRow); guest hides it entirely.
+        const hideTrack = this._isGuest() || this._pickerBotMode;
+        if (hideTrack) {
             this._pickerSelectedTrack = 'paper';
             if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = false;
             if (this._pickerRealToggle)  this._pickerRealToggle.node.active = false;
-            if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = false;
-            // Wager chips become irrelevant in guest paper mode.
-            for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
+            // Track section header label — find by name (emitted by scene-gen
+            // as 'PickerSectionLabel_Track' top-level child of ModePickerOverlay).
+            const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
+            if (trackHdr) trackHdr.active = false;
+            if (this._isGuest()) {
+                if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = false;
+                for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
+            } else {
+                // Bot mode — keep wager readout visible (shows "FREE · Bot Match")
+                if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = true;
+                for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
+            }
         } else {
             if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = true;
             if (this._pickerRealToggle)  this._pickerRealToggle.node.active = true;
+            const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
+            if (trackHdr) trackHdr.active = true;
             if (this._pickerWagerReadout) this._pickerWagerReadout.node.active = true;
             for (const btn of this._pickerWagerButtons.values()) btn.node.active = true;
         }
+        // 2026-04-27 — Shift Difficulty / Wager / Start / Status nodes UP by
+        // 150 px when Track is hidden, so we don't leave a gap. Idempotent —
+        // each call sets absolute position from a known base.
+        const SHIFT = hideTrack ? 150 : 0;
+        const setY = (n: Node | null | undefined, baseY: number) => {
+            if (!n) return;
+            const p = n.position;
+            n.setPosition(p.x, baseY + SHIFT, p.z);
+        };
+        setY(this._modePickerOverlay?.getChildByName('PickerSectionLabel_Difficulty'), -110);
+        for (const btn of this._pickerDifficultyButtons.values()) setY(btn.node, -170);
+        setY(this._pickerWagerReadout?.node, -280);
+        setY(this._modePickerOverlay?.getChildByName('PickerStartButton'), -380);
+        setY(this._modePickerOverlay?.getChildByName('PickerStatusLabel'), -460);
         // Stage 3 mode rebalance: scene keys ARE ModeIds now.
         const sceneToModeId: Record<string, string> = {
             oneVone:     'oneVone',
@@ -11108,8 +11402,12 @@ export class AppUI extends Component {
     private _onWagerStartTap(): void {
         const filled = this._squad.filled;
         if (filled !== 3) {
-            showToast(`Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`);
-            console.log(`${TAG} _onWagerStartTap | NOT_READY filled=${filled}/3`);
+            // 2026-04-27 — when the label says "Pick X more"/"Pick 3 tokens",
+            // route the tap into the existing squad-pick checkbox flow instead
+            // of just toasting. _onSquadPickClick enters pick mode on the
+            // first call and confirms (adds checked rows) on the second.
+            console.log(`${TAG} _onWagerStartTap | NOT_READY filled=${filled}/3 → squadPickClick`);
+            this._onSquadPickClick();
             return;
         }
         if (this._wagerDropdown) this._wagerDropdown.active = false;
@@ -11119,12 +11417,11 @@ export class AppUI extends Component {
             this._onPickerStart();
             return;
         }
-        if (this._isBotMode()) {
-            console.log(`${TAG} _onWagerStartTap | BOT_MODE skip_modepicker mode=${this._pickerSelectedMode}`);
-            this._onPickerStart();
-            return;
-        }
-        console.log(`${TAG} _onWagerStartTap | OPEN_PICKER wager_idx=${this._pickerSelectedWagerIndex}`);
+        // 2026-04-27 — Bot mode no longer skips the picker. User picks 3 tokens
+        // in TokenDuelPanel, taps Start Duel → ModePicker opens (Track row hidden
+        // per _refreshModePickerUi bot branch) → user picks mode/duration/difficulty
+        // → tap Start Matching → match runs.
+        console.log(`${TAG} _onWagerStartTap | OPEN_PICKER bot_mode=${this._isBotMode()} wager_idx=${this._pickerSelectedWagerIndex}`);
         if (this._modePickerOverlay) {
             this._modePickerOverlay.active = true;
             this._refreshModePickerUi();
@@ -11143,7 +11440,8 @@ export class AppUI extends Component {
             (this._liqSortPopoverNode && this._liqSortPopoverNode.active) ||
             (this._columnsPopoverNode && this._columnsPopoverNode.active) ||
             (this._searchPopoverNode && this._searchPopoverNode.active) ||
-            (this._wagerDropdown && this._wagerDropdown.active)
+            (this._wagerDropdown && this._wagerDropdown.active) ||
+            (this._rowActionPopover && this._rowActionPopover.active)
         );
     }
 
@@ -11162,6 +11460,8 @@ export class AppUI extends Component {
         if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
         if (this._searchPopoverNode) this._searchPopoverNode.active = false;
         if (this._wagerDropdown) this._wagerDropdown.active = false;
+        if (this._rowActionPopover) this._rowActionPopover.active = false;
+        this._rowActionPendingRow = null;
         this._syncBackdrop();
     }
 
@@ -12128,7 +12428,7 @@ export class AppUI extends Component {
     private _refreshQPCard(): void {
         const ls = this._readLocalStorage();
         const logicalMode = (ls?.getItem('tokenduel:qp.mode') ?? 'oneVone');
-        const windowKey = ls?.getItem('tokenduel:qp.window') ?? '1d';
+        const windowKey = ls?.getItem('tokenduel:qp.window') ?? '30s';
         const wagerIdx = parseInt(ls?.getItem('tokenduel:qp.wager') ?? '2', 10);
         const track = (ls?.getItem('tokenduel:qp.track') ?? 'paper');
 
@@ -12146,7 +12446,7 @@ export class AppUI extends Component {
         const wagerKey = ['001','005','01','025','05'][wagerIdx] ?? '01';
         const optLabels: Record<string, string> = {
             '1v1': '1v1', 'trio': 'Trio', '4p': '4p', '8p': '8p',
-            '1h': '1h', '1d': '1d', '3d': '3d', '7d': '7d',
+            '30s': '30s', '1m': '1m', '5m': '5m', '1h': '1h', '24h': '24h', '7d': '7d',
             '001': '0.01 SOL', '005': '0.05 SOL', '01': '0.1 SOL', '025': '0.25 SOL', '05': '0.5 SOL',
         };
         const paint = (map: Map<string, Button>, activeKey: string) => {
@@ -12769,7 +13069,7 @@ export class AppUI extends Component {
             if (modeL) {
                 // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
                 const modeName = MODES[(['oneVone', 'trio', 'fourPlayer', 'eightPlayer'][entry.mode] ?? 'oneVone') as keyof typeof MODES]?.shortLabel ?? '—';
-                const windowLabel = TIME_WINDOWS[(['1h', '1d', '3d', '7d'][entry.timeWindow] ?? '1d') as TimeWindowId]?.label ?? '';
+                const windowLabel = TIME_WINDOWS[(['30s', '1m', '5m', '1h', '24h', '7d'][entry.timeWindow] ?? '30s') as TimeWindowId]?.label ?? '';
                 modeL.string = `${modeName} · ${windowLabel}${entry.wasForceSettled ? ' · AFK' : ''}`;
             }
             if (wagerL) wagerL.string = `${(Number(entry.wagerLamports) / 1e9).toFixed(3)} SOL`;

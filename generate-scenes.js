@@ -2636,11 +2636,92 @@ function generate() {
     // Dim the label so the button reads as low-priority.
     style(sb, raceCancelN, { color: cl(140, 145, 160, 255), fontSize: 18 });
 
+    // 2026-04-27 — "← Home" button paired LEFT of Forfeit on y=-260 row.
+    // Tap → activates HomePanel, leaves PortfolioRace running in background;
+    // match resumable via MatchesInProgressPanel.
+    const raceHomeBtnN = mkBtnXY(sb, 'RaceHomeButton', racePanelN, '← Home',
+        RPE.homeBtn.x, RPE.homeBtn.y, RPE.homeBtn.w, RPE.homeBtn.h, 28, 34, 48);
+    style(sb, raceHomeBtnN, { color: cl(168, 174, 201, 255), fontSize: 18 });
+
     // Gameplay hint (sits below Forfeit, child of RacePanel so it draws
     // above the panel scrim). String is overwritten by AppUI on race entry.
     const raceHintN = mkLabel(sb, 'RaceHintLabel', racePanelN,
         'Tap to drop - stack as high as you can', 18,
         RPE.hintLabel.y, RPE.hintLabel.w, RPE.hintLabel.h, 168, 174, 201);
+
+    // 2026-04-27 — Multi-player condensed opponent grid (Trio / 4p / 8p).
+    // Built once with 7 cards; AppUI activates the right subset per mode
+    // and switches between collapsed grid + expanded 1v1-style opp view.
+    const MOG = LAYOUT.RacePanel.templates.multiOppCard;
+    const multiGridN = sb.e.length;
+    sb.node('RaceMultiOppGrid', racePanelN, [], [], v3(RPE.multiOppGrid.x, RPE.multiOppGrid.y, 0));
+    sb.ut(multiGridN, RPE.multiOppGrid.w, RPE.multiOppGrid.h);
+    // Local invis-btn helper (mkInvisBtnXY is declared later in this fn — TDZ).
+    const raceMultiInvisBtn = (name, parent, x, y, w, h) => {
+        const hN = sb.e.length;
+        sb.node(name, parent, [], [], v3(x, y, 0));
+        const hUT = sb.ut(hN, w, h);
+        const hBtn = sb.add({
+            __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(hN), _enabled: true, __prefab: null,
+            _interactable: true, _transition: 0,
+            _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+            _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+            _duration: 0.1, _zoomScale: 1.04, _target: rf(hN), _id: gid(),
+        });
+        sb.e[hN]._components = [rf(hUT), rf(hBtn)];
+        return hN;
+    };
+    const ROW1_XS = [-258, -86, 86, 258];
+    const ROW2_XS = [-172, 0, 172];
+    const multiCardIndices = [];
+    for (let i = 0; i < 7; i++) {
+        const inRow1 = i < 4;
+        const cx = inRow1 ? ROW1_XS[i] : ROW2_XS[i - 4];
+        const cy = inRow1 ? MOG.row1Y : MOG.row2Y;
+        const cardN = sb.e.length;
+        sb.node(`MultiOppCard_${i}`, multiGridN, [], [], v3(cx, cy, 0));
+        const cardUT = sb.ut(cardN, MOG.w, MOG.h);
+        const cardSpr = sb.spr(cardN, 22, 28, 44);
+        // Tap target — sits behind visible content. Generic name; verifier
+        // uses suffix-stripped match ('MultiOppCardTap_0' → 'MultiOppCardTap').
+        const tapN = raceMultiInvisBtn(`MultiOppCardTap_${i}`, cardN, MOG.tap.x, MOG.tap.y, MOG.tap.w, MOG.tap.h);
+        // Rank chip (top-LEFT of card)
+        const rankN = mkLabel(sb, `MultiOppRankChip_${i}`, cardN, '—', 12,
+            MOG.rankChip.y, MOG.rankChip.w, MOG.rankChip.h, 168, 174, 201);
+        sb.e[rankN]._lpos = v3(MOG.rankChip.x, MOG.rankChip.y, 0);
+        sb.e[sb.e[rankN]._components[1].__id__]._isBold = true;
+        // Name label
+        const nameN = mkLabel(sb, `MultiOppName_${i}`, cardN, '—', 14,
+            MOG.name.y, MOG.name.w, MOG.name.h, 244, 245, 249);
+        // Delta (big colored)
+        const deltaN = mkLabel(sb, `MultiOppDelta_${i}`, cardN, '—', 22,
+            MOG.delta.y, MOG.delta.w, MOG.delta.h, 168, 174, 201);
+        sb.e[sb.e[deltaN]._components[1].__id__]._isBold = true;
+        style(sb, deltaN, { mono: true });
+        // PnL-vs-me bar (horizontal stripe near bottom)
+        const barN = sb.e.length;
+        sb.node(`MultiOppPnlBar_${i}`, cardN, [], [], v3(MOG.pnlBar.x, MOG.pnlBar.y, 0));
+        const barUT = sb.ut(barN, MOG.pnlBar.w, MOG.pnlBar.h);
+        const barSpr = sb.spr(barN, 48, 198, 155);
+        sb.e[barN]._components = [rf(barUT), rf(barSpr)];
+        sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
+        sb.e[cardN]._children = [rf(tapN), rf(rankN), rf(nameN), rf(deltaN), rf(barN)];
+        sb.e[cardN]._active = false;
+        multiCardIndices.push(cardN);
+    }
+    sb.e[multiGridN]._children = multiCardIndices.map(rf);
+    sb.e[multiGridN]._active = false;
+
+    // "← Back" — only visible when an opponent card is expanded.
+    const raceMultiBackN = mkBtnXY(sb, 'RaceMultiBackButton', racePanelN, '← Back',
+        RPE.multiBackBtn.x, RPE.multiBackBtn.y, RPE.multiBackBtn.w, RPE.multiBackBtn.h, 28, 34, 48);
+    style(sb, raceMultiBackN, { color: cl(168, 174, 201, 255), fontSize: 18 });
+    sb.e[raceMultiBackN]._active = false;
+
+    // 2026-04-27 — Force-hide the legacy 7-row opponent strip (replaced by
+    // RaceMultiOppGrid + tap-to-expand for 4p/8p modes).
+    sb.e[raceOppStripN]._active = false;
 
     const raceVignetteN = sb.e.length;
     sb.node('ScreenVignette', racePanelN, [], [raceVignetteN + 1, raceVignetteN + 2], v3(RPE.vignette.x, RPE.vignette.y, 0));
@@ -2897,7 +2978,11 @@ function generate() {
         ...raceCardIndices.map(rf),
         rf(raceOppCard),
         rf(raceOppStripN),
+        // 2026-04-27 — multi-player condensed grid + back btn (hidden until 4p/8p).
+        rf(multiGridN),
+        rf(raceMultiBackN),
         rf(raceCancelN),
+        rf(raceHomeBtnN),                                  // 2026-04-27 — Home pair (LEFT of Forfeit)
         rf(raceHintN),
         rf(raceMascotN),
     ];
@@ -2984,15 +3069,13 @@ function generate() {
     style(sb, pickerWagerReadout, { bold: true });
     const wagerIndices = [pickerWagerReadout];
 
-    // 4 match-duration window chips in a row (LAYOUT.templates.windowBtn).
-    // Keys stay '1h'|'1d'|'3d'|'7d' for node-name stability; user-facing
-    // labels show the new duration semantics ('30s'|'1m'|'5m'|'1h').
-    const windowDisplayLabels = ['30s', '1m', '5m', '1h'];
+    // 2026-04-27 — 6 match-duration window chips in a row. Keys + labels both
+    // come from LAYOUT.templates.windowBtn (re-keyed: '30s'|'1m'|'5m'|'1h'|'24h'|'7d').
     const windowIndices = [];
     for (let w = 0; w < MPT.windowBtn.count; w++) {
         const wx = MPT.windowBtn.baseX + w * MPT.windowBtn.gapX;
         const wN = mkBtnXY(sb, `Window_${MPT.windowBtn.keys[w]}`, modePickerN,
-            windowDisplayLabels[w], wx, MPT.windowBtn.y,
+            MPT.windowBtn.labels[w], wx, MPT.windowBtn.y,
             MPT.windowBtn.w, MPT.windowBtn.h, 28, 34, 48);
         windowIndices.push(wN);
     }
@@ -3215,6 +3298,34 @@ function generate() {
     sb.e[tdBackdrop]._components = [rf(tdBackdropUT), rf(tdBackdropSpr), rf(tdBackdropBtn)];
     sb.e[tdBackdrop]._active = false;
 
+    // 2026-04-27 — Row-tap popover (Pick + / View Chart). Hidden by default;
+    // AppUI._onFeedRowTap (default branch) re-anchors and shows it.
+    const RAP = TDE.rowActionPopover;
+    const tdRowActionPop = sb.e.length;
+    sb.node('RowActionPopover', tdN, [], [], v3(RAP.x, RAP.y, 0));
+    const tdRowActionPopUT = sb.ut(tdRowActionPop, RAP.w, RAP.h);
+    const tdRowActionPopSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(tdRowActionPop), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 25, 38, 235),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[tdRowActionPop]._components = [rf(tdRowActionPopUT), rf(tdRowActionPopSpr)];
+    const tdRowActionPickBtn = mkBtnXY(sb, 'RowActionPickButton', tdRowActionPop, '+ Pick',
+        TDE.rowActionPickBtn.x, TDE.rowActionPickBtn.y,
+        TDE.rowActionPickBtn.w, TDE.rowActionPickBtn.h, 56, 148, 252);
+    style(sb, tdRowActionPickBtn, { bold: true });
+    const tdRowActionChartBtn = mkBtnXY(sb, 'RowActionChartButton', tdRowActionPop, 'View Chart',
+        TDE.rowActionChartBtn.x, TDE.rowActionChartBtn.y,
+        TDE.rowActionChartBtn.w, TDE.rowActionChartBtn.h, 40, 50, 70);
+    sb.e[tdRowActionPop]._children = [rf(tdRowActionPickBtn), rf(tdRowActionChartBtn)];
+    sb.e[tdRowActionPop]._active = false;
+
     // SearchSuggestionPopover — 5 pre-instantiated rows from suggestRow template.
     // Rendered LAST in children order so it overlays the feed when visible.
     // Hidden by default; AppUI toggles _active via SearchEditBox text events.
@@ -3310,6 +3421,7 @@ function generate() {
         rf(h1N), rf(h2N), rf(h3N),
         rf(tdGameArea), rf(tdGameOver), rf(racePanelN),       // betting-duel Phase 3: live race screen
         rf(tdBackdrop),                                       // below popovers for tap-outside-close
+        rf(tdRowActionPop),                                   // Pick + / View Chart popover (above backdrop)
         rf(popN), rf(minLiqPopN), rf(liqSortPopN), rf(colPopN), rf(suggestN),
         rf(dropOverlayN),
         rf(modePickerN),                                      // Session D Part 2 (top-most overlay)
@@ -4752,7 +4864,7 @@ function generate() {
         return rowN;
     };
     const stQpModeRow   = buildQPDropdownRow('QPModeRow',   QPC.qpModeRow,   'MODE',      '1v1');
-    const stQpWindowRow = buildQPDropdownRow('QPWindowRow', QPC.qpWindowRow, 'TIMEFRAME', '1d');
+    const stQpWindowRow = buildQPDropdownRow('QPWindowRow', QPC.qpWindowRow, 'TIMEFRAME', '30s');
     const stQpWagerRow  = buildQPDropdownRow('QPWagerRow',  QPC.qpWagerRow,  'WAGER',     '0.1 SOL');
 
     // TRADING MODE row — sibling key label + segmented control. The toggle is

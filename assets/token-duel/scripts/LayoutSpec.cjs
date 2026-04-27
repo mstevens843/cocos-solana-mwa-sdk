@@ -172,18 +172,32 @@ const race = {
     // Opponent-side token row (3 cards side-by-side, duel layout).
     OPP_TOKEN_ROW_Y:     -90,
 
-    // Forfeit button (small, low-emphasis).
+    // 2026-04-27 — Forfeit + Home buttons paired on y=-260. Home on LEFT,
+    // Forfeit on RIGHT. Hint text + mascot stay where they are.
     FORFEIT_BTN_Y:       -260,
+    FORFEIT_BTN_X:        80,    // moved x=0 → +80 to make room for Home
+    HOME_BTN_X:          -80,
+    HOME_BTN_Y:          -260,
 
     // Gameplay hint ("Tap to drop - stack as high as you can"). Sits below Forfeit.
     HINT_LABEL_Y:        -310,
 
     // 4p/8p multi-player surfaces — mutually exclusive with duel layout.
     OPP_CARD_Y:          -400,   // 1v1 legacy big opponent card (hidden in duel)
-    OPP_STRIP_Y:         -406,   // 7-bot opponent leaderboard strip (4p/8p)
+    OPP_STRIP_Y:         -406,   // 7-bot opponent leaderboard strip — KILLED 2026-04-27 (force-hidden)
 
     // Mascot bottom-right corner.
     MASCOT_Y:            -460,
+
+    // 2026-04-27 — Multi-player condensed-card grid (Trio / 4p / 8p).
+    // Group sits in the band below the central duel bar. Row1 cards centered
+    // at gridY=+60 (panel y=-130), row2 at gridY=-60 (panel y=-250).
+    MULTI_GRID_Y:        -190,
+    MULTI_GRID_W:         696,
+    MULTI_GRID_H:         260,
+    // "← Back" button — only visible when an opponent card is expanded.
+    MULTI_BACK_BTN_X:    -260,
+    MULTI_BACK_BTN_Y:     140,    // same band as opponentDelta (top-LEFT of expanded view)
 };
 
 // 2026-04-27 — LandingPanel deterministic Y anchors.
@@ -713,12 +727,14 @@ const LayoutSpec = {
                     { x:  160, y: 290 },
                 ],
             },
-            // 4 window chips in a single row. Phase 23: 140×40 → 160×52.
+            // 2026-04-27 — 6 window chips in a single row (was 4). Re-keyed
+            // to match real durations. baseX -270 / gapX 108 → 6×100 + 5×8 = 640
+            // total span, centered on x=0; first chip at x=-270, last at +270.
             windowBtn: {
-                count: 4, w: 160, h: 52, y: 130,
-                keys: ['1h', '1d', '3d', '7d'],
-                labels: ['1 Hour', '1 Day', '3 Days', '7 Days'],
-                baseX: -258, gapX: 172,
+                count: 6, w: 100, h: 52, y: 130,
+                keys: ['30s', '1m', '5m', '1h', '24h', '7d'],
+                labels: ['30s', '1m', '5m', '1h', '24h', '7d'],
+                baseX: -270, gapX: 108,
             },
             // 3 difficulty chips in a single row. Phase 23: 130×40 → 180×52.
             difficultyBtn: {
@@ -797,12 +813,24 @@ const LayoutSpec = {
 
             // Legacy 1v1 opponent card (HIDDEN in duel layout — gated in AppUI).
             opponentCard:     { x: 0,    y: race.OPP_CARD_Y,  w: 640, h: 110, type: 'sprite' },
-            // 4p/8p multi-bot strip (still used when requiredPlayers > 2)
+            // 4p/8p multi-bot strip — 2026-04-27 KILLED (force-hidden in scene-gen + AppUI).
+            // Replaced by multiOppGrid + 7 MultiOppCard_* with tap-to-expand.
             opponentStrip:    { x: 0,    y: race.OPP_STRIP_Y, w: 640, h: 260, type: 'group' },
 
-            // Forfeit (smaller, dimmer, below opponent section) + mascot + vignette
-            cancelBtn:        { x: 0,    y: race.FORFEIT_BTN_Y, w: 140, h: 36,  type: 'btn',
-                notes: 'duel layout: small/recessed gray surface, low emphasis' },
+            // 2026-04-27 — Multi-player condensed-card grid (Trio / 4p / 8p).
+            // Hidden by default; AppUI activates when requiredPlayers > 2.
+            // 4+3 grid: row1 (4 cards) at gridY=+60, row2 (3 cards) at gridY=-60.
+            multiOppGrid:     { x: 0,    y: race.MULTI_GRID_Y, w: race.MULTI_GRID_W, h: race.MULTI_GRID_H, type: 'group',
+                notes: 'multi-player N-card grid; AppUI re-positions cards per mode (Trio: 2, 4p: 3, 8p: 4+3).' },
+            // "← Back" — only visible when an opponent card is expanded.
+            multiBackBtn:     { x: race.MULTI_BACK_BTN_X, y: race.MULTI_BACK_BTN_Y, w: 100, h: 36, type: 'btnGhost',
+                notes: 'returns from expanded opp view to the condensed MultiOppGrid.' },
+
+            // Forfeit (paired RIGHT of Home on y=-260 row) + Home button (LEFT)
+            cancelBtn:        { x: race.FORFEIT_BTN_X, y: race.FORFEIT_BTN_Y, w: 140, h: 36, type: 'btn',
+                notes: '2026-04-27 — moved x 0→+80 to pair with Home button on the LEFT.' },
+            homeBtn:          { x: race.HOME_BTN_X, y: race.HOME_BTN_Y, w: 140, h: 36, type: 'btnGhost',
+                notes: '2026-04-27 — "← Home" non-destructive escape; PortfolioRace keeps running, match resumable via MIP panel.' },
 
             // Gameplay hint — child of RacePanel so it draws above the panel scrim.
             hintLabel:        { x: 0,    y: race.HINT_LABEL_Y, w: 620, h: 24, type: 'label',
@@ -866,6 +894,18 @@ const LayoutSpec = {
                 dot:   { x: -120, y: 0,   w: 10,  h: 10 },
                 name:  { x: 8,    y: 12,  w: 240, h: 24 },
                 level: { x: 8,    y: -14, w: 240, h: 18 },
+            },
+            // 2026-04-27 — Multi-player condensed opponent card. AppUI builds
+            // 7 such cards as children of RaceMultiOppGrid; activates the
+            // right subset per mode (Trio: 2, 4p: 3, 8p: 7).
+            multiOppCard: {
+                count: 7, w: 160, h: 120,
+                row1Y: 60, row2Y: -60,
+                rankChip:  { x: -60, y: 42,  w: 40,  h: 20 },
+                name:      { x:   0, y: 20,  w: 140, h: 22 },
+                delta:     { x:   0, y: -12, w: 140, h: 24 },
+                pnlBar:    { x:   0, y: -44, w: 120, h: 4 },
+                tap:       { x:   0, y: 0,   w: 160, h: 120 },
             },
         },
         allowedOverlaps: [
@@ -941,6 +981,11 @@ const LayoutSpec = {
             ['ScreenVignette', 'RaceDuelBarContainer'],
             ['ScreenVignette', 'OpponentDeltaHeroLabel'],
             ['ScreenVignette', 'OpponentSubtitleGapLabel'],
+            // 2026-04-27 — new buttons + multi grid sit on top of the
+            // full-canvas vignette by design.
+            ['ScreenVignette', 'RaceHomeButton'],
+            ['ScreenVignette', 'RaceMultiBackButton'],
+            ['ScreenVignette', 'RaceMultiOppGrid'],
         ],
     },
 
@@ -1152,8 +1197,8 @@ const LayoutSpec = {
             // ride along with the cards (cards shifted +30 in 2026-04-27 refactor).
             qpModePopover:   { x: 200, y: settings.QP_MODE_POPOVER_Y,   w: 220, h: 174, type: 'group',
                 notes: 'opens BELOW QPModeRow; 4 options × 40 + 14 padding' },
-            qpWindowPopover: { x: 200, y: settings.QP_WINDOW_POPOVER_Y, w: 220, h: 174, type: 'group',
-                notes: 'opens BELOW QPWindowRow' },
+            qpWindowPopover: { x: 200, y: settings.QP_WINDOW_POPOVER_Y, w: 220, h: 204, type: 'group',
+                notes: 'opens BELOW QPWindowRow; 2026-04-27 grew 174→204 for 6 options' },
             qpWagerPopover:  { x: 200, y: settings.QP_WAGER_POPOVER_Y,  w: 220, h: 214, type: 'group',
                 notes: 'opens BELOW QPWagerRow; 5 options × 40 + 14' },
         },
@@ -1168,10 +1213,10 @@ const LayoutSpec = {
                 logical: ['oneVone', 'trio', 'fourPlayer', 'eightPlayer'],
             },
             qpWindowOption: {
-                count: 4, w: 200, h: 36,
-                keys:   ['1h', '1d', '3d', '7d'],
-                labels: ['1h', '1d', '3d', '7d'],
-                ys:     [60, 20, -20, -60],
+                count: 6, w: 200, h: 30,
+                keys:   ['30s', '1m', '5m', '1h', '24h', '7d'],
+                labels: ['30s', '1m', '5m', '1h', '24h', '7d'],
+                ys:     [80, 48, 16, -16, -48, -80],
             },
             qpWagerOption: {
                 count: 5, w: 200, h: 36,
@@ -1748,6 +1793,12 @@ const LayoutSpec = {
             presetsModalCancel:      { x: 100,  y: -50, w: 180, h: 44, type: 'btnGhost' },
             // Invisible full-panel tap-outside catcher; rendered below popovers.
             backdropButton:          { x: 0, y: 0, w: 720, h: 1280, type: 'btnGhost' },
+            // 2026-04-27 — Row-tap popover (Pick + / View Chart). Repositioned
+            // at runtime by AppUI to anchor near the tapped row.
+            rowActionPopover:        { x: 0, y: 0,  w: 260, h: 110, type: 'group',
+                notes: 'shown when a feed row is tapped in default mode; 2 buttons stacked' },
+            rowActionPickBtn:        { x: 0, y:  26, w: 240, h: 44, type: 'btnPrimary' },
+            rowActionChartBtn:       { x: 0, y: -26, w: 240, h: 44, type: 'btnGhost' },
         },
         templates: {
             // 4 top-row icon buttons — 64×56 each, stride 76. 2026-04-27 v3:
@@ -2069,6 +2120,18 @@ const LayoutSpec = {
             // Ring (radius 22, y=8) and time label (y=-22) share the right
             // column. Time label bbox extends up into ring bbox by design.
             ['MIPRing', 'MIPTimeLabel'],
+        ],
+    },
+
+    // 2026-04-27 — synthetic panel-name entry for the multi-opponent cards
+    // on RacePanel. Each MultiOppCard_N has an invisible TapTarget child
+    // sitting BEHIND 4 visible children (rank chip, name, delta, PnL bar).
+    MultiOppCard: {
+        allowedOverlaps: [
+            ['MultiOppCardTap', 'MultiOppRankChip'],
+            ['MultiOppCardTap', 'MultiOppName'],
+            ['MultiOppCardTap', 'MultiOppDelta'],
+            ['MultiOppCardTap', 'MultiOppPnlBar'],
         ],
     },
 
