@@ -34,45 +34,45 @@
 // below the (now-shorter) scrollview bottom.
 const td = {
     // Header band — pills + back; aligned with HomePanel.notificationBell etc.
-    // 2026-04-27: HEADER_Y 620→660 to raise the (now-shrunk-25%) Lv/SOL pills
-    // higher into the safe-area gap.
-    HEADER_Y:           660,
+    // 2026-04-27 v3: HEADER_Y 660→620 — drop pill row right above the title.
+    HEADER_Y:           620,
     TITLE_Y:            570,
     TITLE_BOTTOM:       552,   // = TITLE_Y - title.h(36)/2
 
     // MatchSetupCard summary — directly under title.
-    // 2026-04-27: 485 → 455 (drop 30 to clear title underline gap).
-    MATCHSETUP_CARD_Y:  455,   // h=124 → top 517, bottom 393
+    // 2026-04-27 v3: 455 → 480 (gap title→card halved 50→25).
+    MATCHSETUP_CARD_Y:  480,   // h=93 → top 527, bottom 433
 
     // FeedFrameCard wrapping search/chips/col-headers + scrollview.
-    // 2026-04-27 v2: scroll shrank 25% (680 → 510). Frame shrinks to wrap.
-    FEED_FRAME_TOP:     375,
+    // 2026-04-27 v3: top 375→417 (gap card→frame halved 33→16). Inside-frame
+    // items + everything below shift up 42 to follow.
+    FEED_FRAME_TOP:     417,
     FEED_FRAME_H:       656,
-    FEED_FRAME_Y:       47,    // = FEED_FRAME_TOP - FEED_FRAME_H/2
+    FEED_FRAME_Y:       89,    // = FEED_FRAME_TOP - FEED_FRAME_H/2
 
-    // In-frame mid band — search/filter/cols.
-    SEARCH_Y:           345,
-    CHIPS_Y:            293,
-    COL_HEADERS_Y:      255,
+    // In-frame mid band — search/filter/cols (all +42 vs v2).
+    SEARCH_Y:           387,
+    CHIPS_Y:            335,
+    COL_HEADERS_Y:      297,
 
-    // Feed scrollview — 2026-04-27 v2: h 680 → 510 (25% shrink). Top stays at 239.
-    FEED_SCROLL_TOP:    239,
+    // Feed scrollview — h=510 unchanged; top +42.
+    FEED_SCROLL_TOP:    281,
     FEED_SCROLL_H:      510,
-    FEED_SCROLL_Y:      -16,   // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
-    FEED_SCROLL_BOTTOM: -271,
+    FEED_SCROLL_Y:      26,    // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
+    FEED_SCROLL_BOTTOM: -229,
 
-    // SquadPanel — lifted 191 to follow scroll shrink.
-    SQUAD_PANEL_TOP:    -291,
+    // SquadPanel — lifted 42.
+    SQUAD_PANEL_TOP:    -249,
     SQUAD_PANEL_H:      220,
-    SQUAD_PANEL_Y:      -401,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
-    SQUAD_PANEL_BOTTOM: -511,
-    SQUAD_HEADER_Y:     -336,
-    SQUAD_SLOTS_Y:      -386,
-    WAGER_Y:            -451,
-    WAGER_DROPDOWN_Y:   -419,
+    SQUAD_PANEL_Y:      -359,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
+    SQUAD_PANEL_BOTTOM: -469,
+    SQUAD_HEADER_Y:     -294,
+    SQUAD_SLOTS_Y:      -344,
+    WAGER_Y:            -409,
+    WAGER_DROPDOWN_Y:   -377,
 
     // Footer.
-    STATUS_Y:           -579,
+    STATUS_Y:           -537,
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
@@ -1655,11 +1655,11 @@ const LayoutSpec = {
             backLink:           { x: -288, y: td.HEADER_Y,  w: 100, h: 28, type: 'label' },
             backBtn:            { x: -288, y: td.HEADER_Y,  w: 120, h: 40, type: 'btnGhost' },
             title:              { x: 0,    y: td.TITLE_Y,   w: 320, h: 36, type: 'label' },
-            // 2026-04-27 v2: pills shrunk 25% from the 2× pass (370×72 → 278×54;
-            // 260×72 → 195×54) and repositioned tighter so the row reads cleanly
-            // under the (raised) icon-button row.
-            levelPill:          { x: -130, y: td.HEADER_Y,  w: 278, h: 54, type: 'chip',    notes: '"Lv N · curr/max XP"' },
-            solPill:            { x: 170,  y: td.HEADER_Y,  w: 195, h: 54, type: 'chip',    notes: '"◼ 19.99 SOL"' },
+            // 2026-04-27 v3: pills shrunk further (278×54 → 140×44; 195×54 → 140×44)
+            // and right-clustered so both sit on the right half of the canvas with
+            // the icon row above them.
+            levelPill:          { x: 85,  y: td.HEADER_Y,  w: 140, h: 44, type: 'chip',    notes: '"Lv N · curr/max XP"' },
+            solPill:            { x: 255, y: td.HEADER_Y,  w: 140, h: 44, type: 'chip',    notes: '"◼ 19.99 SOL"' },
             // MatchSetupCard restored — multi-line summary directly under title.
             // Mode tag (top-left) + Squad/Stake (mid) + Hint (bottom) live INSIDE.
             // 2026-04-27 v2: h 124 → 93 (25% shorter so the rest of the layout
@@ -1750,16 +1750,15 @@ const LayoutSpec = {
             backdropButton:          { x: 0, y: 0, w: 720, h: 1280, type: 'btnGhost' },
         },
         templates: {
-            // 4 top-row icon buttons — 2026-04-27: 2× size (32×28 → 64×56),
-            // stride 76, right-anchored at xs[3]=328.
-            // 2026-04-27 v2: y 660→720 to clear the (now-raised) Lv/SOL pills
-            // sitting at HEADER_Y=660.
+            // 4 top-row icon buttons — 64×56 each, stride 76. 2026-04-27 v3:
+            // y 720→685 (drop above pill row at 620); xs shifted left 30 so
+            // the rightmost icon's right edge sits ~30 px from the canvas edge.
             topRowActionBtn: {
-                count: 4, w: 64, h: 56, y: 720,
+                count: 4, w: 64, h: 56, y: 685,
                 names:  ['OpenSettingsButton', 'OpenSquadPresetsButton',
                          'SuggestSquadButton', 'HelpButton'],
                 labels: ['', '', '', '?'],
-                xs:     [100, 176, 252, 328],
+                xs:     [70, 146, 222, 298],
             },
             // Sort chips — 2-chip row: [Newest] [Liquidity ▾]. The Liq↓ + Liq↑
             // chips collapsed into a single 'liq' chip that opens
@@ -1799,12 +1798,12 @@ const LayoutSpec = {
             //   Top line (y=36):    [Avatar 150x150] [SYMBOL bold]   [Score]   [+24H% color]
             //   Bottom line (y=-30):                  [name·mint muted]  [Liq] [Vol]   [Price]
             feedRow: {
-                count: 20, w: 688, h: 136,
-                baseY: -68, gapY: -140,
-                selectedEdge: { x: -334, y: 0,   w: 5,   h: 124, notes: 'left teal stripe' },
+                count: 20, w: 688, h: 102,
+                baseY: -51, gapY: -105,
+                selectedEdge: { x: -334, y: 0,   w: 5,   h: 94,  notes: 'left teal stripe' },
                 checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
                 checkmark:    { x: 0,    y: 1,   w: 22,  h: 22 },
-                logo:         { x: -253, y: 0,   w: 120, h: 120 },
+                logo:         { x: -253, y: 0,   w: 90,  h: 90 },
                 symbol:       { x: -71,  y: 36,  w: 154, h: 26, notes: 'bold 22pt' },
                 score:        { x: 40,   y: 36,  w: 44,  h: 20 },
                 change:       { x: 280,  y: 36,  w: 90,  h: 30, notes: 'HERO 24H% — 26pt bold' },

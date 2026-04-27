@@ -3410,7 +3410,7 @@ export class AppUI extends Component {
             // FeedTabDropdownButton + WatchlistStarButton icons are state-driven; see _refreshFeedTabDropdown / _refreshWatchlistStarLabel.
 
             // Wager
-            { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 26, offsetX: -120 },
+            { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 26, offsetX: -70 },
 
             // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
             { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 28, offsetX: -150 },

@@ -1610,8 +1610,8 @@ function generate() {
     const tdLevelInnerN = sb.e.length;
     sb.node('TokenDuelLevelChip', tdLevelChipN, [], [], v3(0, 0, 0));
     const tdLevelInnerUT = sb.ut(tdLevelInnerN, TDE.levelPill.w - 16, TDE.levelPill.h - 8);
-    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 24, 0,
-        TDE.levelPill.w - 24, 40, 255, 210, 74);
+    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 18, 0,
+        TDE.levelPill.w - 24, 32, 255, 210, 74);
     sb.e[sb.e[tdLevelChipLbl]._components[1].__id__]._isBold = true;
     sb.e[tdLevelInnerN]._components = [rf(tdLevelInnerUT)];
     sb.e[tdLevelInnerN]._children = [rf(tdLevelChipLbl)];
@@ -1638,8 +1638,8 @@ function generate() {
     const tdBalanceInnerN = sb.e.length;
     sb.node('BalanceChip', tdSolPillN, [], [], v3(0, 0, 0));
     const tdBalanceInnerUT = sb.ut(tdBalanceInnerN, TDE.solPill.w - 16, TDE.solPill.h - 8);
-    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 24, 0,
-        TDE.solPill.w - 24, 40, 168, 230, 200);
+    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 18, 0,
+        TDE.solPill.w - 24, 32, 168, 230, 200);
     sb.e[sb.e[tdBalanceLbl]._components[1].__id__]._isBold = true;
     style(sb, tdBalanceLbl, { mono: true });
     sb.e[tdBalanceInnerN]._components = [rf(tdBalanceInnerUT)];
@@ -1682,23 +1682,23 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    const mscModeTag = mkLabel(sb, 'MatchSetupModeTag', matchSetupCardN, 'TOKEN DUEL · 1V1', 11, 29,
-        220, 14, 168, 174, 201);
-    sb.e[mscModeTag]._lpos = v3(-220, 29, 0);
+    const mscModeTag = mkLabel(sb, 'MatchSetupModeTag', matchSetupCardN, 'TOKEN DUEL · 1V1', 14, 32,
+        220, 18, 168, 174, 201);
+    sb.e[mscModeTag]._lpos = v3(-220, 32, 0);
     sb.e[sb.e[mscModeTag]._components[1].__id__]._horizontalAlign = 0;
     sb.e[sb.e[mscModeTag]._components[1].__id__]._spacingX = 1;
-    const mscSquadLbl = mkLabel(sb, 'MatchSetupSquadLabel', matchSetupCardN, 'Squad: 0/3', 17, 4,
-        260, 21, 244, 245, 249);
-    sb.e[mscSquadLbl]._lpos = v3(-180, 4, 0);
+    const mscSquadLbl = mkLabel(sb, 'MatchSetupSquadLabel', matchSetupCardN, 'Squad: 0/3', 22, 0,
+        260, 28, 244, 245, 249);
+    sb.e[mscSquadLbl]._lpos = v3(-180, 0, 0);
     sb.e[sb.e[mscSquadLbl]._components[1].__id__]._horizontalAlign = 0;
     sb.e[sb.e[mscSquadLbl]._components[1].__id__]._isBold = true;
-    const mscStakeLbl = mkLabel(sb, 'MatchSetupStakeLabel', matchSetupCardN, 'Stake: 0.05 SOL', 17, 4,
-        260, 21, 255, 210, 74);
-    sb.e[mscStakeLbl]._lpos = v3(180, 4, 0);
+    const mscStakeLbl = mkLabel(sb, 'MatchSetupStakeLabel', matchSetupCardN, 'Stake: 0.05 SOL', 22, 0,
+        260, 28, 255, 210, 74);
+    sb.e[mscStakeLbl]._lpos = v3(180, 0, 0);
     sb.e[sb.e[mscStakeLbl]._components[1].__id__]._horizontalAlign = 2;
     style(sb, mscStakeLbl, { mono: true, bold: true });
-    const mscHintLbl = mkLabel(sb, 'MatchSetupHintLabel', matchSetupCardN, 'Pick 3 tokens to start', 14, -21,
-        620, 17, 20, 241, 149);
+    const mscHintLbl = mkLabel(sb, 'MatchSetupHintLabel', matchSetupCardN, 'Pick 3 tokens to start', 18, -32,
+        620, 22, 20, 241, 149);
     sb.e[sb.e[mscHintLbl]._components[1].__id__]._isBold = true;
     const mscEdge = mkCardEdge(sb, matchSetupCardN, MSC.w, MSC.h, 20, 241, 149);
     sb.e[matchSetupCardN]._components = [rf(mscUT), rf(mscSpr)];
