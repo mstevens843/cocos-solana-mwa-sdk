@@ -90,6 +90,10 @@ export class NotificationStore {
     private _listeners: Set<NotificationListener> = new Set();
     /** Tracks recent (kind, dedupeKey) → ts to suppress floods. */
     private _dedupeTs: Map<string, number> = new Map();
+    /** DB Stage 10 — pubkey for fire-and-forget backend sync. Null = guest/disconnected. */
+    private _syncPubkey: string | null = null;
+    /** Ids that arrived via _ingestBackendEvent — never round-trip them back to the server. */
+    private _serverOriginIds: Set<string> = new Set();
 
     /** Add a new notification. Returns the persisted record (with id+createdAt). */
     add(input: {
@@ -150,6 +154,13 @@ export class NotificationStore {
         console.log(`${TAG} add | id=${n.id.slice(0, 8)} kind=${n.kind} title="${n.title}" total=${this._list.length}`);
         this._persist();
         this._fanout();
+        // DB Stage 10 — fire-and-forget backend write for *locally-emitted*
+        // notifications. Server-origin entries (those passed through with
+        // markServerOrigin) are not echoed back, since the server already
+        // knows about them.
+        if (this._syncPubkey && !this._serverOriginIds.has(n.id)) {
+            this._postNotification(n);
+        }
         return n;
     }
 
@@ -160,22 +171,28 @@ export class NotificationStore {
         console.log(`${TAG} markRead | id=${id.slice(0, 8)}`);
         this._persist();
         this._fanout();
+        if (this._syncPubkey) this._postRead(id);
         return true;
     }
 
     markAllRead(): number {
         const now = Date.now();
         let count = 0;
+        const newlyReadIds: string[] = [];
         for (const n of this._list) {
             if (n.readAt === null && n.dismissedAt === null) {
                 n.readAt = now;
                 count += 1;
+                newlyReadIds.push(n.id);
             }
         }
         if (count > 0) {
             console.log(`${TAG} markAllRead | count=${count}`);
             this._persist();
             this._fanout();
+            if (this._syncPubkey) {
+                for (const id of newlyReadIds) this._postRead(id);
+            }
         }
         return count;
     }
@@ -222,6 +239,104 @@ export class NotificationStore {
         this._dedupeTs.clear();
         this._persist();
         this._fanout();
+    }
+
+    // ── DB Stage 10 — backend sync ─────────────────────────────────────
+
+    /** Bind to a pubkey for cross-device sync. Pass null to detach (guest mode / disconnect). */
+    setSyncPubkey(pubkey: string | null): void {
+        this._syncPubkey = pubkey || null;
+    }
+
+    /**
+     * Mark an id as server-origin so add() doesn't echo it back to the
+     * server. Called by AppUI._ingestBackendEvent before delegating to
+     * add(). Bounded so the set can't grow unbounded over a long session.
+     */
+    markServerOrigin(id: string): void {
+        this._serverOriginIds.add(id);
+        // Trim the set if it gets too big — we only need recent ids.
+        if (this._serverOriginIds.size > STORE_LIMIT * 2) {
+            const arr = Array.from(this._serverOriginIds);
+            this._serverOriginIds = new Set(arr.slice(arr.length - STORE_LIMIT));
+        }
+    }
+
+    /**
+     * Pull the server's notification list and merge in. Server is
+     * authoritative on read_at/dismissed_at — once read on Device A, stays
+     * read on Device B. Local entries the server hasn't seen survive.
+     */
+    async hydrateFromBackend(pubkey: string): Promise<void> {
+        if (!pubkey) return;
+        try {
+            const { fetchNotifications } = await import('./NotificationsRpc');
+            const remote = await fetchNotifications(pubkey, 0, STORE_LIMIT);
+            if (!remote) return;
+            const localById = new Map<string, Notification>(this._list.map((n) => [n.id, n]));
+            for (const ev of remote.events) {
+                this.markServerOrigin(ev.id);
+                const existing = localById.get(ev.id);
+                const remoteReadAt = (ev as any).readAt ?? null;
+                const merged: Notification = {
+                    id: ev.id,
+                    kind: ev.kind as NotificationKind,
+                    title: ev.title,
+                    body: ev.body,
+                    payload: ev.payload,
+                    createdAt: ev.createdAt,
+                    // Server wins on readAt — once read anywhere, stays read.
+                    readAt: typeof remoteReadAt === 'number' ? remoteReadAt
+                          : existing?.readAt ?? null,
+                    // dismissed is currently device-local (no server column for it on this route);
+                    // preserve local value if any.
+                    dismissedAt: existing?.dismissedAt ?? null,
+                    quietToast: existing?.quietToast,
+                };
+                localById.set(ev.id, merged);
+            }
+            // Rebuild list: server entries + any local-only entries, newest first, capped.
+            const all = Array.from(localById.values()).sort((a, b) => b.createdAt - a.createdAt);
+            this._list = all.slice(0, STORE_LIMIT);
+            this._persist();
+            this._fanout();
+            console.log(`${TAG} hydrate | server_count=${remote.events.length} merged_count=${this._list.length}`);
+        } catch (e) {
+            console.log(`${TAG} hydrate | ERR ${e}`);
+        }
+    }
+
+    private _postNotification(n: Notification): void {
+        const pubkey = this._syncPubkey;
+        if (!pubkey) return;
+        void (async () => {
+            try {
+                const { postNotification } = await import('./NotificationsRpc');
+                await postNotification(pubkey, {
+                    id: n.id,
+                    kind: n.kind,
+                    title: n.title,
+                    body: n.body,
+                    payload: n.payload,
+                    createdAt: n.createdAt,
+                });
+            } catch (e) {
+                console.log(`${TAG} _postNotification | NET_ERR ${e}`);
+            }
+        })();
+    }
+
+    private _postRead(id: string): void {
+        const pubkey = this._syncPubkey;
+        if (!pubkey) return;
+        void (async () => {
+            try {
+                const { postNotificationRead } = await import('./NotificationsRpc');
+                await postNotificationRead(pubkey, id);
+            } catch (e) {
+                console.log(`${TAG} _postRead | NET_ERR ${e}`);
+            }
+        })();
     }
 
     // ── internals ────────────────────────────────────────────────────

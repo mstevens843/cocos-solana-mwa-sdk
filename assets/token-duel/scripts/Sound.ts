@@ -39,6 +39,21 @@ let _source: AudioSource | null = null;
 const _clips: Map<SoundKey, AudioClip> = new Map();
 let _volume: number = 0.7;   // 0..1
 let _enabled: boolean = true;
+/** DB Stage 10 — pubkey for cross-device preferences sync. Null = guest. */
+let _syncPubkey: string | null = null;
+
+function _syncPref(patch: { soundEnabled?: boolean; soundVolume?: number }): void {
+    if (!_syncPubkey) return;
+    const pubkey = _syncPubkey;
+    void (async () => {
+        try {
+            const { putPreferences } = await import('./PreferencesRpc');
+            await putPreferences(pubkey, patch);
+        } catch (e) {
+            console.log(`${TAG} _syncPref | NET_ERR ${e}`);
+        }
+    })();
+}
 
 function ls(): Storage | null {
     try {
@@ -106,6 +121,7 @@ export function setVolume(pct: number): void {
     if (_source) _source.volume = _volume;
     try { ls()?.setItem(LS_VOL, String(clamped)); } catch (_) { /* ignore */ }
     console.log(`${TAG} setVolume | volume=${clamped}%`);
+    _syncPref({ soundVolume: clamped });
 }
 
 export function getVolume(): number { return Math.round(_volume * 100); }
@@ -114,6 +130,26 @@ export function setEnabled(on: boolean): void {
     _enabled = on;
     try { ls()?.setItem(LS_ON, on ? 'true' : 'false'); } catch (_) { /* ignore */ }
     console.log(`${TAG} setEnabled | enabled=${on}`);
+    _syncPref({ soundEnabled: on });
 }
 
 export function isEnabled(): boolean { return _enabled; }
+
+/** DB Stage 10 — bind audio settings to a pubkey for cross-device sync. Pass null to detach. */
+export function setSoundSyncPubkey(pubkey: string | null): void {
+    _syncPubkey = pubkey || null;
+}
+
+/** Apply hydrated preferences from backend on connect. Writes to localStorage + live state. */
+export function applySoundPreferences(prefs: { soundEnabled?: boolean; soundVolume?: number }): void {
+    if (typeof prefs.soundVolume === 'number' && Number.isFinite(prefs.soundVolume)) {
+        const clamped = Math.max(0, Math.min(100, Math.round(prefs.soundVolume)));
+        _volume = clamped / 100;
+        if (_source) _source.volume = _volume;
+        try { ls()?.setItem(LS_VOL, String(clamped)); } catch (_) { /* ignore */ }
+    }
+    if (typeof prefs.soundEnabled === 'boolean') {
+        _enabled = prefs.soundEnabled;
+        try { ls()?.setItem(LS_ON, prefs.soundEnabled ? 'true' : 'false'); } catch (_) { /* ignore */ }
+    }
+}

@@ -32,7 +32,7 @@ import { NotificationListener } from './notification_listener';
 import { TournamentHost } from './tournament_host';
 import { ping as dbPing, dbConfigured, closePool } from './db';
 import { runMigrations } from './migrate';
-import { getUser, setUsername, touchUser, validateUsername } from './users';
+import { getUser, setUsername, touchUser, validateUsername, getPreferences, setPreferences } from './users';
 import { getPaperXp, recordPaperMatch, type PaperTrack } from './paper_xp';
 import { getPresets, replacePresets } from './squad_presets';
 import { getWatchlist, addToWatchlist, removeFromWatchlist } from './user_watchlist';
@@ -623,6 +623,43 @@ app.post('/users/:pubkey/username', async (req: Request, res: Response) => {
     }
 });
 
+// DB Stage 10 — preferences (cross-device user settings).
+// Stored in users.metadata->'preferences' JSONB; no schema change.
+app.get('/users/:pubkey/preferences', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const prefs = await getPreferences(pubkey);
+        return res.json({ pubkey, preferences: prefs });
+    } catch (e: any) {
+        console.log(`${TAG} GET /users/:pubkey/preferences error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.put('/users/:pubkey/preferences', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as { preferences?: Record<string, unknown> };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!body || typeof body.preferences !== 'object' || body.preferences === null || Array.isArray(body.preferences)) {
+            return res.status(400).json({ error: 'body must include { preferences: object }' });
+        }
+        // Defensive: cap blob size so a misbehaving client can't bloat metadata.
+        const blob = JSON.stringify(body.preferences);
+        if (blob.length > 8 * 1024) {
+            return res.status(400).json({ error: 'preferences patch too large (8KB max)' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const prefs = await setPreferences(pubkey, body.preferences);
+        return res.json({ pubkey, preferences: prefs });
+    } catch (e: any) {
+        console.log(`${TAG} PUT /users/:pubkey/preferences error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
 app.get('/pubkey', (_req, res) => {
     res.json({ pubkey: signer.pubkey.toBase58() });
 });
@@ -748,6 +785,58 @@ app.post('/notifications/:pubkey/:id/read', (req: Request, res: Response) => {
         return res.json({ ok });
     } catch (e: any) {
         console.error(`${TAG} POST /notifications/:id/read ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 10 — client-emit notification (paper-mode match settles, etc).
+// Real-mode events are still emitted server-side by notification_listener;
+// this route exists for events the server doesn't observe (paper matches,
+// local level-ups, etc).
+const ALLOWED_NOTIF_KINDS = new Set<string>([
+    'match_filled', 'match_started', 'match_settled', 'payout',
+    'match_expired', 'lobby_cancelled', 'level_up', 'streak_milestone',
+    'tournament_starting', 'tournament_full', 'challenge_done',
+]);
+app.post('/notifications/:pubkey', (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as {
+            id?: string;
+            kind?: string;
+            title?: string;
+            body?: string;
+            payload?: Record<string, unknown>;
+            createdAt?: number;
+        };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!body || typeof body.kind !== 'string' || typeof body.title !== 'string' || typeof body.body !== 'string') {
+            return res.status(400).json({ error: 'body must include { kind, title, body, payload? }' });
+        }
+        if (!ALLOWED_NOTIF_KINDS.has(body.kind)) {
+            return res.status(400).json({ error: `kind must be one of ${Array.from(ALLOWED_NOTIF_KINDS).join(', ')}` });
+        }
+        if (body.title.length > 80 || body.body.length > 280) {
+            return res.status(400).json({ error: 'title ≤80 chars, body ≤280 chars' });
+        }
+        // Server is authoritative on the id — but accepts a client-supplied id
+        // so locally-emitted notifications can dedupe with the in-memory store
+        // (the store's push() already drops duplicates by id).
+        const id = typeof body.id === 'string' && body.id.length > 0 && body.id.length <= 128
+            ? body.id
+            : `${body.kind}:${pubkey}:${Date.now()}`;
+        const event = notificationStore.push({
+            id,
+            kind: body.kind as any,
+            player: pubkey,
+            title: body.title,
+            body: body.body,
+            payload: body.payload && typeof body.payload === 'object' ? body.payload : {},
+            createdAt: typeof body.createdAt === 'number' && Number.isFinite(body.createdAt) ? body.createdAt : Date.now(),
+        });
+        return res.json({ ok: true, event });
+    } catch (e: any) {
+        console.error(`${TAG} POST /notifications/:pubkey ERROR`, e);
         return res.status(500).json({ error: e?.message ?? 'internal error' });
     }
 });

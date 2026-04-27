@@ -4206,17 +4206,30 @@ export class AppUI extends Component {
         this._hideLoadingOverlay();
     }
 
-    /** DB Stage 9 — wire SquadPresets + Watchlist to push mutations
-     *  through to the backend mirror for the connected wallet. Pass null
-     *  to detach on disconnect. */
+    /** DB Stage 9/10 — wire local stores to push mutations through to the
+     *  backend mirror for the connected wallet. Pass null to detach on
+     *  disconnect / guest mode. */
     private _bindUserCollectionsSync(pubkey: string | null): void {
         try { SquadPresets.setSyncPubkey(pubkey); } catch (_) { /* defensive */ }
         try { Watchlist.setSyncPubkey(pubkey); } catch (_) { /* defensive */ }
+        try { NotificationStore.instance.setSyncPubkey(pubkey); } catch (_) { /* defensive */ }
+        // Sound + Haptics imported lazily to avoid pulling AudioSource init
+        // into modules that don't need it.
+        void (async () => {
+            try {
+                const { setSoundSyncPubkey } = await import('../../token-duel/scripts/Sound');
+                setSoundSyncPubkey(pubkey);
+            } catch (_) { /* ignore */ }
+            try {
+                const { Haptics: H } = await import('../../token-duel/scripts/Haptics');
+                H.setSyncPubkey(pubkey);
+            } catch (_) { /* ignore */ }
+        })();
     }
 
-    /** DB Stage 9 — pull presets + watchlist from backend, merge per the
-     *  per-feature conflict strategy (LWW for presets, union for
-     *  watchlist). Best-effort; logs and returns on failure. */
+    /** DB Stage 9/10 — pull presets + watchlist + notifications + preferences
+     *  from backend, merge per the per-feature conflict strategy. Best-effort;
+     *  logs and returns on failure. */
     private async _hydrateUserCollections(pubkey: string): Promise<void> {
         if (!pubkey) return;
         try {
@@ -4228,10 +4241,74 @@ export class AppUI extends Component {
                 Watchlist.hydrateFromBackend(pubkey).catch((e) => {
                     console.log(`${TAG} hydrate_watchlist | ${e}`);
                 }),
+                NotificationStore.instance.hydrateFromBackend(pubkey).catch((e) => {
+                    console.log(`${TAG} hydrate_notifications | ${e}`);
+                }),
+                this._hydratePreferences(pubkey).catch((e) => {
+                    console.log(`${TAG} hydrate_prefs | ${e}`);
+                }),
             ]);
         } catch (e) {
             console.log(`${TAG} _hydrateUserCollections | ${e}`);
         }
+    }
+
+    /** DB Stage 10 — pull preferences from backend and apply to localStorage
+     *  + live UI controls. Server is authoritative on hydrate (preferences
+     *  are explicit user choices, not device-relative). */
+    private async _hydratePreferences(pubkey: string): Promise<void> {
+        try {
+            const { fetchPreferences } = await import('../../token-duel/scripts/PreferencesRpc');
+            const remote = await fetchPreferences(pubkey);
+            if (!remote || !remote.preferences) return;
+            const p = remote.preferences as any;
+            const ls = this._readLocalStorage();
+            if (typeof p.botDifficulty === 'string') {
+                ls?.setItem?.('tokenduel:botDifficulty', p.botDifficulty);
+                this._pickerSelectedDifficulty = p.botDifficulty;
+            }
+            if (typeof p.qpMode === 'string')   ls?.setItem?.('tokenduel:qp.mode', p.qpMode);
+            if (typeof p.qpWindow === 'string') ls?.setItem?.('tokenduel:qp.window', p.qpWindow);
+            if (typeof p.qpWager === 'string')  ls?.setItem?.('tokenduel:qp.wager', p.qpWager);
+            if (typeof p.qpTrack === 'string')  ls?.setItem?.('tokenduel:qp.track', p.qpTrack);
+            // Audio + haptics — apply via their own hydrate hooks so the live
+            // AudioSource volume + cached _enabled flag track the new value.
+            try {
+                const { applySoundPreferences } = await import('../../token-duel/scripts/Sound');
+                applySoundPreferences({
+                    soundEnabled: typeof p.soundEnabled === 'boolean' ? p.soundEnabled : undefined,
+                    soundVolume: typeof p.soundVolume === 'number' ? p.soundVolume : undefined,
+                });
+            } catch (_) { /* ignore */ }
+            try {
+                const { Haptics: H } = await import('../../token-duel/scripts/Haptics');
+                H.applyPreference({
+                    hapticsEnabled: typeof p.hapticsEnabled === 'boolean' ? p.hapticsEnabled : undefined,
+                });
+            } catch (_) { /* ignore */ }
+            // Refresh any UI surface that reads from localStorage (QP card,
+            // settings card icons, etc).
+            try { this._refreshQPCard?.(); } catch (_) { /* ignore */ }
+            console.log(`${TAG} _hydratePreferences | applied keys=[${Object.keys(p).join(',')}]`);
+        } catch (e) {
+            console.log(`${TAG} _hydratePreferences | ${e}`);
+        }
+    }
+
+    /** DB Stage 10 — fire-and-forget merge-patch of user preferences to the
+     *  backend mirror. No-op for guests (no users row to attach to) or
+     *  pre-connect. */
+    private _syncPreference(patch: Record<string, unknown>): void {
+        const pubkey = MWAManager.instance?.connectedPubkey;
+        if (!pubkey || this._isGuest()) return;
+        void (async () => {
+            try {
+                const { putPreferences } = await import('../../token-duel/scripts/PreferencesRpc');
+                await putPreferences(pubkey, patch as any);
+            } catch (e) {
+                console.log(`${TAG} _syncPreference | NET_ERR ${e}`);
+            }
+        })();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -4750,6 +4827,37 @@ export class AppUI extends Component {
                     }
                 })();
             }
+            // DB Stage 10 — match-end notification so the user sees a record
+            // of every match they've played even if they close the app
+            // mid-cinematic or come back days later. Real-mode is handled
+            // server-side by notification_listener; paper has no chain
+            // footprint, so the client emits here. NotificationStore handles
+            // the fire-and-forget POST when a sync pubkey is bound.
+            // Deterministic id so a re-emit (e.g. WS hydrate echo) collapses on
+            // the local store via upsert-by-id. Falls back to a timestamp suffix
+            // for guests where there's no synthetic match id and no pubkey.
+            const notifId = savedLocalPda
+                ? `paper-bot:${savedLocalPda}`
+                : `paper-bot:${myPubkey ?? 'guest'}:${Date.now()}`;
+            this._emitNotification(
+                'match_settled',
+                outcome.playerWon ? 'Bot match · Win!' : 'Bot match · Loss',
+                `${modeDef.label} · ${placementDisplay} of ${totalDisplay} · +${outcome.xpGained} XP`,
+                {
+                    id: notifId,
+                    payload: {
+                        track: 'bot',
+                        mode: modeId,
+                        modeLabel: modeDef.label,
+                        placement: outcome.placement,
+                        totalPlayers: outcome.totalPlayers,
+                        won: outcome.playerWon,
+                        xpGained: outcome.xpGained,
+                        pnlLamports,
+                    },
+                    quietToast: true, // PostMatchPanel is the cinematic; toast would feel spammy
+                },
+            );
             // 2026-04-27 (DB Stage 8) — persist per-match history for signed-in
             // users so a future "Match History" UI can list every paper / bot
             // match they've finished. Synthetic id matches the paper_match_active
@@ -10014,7 +10122,9 @@ export class AppUI extends Component {
     /** Phase E — bot difficulty toggle. Persisted; takes effect at next paper match. */
     private _onPickerDifficultyClick(d: BotDifficulty): void {
         this._pickerSelectedDifficulty = d;
-        try { localStorage.setItem('tokenduel:botDifficulty', d); } catch (_) { /* ignore */ }
+        // sys.localStorage shim for native compat (matches Stats.ts/Watchlist.ts pattern).
+        try { this._readLocalStorage()?.setItem('tokenduel:botDifficulty', d); } catch (_) { /* ignore */ }
+        this._syncPreference({ botDifficulty: d });
         const mul = BOT_DIFFICULTY_MULTIPLIERS[d] ?? 1.0;
         console.log(`${TAG} _onPickerDifficultyClick | difficulty=${d} mul=${mul.toFixed(2)}`);
         this._refreshModePickerUi();
@@ -10834,6 +10944,9 @@ export class AppUI extends Component {
     /** Phase N6 — translate a backend event into a local NotificationStore add. */
     private _ingestBackendEvent(ev: { id: string; kind: string; player: string; title: string; body: string; payload?: Record<string, unknown>; createdAt: number }): void {
         try {
+            // DB Stage 10 — flag this id as server-origin so add() doesn't
+            // echo it back to the server (would create a feedback loop).
+            NotificationStore.instance.markServerOrigin(ev.id);
             NotificationStore.instance.add({
                 id: ev.id,
                 kind: ev.kind as any,
@@ -10852,13 +10965,14 @@ export class AppUI extends Component {
         kind: NotificationKind,
         title: string,
         body: string,
-        opts?: { payload?: Record<string, unknown>; quietToast?: boolean; dedupeKey?: string },
+        opts?: { payload?: Record<string, unknown>; quietToast?: boolean; dedupeKey?: string; id?: string },
     ): Notification | null {
         return NotificationStore.instance.add({
             kind, title, body,
             payload: opts?.payload,
             quietToast: opts?.quietToast,
             dedupeKey: opts?.dedupeKey,
+            id: opts?.id,
         });
     }
 
@@ -12759,6 +12873,7 @@ export class AppUI extends Component {
     private _onQPModeClick(uiKey: string, logicalKey: string): void {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.mode', logicalKey);
+        this._syncPreference({ qpMode: logicalKey });
         console.log(`${TAG} _onQPModeClick | ui=${uiKey} logical=${logicalKey}`);
         this._closeAllQPPopovers();
         this._refreshQPCard();
@@ -12767,6 +12882,7 @@ export class AppUI extends Component {
     private _onQPWindowClick(w: string): void {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.window', w);
+        this._syncPreference({ qpWindow: w });
         console.log(`${TAG} _onQPWindowClick | window=${w}`);
         this._closeAllQPPopovers();
         this._refreshQPCard();
@@ -12774,7 +12890,9 @@ export class AppUI extends Component {
 
     private _onQPWagerClick(key: string, idx: number): void {
         const ls = this._readLocalStorage();
-        ls?.setItem('tokenduel:qp.wager', idx.toString());
+        const idxStr = idx.toString();
+        ls?.setItem('tokenduel:qp.wager', idxStr);
+        this._syncPreference({ qpWager: idxStr });
         console.log(`${TAG} _onQPWagerClick | key=${key} idx=${idx}`);
         this._closeAllQPPopovers();
         this._refreshQPCard();
@@ -12783,6 +12901,7 @@ export class AppUI extends Component {
     private _onQPTrackClick(track: 'paper' | 'real'): void {
         const ls = this._readLocalStorage();
         ls?.setItem('tokenduel:qp.track', track);
+        this._syncPreference({ qpTrack: track });
         console.log(`${TAG} _onQPTrackClick | track=${track}`);
         // Slide indicator with a 0.15s ease-out cubic tween (Phase 18 polish standard).
         const targetX = track === 'paper' ? -78 : 78;

@@ -113,3 +113,53 @@ export async function getUsernamesBulk(pubkeys: string[]): Promise<Map<string, s
     for (const r of rows) m.set(r.pubkey, r.username);
     return m;
 }
+
+// ── DB Stage 10 — preferences (cross-device user settings) ─────────────
+//
+// Preferences live inside the existing `users.metadata` JSONB column under
+// the `preferences` key. No schema change needed. Shape on the client:
+//   { botDifficulty?, qpMode?, qpWindow?, qpWager?, qpTrack?,
+//     soundEnabled?, soundVolume?, hapticsEnabled? }
+// Anything not in this enum is preserved on PUT (server merges, doesn't
+// replace) so the contract is forward-compatible with new prefs.
+
+export type PreferencesPatch = Record<string, unknown>;
+
+export async function getPreferences(pubkey: string): Promise<PreferencesPatch> {
+    if (!dbConfigured()) return {};
+    const row = await queryOne<{ preferences: PreferencesPatch | null }>(
+        `SELECT (metadata->'preferences') AS preferences FROM users WHERE pubkey = $1`,
+        [pubkey],
+    );
+    return (row?.preferences ?? {}) as PreferencesPatch;
+}
+
+/**
+ * Merge-patch the user's preferences. Existing keys not in `patch` survive;
+ * keys present in `patch` overwrite (last-write-wins per-key). Touches the
+ * user row first so a PUT against a never-seen pubkey works.
+ */
+export async function setPreferences(pubkey: string, patch: PreferencesPatch): Promise<PreferencesPatch> {
+    if (!dbConfigured()) throw new Error('db not configured');
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+        throw new Error('preferences patch must be an object');
+    }
+    await touchUser(pubkey);
+    // jsonb_set on `metadata.preferences` if present, else create the
+    // sub-object. The COALESCE handles a metadata row that has no
+    // preferences key yet.
+    const row = await queryOne<{ preferences: PreferencesPatch }>(
+        `UPDATE users
+            SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{preferences}',
+                COALESCE(metadata->'preferences', '{}'::jsonb) || $2::jsonb,
+                true
+            ),
+            last_seen_at = now()
+          WHERE pubkey = $1
+          RETURNING (metadata->'preferences') AS preferences`,
+        [pubkey, JSON.stringify(patch)],
+    );
+    return (row?.preferences ?? patch) as PreferencesPatch;
+}

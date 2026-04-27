@@ -26,6 +26,21 @@ export enum HapticType {
 }
 
 let _enabled: boolean | null = null; // lazy-loaded from storage on first access
+/** DB Stage 10 — pubkey for cross-device preferences sync. Null = guest. */
+let _syncPubkey: string | null = null;
+
+function _syncPref(on: boolean): void {
+    if (!_syncPubkey) return;
+    const pubkey = _syncPubkey;
+    void (async () => {
+        try {
+            const { putPreferences } = await import('./PreferencesRpc');
+            await putPreferences(pubkey, { hapticsEnabled: on });
+        } catch (e) {
+            console.log(`${TAG} _syncPref | NET_ERR ${e}`);
+        }
+    })();
+}
 
 function readEnabled(): boolean {
     if (_enabled !== null) return _enabled;
@@ -55,6 +70,19 @@ export class Haptics {
     static setEnabled(on: boolean): void {
         writeEnabled(on);
         console.log(`${TAG} setEnabled | enabled=${on}`);
+        _syncPref(on);
+    }
+
+    /** DB Stage 10 — bind haptics setting to a pubkey for cross-device sync. */
+    static setSyncPubkey(pubkey: string | null): void {
+        _syncPubkey = pubkey || null;
+    }
+
+    /** Apply hydrated preference from backend on connect. */
+    static applyPreference(prefs: { hapticsEnabled?: boolean }): void {
+        if (typeof prefs.hapticsEnabled === 'boolean') {
+            writeEnabled(prefs.hapticsEnabled);
+        }
     }
 
     /** Fire a haptic feedback pulse. No-op if disabled or on non-Android platforms. */
