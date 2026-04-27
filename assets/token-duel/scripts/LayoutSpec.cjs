@@ -33,6 +33,63 @@ const LayoutSpec = {
             ['TopHighlight', 'Label'],         // bevel highlight under label
             ['BottomShadow', 'Label'],         // bevel shadow under label
             ['TopHighlight', 'BottomShadow'],  // defensive — shouldn't y-overlap
+            // Landing redesign — mkBtnHeroLayered swaps single Label for
+            // TitleLabel + SubtitleLabel stacked inside one button rect.
+            // The two labels are intentionally close (subtitle hugs title).
+            ['TopHighlight', 'TitleLabel'],
+            ['BottomShadow', 'TitleLabel'],
+            ['TopHighlight', 'SubtitleLabel'],
+            ['BottomShadow', 'SubtitleLabel'],
+            ['TitleLabel',   'SubtitleLabel'],
+            // v2 — opts.gradient adds a MidGloss bevel strip across the
+            // button's mid-line; it overlaps every other in-button child
+            // by construction (it's a glossy accent layer).
+            ['TopHighlight', 'MidGloss'],
+            ['BottomShadow', 'MidGloss'],
+            ['MidGloss',     'TitleLabel'],
+            ['MidGloss',     'SubtitleLabel'],
+            ['MidGloss',     'Label'],
+            // ConnectChevron is a child of ConnectButton — overlaps button bevel layers.
+            ['TopHighlight', 'ConnectChevron'],
+            ['BottomShadow', 'ConnectChevron'],
+            ['MidGloss',     'ConnectChevron'],
+            ['TitleLabel',   'ConnectChevron'],
+            ['SubtitleLabel','ConnectChevron'],
+            // v2 Landing CTA card backdrop sits behind every action element
+            // by design (single visual grouping). Verifier looks up by scene
+            // node name (LandingPanel) but Landing.allowedOverlaps is keyed
+            // 'Landing' — so these go global to actually clear.
+            ['CTACardBg', 'ConnectButton'],
+            ['CTACardBg', 'ReconnectButton'],
+            ['CTACardBg', 'PlayAsGuestButton'],
+            ['CTACardBg', 'TrustLineLabel'],
+            ['CTACardBg', 'CardEdgeAccent'],
+            // 2026-04-26 lobby restructure — Home action trio has subtitle +
+            // chevron CHILDREN of each mkBtnHero button. They overlap the
+            // button's own Label/TopHighlight/BottomShadow rect by design.
+            ['Label',        'StartMatchSubtitle'],
+            ['Label',        'FindMatchSubtitle'],
+            ['Label',        'BotMatchSubtitle'],
+            ['Label',        'StartMatchChevron'],
+            ['Label',        'FindMatchChevron'],
+            ['Label',        'BotMatchChevron'],
+            ['TopHighlight', 'StartMatchChevron'],
+            ['TopHighlight', 'FindMatchChevron'],
+            ['TopHighlight', 'BotMatchChevron'],
+            ['BottomShadow', 'StartMatchChevron'],
+            ['BottomShadow', 'FindMatchChevron'],
+            ['BottomShadow', 'BotMatchChevron'],
+            // WalletPill houses pubkey + walletName + a secure-dot indicator
+            // sitting on the left edge — overlap with PubkeyLabel by design.
+            ['PubkeyLabel',  'WalletPillSecureDot'],
+            // HomeMatchTicker card has a "RECENT MATCHES" header label that
+            // spans the full card width and 5 chip groups below it. The
+            // header bbox marginally crosses the chip group bboxes.
+            ['HomeMatchTickerHeader', 'HomeMatchChip_mode'],
+            ['HomeMatchTickerHeader', 'HomeMatchChip_players'],
+            ['HomeMatchTickerHeader', 'HomeMatchChip_stake'],
+            ['HomeMatchTickerHeader', 'HomeMatchChip_duration'],
+            ['HomeMatchTickerHeader', 'HomeMatchChip_created'],
         ],
     },
 
@@ -91,31 +148,45 @@ const LayoutSpec = {
     },
 
     /* ───── LANDING ─────────────────────────────────────────────────── */
-    // Pre-connect screen. Title + subtitle + mascot greeter + Connect /
-    // Reconnect / Status. Vertical band: y=500 down to y=-240.
+    // v2 — premium onboarding. Compressed hero (title→subtitle→mascot→tagline
+    // →support reads as one block). Action stack lives INSIDE a CTA card
+    // backdrop with a violet edge accent (signals "sign-in zone"). Connect
+    // gets a glossy gradient + right chevron; trust line sits directly under
+    // it; Guest has a dim halo so it visibly defers to Connect. Status pill
+    // unchanged at bottom.
     Landing: {
         canvas: { w: 720, h: 1280 },
         bg: { color: '#000000' },
         elements: {
-            title:             { x: 0,   y: 460,  w: 680, h: 80,  type: 'label',     notes: 'Token Duel — display font, gold' },
-            subtitle:          { x: 0,   y: 370,  w: 680, h: 50,  type: 'label',     notes: 'Portfolio Race on Solana — body font, muted' },
-            mascot:            { x: 0,   y: 215,  w: 140, h: 180, type: 'mascot',    notes: 'idle Seedance frames; 40px gap below subtitle, 55px gap above connect' },
-            tagline:           { x: 0,   y: 110,  w: 680, h: 40,  type: 'label' },
-            supportLine:       { x: 0,   y: 66,   w: 660, h: 22,  type: 'label' },
-            ctaCardBg:         { x: 0,   y: -185, w: 700, h: 440, type: 'group' },
-            connectChevron:    { x: 290, y: -25,  w: 24,  h: 28,  type: 'label' },
-            trustLine:         { x: 0,   y: -100, w: 640, h: 20,  type: 'label' },
-            connectionStatusPill: { x: 0,y: -555, w: 200, h: 40,  type: 'chip' },
-            connectBtn:        { x: 0,   y: 20,   w: 680, h: 100, type: 'btnPrimary',notes: 'Connect Wallet primary CTA' },
-            reconnBtn:         { x: 0,   y: -90,  w: 680, h: 100, type: 'btnSuccess',notes: 'Reconnect (Cached) — only shown when AuthCache.hasCachedAuth' },
-            statusLbl:         { x: 0,   y: -210, w: 680, h: 36,  type: 'label',     notes: 'Tap Connect to link your wallet — body, muted; shrunk h 60→36 to clear Play as Guest button bbox' },
-            // Play as Guest — zero-friction try-it-out. Creates a synthetic
-            // local-only ID + drops user into paper-bot-only flow. No wallet,
-            // no SOL. Sign Out clears local stats.
-            playAsGuestBtn:    { x: 0,   y: -320, w: 680, h: 100, type: 'btnSuccess',notes: 'Practice with bots, no wallet needed' },
-            playAsGuestSubtitle:{ x: 0,  y: -380, w: 660, h: 22,  type: 'label',     notes: '14pt mid text under PlayAsGuestButton' },
+            // Hero band (compressed — was y=500/432/220/45/-10 in v1)
+            title:               { x: 0,   y: 510,  w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold' },
+            subtitle:            { x: 0,   y: 445,  w: 680, h: 30,  type: 'label',      notes: 'Portfolio Race on Solana — 24pt body, mid' },
+            mascot:              { x: 0,   y: 280,  w: 260, h: 260, type: 'mascot',     notes: 'idle Seedance frames; slightly larger (was 240)' },
+            tagline:             { x: 0,   y: 110,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform." (was 2-line in v1)' },
+            supportLine:         { x: 0,   y: 66,   w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 16pt lo' },
+            // CTA card backdrop (NEW v2) — semi-translucent dark surface w/ violet edge
+            ctaCardBg:           { x: 0,   y: -185, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
+            // Action stack (re-anchored within card)
+            connectBtn:          { x: 0,   y: -25,  w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Use real funds · compete for SOL"' },
+            connectChevron:      { x: 290, y: -25,  w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue (NEW)' },
+            trustLine:           { x: 0,   y: -100, w: 640, h: 20,  type: 'label',      notes: 'NEW — "Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card' },
+            reconnBtn:           { x: 0,   y: -170, w: 660, h: 80,  type: 'btnGhost',   notes: 'SECONDARY — ghost-teal Reconnect; only active when AuthCache.hasCachedAuth' },
+            playAsGuestBtn:      { x: 0,   y: -285, w: 660, h: 100, type: 'btnSuccess', notes: 'TERTIARY — Guest w/ DIM halo (alpha 40) so it doesnt rival Connect' },
+            connectionStatusPill:{ x: 0,   y: -555, w: 200, h: 40,  type: 'chip',       notes: 'subtle bottom pill — disconnected/connecting/failed states' },
         },
-        allowedOverlaps: [],
+        allowedOverlaps: [
+            // Card backdrop intentionally sits behind every action element
+            ['CTACardBg', 'ConnectButton'],
+            ['CTACardBg', 'ConnectChevron'],
+            ['CTACardBg', 'TrustLineLabel'],
+            ['CTACardBg', 'ReconnectButton'],
+            ['CTACardBg', 'PlayAsGuestButton'],
+            ['CTACardBg', 'BtnGlow_ConnectButton'],
+            ['CTACardBg', 'BtnGlow_PlayAsGuestButton'],
+            ['CTACardBg', 'CardEdgeAccent'],
+            // Chevron sits inside ConnectButton's bbox by design (right-aligned)
+            ['ConnectButton', 'ConnectChevron'],
+        ],
     },
 
     /* ───── HOME ────────────────────────────────────────────────────── */
@@ -128,51 +199,145 @@ const LayoutSpec = {
     // Sign* + Capabilities MWA-test buttons are intentionally REMOVED — the
     // home is now intent-first (Start vs Find vs Bot) instead of hosting a
     // grab-bag of MWA debug surfaces.
+    // 2026-04-26 lobby restructure: HUD header → MatchStatusCard →
+    // ChallengeSeasonCard → "CHOOSE MATCH TYPE" → 3 action buttons (subtitles
+    // + chevrons reparented INSIDE button rect) → TrainingCard (mascot +
+    // free-bot copy + status footer). Disconnect/Delete/SignOut REMOVED from
+    // Home; SettingsPanel is the single account-control surface.
     Home: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // Top bar (y=700) — symmetric Bell ↔ Pubkey ↔ Settings
-            notificationBell:    { x: -280, y: 700,  w: 64,  h: 64,  type: 'btnGhost', notes: 'left flank icon' },
-            notificationBadge:   { x: -256, y: 722,  w: 24,  h: 24,  type: 'badge',    notes: 'unread count; sits ON the bell intentionally' },
-            pubkeyLabel:         { x: 0,    y: 700,  w: 380, h: 40,  type: 'label',    notes: 'centered between bell and settings; w 360→380 since FindMatch icon removed' },
-            openSettingsBtn:     { x: 280,  y: 700,  w: 64,  h: 64,  type: 'btnGhost', notes: 'right flank icon' },
-            // Stage 2 — Lv/XP chip top-right above the chrome row. Reads
-            // on-chain UserStats + local XP via _refreshLevelChip().
-            homeLevelChip:       { x: 240,  y: 750,  w: 200, h: 32,  type: 'chip',     notes: '"Lv N · X/Y" gold bold; hidden until UserStats loads' },
-            // Chrome strips (alternates — only one active at a time)
-            homeRakeChip:        { x: 0,    y: 552,  w: 700, h: 22,  type: 'chip',     notes: 'Phase 22 (B): below-strips position so identity (pubkey) reads first, status next, contextual rake last.' },
-            homeMatchTicker:     { x: 0,    y: 660,  w: 700, h: 36,  type: 'chip',     notes: 'shown during active match' },
-            homeTournamentBadge: { x: 0,    y: 660,  w: 700, h: 36,  type: 'chip',     notes: 'shown when tournament soon' },
-            dailyStreakStrip:    { x: 0,    y: 600,  w: 700, h: 48,  type: 'chip',     notes: 'always-visible streak/season strip' },
-            // Primary CTA TRIO — stacked hero buttons + matching subtitle labels.
-            // Buttons h=82, subtitles h=20, 6 px gap below button → 108-px unit
-            // with 116 px stride. Spans y=540 → y=226 (mascot top y=225).
-            startMatchBtn:       { x: 0,    y: 499,  w: 680, h: 82,  type: 'btnPrimary', notes: 'Hero violet — host a real on-chain match' },
-            startMatchSubtitle:  { x: 0,    y: 448,  w: 660, h: 20,  type: 'label',      notes: '14pt mid text — subtitle under StartMatchBtn' },
-            findMatchBtn:        { x: 0,    y: 383,  w: 680, h: 82,  type: 'btnSuccess', notes: 'Hero teal — browse open lobbies' },
-            findMatchSubtitle:   { x: 0,    y: 332,  w: 660, h: 20,  type: 'label',      notes: '14pt mid text — subtitle under FindMatchBtn' },
-            findMatchCountBadge: { x: 244,  y: 401,  w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn; teal fill, white bold; AppUI subscribes to MatchBrowser' },
-            botMatchBtn:         { x: 0,    y: 267,  w: 680, h: 82,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free' },
-            botMatchSubtitle:    { x: 0,    y: 216,  w: 660, h: 20,  type: 'label',      notes: '14pt mid text — subtitle under BotMatchBtn' },
-            // Mascot (centerpiece) — moved up from y=180 to y=140 to give the
-            // CTA trio breathing room. Size shrunk 140×180 → 130×170 (still
-            // visually balanced with the new stack).
-            mascot:              { x: 0,    y: 140,  w: 130, h: 170, type: 'mascot',     notes: 'idle Seedance frames; CTA trio sits above, account mgmt below' },
-            // Account management
-            disconnectBtn:       { x: 0,    y: -50,  w: 680, h: 86,  type: 'btnDanger',  notes: 'orange-warning; hidden in guest mode' },
-            // Guest mode "Sign Out" — same slot as Disconnect, mutually exclusive.
-            signOutGuestBtn:     { x: 0,    y: -50,  w: 680, h: 86,  type: 'btnDanger',  notes: 'guest-only; clears guest_id + paper Stats; replaces DisconnectButton when _isGuest' },
-            deleteBtn:           { x: 0,    y: -160, w: 680, h: 86,  type: 'btnDanger',  notes: 'red-danger' },
-            // Status footer
-            homeStatus:          { x: 0,    y: -300, w: 680, h: 32,  type: 'label',      notes: 'status banner near bottom' },
+            // 2026-04-26 V2 — production lobby polish: scrim behind content, wallet
+            // pill upgraded to glowing centered anchor, XP card grown to a real
+            // progression module, RecentMatch card split into 2 rows, secondary
+            // stats card slimmed (DAY/CHALLENGES/POOL/RAKE only), CTA trio tiered
+            // by size + glow alpha, training card grown with mascot glow halo.
+            // ── BACKGROUND SCRIM (full panel, behind everything) ──
+            homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite', notes: 'dim overlay behind content column — reduces starfield contrast' },
+            // ── HUD HEADER (y=620) — bell · WalletPill · 3 chrome icons ──
+            notificationBell:    { x: -330, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'Phase N4: far-left of 5-icon bar; bell icon attached at runtime' },
+            notificationBadge:   { x: -308, y: 638,  w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
+            walletPill:          { x: 0,    y: 620,  w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
+            walletPillGlow:      { x: 0,    y: 620,  w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
+            walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge',    notes: 'green status dot at left edge of pill (relative to pill)' },
+            pubkeyLabel:         { x: -30,  y: 6,    w: 280, h: 24,  type: 'label',    notes: 'short address inside WalletPill (relative to pill)' },
+            walletNameLabel:     { x: 0,    y: -16,  w: 280, h: 14,  type: 'label',    notes: 'wallet brand line under address (relative to pill)' },
+            // Phase N4: openPortfolioBtn removed (Portfolio collapsed into Leaderboard hub).
+            // 5-icon bar reordered to [bell | trophy | wallet | cog | disconnect] with wallet centered.
+            openLeaderboardBtn:  { x: -250, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'left of WalletPill — opens Portfolio+Leaderboard hub' },
+            openSettingsBtn:     { x:  250, y: 620,  w: 56,  h: 56,  type: 'btnGhost', notes: 'right of WalletPill — settings' },
+            // ── XP MODULE (y=540, h=80) — real progression bar, animated ──
+            homeLevelChip:       { x: 0,    y: 540,  w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
+            homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
+            homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite',   notes: 'rounded track 640x14 (relative to card)' },
+            homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite',   notes: 'gold fill, left-anchored, width tweens on load (relative to track)' },
+            // ── RECENT MATCH CARD (y=420, h=140) — 2-row chip grid ──
+            homeMatchTicker:     { x: 0,    y: 420,  w: 680, h: 140, type: 'chip',     notes: 'recent-matches card with header + 2 rows of chips; tap → SpectatorPanel' },
+            homeMatchTickerHeader: { x: 0,  y: 58,   w: 660, h: 16,  type: 'label',    notes: '"RECENT MATCH" header (relative to card)' },
+            homeMatchChipDivider: { x: 0,   y: -7,   w: 600, h: 1,   type: 'sprite',   notes: 'subtle 1-px divider between row 1 and row 2 (relative to card)' },
+            homeMatchChip:       { keys: ['mode', 'players', 'stake', 'duration', 'created'],
+                                   labels: ['MODE', 'PLAYERS', 'STAKE', 'DURATION', 'CREATED'],
+                                   xs: [-200, 0, 200, -100, 100],
+                                   ys: [18, 18, 18, -38, -38],
+                                   ws: [160, 160, 160, 200, 200],
+                                   h: 52,
+                                   keyFs: 10, valFs: 14,
+                                   notes: '5 chips: row 1 (mode/players/stake), row 2 (duration/created)' },
+            // Tournament alternate — same slot as ticker, mutually exclusive.
+            homeTournamentBadge: { x: 0,    y: 420,  w: 680, h: 140, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active' },
+            // Off-flow placeholders — superseded by SettingsPanel + homeChalChip
+            // 'rake' key. Nodes pinned below safe-area so they never collide.
+            homeRakeChip:        { x: 0,    y: -820, w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
+            disconnectBtn:       { x:  330, y: 620,  w: 56,  h: 56,  type: 'btnGhost',  notes: 'Phase N4: Home top-bar far-right; one-tap wallet/guest disconnect (drawDisconnect icon)' },
+            deleteBtn:           { x: 180,  y: -880, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
+            signOutGuestBtn:     { x: 0,    y: -940, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
+            // ── SECONDARY STATS CARD (y=320, h=64) — 4 chips, no SEASON ──
+            // Node name "DailyStreakStrip" preserved for AppUI binding stability;
+            // semantically this is now the SecondaryStats card.
+            dailyStreakStrip:    { x: 0,    y: 320,  w: 680, h: 64,  type: 'chip',     notes: '4 chips (DAY/CHALLENGES/POOL/RAKE); tap → DailyChallengePanel' },
+            homeChalChip:        { keys: ['day', 'challenges', 'pool', 'rake'],
+                                   labels: ['DAY', 'CHALLENGES', 'POOL', 'RAKE'],
+                                   xs: [-240, -80, 80, 240], y: 0, w: 130, h: 52,
+                                   keyFs: 10, valFs: 14,
+                                   notes: 'inline 4 chip groups inside SecondaryStats card (SEASON dropped)' },
+            // ── SECTION TITLE (y=260) ──
+            homeChooseMatchLabel: { x: 0,   y: 260,  w: 680, h: 24,  type: 'label',    notes: '"CHOOSE MATCH TYPE" tracked uppercase muted lo-tier' },
+            // ── PRIMARY CTA TRIO (tiered hierarchy: Start > Find > Bot) ──
+            startMatchBtn:       { x: 0,    y: 196,  w: 680, h: 104, type: 'btnPrimary', notes: 'Hero violet — host real match (TALLEST + brightest glow)' },
+            startMatchSubtitle:  { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
+            startMatchChevron:   { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
+            findMatchBtn:        { x: 0,    y: 80,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Hero teal — browse open lobbies (mid)' },
+            findMatchSubtitle:   { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
+            findMatchChevron:    { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
+            findMatchCountBadge: { x: 244,  y: 102,  w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
+            botMatchBtn:         { x: 0,    y: -28,  w: 680, h: 84,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free practice (smallest, muted)' },
+            botMatchSubtitle:    { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton' },
+            botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton' },
+            // ── TRAINING HERO CARD (y=-200, h=196) — mascot + glow + CTA hint ──
+            homeTrainingCard:    { x: 0,    y: -200, w: 680, h: 196, type: 'card',      notes: 'hero card with mascot (left) + copy (right); subtle gradient feel' },
+            trainingMascotGlow:  { x: -220, y: 0,    w: 200, h: 200, type: 'sprite',    notes: 'soft amber glow halo BEHIND mascot (relative to card)' },
+            mascot:              { x: -220, y: 0,    w: 160, h: 180, type: 'mascot',    notes: 'mascot inside training card (relative to card)' },
+            homeTrainingTitleLabel: { x: 40, y: 60,  w: 440, h: 24,  type: 'label',     notes: '"TRAINING MODE" gold bold tracked, anchor-left (relative to card)' },
+            homeTrainingBodyLabel:  { x: 40, y: 20,  w: 440, h: 24,  type: 'label',     notes: '"N free matches left" body, anchor-left (relative to card)' },
+            homeTrainingHintLabel:  { x: 40, y: -12, w: 460, h: 18,  type: 'label',     notes: '"Easier bots · paper-track only" muted (relative to card)' },
+            trainingCtaHint:     { x: 40,   y: -44,  w: 460, h: 18,  type: 'label',     notes: '"Tap Bot Match to begin" amber italic CTA hint (relative to card)' },
+            homeStatus:          { x: 40,   y: -76,  w: 460, h: 16,  type: 'label',     notes: 'thin lo-tier status footer (relative to card)' },
         },
         allowedOverlaps: [
+            // V2 — content scrim sits behind everything; intentionally overlaps all
+            ['HomeContentScrim',        'NotificationBellButton'],
+            ['HomeContentScrim',        'NotificationBellBadge'],
+            ['HomeContentScrim',        'WalletPill'],
+            ['HomeContentScrim',        'WalletPillGlow'],
+            ['HomeContentScrim',        'OpenPortfolioButton'],
+            ['HomeContentScrim',        'OpenLeaderboardButton'],
+            ['HomeContentScrim',        'OpenSettingsButton'],
+            ['HomeContentScrim',        'HomeLevelChip'],
+            ['HomeContentScrim',        'HomeMatchTicker'],
+            ['HomeContentScrim',        'HomeTournamentBadge'],
+            ['HomeContentScrim',        'DailyStreakStrip'],
+            ['HomeContentScrim',        'HomeChooseMatchLabel'],
+            ['HomeContentScrim',        'StartMatchButton'],
+            ['HomeContentScrim',        'BtnGlow_StartMatchButton'],
+            ['HomeContentScrim',        'FindMatchButton'],
+            ['HomeContentScrim',        'BtnGlow_FindMatchButton'],
+            ['HomeContentScrim',        'FindMatchButtonCountBadge'],
+            ['HomeContentScrim',        'BotMatchButton'],
+            ['HomeContentScrim',        'BtnGlow_BotMatchButton'],
+            ['HomeContentScrim',        'HomeTrainingCard'],
             ['NotificationBellButton',  'NotificationBellBadge'],   // badge ON bell
-            ['DailyStreakStrip',        'HomeMatchTicker'],          // alternates
-            ['DailyStreakStrip',        'HomeTournamentBadge'],      // alternates
-            ['HomeMatchTicker',         'HomeTournamentBadge'],      // alternates
+            ['HomeMatchTicker',         'HomeTournamentBadge'],     // alternates
             ['FindMatchButton',         'FindMatchButtonCountBadge'],// badge sits ON the FindMatch button intentionally
-            ['DisconnectButton',        'SignOutGuestButton'],       // alternates per guest/wallet mode
+            // V2 — wallet pill glow halo sits BEHIND the pill; intentional overlap.
+            ['WalletPill',              'WalletPillGlow'],
+            // Subtitle + chevron now live INSIDE each action button.
+            ['StartMatchButton',        'StartMatchSubtitle'],
+            ['StartMatchButton',        'StartMatchChevron'],
+            ['FindMatchButton',         'FindMatchSubtitle'],
+            ['FindMatchButton',         'FindMatchChevron'],
+            ['BotMatchButton',          'BotMatchSubtitle'],
+            ['BotMatchButton',          'BotMatchChevron'],
+            // WalletPill bbox houses pubkey + wallet name + secure dot.
+            ['WalletPill',              'PubkeyLabel'],
+            ['WalletPill',              'WalletNameLabel'],
+            ['WalletPill',              'WalletPillSecureDot'],
+            // Training card houses mascot + glow + 3 labels + reparented status footer.
+            ['HomeTrainingCard',        'MascotContainer'],
+            ['HomeTrainingCard',        'TrainingMascotGlow'],
+            ['HomeTrainingCard',        'HomeTrainingTitleLabel'],
+            ['HomeTrainingCard',        'HomeTrainingBodyLabel'],
+            ['HomeTrainingCard',        'HomeTrainingHintLabel'],
+            ['HomeTrainingCard',        'TrainingCtaHint'],
+            ['HomeTrainingCard',        'HomeStatusLabel'],
+            // Mascot glow sits behind mascot — intentional overlap.
+            ['TrainingMascotGlow',      'MascotContainer'],
+            // Level chip houses progress bar + labels.
+            ['HomeLevelChip',           'HomeLevelChipLabel'],
+            ['HomeLevelChip',           'HomeXpProgressLabel'],
+            ['HomeLevelChip',           'HomeXpBarTrack'],
+            ['HomeXpBarTrack',          'HomeXpBarFill'],
+            // RecentMatch divider sits inside card.
+            ['HomeMatchTicker',         'HomeMatchChipDivider'],
         ],
     },
 
@@ -240,27 +405,77 @@ const LayoutSpec = {
 
     /* ───── RACE ────────────────────────────────────────────────────── */
     // Live race panel — fullscreen overlay during active match. 720×1800
-    // (oversized for tall device viewports). Layout: TimerRing+countdown
-    // top center y=480, hero % y=340, 5 race cards stacked y=50→-470,
-    // opponent card/strip at y=-400/-406 (alternates), forfeit y=-560,
-    // race mascot bottom-right, vignette overlay.
+    // (oversized for tall device viewports).
+    //
+    // 1v1 DUEL LAYOUT (2026-04-26 battle-UI polish):
+    //   Top row y=720: [Lv chip] (Timer) [hero +%] — single horizontal band.
+    //   Player tokens y=540 (3 horizontal cards w/ contribution bars).
+    //   Lead-state line y=410 ("YOU LEAD\n+0.48 pp"; replaces tiny gap text).
+    //   Duel bar y=300 — tug-of-war bar that moves toward winner.
+    //   Opp hero % y=140, opp identity y=40 ("BOT · Lv 3" header).
+    //   Opp tokens y=-90 (mirror).
+    //   Forfeit y=-260 (small/recessed), mascot y=-460 (dimmed @ 55%).
+    //
+    // 4p/8p MULTI-MODE FALLBACK: AppUI hides the duel surfaces and re-shows
+    // legacy raceCard 5-stack + opponentStrip when requiredPlayers > 2.
     RacePanel: {
         canvas: { w: 720, h: 1800 },
         elements: {
-            // Timer + countdown (countdown label sits inside the ring)
-            timerRing:        { x: 0,    y: 480,  w: 140, h: 140, type: 'graphics' },
-            timerPulse:       { x: 0,    y: 0,    w: 110, h: 110, type: 'graphics', notes: 'inside ring; coords relative to ring' },
-            countdownLabel:   { x: 0,    y: 480,  w: 110, h: 36,  type: 'label' },
-            // Hero portfolio delta
-            heroDelta:        { x: 0,    y: 340,  w: 680, h: 140, type: 'label' },
-            heroSubtitle:     { x: 0,    y: 250,  w: 600, h: 40,  type: 'label' },
-            // Opponent surfaces (alternates: 1v1 shows opponentCard, multi shows oppStrip)
+            // 2026-04-26 battle-UI polish — top row is one horizontal band:
+            //   [Lv pill]  ( Timer )  [+0.00%]
+            // Player identity card (wallet truncation) is dropped — wallet
+            // shows in post-match summary instead. Lv pill stays small/low-
+            // emphasis on the left; hero delta moves to the right side.
+            racePlayerLevelChip: { x: -260, y: 720, w: 120, h: 40, type: 'chip',
+                notes: 'small Lv pill, top-left of duel battle UI' },
+
+            // Timer + countdown (centered top row)
+            timerRing:        { x: 0,    y: 720,  w: 132, h: 132, type: 'graphics' },
+            timerPulse:       { x: 0,    y: 0,    w: 100, h: 100, type: 'graphics', notes: 'inside ring; coords relative to ring' },
+            countdownLabel:   { x: 0,    y: 720,  w: 100, h: 32,  type: 'label' },
+
+            // Hero portfolio delta — right-aligned in top row, bold/primary.
+            heroDelta:        { x: 240,  y: 720,  w: 220, h: 80,  type: 'label' },
+
+            // Player token row container — 3 horizontal cards (tightened spacing)
+            playerTokenRow:   { x: 0,    y: 540,  w: 696, h: 110, type: 'group' },
+
+            // Lead-state copy ("YOU LEAD / YOU TRAIL / DEAD HEAT") — promoted
+            // from a tiny subtitle to a 2-line emphasis line above the bar.
+            opponentSubtitle: { x: 0,    y: 410,  w: 620, h: 64,  type: 'label',
+                notes: 'lead-state line above duel bar (replaces "you +X.XX pp ahead")' },
+
+            // Duel bar — center tug-of-war (tightened up)
+            duelBarContainer: { x: 0,    y: 300,  w: 680, h: 80,  type: 'group' },
+            duelBarTrack:     { x: 0,    y: 0,    w: 640, h: 8,   type: 'graphics', notes: 'relative to container' },
+            duelBarFill:      { x: 0,    y: 0,    w: 640, h: 12,  type: 'graphics', notes: 'relative to container' },
+            duelBarGlow:      { x: 0,    y: 0,    w: 640, h: 40,  type: 'graphics', notes: 'leading-tip pulse + trail' },
+            duelBarCenterTick:{ x: 0,    y: 0,    w: 2,   h: 32,  type: 'graphics' },
+            duelBarPlayerTag: { x: -300, y: -22,  w: 80,  h: 16,  type: 'label' },
+            duelBarOppTag:    { x: 300,  y: -22,  w: 80,  h: 16,  type: 'label' },
+            duelBarLeadingPp: { x: 0,    y: 24,   w: 160, h: 22,  type: 'label', notes: 'floats above leading tip' },
+
+            // Opponent hero delta — slightly LARGER than player (80pt vs 56pt)
+            // for symmetry of stake when losing the duel.
+            opponentDelta:    { x: 0,    y: 140,  w: 680, h: 96,  type: 'label' },
+
+            // Opponent identity card — moved ABOVE opponent tokens. Internals
+            // via templates.identityCard. Single combined "BOT · Lv 3" copy.
+            opponentIdentityCard:  { x: 0,   y: 40,  w: 280, h: 44, type: 'sprite' },
+
+            // Opponent token row container — 3 horizontal cards (mirror player)
+            opponentTokenRow: { x: 0,    y: -90,  w: 696, h: 110, type: 'group' },
+
+            // Legacy 1v1 opponent card (HIDDEN in duel layout — gated in AppUI).
             opponentCard:     { x: 0,    y: -400, w: 640, h: 110, type: 'sprite' },
+            // 4p/8p multi-bot strip (still used when requiredPlayers > 2)
             opponentStrip:    { x: 0,    y: -406, w: 640, h: 260, type: 'group' },
-            // Forfeit + mascot + vignette
-            cancelBtn:        { x: 0,    y: -560, w: 200, h: 48,  type: 'btnDanger' },
-            mascot:           { x: 260,  y: -620, w: 140, h: 180, type: 'mascot',
-                notes: 'Phase 21 (A1): y -680 → -620 (60 px up) per device test feedback' },
+
+            // Forfeit (smaller, dimmer, below opponent section) + mascot + vignette
+            cancelBtn:        { x: 0,    y: -260, w: 140, h: 36,  type: 'btn',
+                notes: 'duel layout: small/recessed gray surface, low emphasis' },
+            mascot:           { x: 260,  y: -460, w: 120, h: 160, type: 'mascot',
+                notes: 'duel layout: dimmed to ~55% via UIOpacity (decorative)' },
             vignette:         { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics', notes: 'full-screen alpha overlay' },
         },
         templates: {
@@ -301,6 +516,24 @@ const LayoutSpec = {
                 delta:  { x: 220,  y: 8,   w: 180, h: 48 },
                 gap:    { x: 220,  y: -30, w: 200, h: 22 },
             },
+            // 1v1 duel-layout horizontal token row — 3 cards side by side.
+            // Used for both player (PlayerTokenCard_0..2) and opponent
+            // (OpponentTokenCard_0..2) rows. Internal sym top, delta middle,
+            // contribution bar bottom (Graphics, drawn per tick).
+            duelTokenCard: {
+                count: 3, w: 216, h: 110,
+                baseX: -228, gapX: 228,
+                sym:   { x: 0,   y: 32,  w: 196, h: 28 },
+                delta: { x: 0,   y: -8,  w: 196, h: 36 },
+                bar:   { x: 0,   y: -42, w: 180, h: 6 },
+            },
+            // Identity card internals — positions relative to the card center.
+            // dot at far-left, name top-right of dot, level below name.
+            identityCard: {
+                dot:   { x: -120, y: 0,   w: 10,  h: 10 },
+                name:  { x: 8,    y: 12,  w: 240, h: 24 },
+                level: { x: 8,    y: -14, w: 240, h: 18 },
+            },
         },
         allowedOverlaps: [
             ['RaceTimerRing', 'RaceCountdownLabel'],   // label inside ring
@@ -310,12 +543,54 @@ const LayoutSpec = {
             ['RaceTokenCard_4', 'RaceOpponentCard'],
             ['RaceTokenCard_4', 'RaceOpponentStrip'],
             ['RaceOpponentCard', 'RaceOpponentStrip'],
+            // Duel layout vs legacy 1v1 layout — mutually exclusive
+            // visibility. AppUI shows duel surfaces only when 1v1; legacy
+            // 5-card stack + RaceOpponentCard re-show in 4p/8p only.
+            ['PlayerTokenCardsRow',  'RaceTokenCard_0'],
+            ['PlayerTokenCardsRow',  'RaceTokenCard_1'],
+            ['PlayerTokenCardsRow',  'RaceTokenCard_2'],
+            ['PlayerTokenCardsRow',  'RaceTokenCard_3'],
+            ['PlayerTokenCardsRow',  'RaceTokenCard_4'],
+            ['OpponentTokenCardsRow','RaceTokenCard_2'],
+            ['OpponentTokenCardsRow','RaceTokenCard_3'],
+            ['OpponentTokenCardsRow','RaceTokenCard_4'],
+            ['OpponentTokenCardsRow','RaceOpponentCard'],
+            ['OpponentTokenCardsRow','RaceOpponentStrip'],
+            ['RaceDuelBarContainer', 'RaceTokenCard_2'],
+            ['RaceDuelBarContainer', 'RaceTokenCard_3'],
+            ['RaceDuelBarContainer', 'RaceTokenCard_4'],
+            ['OpponentDeltaHeroLabel','RaceOpponentCard'],
+            ['OpponentDeltaHeroLabel','RaceOpponentStrip'],
+            ['OpponentSubtitleGapLabel','RaceOpponentCard'],
+            ['OpponentSubtitleGapLabel','RaceOpponentStrip'],
+            ['OpponentIdentityCard',  'RaceOpponentCard'],
+            ['OpponentIdentityCard',  'RaceOpponentStrip'],
+            // Player Lv chip — small pill on top row, internal label child.
+            ['RacePlayerLevelChip', 'RacePlayerLevelChipLabel'],
+            // Identity card internal labels (opponent only — player identity
+            // card was dropped 2026-04-26 in favor of the small Lv chip).
+            ['OpponentIdentityCard', 'OpponentIdentityNameLabel'],
+            ['OpponentIdentityCard', 'OpponentIdentityLevelLabel'],
+            ['OpponentIdentityCard', 'OpponentIdentityDot'],
+            // Duel bar internals overlap the container (children) and each other
+            ['RaceDuelBarContainer', 'DuelBarTrack'],
+            ['RaceDuelBarContainer', 'DuelBarFill'],
+            ['RaceDuelBarContainer', 'DuelBarGlow'],
+            ['RaceDuelBarContainer', 'DuelBarCenterTick'],
+            ['RaceDuelBarContainer', 'DuelBarPlayerTagLabel'],
+            ['RaceDuelBarContainer', 'DuelBarOppTagLabel'],
+            ['RaceDuelBarContainer', 'DuelBarLeadingPpLabel'],
+            ['DuelBarTrack', 'DuelBarFill'],
+            ['DuelBarTrack', 'DuelBarGlow'],
+            ['DuelBarTrack', 'DuelBarCenterTick'],
+            ['DuelBarFill',  'DuelBarGlow'],
+            ['DuelBarFill',  'DuelBarCenterTick'],
+            ['DuelBarGlow',  'DuelBarCenterTick'],
             // ScreenVignette is a full-screen alpha overlay drawn beneath
             // race UI; intentional overlap with everything visible.
             ['ScreenVignette', 'RaceTimerRing'],
             ['ScreenVignette', 'RaceCountdownLabel'],
             ['ScreenVignette', 'RaceHeroDeltaLabel'],
-            ['ScreenVignette', 'RaceHeroSubtitleLabel'],
             ['ScreenVignette', 'RaceTokenCard_0'],
             ['ScreenVignette', 'RaceTokenCard_1'],
             ['ScreenVignette', 'RaceTokenCard_2'],
@@ -325,69 +600,127 @@ const LayoutSpec = {
             ['ScreenVignette', 'RaceOpponentStrip'],
             ['ScreenVignette', 'RaceCancelButton'],
             ['ScreenVignette', 'RaceMascotContainer'],
+            ['ScreenVignette', 'RacePlayerLevelChip'],
+            ['ScreenVignette', 'OpponentIdentityCard'],
+            ['ScreenVignette', 'PlayerTokenCardsRow'],
+            ['ScreenVignette', 'OpponentTokenCardsRow'],
+            ['ScreenVignette', 'RaceDuelBarContainer'],
+            ['ScreenVignette', 'OpponentDeltaHeroLabel'],
+            ['ScreenVignette', 'OpponentSubtitleGapLabel'],
+        ],
+    },
+
+    // Phase 22 — Duel bar internal overlaps. Track/Fill/Glow/CenterTick all
+    // stack at center y by design (the Fill draws over Track, Glow draws
+    // over Fill, CenterTick punctuates the middle). Tags + leading-pp label
+    // sit above/below the bar but the Glow's 40px tall bbox crosses them.
+    RaceDuelBarContainer: {
+        canvas: { w: 680, h: 80 },
+        elements: {},
+        allowedOverlaps: [
+            ['DuelBarTrack', 'DuelBarFill'],
+            ['DuelBarTrack', 'DuelBarGlow'],
+            ['DuelBarTrack', 'DuelBarCenterTick'],
+            ['DuelBarFill',  'DuelBarGlow'],
+            ['DuelBarFill',  'DuelBarCenterTick'],
+            ['DuelBarGlow',  'DuelBarCenterTick'],
+            ['DuelBarGlow',  'DuelBarPlayerTagLabel'],
+            ['DuelBarGlow',  'DuelBarOppTagLabel'],
+            ['DuelBarGlow',  'DuelBarLeadingPpLabel'],
+            ['DuelBarCenterTick', 'DuelBarLeadingPpLabel'],
         ],
     },
 
     /* ───── SETTINGS ────────────────────────────────────────────────── */
-    // Settings hub. Top: Back/Title. WALLET / PROFILE /
-    // QUICK PLAY DEFAULTS / AUDIO+HAPTICS cards stacked. Then Fees link,
-    // Reconnect / Disconnect / Delete actions, Status footer.
+    // Phase 29 redesign — premium fintech-grade hierarchy. 5 cards: WALLET /
+    // PROFILE / GAME DEFAULTS (was Quick Play) / PREFERENCES (was Audio+Haptics
+    // toggle rows) / ACCOUNT (new — wraps Fees+Reconnect+Disconnect). Saturated
+    // edge-stripes removed in favour of subtle 1px hairline borders. Delete
+    // Account is now a small red text button below the Account card.
     SettingsPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
+            // Phase 30 redesign — premium settings page. Compact wallet identity
+            // card, real toggle switches, account hierarchy with group labels,
+            // delete-account moved further down, dark sheet behind cards.
+            sheetBg:         { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite',
+                notes: 'subtle dark overlay (z-order behind all cards) — first child of SettingsPanel' },
             backLink:        { x: -280, y: 618,  w: 110, h: 28,  type: 'label' },
             backBtn:         { x: -280, y: 618,  w: 140, h: 36,  type: 'btnGhost' },
-            title:           { x: 0,    y: 600,  w: 400, h: 40,  type: 'label' },
-            walletCard:      { x: 0,    y: 440,  w: 660, h: 130, type: 'group',
+            title:           { x: 0,    y: 612,  w: 400, h: 40,  type: 'label' },
+            // Wallet → compact identity card (160→124, ~22% reduction).
+            // Layout: header row (status dot + secondary "Connected · MWA"),
+            // pubkey row (mono, prominent, with copy icon), divider, balance row.
+            // Violet glow border (4 perimeter strokes) replaces top hairline.
+            walletCard:      { x: 0,    y: 500,  w: 688, h: 124, type: 'group',
                 children: {
-                    header:        { x: -290, y: 44,  w: 200, h: 16, type: 'label' },
-                    walletName:    { x: 0,    y: 14,  w: 600, h: 28, type: 'label' },
-                    walletPubkey:  { x: 0,    y: -20, w: 600, h: 22, type: 'label' },
-                    walletBalance: { x: 0,    y: -44, w: 600, h: 18, type: 'label' },
+                    header:        { x: -304, y: 42,  w: 200, h: 16, type: 'label',
+                        notes: 'micro-header "WALLET"' },
+                    statusDot:     { x: -270, y: 18,  w: 12,  h: 12, type: 'sprite' },
+                    walletName:    { x: 4,    y: 18,  w: 540, h: 18, type: 'label',
+                        notes: 'secondary "Connected · {wallet}" (12px mid-text)' },
+                    walletPubkey:  { x: -52,  y: -6,  w: 460, h: 24, type: 'label',
+                        notes: 'mono 18px hi-text, left-aligned identity' },
+                    copyPubkeyBtn: { x: 252,  y: -6,  w: 36,  h: 36, type: 'btnGhost' },
+                    divider:       { x: 0,    y: -26, w: 632, h: 1,  type: 'sprite',
+                        notes: 'hairline between pubkey and balance, white α 24' },
+                    walletBalance: { x: -304, y: -42, w: 460, h: 20, type: 'label',
+                        notes: 'mono 16px teal, left-aligned' },
+                    glowTop:       { x: 0,    y: 61,  w: 686, h: 2,  type: 'sprite',
+                        notes: 'violet α 80 perimeter stroke (top)' },
+                    glowBot:       { x: 0,    y: -61, w: 686, h: 2,  type: 'sprite' },
+                    glowLeft:      { x: -343, y: 0,   w: 2,   h: 122, type: 'sprite' },
+                    glowRight:     { x: 343,  y: 0,   w: 2,   h: 122, type: 'sprite' },
                 },
             },
-            profileCard:     { x: 0,    y: 280,  w: 660, h: 150, type: 'group',
+            // Profile — adds explicit "Username" label above the input + a
+            // focus ring that fades in on edit.
+            profileCard:     { x: 0,    y: 346,  w: 688, h: 148, type: 'group',
                 children: {
-                    header:       { x: -290, y: 54,  w: 200, h: 16, type: 'label' },
-                    username:     { x: 0,    y: 16,  w: 600, h: 44, type: 'editbox' },
-                    usernameSaved:{ x: 0,    y: -26, w: 600, h: 18, type: 'label' },
-                    usernameHelp: { x: 0,    y: -50, w: 600, h: 16, type: 'label' },
+                    header:       { x: -304, y: 56,  w: 200, h: 16, type: 'label' },
+                    usernameLabel:{ x: -304, y: 36,  w: 200, h: 16, type: 'label',
+                        notes: '"Username" 11px mid-text above the input' },
+                    focusRing:    { x: 0,    y: 8,   w: 624, h: 48, type: 'sprite',
+                        notes: 'violet stroke around EditBox, alpha 0 → 80 on focus' },
+                    username:     { x: 0,    y: 8,   w: 620, h: 44, type: 'editbox' },
+                    usernameSaved:{ x: 0,    y: -22, w: 620, h: 18, type: 'label' },
+                    usernameHelp: { x: 0,    y: -46, w: 620, h: 16, type: 'label' },
+                    topBorder:    { x: 0,    y: 73,  w: 686, h: 1,  type: 'sprite' },
                 },
             },
-            // Phase 27 — QuickPlayCard: 13-button strip → 3 dropdown rows + 1 pill toggle.
-            // Card grew y=80→60, h=200→240. Internal layout: header on top, 3 rows
-            // stacked, track toggle on bottom. Each row = full-width button with
-            // two label children (key left, value right + chevron).
-            quickPlayCard:   { x: 0,    y: 60,   w: 660, h: 240, type: 'group',
+            // Phase 29 — "DEFAULT MATCH SETTINGS". Phase 30 — drops ▾ glyph
+            // from value labels and adds a › chevron child to each row for
+            // stronger affordance. Trading-mode toggle gains a teal glow halo.
+            quickPlayCard:   { x: 0,    y: 108,  w: 688, h: 260, type: 'group',
                 children: {
-                    header: { x: -290, y: 106, w: 400, h: 18, type: 'label' },
-                    // 3 dropdown rows. Each row container is a button with 2 label
-                    // children (key/value). Rows are siblings under QPCard.
-                    qpModeRow:   { x: 0, y: 68,  w: 600, h: 40, type: 'btnGhost',
+                    header: { x: -304, y: 116, w: 400, h: 18, type: 'label' },
+                    qpModeRow:   { x: 0, y: 76,  w: 620, h: 40, type: 'btnGhost',
                         children: {
-                            keyLabel:   { x: -270, y: 0, w: 200, h: 20, type: 'label' },
-                            valueLabel: { x:  130, y: 0, w: 280, h: 22, type: 'label' },
+                            keyLabel:   { x: -284, y: 0, w: 200, h: 20, type: 'label' },
+                            valueLabel: { x:  120, y: 0, w: 280, h: 22, type: 'label' },
+                            chevron:    { x:  282, y: 0, w: 20,  h: 22, type: 'label' },
                         },
                     },
-                    qpWindowRow: { x: 0, y: 22,  w: 600, h: 40, type: 'btnGhost',
+                    qpWindowRow: { x: 0, y: 30,  w: 620, h: 40, type: 'btnGhost',
                         children: {
-                            keyLabel:   { x: -270, y: 0, w: 200, h: 20, type: 'label' },
-                            valueLabel: { x:  130, y: 0, w: 280, h: 22, type: 'label' },
+                            keyLabel:   { x: -284, y: 0, w: 200, h: 20, type: 'label' },
+                            valueLabel: { x:  120, y: 0, w: 280, h: 22, type: 'label' },
+                            chevron:    { x:  282, y: 0, w: 20,  h: 22, type: 'label' },
                         },
                     },
-                    qpWagerRow:  { x: 0, y: -24, w: 600, h: 40, type: 'btnGhost',
+                    qpWagerRow:  { x: 0, y: -16, w: 620, h: 40, type: 'btnGhost',
                         children: {
-                            keyLabel:   { x: -270, y: 0, w: 200, h: 20, type: 'label' },
-                            valueLabel: { x:  130, y: 0, w: 280, h: 22, type: 'label' },
+                            keyLabel:   { x: -284, y: 0, w: 200, h: 20, type: 'label' },
+                            valueLabel: { x:  120, y: 0, w: 280, h: 22, type: 'label' },
+                            chevron:    { x:  282, y: 0, w: 20,  h: 22, type: 'label' },
                         },
                     },
-                    // Track pill toggle — 320×44 right-aligned within card. Indicator
-                    // sprite slides x=−78 ↔ x=78 between Paper/Real halves. Hit
-                    // areas are invisible buttons sitting on top of indicator+labels.
-                    qpTrackRow:   { x: -270, y: -78, w: 240, h: 22, type: 'label',
-                        notes: 'TRACK key label sibling of toggle' },
-                    qpTrackToggle:{ x: 80,  y: -78, w: 320, h: 44, type: 'group',
+                    qpTrackRow:   { x: -260, y: -72, w: 220, h: 22, type: 'label',
+                        notes: 'TRADING MODE key label sibling of toggle' },
+                    qpTrackToggle:{ x: 90,  y: -72, w: 320, h: 44, type: 'group',
                         children: {
+                            glowHalo:   { x: -78, y: 0, w: 168, h: 52, type: 'sprite',
+                                notes: 'teal α 60 halo behind indicator, follows x via tween' },
                             indicator:  { x: -78, y: 0, w: 156, h: 44, type: 'sprite' },
                             paperLabel: { x: -78, y: 0, w: 140, h: 22, type: 'label' },
                             realLabel:  { x:  78, y: 0, w: 140, h: 22, type: 'label' },
@@ -395,30 +728,101 @@ const LayoutSpec = {
                             realHit:    { x:  78, y: 0, w: 156, h: 44, type: 'btnGhost' },
                         },
                     },
+                    qpTrackHelp:  { x: 0, y: -108, w: 620, h: 16, type: 'label' },
+                    topBorder:    { x: 0, y: 129,  w: 686, h: 1,  type: 'sprite' },
                 },
             },
-            // Phase 27 — AudioCard shifted y=-80 → -130 to clear taller QPCard.
-            audioCard:       { x: 0,    y: -130, w: 660, h: 70,  type: 'group',
+            // PREFERENCES — Phase 30: real toggle switches (track + sliding knob)
+            // replace the ON/OFF pills. Pill nodes preserved (deactivated) so
+            // verifier allowedOverlaps and binding stability stay intact.
+            audioCard:       { x: 0,    y: -134, w: 688, h: 148, type: 'group',
                 children: {
-                    header:        { x: -290, y: 20,  w: 400, h: 16, type: 'label' },
-                    soundToggle:   { x: -150, y: -10, w: 260, h: 38, type: 'btnPrimary' },
-                    hapticsToggle: { x: 150,  y: -10, w: 260, h: 38, type: 'btnPrimary' },
+                    header:        { x: -304, y: 60,  w: 400, h: 16, type: 'label' },
+                    soundRow:      { x: 0,    y: 22,  w: 620, h: 48, type: 'btnGhost',
+                        children: {
+                            icon:        { x: -274, y: 0,   w: 28, h: 28, type: 'sprite' },
+                            label:       { x: -232, y: 0,   w: 220, h: 22, type: 'label' },
+                            switchTrack: { x:  254, y: 0,   w: 52,  h: 30, type: 'sprite' },
+                            switchKnob:  { x:  266, y: 0,   w: 24,  h: 24, type: 'sprite',
+                                notes: 'starts at switchTrack.x+12 when ON, x-12 when OFF' },
+                            pillBg:      { x:  254, y: 0,   w: 52,  h: 30, type: 'sprite',
+                                notes: 'legacy node, deactivated — kept for verifier overlap entries' },
+                            pillLbl:     { x:  254, y: 0,   w: 52,  h: 22, type: 'label',
+                                notes: 'legacy node, deactivated' },
+                        },
+                    },
+                    hapticsRow:    { x: 0,    y: -34, w: 620, h: 48, type: 'btnGhost',
+                        children: {
+                            icon:        { x: -274, y: 0,   w: 28, h: 28, type: 'sprite' },
+                            label:       { x: -232, y: 0,   w: 220, h: 22, type: 'label' },
+                            switchTrack: { x:  254, y: 0,   w: 52,  h: 30, type: 'sprite' },
+                            switchKnob:  { x:  266, y: 0,   w: 24,  h: 24, type: 'sprite' },
+                            pillBg:      { x:  254, y: 0,   w: 52,  h: 30, type: 'sprite' },
+                            pillLbl:     { x:  254, y: 0,   w: 52,  h: 22, type: 'label' },
+                        },
+                    },
+                    rowDivider:    { x: 0,    y: -6,  w: 600, h: 1,  type: 'sprite',
+                        notes: 'subtle separator between sound + haptics rows, white α 14' },
+                    topBorder:     { x: 0, y: 73, w: 686, h: 1, type: 'sprite' },
                 },
             },
-            feesLink:        { x: 0,    y: -360, w: 560, h: 52, type: 'btnGhost' },
-            reconnectBtn:    { x: 0,    y: -440, w: 660, h: 48, type: 'btnGhost' },
-            disconnectBtn:   { x: 0,    y: -500, w: 660, h: 48, type: 'btnDanger' },
-            deleteBtn:       { x: 0,    y: -560, w: 660, h: 48, type: 'btnDanger' },
-            status:          { x: 0,    y: -610, w: 640, h: 20, type: 'label' },
-            // Phase 27 — QP popovers. Direct children of SettingsPanel for z-order
-            // (must render on top of all cards). Hidden by default; AppUI shows on
-            // dropdown tap. Panel-y positions anchor each popover below its row.
-            qpModePopover:   { x: 200, y: 20,  w: 220, h: 174, type: 'group',
-                notes: 'opens BELOW QPModeRow (panel y=128); 4 options × 40 + 14 padding' },
-            qpWindowPopover: { x: 200, y: -26, w: 220, h: 174, type: 'group',
-                notes: 'opens BELOW QPWindowRow (panel y=82)' },
-            qpWagerPopover:  { x: 200, y: -92, w: 220, h: 214, type: 'group',
-                notes: 'opens BELOW QPWagerRow (panel y=36); 5 options × 40 + 14' },
+            // ACCOUNT — Phase 30: explicit GENERAL / SESSION group labels with a
+            // hairline divider between, plus a row divider between Reconnect and
+            // Disconnect. Card grows 200 → 232 to accommodate the headers.
+            accountCard:     { x: 0,    y: -362, w: 688, h: 232, type: 'group',
+                children: {
+                    header:           { x: -304, y: 100, w: 400, h: 16, type: 'label' },
+                    generalGroupLabel:{ x: -304, y: 78,  w: 200, h: 14, type: 'label',
+                        notes: '"GENERAL" group header (lo-text, 10px)' },
+                    feesRow:          { x: 0,    y: 46,  w: 620, h: 48, type: 'btnGhost',
+                        children: {
+                            icon:    { x: -274, y: 0,   w: 26, h: 26, type: 'sprite' },
+                            // label x shifted -232 → -190 so the auto-fitted text box (overflow=NONE
+                            // means anchor 0.5/0.5 centers text on lpos.x) clears the icon at x=-274.
+                            label:   { x: -190, y: 0,   w: 360, h: 22, type: 'label' },
+                            chevron: { x:  282, y: 0,   w: 20,  h: 22, type: 'label' },
+                        },
+                    },
+                    groupDivider:     { x: 0,    y: 16,  w: 600, h: 1, type: 'sprite',
+                        notes: 'GENERAL / SESSION separator hairline' },
+                    sessionGroupLabel:{ x: -304, y: -2,  w: 200, h: 14, type: 'label' },
+                    reconnectRow:     { x: 0,    y: -34, w: 620, h: 48, type: 'btnGhost',
+                        children: {
+                            icon:    { x: -274, y: 0,   w: 26, h: 26, type: 'sprite' },
+                            // label x shifted -232 → -190 so the auto-fitted text box (overflow=NONE
+                            // means anchor 0.5/0.5 centers text on lpos.x) clears the icon at x=-274.
+                            label:   { x: -190, y: 0,   w: 360, h: 22, type: 'label' },
+                            chevron: { x:  282, y: 0,   w: 20,  h: 22, type: 'label' },
+                        },
+                    },
+                    rowDivider:       { x: 0,    y: -64, w: 600, h: 1, type: 'sprite',
+                        notes: 'subtle separator between reconnect + disconnect rows' },
+                    disconnectRow:    { x: 0,    y: -90, w: 620, h: 48, type: 'btnGhost',
+                        children: {
+                            icon:    { x: -274, y: 0,   w: 26, h: 26, type: 'sprite' },
+                            // label x shifted -232 → -190 so the auto-fitted text box (overflow=NONE
+                            // means anchor 0.5/0.5 centers text on lpos.x) clears the icon at x=-274.
+                            label:   { x: -190, y: 0,   w: 360, h: 22, type: 'label' },
+                            chevron: { x:  282, y: 0,   w: 20,  h: 22, type: 'label' },
+                        },
+                    },
+                    topBorder:        { x: 0, y: 115, w: 686, h: 1, type: 'sprite' },
+                },
+            },
+            // Phase 30 — Delete Account moved further down with a 54px buffer
+            // above (intentional friction for a destructive action).
+            deleteBtn:       { x: 0,    y: -548, w: 220, h: 32, type: 'btnGhost',
+                notes: 'small red text — rose label, NOT bold. Sits ~54px below account card.' },
+            status:          { x: 0,    y: -592, w: 640, h: 20, type: 'label' },
+            // Phase 27 — QP popovers. Direct children of SettingsPanel for z-order.
+            // y-positions follow the new QP card y=108 (was 90) — shifted +18 so
+            // each popover still opens just below its row.
+            qpModePopover:   { x: 200, y: 68,   w: 220, h: 174, type: 'group',
+                notes: 'opens BELOW QPModeRow (panel y=184); 4 options × 40 + 14 padding' },
+            qpWindowPopover: { x: 200, y: 22,   w: 220, h: 174, type: 'group',
+                notes: 'opens BELOW QPWindowRow (panel y=138)' },
+            qpWagerPopover:  { x: 200, y: -44,  w: 220, h: 214, type: 'group',
+                notes: 'opens BELOW QPWagerRow (panel y=92); 5 options × 40 + 14' },
         },
         templates: {
             // Phase 27 — popover option templates. Each popover stacks N options
@@ -445,6 +849,20 @@ const LayoutSpec = {
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],   // label sits ON invisible button
+            // Phase 30 — sheet bg sits behind every card by z-order (first child).
+            ['SettingsSheetBg', 'WalletCard'],
+            ['SettingsSheetBg', 'ProfileCard'],
+            ['SettingsSheetBg', 'QuickPlayDefaultsCard'],
+            ['SettingsSheetBg', 'AudioSettingsCard'],
+            ['SettingsSheetBg', 'AccountSettingsCard'],
+            ['SettingsSheetBg', 'DeleteAccountSettingsButton'],
+            ['SettingsSheetBg', 'SettingsStatusLabel'],
+            ['SettingsSheetBg', 'SettingsTitleLabel'],
+            ['SettingsSheetBg', 'BackLinkLabel'],
+            ['SettingsSheetBg', 'BackButton'],
+            ['SettingsSheetBg', 'QPModePopover'],
+            ['SettingsSheetBg', 'QPWindowPopover'],
+            ['SettingsSheetBg', 'QPWagerPopover'],
         ],
     },
 
@@ -452,56 +870,208 @@ const LayoutSpec = {
     // by panel name. QPTrackToggle counts as its own panel because it has 5 UI
     // children. The toggle has intentional internal overlaps: indicator sits
     // BEHIND labels (decorative), and invisible hit areas sit ON TOP of both.
+    // Phase 30 adds a teal glow halo behind the indicator that follows the same x.
     QPTrackToggle: {
         allowedOverlaps: [
             ['QPTrackIndicator', 'QPTrackPaperLabel'],
             ['QPTrackIndicator', 'QPTrackPaperHit'],
             ['QPTrackPaperLabel', 'QPTrackPaperHit'],
             ['QPTrackRealLabel', 'QPTrackRealHit'],
+            ['QPTrackGlowHalo', 'QPTrackIndicator'],
+            ['QPTrackGlowHalo', 'QPTrackPaperLabel'],
+            ['QPTrackGlowHalo', 'QPTrackPaperHit'],
+            ['QPTrackGlowHalo', 'QPTrackRealLabel'],
+            ['QPTrackGlowHalo', 'QPTrackRealHit'],
+        ],
+    },
+
+    // Phase 29 — Wallet card. Status dot sits next to the connected name
+    // label, and the truncated pubkey sits next to the copy button. Phase 30
+    // adds a 4-stroke violet glow border that overlaps everything inside.
+    WalletCard: {
+        allowedOverlaps: [
+            ['WalletStatusDot', 'WalletNameLabel'],
+            ['WalletPubkeyLabel', 'CopyPubkeyButton'],
+            ['WalletNameLabel', 'CopyPubkeyButton'],
+            ['WalletGlowTop', 'WalletGlowLeft'],
+            ['WalletGlowTop', 'WalletGlowRight'],
+            ['WalletGlowBot', 'WalletGlowLeft'],
+            ['WalletGlowBot', 'WalletGlowRight'],
+            // Perimeter strokes intentionally overlap any wide content inside.
+            ['HeaderLabel',         'WalletGlowLeft'],
+            ['HeaderLabel',         'WalletGlowRight'],
+            ['WalletNameLabel',     'WalletGlowLeft'],
+            ['WalletNameLabel',     'WalletGlowRight'],
+            ['WalletPubkeyLabel',   'WalletGlowLeft'],
+            ['WalletPubkeyLabel',   'WalletGlowRight'],
+            ['WalletBalanceLabel',  'WalletGlowLeft'],
+            ['WalletBalanceLabel',  'WalletGlowRight'],
+            ['WalletDivider',       'WalletGlowLeft'],
+            ['WalletDivider',       'WalletGlowRight'],
+        ],
+    },
+
+    // Phase 29 — Preference toggle rows. Each row's icon (left gutter) and
+    // label sit in the same horizontal band by design. The pill background
+    // and its ON/OFF label co-locate on the right. Phase 30 adds toggle-switch
+    // siblings (track + sliding knob) on the same right gutter.
+    SoundToggleButton: {
+        allowedOverlaps: [
+            ['PrefSoundIcon', 'SoundToggleButtonLabel'],
+            ['SoundToggleButtonPillBg', 'SoundToggleButtonPillLabel'],
+            ['SoundToggleButtonSwitchTrack', 'SoundToggleButtonSwitchKnob'],
+            ['SoundToggleButtonSwitchTrack', 'SoundToggleButtonPillBg'],
+            ['SoundToggleButtonSwitchTrack', 'SoundToggleButtonPillLabel'],
+            ['SoundToggleButtonSwitchKnob', 'SoundToggleButtonPillBg'],
+            ['SoundToggleButtonSwitchKnob', 'SoundToggleButtonPillLabel'],
+        ],
+    },
+    HapticsToggleButton: {
+        allowedOverlaps: [
+            ['PrefHapticsIcon', 'HapticsToggleButtonLabel'],
+            ['HapticsToggleButtonPillBg', 'HapticsToggleButtonPillLabel'],
+            ['HapticsToggleButtonSwitchTrack', 'HapticsToggleButtonSwitchKnob'],
+            ['HapticsToggleButtonSwitchTrack', 'HapticsToggleButtonPillBg'],
+            ['HapticsToggleButtonSwitchTrack', 'HapticsToggleButtonPillLabel'],
+            ['HapticsToggleButtonSwitchKnob', 'HapticsToggleButtonPillBg'],
+            ['HapticsToggleButtonSwitchKnob', 'HapticsToggleButtonPillLabel'],
+        ],
+    },
+
+    // Phase 29 — Account card chevron rows. Icon (left gutter) and label
+    // share the same horizontal band by design.
+    FeesLinkButton: {
+        allowedOverlaps: [
+            ['AccountFeesIcon', 'FeesLinkButtonLabel'],
+        ],
+    },
+    ReconnectSettingsButton: {
+        allowedOverlaps: [
+            ['AccountReconnectIcon', 'ReconnectSettingsButtonLabel'],
+        ],
+    },
+    DisconnectSettingsButton: {
+        allowedOverlaps: [
+            ['AccountDisconnectIcon', 'DisconnectSettingsButtonLabel'],
+        ],
+    },
+
+    // Phase 30 — Profile card. The violet focus ring shares the same
+    // bounding box as the EditBox (it's the ring around it). The "Username"
+    // label sits in the gutter to the left of the input but its left padding
+    // overlaps the EditBox bbox by a few px. Save / help labels sit just
+    // below the input and the focus ring's bottom edge dips into them.
+    ProfileCard: {
+        allowedOverlaps: [
+            ['UsernameFocusRing', 'UsernameEditBox'],
+            ['UsernameLabel',     'UsernameFocusRing'],
+            ['UsernameLabel',     'UsernameEditBox'],
+            ['UsernameFocusRing', 'UsernameSaveLabel'],
+            ['UsernameEditBox',   'UsernameSaveLabel'],
+        ],
+    },
+
+    // Phase 30 — Account card has GENERAL / SESSION group labels and divider
+    // hairlines that visually nest the chevron rows. Hairlines are intended
+    // to span the full row width.
+    AccountSettingsCard: {
+        allowedOverlaps: [
+            ['AccountGroupDivider',     'FeesLinkButton'],
+            ['AccountGroupDivider',     'ReconnectSettingsButton'],
+            ['AccountRowDivider',       'ReconnectSettingsButton'],
+            ['AccountRowDivider',       'DisconnectSettingsButton'],
+            ['AccountGeneralGroupLabel','FeesLinkButton'],
+            ['AccountSessionGroupLabel','ReconnectSettingsButton'],
+        ],
+    },
+
+    // Phase 30 — PREFERENCES card. Row divider hairline intentionally spans
+    // both toggle rows.
+    AudioSettingsCard: {
+        allowedOverlaps: [
+            ['AudioRowDivider', 'SoundToggleButton'],
+            ['AudioRowDivider', 'HapticsToggleButton'],
         ],
     },
 
     /* ───── LEADERBOARD ─────────────────────────────────────────────── */
-    // Trophy → top-10 by mode (1v1 / 4p / 8p / BR10 / season). 5 mode tabs
-    // y=600, 10 rows y=540→-36 (stride 64), PersonalRankCard footer y=-130
-    // (HIDDEN until pubkey connects), Status y=-740. Back/Title at top.
+    // Hero card for rank #1 (TopPlayerCard) + 9 standard rows + 4-tab segmented
+    // mode control + standalone "This Week" chip + EmptyStateGroup + sticky-bottom
+    // PersonalRankCard. AppUI fills entries[0] into TopPlayerCard and ranks 2..10
+    // into LBRow_1..LBRow_9. Season filter (modeU8=4) drives the same nodes via
+    // a wins-based render path.
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
             backLink:        { x: -280, y: 720,  w: 110, h: 28,  type: 'label' },
             backBtn:         { x: -280, y: 720,  w: 140, h: 36,  type: 'btnGhost' },
             title:           { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
-            personalRankCard: { x: 0,   y: -130, w: 660, h: 100, type: 'group',
+            // Subtitle line under title — "{mode} · This Week" / "All modes · This Week".
+            subtitle:        { x: 0,    y: 638,  w: 520, h: 24,  type: 'label' },
+            // Pill-shaped bg behind the 4 mode tabs (segmented control container).
+            modeTabsContainer: { x: -90, y: 590, w: 480, h: 46, type: 'sprite',
+                notes: 'segmented-control bg behind 4 mode tabs (left-anchored)' },
+            // Standalone "This Week" chip on the right of the segmented control.
+            // Node name kept as LBTab_season (modeU8=4) so the existing handler still binds.
+            thisWeekChip:    { x: 240,  y: 590,  w: 130, h: 42,  type: 'btnGhost' },
+            // Hero card for rank #1. AppUI fills entries[0] here and skips LBRow_0.
+            topPlayerCard:   { x: 0,    y: 510,  w: 660, h: 110, type: 'group',
                 children: {
-                    header: { x: -290, y: 32,  w: 120, h: 18, type: 'label' },
-                    rank:   { x: 0,    y: 6,   w: 600, h: 24, type: 'label' },
-                    stats:  { x: 0,    y: -22, w: 600, h: 20, type: 'label' },
+                    crown:   { x: -290, y: 22,  w: 40,  h: 40, type: 'label' },
+                    rank:    { x: -240, y: 22,  w: 60,  h: 28, type: 'label' },
+                    player:  { x: -50,  y: 18,  w: 240, h: 28, type: 'label' },
+                    elapsed: { x: -50,  y: -16, w: 240, h: 18, type: 'label' },
+                    score:   { x: 230,  y: 4,   w: 160, h: 40, type: 'label' },
+                },
+            },
+            // Empty-state cluster (icon + title + subtitle + CTA). _active toggled by AppUI.
+            emptyState:      { x: 0,    y: 150,  w: 660, h: 300, type: 'group',
+                children: {
+                    icon:    { x: 0,    y: 100,  w: 120, h: 120, type: 'label' },
+                    title:   { x: 0,    y: -8,   w: 600, h: 32,  type: 'label' },
+                    sub:     { x: 0,    y: -42,  w: 600, h: 22,  type: 'label' },
+                    cta:     { x: 0,    y: -110, w: 260, h: 60,  type: 'btnPrimary' },
+                },
+            },
+            // Sticky-bottom YOU card — y=-440 keeps it inside the panel after SAFE_AREA_TOP=110 shift.
+            personalRankCard: { x: 0,   y: -440, w: 660, h: 130, type: 'group',
+                children: {
+                    header: { x: -290, y: 46,  w: 120, h: 18, type: 'label' },
+                    rank:   { x: -90,  y: 22,  w: 440, h: 28, type: 'label' },
+                    stats:  { x: -90,  y: -8,  w: 440, h: 22, type: 'label' },
+                    cta:    { x: 220,  y: -42, w: 200, h: 40, type: 'btnGhost' },
                 },
             },
             status:          { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
         },
         templates: {
-            // 5 mode tabs at y=600 (Stage 3: br10 → trio).
+            // 4 mode tabs at y=590 (segmented control). The 5th season tab is now a
+            // standalone right-side chip — see elements.thisWeekChip.
             lbTab: {
-                count: 5, w: 130, h: 44, y: 600,
-                keys:   ['1v1', 'trio', '4p', '8p', 'season'],
-                labels: ['1v1', 'Trio', '4p', '8p', 'This Week'],
-                xs: [-292, -146, 0, 146, 292],
+                count: 4, w: 120, h: 42, y: 590,
+                keys:   ['1v1', 'trio', '4p', '8p'],
+                labels: ['1v1', 'Trio', '4p', '8p'],
+                xs: [-270, -150, -30, 90],
                 activeIdx: 0,
             },
-            // 10 rank rows. Player h shrunk 28→24 and Elapsed y moved
-            // -14→-16 so internal bboxes don't overlap when rows activate.
+            // 9 rank rows. Rank-1 promoted to TopPlayerCard, so this loop fills
+            // ranks 2..10 (LBRow_1..LBRow_9). HeightLabel renamed to ScoreLabel.
             lbRow: {
-                count: 10, w: 660, h: 54,
-                baseY: 540, gapY: -64,
+                count: 9, w: 660, h: 56,
+                baseY: 400, gapY: -64,
                 rank:    { x: -300, y: 0,   w: 50,  h: 30 },
                 player:  { x: -110, y: 6,   w: 280, h: 24 },
-                height:  { x: 180,  y: 6,   w: 120, h: 28 },
+                score:   { x: 220,  y: 6,   w: 120, h: 28 },
                 elapsed: { x: -110, y: -16, w: 280, h: 18 },
             },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
+            // Segmented control: tabs sit ON ModeTabsContainer by design.
+            ['ModeTabsContainer', 'LBTab_1v1'],
+            ['ModeTabsContainer', 'LBTab_trio'],
+            ['ModeTabsContainer', 'LBTab_4p'],
+            ['ModeTabsContainer', 'LBTab_8p'],
         ],
     },
 
@@ -686,32 +1256,66 @@ const LayoutSpec = {
     TokenDuelPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:           { x: -280, y: 720,  w: 110, h: 28, type: 'label' },
-            backBtn:            { x: -280, y: 720,  w: 140, h: 36, type: 'btnGhost' },
-            title:              { x: 0,    y: 700,  w: 280, h: 44, type: 'label' },
-            // Stage 2 — Lv/XP chip top-right of TokenDuelPanel header (mirrors Home).
-            tokenDuelLevelChip: { x: 140,  y: 750,  w: 400, h: 64, type: 'chip',    notes: '2× scale (200×32→400×64), x=240→140 to keep right edge in bounds' },
-            balanceChip:        { x: 130,  y: 700,  w: 360, h: 64, type: 'label',   notes: '2× scale (180×32→360×64), x=230→130 to keep right edge in bounds' },
-            search:             { x: 0,    y: 640,  w: 620, h: 46, type: 'editbox' },
-            searchClear:        { x: 285,  y: 640,  w: 40,  h: 40, type: 'btnGhost' },
-            feedTabDropdown:    { x: -200, y: 590,  w: 240, h: 40, type: 'btnGhost' },
-            watchlistStar:      { x: 10,   y: 590,  w: 170, h: 38, type: 'btnGhost' },
-            cancelWatchlist:    { x: 115,  y: 590,  w: 36,  h: 36, type: 'btnGhost' },
-            liveIndicator:      { x: 260,  y: 590,  w: 110, h: 40, type: 'label' },
-            minLiqDropdown:     { x: 15,   y: 550,  w: 110, h: 34, type: 'btnGhost', notes: 'Phase 24: h 28→34. moved x=-35→15 to clear FilterChip_liq_asc' },
-            columnsBtn:         { x: 250,  y: 550,  w: 110, h: 34, type: 'btnGhost' },
-            feedColumnHeaders:  { x: 0,    y: 505,  w: 700, h: 24, type: 'group',   notes: 'sticky col headers above feed; cols sourced from templates.feedColHeader' },
-            feedScrollView:     { x: 0,    y: 30,   w: 700, h: 820, type: 'scrollview', notes: 'content sized to FEED_ROW_LIMIT × stride = 20 × 70 = 1400' },
-            // 8c — Squad header (live; squad slots come from templates.squadSlot).
-            squadHeaderLabel:   { x: 0,    y: -510, w: 420, h: 18, type: 'label',   notes: 'YOUR SQUAD — all-caps tracked' },
-            // 8c — Wager row (live betting-duel CTA; replaces legacy stake commit).
-            wagerValueButton:   { x: -180, y: -640, w: 300, h: 64, type: 'btnGhost',   notes: 'tier selector; opens WagerDropdown upward. Phase 24: h 56→64. _active=false in join-mode (see WagerLockChip).' },
-            wagerStartButton:   { x: 180,  y: -640, w: 320, h: 64, type: 'btnPrimary', notes: '▶ Start Match — enabled only when squad full. Phase 24: h 56→64. Relabeled "▶ Join Match" in join-mode.' },
-            wagerLockChip:      { x: -180, y: -640, w: 300, h: 64, type: 'chip',       notes: 'JOIN-MODE only — replaces wagerValueButton when _pickerJoinTarget set. "🔒 0.05 SOL · joining 5Ksq…sDst". _active=false by default.' },
-            wagerBotChip:       { x: -180, y: -640, w: 300, h: 64, type: 'chip',       notes: 'BOT-MODE only — replaces wagerValueButton when _pickerBotMode true. "🤖 FREE · Bot Match". _active=false by default.' },
-            wagerHintLabel:     { x: 0,    y: -684, w: 600, h: 16, type: 'label',      notes: "contextual: Pick X more / Ready / Joining 5Ksq…sDst's match" },
-            wagerDropdown:      { x: -180, y: -606, w: 360, h: 360, type: 'group',
-                notes: 'anchor (0.5, 0); grows upward; hidden by default; 8 rows from templates.wagerDropdownRow' },
+            // 2026-04-26 UX polish — two-row header eliminates the title↔pill overlap.
+            // Stack (top→bottom): icons row (615) · headerRow (575: Back+Pill) ·
+            // title (525) · MatchSetupCard (440) · Search (360) · SourceTabs (300) ·
+            // FilterChips (248) · ColumnHeaders (210) · FeedScrollview (0 ctr, h=388) ·
+            // SquadPanel wrapper (-345) · Status (-510). Side padding 16 → cards w=688/696.
+            backLink:           { x: -288, y: 575,  w: 100, h: 28, type: 'label' },
+            backBtn:            { x: -288, y: 575,  w: 120, h: 40, type: 'btnGhost' },
+            // Title moves to its own row below Back/Pill so it's centered cleanly.
+            title:              { x: 0,    y: 525,  w: 320, h: 36, type: 'label' },
+            // Two SEPARATE rounded pills on header row 1 (right side).
+            // Wider than the old combined pill so long XP totals
+            // ("Lv 99 · 12345/67890") and 2-decimal SOL never overflow.
+            // Right margin 16px from canvas edge (canvas right = 360, solPill
+            // right edge = 360 - 16 = 344 → solPill center = 344 - 65 = 279).
+            // levelPill sits left of solPill with 8px gap.
+            levelPill:          { x: 113,  y: 575,  w: 185, h: 36, type: 'chip',    notes: '"Lv N · curr/max XP" — auto-fits up to Lv 99 · 12345/67890.' },
+            solPill:            { x: 279,  y: 575,  w: 130, h: 36, type: 'chip',    notes: '"◼ 19.99 SOL" — 2 decimals, mint label, gold edge.' },
+            // Match Setup Summary Card — multi-line state card directly under
+            // the header. Tells the player: mode, squad count, stake, and
+            // what to do next. Card sprite + teal accent edge.
+            matchSetupCard:     { x: 0,    y: 440,  w: 688, h: 124, type: 'group',  notes: '+14h vertical padding for breathing; teal cardEdge accent on left' },
+            // 2026-04-26 unified card refactor — Row 1 of the unified Token
+            // Feed Card holds: [Trending ▾] [Search] [★ icon] [● LIVE] all
+            // on the same y=300 band. Search dropped from 78h band to 44h to
+            // share the row.
+            // Master frame that visually wraps Row 1, Row 2, column headers,
+            // and the FeedScrollView. Rendered BEFORE its sibling content so
+            // it sits behind. Spans y=330 (above Row 1) to y=-202 (below feed).
+            feedFrameCard:      { x: 0,    y: 64,   w: 712, h: 532, type: 'sprite', notes: 'unified card behind Row 1 + Row 2 + col headers + feed' },
+            search:             { x: 46,   y: 300,  w: 312, h: 44, type: 'editbox', notes: 'shrunken to share Row 1 with Trending dropdown + star + LIVE' },
+            searchClear:        { x: 188,  y: 300,  w: 32,  h: 32, type: 'btnGhost' },
+            feedTabDropdown:    { x: -224, y: 300,  w: 200, h: 44, type: 'btnGhost' },
+            watchlistStar:      { x: 240,  y: 300,  w: 44,  h: 44, type: 'btnGhost', notes: 'icon-only ★ button (no text)' },
+            cancelWatchlist:    { x: 240,  y: 300,  w: 36,  h: 36, type: 'btnGhost' },
+            liveIndicator:      { x: 314,  y: 300,  w: 80,  h: 24, type: 'label' },
+            // Filter row (y=248) — pill chips: [Newest] [Liquidity ▾] [All ▾] ........ [⋮ Cols]
+            // Newest + Liquidity ▾ come from feedFilterChip template (xs=[-272,-160]).
+            // [All ▾] = minLiqDropdown (relabeled at runtime from active value).
+            // [⋮ Cols] = columnsBtn shrunk for icon-feel at far right.
+            minLiqDropdown:     { x: -16,  y: 248,  w: 110, h: 32, type: 'chip',    notes: 'label morphs to active value: "All ▾" / "$1K+ ▾" / "$5K+ ▾" / "$10K+ ▾"' },
+            columnsBtn:         { x: 270,  y: 248,  w: 96,  h: 32, type: 'chip',    notes: 'reads "Cols ±" — wider than original 80 to fit new label' },
+            feedColumnHeaders:  { x: 0,    y: 210,  w: 696, h: 24, type: 'group',    notes: 'docked just above scrollview; bg sprite child gives it visible chrome.' },
+            // FeedScrollview shrunk to absorb the 32 px the two-row header consumed.
+            // Bottom (y=-194) clears the sticky squad panel top (y=-235).
+            feedScrollView:     { x: 0,    y: 0,    w: 696, h: 388, type: 'scrollview', notes: 'h 420→388 to make room for two-row header; ~4 visible rows still.' },
+            // 2026-04-26 UX redesign — Sticky Squad Panel groups the squad header,
+            // 3 slots, wager row, and Manage Squad ghost link inside a card sprite
+            // at y=-345 / h=220. The card itself is rendered in scene-gen as a
+            // sprite sibling positioned BEFORE the existing squad/wager nodes in
+            // the children list so it sits behind them.
+            squadPanel:         { x: 0,    y: -345, w: 700, h: 220, type: 'group',  notes: 'wrapper card around squadHeaderLabel + 3 squadSlots + wager row + ManageSquad ghost' },
+            squadHeaderLabel:   { x: 0,    y: -280, w: 420, h: 24, type: 'label',   notes: 'YOUR SQUAD — sits below the +Pick / Manage Squad action row inside squadPanel.' },
+            // Wager row — left wager-value button (200 wide), right start CTA
+            // (460 wide). Together they span 700 minus padding, full-width feel.
+            wagerValueButton:   { x: -240, y: -395, w: 200, h: 56, type: 'btnGhost',   notes: 'tier selector; opens WagerDropdown upward. Resized 300x64→200x56 to share row with wider start CTA.' },
+            wagerStartButton:   { x: 110,  y: -395, w: 460, h: 56, type: 'btnPrimary', notes: '▶ Start Duel CTA — relabels to "Pick X more" when squad incomplete. w 320→460 (full-width feel).' },
+            wagerLockChip:      { x: -240, y: -395, w: 200, h: 56, type: 'chip',       notes: 'JOIN-MODE replaces wagerValueButton.' },
+            wagerBotChip:       { x: -240, y: -395, w: 200, h: 56, type: 'chip',       notes: 'BOT-MODE replaces wagerValueButton.' },
+            wagerHintLabel:     { x: 0,    y: -700, w: 600, h: 24, type: 'label',      notes: 'HIDDEN in redesign — the contextual hint moved into matchSetupCard.matchSetupHintLabel. Kept here for AppUI binding compatibility, _active=false at scene-gen.' },
+            wagerDropdown:      { x: -240, y: -363, w: 360, h: 360, type: 'group',     notes: 'opens upward from new wager-value button position (y=-395 + h/2 + small gap = -363)' },
             // 8c — Legacy stake cluster (kept for node-name bindings; force-hidden
             // at scene-gen so verifier sees real state. AppUI._hideLegacyBettingDuelNodes
             // is belt-and-suspenders.)
@@ -727,18 +1331,21 @@ const LayoutSpec = {
             // 8c — Game overlay (paper-match flow — inactive on betting-duel).
             gameArea:           { x: 0,    y: 0,    w: 720, h: 1000, type: 'group',  notes: 'LEGACY — _active=false; full-panel container for tower/HUD' },
             gameOverLabel:      { x: 0,    y: 0,    w: 680, h: 180,  type: 'label',  notes: 'LEGACY — _active=false; full-panel overlay' },
-            status:             { x: 0,    y: -740, w: 660, h: 22, type: 'label' },
+            status:             { x: 0,    y: -510, w: 688, h: 26, type: 'label',     notes: 'Holdings loaded (...). Sits below squad panel.' },
             // 8d — popover containers + their internal labels/buttons. Each
             // popover is _active=false by default; AppUI toggles per-event.
-            // Sizes/positions match the inline literals previously hard-coded.
-            searchSuggestionPopover: { x: -30, y: 360,  w: 560, h: 300, type: 'group',
-                notes: '5 SuggestRow children from templates.suggestRow' },
-            feedTabDropdownPopover:  { x: -200, y: 425, w: 240, h: 304, type: 'group',
-                notes: 'opens DOWN-LEFT of FeedTabDropdownButton; y = feedTabDropdown.y - 165' },
-            minLiqDropdownPopover:   { x: -60,  y: 454, w: 120, h: 180, type: 'group',
-                notes: 'y = minLiqDropdown.y - 96' },
-            columnsPopover:          { x: 215,  y: 342, w: 170, h: 360, type: 'group',
-                notes: 'y = columnsBtn.y - 208; opens DOWN-LEFT of ColumnsButton' },
+            // Anchors mechanically follow their triggers (y-shift to match new chip/tab/search y).
+            searchSuggestionPopover: { x: -30, y: 345,  w: 560, h: 300, type: 'group',
+                notes: '5 SuggestRow children; y = search.y(360) - 15' },
+            feedTabDropdownPopover:  { x: -200, y: 135, w: 240, h: 304, type: 'group',
+                notes: 'opens DOWN of FeedTabDropdownButton; y = feedTabDropdown.y(300) - 165 = 135' },
+            minLiqDropdownPopover:   { x: -32,  y: 152, w: 120, h: 180, type: 'group',
+                notes: 'y = minLiqDropdown.y(248) - 96 = 152' },
+            // NEW — Liquidity-direction dropdown popover (mirrors minLiqDropdownPopover pattern).
+            liqSortDropdownPopover:  { x: -160, y: 152, w: 140, h: 100, type: 'group',
+                notes: 'opens DOWN from "Liquidity ▾" chip (anchor x=-160, y=248); 2 rows from liqSortOption template' },
+            columnsPopover:          { x: 235,  y: 40,  w: 170, h: 360, type: 'group',
+                notes: 'opens DOWN-LEFT of ColumnsButton (now x=270, y=248, w=80)' },
             columnsPopoverHint:      { x: 10,   y: -164, w: 160, h: 20, type: 'label',
                 notes: 'rel to columnsPopover center; y = colPopStartY(160) - 10*colPopRowH(32) - 4' },
             // SquadDropOverlay — full-panel modal (3 pills from squadDropPill template).
@@ -763,34 +1370,39 @@ const LayoutSpec = {
             backdropButton:          { x: 0, y: 0, w: 720, h: 1280, type: 'btnGhost' },
         },
         templates: {
-            // 6 top-row icon buttons at y=750. Moved from y=735 to clear
-            // TitleLabel's bbox (y=700 h=44 → top=722, button bottom=730 → 8-px gap).
+            // 4 top-row icon buttons — relocated to a right-side cluster above
+            // the Lv/SOL pills. Smaller (36×32 → 32×28) so they don't compete
+            // with the pill row at y=575. Right margin 16px (rightmost icon
+            // center = 360-16-16 = 328); 38px stride (32w + 6 gap).
             topRowActionBtn: {
-                count: 6, w: 96, h: 80, y: 750,
-                names:  ['OpenLeaderboardButton', 'OpenPortfolioButton', 'OpenSettingsButton',
-                         'OpenSquadPresetsButton', 'SuggestSquadButton', 'HelpButton'],
-                labels: ['', '', '', '', '', '?'],
-                xs:     [-260, -156, -52, 52, 156, 260],
+                count: 4, w: 32, h: 28, y: 615,
+                names:  ['OpenSettingsButton', 'OpenSquadPresetsButton',
+                         'SuggestSquadButton', 'HelpButton'],
+                labels: ['', '', '', '?'],
+                xs:     [214, 252, 290, 328],
             },
-            // 3 sort filter chips at y=550 (Newest / Liq↓ / Liq↑).
+            // Sort chips — 2-chip row: [Newest] [Liquidity ▾]. The Liq↓ + Liq↑
+            // chips collapsed into a single 'liq' chip that opens
+            // liqSortDropdownPopover (mirrors the minLiqDropdown pattern).
+            // Filter row reads: [Newest] [Liquidity ▾] [All ▾] ........ [⋮ Cols]
+            // ([All ▾] = minLiqDropdown, [⋮ Cols] = columnsBtn — both in elements above.)
             feedFilterChip: {
-                count: 3, w: 72, h: 34, y: 550,
-                keys:   ['newest', 'liq_desc', 'liq_asc'],
-                labels: ['Newest', 'Liq↓', 'Liq↑'],
-                baseX: -268, gapX: 80,
+                count: 2, w: 110, h: 32, y: 248,
+                keys:   ['newest', 'liq'],
+                labels: ['Newest', 'Liquidity ▾'],
+                xs:     [-272, -144],
             },
-            // 7 column headers laid out inside FeedColumnHeaders group at y=505.
-            // Coordinates relative to group center. align: 0 = left, 1 = center.
+            // 6 column headers (was 7 — Age dropped in 2026-04-26 redesign).
+            // Widths kept narrow so headers don't bbox-overlap each other.
             feedColHeader: {
-                count: 7, h: 22,
+                count: 6, h: 24,
                 cols: [
                     { key: 'Token',  text: 'TOKEN',  x: -262, w: 160, align: 0 },
-                    { key: 'Score',  text: 'SCORE',  x: -90,  w: 40,  align: 1 },
-                    { key: 'Liq',    text: 'LIQ',    x: -40,  w: 60,  align: 1 },
-                    { key: 'Vol',    text: 'VOL',    x: 30,   w: 60,  align: 1 },
-                    { key: 'Change', text: '24H',    x: 100,  w: 60,  align: 1 },
-                    { key: 'Price',  text: 'PRICE',  x: 180,  w: 80,  align: 1 },
-                    { key: 'Age',    text: 'AGE',    x: 285,  w: 40,  align: 1 },
+                    { key: 'Score',  text: 'SCORE',  x: 30,   w: 50,  align: 1 },
+                    { key: 'Liq',    text: 'LIQ',    x: 90,   w: 40,  align: 1 },
+                    { key: 'Vol',    text: 'VOL',    x: 150,  w: 40,  align: 1 },
+                    { key: 'Change', text: '24H',    x: 220,  w: 50,  align: 1 },
+                    { key: 'Price',  text: 'PRICE',  x: 295,  w: 60,  align: 2 },
                 ],
             },
             // 20 reusable feed rows in the scroll-view content. baseY/gapY drive
@@ -803,45 +1415,58 @@ const LayoutSpec = {
             // ↔ ScoreLabel 10-px overlap that the verifier flagged.
             // ChangeLabel and DeltaLabel share the same position (delta is
             // the alternate label, hidden by default — see allowedOverlaps).
+            // 2026-04-26 redesign — feedRow as a 2-line mobile card.
+            //   Top line:    [Avatar 44×44] [SYMBOL bold]   [Score badge]   [+24H% color]
+            //   Bottom line:               [name·mint muted]  [Liq] [Vol]   [Price gold right]
+            // Avatar bumped 28→44. Row h 66→88, stride 70→92. Age and Dex
+            // dropped from view (kept in template at off-screen positions for
+            // AppUI binding compatibility, _active=false).
             feedRow: {
-                count: 20, w: 680, h: 66,
-                baseY: -33, gapY: -70,
-                selectedEdge: { x: -338, y: 0,   w: 3,   h: 60, notes: 'left emerald edge — hidden by default' },
-                checkbox:     { x: -320, y: 0,   w: 22,  h: 22, notes: 'watchlist mode — hidden by default' },
-                checkmark:    { x: 0,    y: 1,   w: 22,  h: 22, notes: 'inside checkbox — hidden by default' },
-                logo:         { x: -310, y: 0,   w: 28,  h: 28 },
-                symbol:       { x: -180, y: 12,  w: 140, h: 22, notes: 'top line, left-aligned bold (was w=160 — shrunk to clear Score)' },
-                name:         { x: -180, y: -14, w: 200, h: 18, notes: 'bottom line, muted' },
-                score:        { x: -90,  y: 12,  w: 40,  h: 22 },
-                liq:          { x: -40,  y: 12,  w: 60,  h: 22 },
-                vol:          { x: 30,   y: 12,  w: 60,  h: 22 },
-                change:       { x: 100,  y: 12,  w: 60,  h: 22 },
-                delta:        { x: 100,  y: 12,  w: 60,  h: 22, notes: 'alternate of change — hidden by default' },
-                price:        { x: 180,  y: 12,  w: 80,  h: 22 },
-                age:          { x: 285,  y: 12,  w: 40,  h: 22 },
-                dex:          { x: 80,   y: -14, w: 200, h: 18 },
-                liveDot:      { x: 315,  y: -14, w: 8,   h: 8,  notes: 'hidden by default' },
+                count: 20, w: 688, h: 170,
+                baseY: -85, gapY: -174,
+                selectedEdge: { x: -334, y: 0,   w: 5,   h: 154, notes: 'left teal stripe; height tracks row h' },
+                checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
+                checkmark:    { x: 0,    y: 1,   w: 22,  h: 22,  notes: 'inside checkbox — hidden by default' },
+                logo:         { x: -253, y: 0,   w: 150, h: 150, notes: '3.4× original (44→150) — second bump request 2026-04-26' },
+                // Top line (y=36)
+                symbol:       { x: -71,  y: 36,  w: 154, h: 26, notes: 'bold 22pt, left-aligned; tight to clear 150px logo' },
+                score:        { x: 40,   y: 36,  w: 44,  h: 20, notes: 'small gold chip; subordinate to 24H hero' },
+                change:       { x: 280,  y: 36,  w: 90,  h: 30, notes: 'HERO 24H% — 26pt bold right-aligned colored' },
+                delta:        { x: 280,  y: 36,  w: 90,  h: 30, notes: 'alternate of change — _active=false' },
+                // Bottom line (y=-30)
+                name:         { x: -71,  y: -30, w: 154, h: 18, notes: 'name · mint muted, left-aligned' },
+                liq:          { x: 80,   y: -30, w: 70,  h: 18 },
+                vol:          { x: 160,  y: -30, w: 70,  h: 18 },
+                price:        { x: 270,  y: -30, w: 90,  h: 18, notes: 'gold mono, right-aligned, 16pt' },
+                // Hidden in card view but kept for binding compat (off-screen)
+                age:          { x: -2000, y: 0,  w: 1, h: 1, notes: 'DROPPED FROM CARD; node kept active=false off-screen' },
+                dex:          { x: -2000, y: 0,  w: 1, h: 1, notes: 'DROPPED FROM CARD' },
+                liveDot:      { x: 320,  y: -64, w: 8,   h: 8 },
             },
-            // 8c — 3 squad action buttons at y=-440.
-            // Pick = emerald CTA, Drop = chrome neutral, Run = blue primary.
+            // Squad action row — restored 2026-04-26. +Pick re-enters multi-pick
+            // mode (still useful when tapping rows isn't ergonomic on small
+            // viewports), Manage Squad opens the SquadDropOverlay. Both sit
+            // INSIDE the squadPanel, just above the YOUR SQUAD header.
+            // 2026-04-26 — Pick / Manage Squad globals removed. Each empty
+            // slot now reads 'Pick +' and acts as the per-slot pick affordance;
+            // the per-slot × button replaces Manage Squad. Template kept with
+            // count: 0 so generate-scenes.js's existing loop produces nothing.
             squadActionBtn: {
-                count: 3, w: 200, h: 60, y: -440,
-                names:  ['SquadPickButton', 'SquadDropButton', 'SquadRunButton'],
-                labels: ['+ Pick',          'Manage Squad',    '▶ Run Squad'],
-                xs:     [-220, 0, 220],
-                colors: [[48, 198, 155], [28, 34, 48], [56, 148, 252]],
-                bold:   [true, false, true],
+                count: 0, w: 180, h: 32, y: -256,
+                names:  [],
+                labels: [],
+                xs:     [],
+                colors: [],
+                bold:   [],
             },
-            // 8c — 3 squad slots at y=-550. Internals: bg button + Logo (36×36 left)
-            // + SymbolLabel (top, bold) + DeltaLabel (bottom, colored). Each slot
-            // _active=false initially; AppUI activates per slot when squad fills.
-            // logo.x: -squadSlotW/2 + 26 = -64. symbol/delta width: squadSlotW - 60 = 120.
+            // 3 squad slots — pushed down from y=-300 to y=-330 to make room
+            // for the action button row + header above.
             squadSlot: {
-                count: 3, w: 180, h: 54, y: -550,
-                xs: [-200, 0, 200],
-                logo:   { x: -66, y: 0,   w: 36,  h: 36, notes: 'x shifted -64→-66 so right edge x=-48 clears symbol/delta left' },
-                symbol: { x: 12,  y: 8,   w: 120, h: 22 },
-                delta:  { x: 12,  y: -12, w: 120, h: 16 },
+                count: 3, w: 200, h: 64, y: -330,
+                xs: [-220, 0, 220],
+                logo:   { x: -76, y: 0,   w: 40,  h: 40 },
+                symbol: { x: 14,  y: 10,  w: 130, h: 22 },
+                delta:  { x: 14,  y: -14, w: 130, h: 18 },
             },
             // 8c — 3 legacy stake preset chips at y=-515. LEGACY — _active=false.
             stakeChip: {
@@ -887,6 +1512,14 @@ const LayoutSpec = {
                 labels: ['All', '$1K+', '$5K+', '$10K+'],
                 ys:     [72, 24, -24, -72],
             },
+            // 2 liquidity-sort options inside LiqSortDropdownPopover.
+            // Replaces the old standalone Liq↓ / Liq↑ chips.
+            liqSortOption: {
+                count: 2, w: 124, h: 38,
+                keys:   ['liq_desc', 'liq_asc'],
+                labels: ['Liq High → Low', 'Liq Low → High'],
+                ys:     [24, -24],
+            },
             // 10 column-toggle rows. AppUI prefixes label with "✓ " when active.
             columnsToggle: {
                 count: 10, w: 154, h: 30,
@@ -928,52 +1561,79 @@ const LayoutSpec = {
     },
 
     /* ───── PORTFOLIO ───────────────────────────────────────────────── */
-    // Phase 9a — Only the match-history row template migrated. Full
-    // PortfolioPanel chrome (tabs, stat cards, trophy grid, headers,
-    // status footer) is migrated in a later phase.
+    // Dashboard redesign (foamy-sphinx): hero P/L card anchors the page,
+    // secondary stats grouped into Performance + Activity sections, XP
+    // progress bar replaces flat XP number, empty state shown when zero
+    // games. Tab hierarchy clarified — primary segmented control on top,
+    // secondary Paper/Real toggle below with MODE eyebrow label.
     PortfolioPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
             historyView: { x: 0, y: 0, w: 720, h: 1280, type: 'group',
                 notes: 'PortfolioHistoryView container; hidden until History tab active' },
-            // 9c — back chrome migrated.
             backLink: { x: -280, y: 720, w: 110, h: 28, type: 'label' },
             backBtn:  { x: -280, y: 720, w: 140, h: 36, type: 'btnGhost' },
             title:    { x: 0,    y: 680, w: 400, h: 44, type: 'label' },
-            // 11 — pubkey + tab row + sub-tab row.
-            pubkeyLabel: { x: 0,    y: 630, w: 460, h: 24, type: 'label' },
-            statsTab:    { x: -180, y: 580, w: 170, h: 44, type: 'btnPrimary' },
-            historyTab:  { x: 0,    y: 580, w: 170, h: 44, type: 'btnGhost' },
-            trophiesTab: { x: 180,  y: 580, w: 170, h: 44, type: 'btnGhost' },
-            paperTab:    { x: -90,  y: 520, w: 170, h: 44, type: 'btnPrimary' },
-            realTab:     { x: 90,   y: 520, w: 170, h: 44, type: 'btnGhost' },
-            // 11 — hint + status footer.
-            hint:        { x: 0,    y: 160,  w: 620, h: 20, type: 'label' },
-            status:      { x: 0,    y: -740, w: 640, h: 22, type: 'label' },
-            // 11 — history view internals.
-            historyEmpty:    { x: 0, y: 0, w: 0,   h: 22, type: 'label' },
-            historyScroll:   { x: 0, y: 40, w: 660, h: 780, type: 'scrollview' },
+            // Subtitle eyebrow under title.
+            subtitle:    { x: 0,    y: 644, w: 460, h: 18, type: 'label' },
+            pubkeyLabel: { x: 0,    y: 612, w: 460, h: 24, type: 'label' },
+            // Primary tabs — full-width segmented control.
+            statsTab:    { x: -200, y: 560, w: 200, h: 48, type: 'btnPrimary' },
+            historyTab:  { x: 0,    y: 560, w: 200, h: 48, type: 'btnGhost' },
+            trophiesTab: { x: 200,  y: 560, w: 200, h: 48, type: 'btnGhost' },
+            // Secondary mode toggle — smaller, with MODE eyebrow above.
+            modeLabel:   { x: 0,    y: 510, w: 100, h: 16, type: 'label' },
+            paperTab:    { x: -75,  y: 482, w: 130, h: 36, type: 'btnPrimary' },
+            realTab:     { x: 75,   y: 482, w: 130, h: 36, type: 'btnGhost' },
+            // Group eyebrow headers (left-aligned).
+            groupHeaderPerformance: { x: -290, y: 230,  w: 200, h: 16, type: 'label' },
+            groupHeaderActivity:    { x: -290, y: -50,  w: 200, h: 16, type: 'label' },
+            // Empty-state container — shown when zero games (hides hero/groups).
+            emptyState:         { x: 0,    y: 200,  w: 600, h: 400, type: 'group' },
+            emptyStateTitle:    { x: 0,    y: 80,   w: 600, h: 36, type: 'label' },
+            emptyStateSubtitle: { x: 0,    y: 30,   w: 600, h: 22, type: 'label' },
+            emptyStateCta:      { x: 0,    y: -50,  w: 320, h: 56, type: 'btnPrimary' },
+            // Footer.
+            hint:   { x: 0, y: -700, w: 620, h: 20, type: 'label' },
+            status: { x: 0, y: -740, w: 640, h: 22, type: 'label' },
+            // History view internals.
+            historyEmpty:    { x: 0, y: 0,    w: 0,   h: 22, type: 'label' },
+            historyScroll:   { x: 0, y: 40,   w: 660, h: 780, type: 'scrollview' },
             historyLoadMore: { x: 0, y: -260, w: 400, h: 48, type: 'btnGhost' },
-            // 11 — trophies view container + empty label.
+            // Trophies view container + empty label.
             trophiesView:    { x: 0, y: 0,   w: 720, h: 1280, type: 'group' },
             trophiesEmpty:   { x: 0, y: 540, w: 0,   h: 24, type: 'label' },
         },
         templates: {
-            // 11 — 6 stat cards in a 3×2 grid (top row: GAMES/WINS/LOSSES,
-            // bottom: WIN%/PNL/XP). Internal: header label (top) + value
-            // label (bottom).
+            // Hero P/L card — focal point. Big colored value + edge accent
+            // (green/red/neutral re-tinted at runtime).
+            heroPnLCard: {
+                x: 0, y: 380, w: 600, h: 160,
+                header:   { x: 0, y: 56,  w: 580, h: 18 },
+                value:    { x: 0, y: 6,   w: 580, h: 64 },
+                subtitle: { x: 0, y: -52, w: 580, h: 18 },
+            },
+            // Secondary stat cards — Performance group (Wins, Losses, Win %)
+            // + Activity group's Games card. Per-def `w` overrides for full-
+            // width Win % row.
             statCard: {
-                count: 6, w: 220, h: 96,
+                count: 4, w: 290, h: 88,
                 defs: [
-                    { key: 'games',   label: 'GAMES',   x: -225, y: 420 },
-                    { key: 'wins',    label: 'WINS',    x:  0,   y: 420 },
-                    { key: 'losses',  label: 'LOSSES',  x:  225, y: 420 },
-                    { key: 'winrate', label: 'WIN %',   x: -225, y: 300 },
-                    { key: 'pnl',     label: 'P/L SOL', x:  0,   y: 300 },
-                    { key: 'xp',      label: 'XP',      x:  225, y: 300 },
+                    { key: 'wins',    label: 'WINS',   x: -150, y: 168 },
+                    { key: 'losses',  label: 'LOSSES', x:  150, y: 168 },
+                    { key: 'winrate', label: 'WIN %',  x:    0, y:  78, w: 600 },
+                    { key: 'games',   label: 'GAMES',  x: -150, y: -120 },
                 ],
-                header: { x: 0, y: 26,  w: 210, h: 22 },
-                value:  { x: 0, y: -18, w: 210, h: 36 },
+                header: { x: 0, y: 22,  w: 270, h: 18 },
+                value:  { x: 0, y: -16, w: 270, h: 36 },
+            },
+            // XP/Level card — gamified progress to next level.
+            xpCard: {
+                x: 150, y: -120, w: 290, h: 88,
+                header: { x: -100, y: 22,  w: 80,  h: 18 },
+                value:  { x:   90, y: 22,  w: 80,  h: 18 },
+                track:  { x:    0, y: -10, w: 250, h: 8  },
+                footer: { x:    0, y: -28, w: 270, h: 16 },
             },
             // 11 — 6 trophy tiles in a 3×2 grid (200×200, 20-px gap).
             trophyTile: {
@@ -1009,6 +1669,16 @@ const LayoutSpec = {
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
+        ],
+    },
+
+    // Synthetic panel-named entry — the verifier walks every node with
+    // children as a "panel", so PFStatCard_xp gets its own allowedOverlaps
+    // bucket. Same pattern as NotificationToastSlot below.
+    PFStatCard_xp: {
+        allowedOverlaps: [
+            // Progress fill is layered on top of the track sprite by design.
+            ['PFXpProgressBar', 'PFXpProgressBarFill'],
         ],
     },
 
@@ -1282,52 +1952,74 @@ const LayoutSpec = {
     },
 
     /* ───── POST MATCH ──────────────────────────────────────────────── */
-    // Phase 9c — only the elements with overlap fixes are migrated. Full
-    // panel chrome (title, track, subtitle, rake, 4 stat cards, CTAs,
-    // trophy, confetti, status) deferred.
+    // Drifting-gadget redesign — five-beat hierarchy:
+    //   Outcome → Mascot → SOL → Stats → CTA. Mascot is the centerpiece;
+    //   payout sits directly under it; subtitle/rake hug payout; cards in
+    //   2×2 grid below; XP bar; CTAs (Play Again primary teal / Pick New
+    //   Squad secondary blue); Share + Status as small bottom-row affordances.
     PostMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
+            // Bg tint layer — full canvas Graphics rect, alpha 0 by default;
+            // AppUI tweens to subtle green/violet based on outcome.
+            outcomeBg:       { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics',
+                notes: 'rendered first (behind everything); AppUI fills + fades on show' },
             backBtn:         { x: -260, y: 700, w: 160, h: 44,  type: 'btnGhost' },
-            title:           { x: 0,    y: 620, w: 620, h: 52,  type: 'label' },
+            title:           { x: 0,    y: 620, w: 620, h: 80,  type: 'label',
+                notes: '56pt bold, color-coded green/rose by outcome' },
             track:           { x: 0,    y: 560, w: 600, h: 22,  type: 'label' },
-            payoutLabel:     { x: 0,    y: 470, w: 620, h: 64,  type: 'label' },
-            subtitle:        { x: 0,    y: 400, w: 600, h: 22,  type: 'label' },
-            rake:            { x: 0,    y: 376, w: 600, h: 20,  type: 'label' },
-            // 9c: Share moved to y=-360 (tertiary action below CTAs at y=-260).
-            shareButton:     { x: 0,    y: -360, w: 320, h: 56, type: 'btnPrimary',
-                notes: '9c: relocated to bottom-area below CTAs; clears Payout/Track/Subtitle/Rake' },
-            sameSquadBtn:    { x: -170, y: -260, w: 320, h: 60, type: 'btnPrimary' },
-            againBtn:        { x: 170,  y: -260, w: 320, h: 60, type: 'btnPrimary' },
-            trophy:          { x: 0,    y: -80,  w: 200, h: 100, type: 'label',
-                notes: 'hidden until placement; AppUI attaches rankIcon at show time' },
-            status:          { x: 0,    y: -740, w: 640, h: 20, type: 'label' },
-            mascotContainer: { x: 250,  y: -500,  w: 140, h: 180, type: 'mascot',
-                notes: 'Phase 21 (A2): y 180 → -500. Was overlapping right-column PMCards (opp/lvl); moved to bottom-right corner clear of cards/trophy/CTAs/status.' },
+            // Mascot glow halo behind the centered mascot — radial fill.
+            mascotGlow:      { x: 0,    y: 130, w: 480, h: 480, type: 'graphics',
+                notes: 'circle fill alpha 0; AppUI tweens to 140 (~0.55) tinted by outcome' },
+            // Mascot centered under header, 1.8× current size.
+            mascotContainer: { x: 0,    y: 130, w: 360, h: 360, type: 'mascot',
+                notes: 'Drifting-gadget redesign: centered, sized for hero impact. Per-state celebrate/lose frames already wired in MascotController.' },
+            payoutLabel:     { x: 0,    y: -80, w: 620, h: 96, type: 'label',
+                notes: '64pt mono, scale-in + ticker on win, scale-in only on loss' },
+            subtitle:        { x: 0,    y: -190, w: 600, h: 44, type: 'label',
+                notes: '18pt 2-line; line1 = "You won by X pp" / "They beat you by X pp"; line2 = per-token breakdown' },
+            rake:            { x: 0,    y: -250, w: 600, h: 20, type: 'label' },
+            // Stat cards in 2×2 grid; row centers below rake.
+            // (Card coords below in templates.pmCard.defs.)
+            // XP progress bar — three siblings: left label, fill graphics, right label.
+            xpBarLabelLeft:  { x: -240, y: -560, w: 200, h: 22, type: 'label',
+                notes: '"Lv N → Lv N+1" 14pt mid-grey' },
+            xpBarFill:       { x: 0,    y: -560, w: 480, h: 16, type: 'graphics',
+                notes: 'Track + accent fill; AppUI tweens fill width on show' },
+            xpBarLabelRight: { x: 240,  y: -560, w: 120, h: 22, type: 'label',
+                notes: '"+10 XP" 18pt bold accent' },
+            sameSquadBtn:    { x: -180, y: -660, w: 320, h: 64, type: 'btnPrimary' },
+            againBtn:        { x: 180,  y: -660, w: 320, h: 64, type: 'btnPrimary' },
+            shareButton:     { x: 0,    y: -740, w: 280, h: 44, type: 'btnPrimary',
+                notes: 'tertiary; only visible for real-track wins' },
+            status:          { x: 0,    y: -810, w: 640, h: 20, type: 'label' },
+            trophy:          { x: 280,  y: 620, w: 64, h: 64, type: 'label',
+                notes: 'corner badge in title row; mascot is now the primary celebration. AppUI attaches rankIcon at show time.' },
         },
         templates: {
             // 4 stat cards in a 2×2 grid (you/opp/xp/lvl). Internal: header
             // label at top + value label below. Coordinates relative to card center.
+            // h bumped 92 → 116 for breathing room; value font emitted larger by generator.
             pmCard: {
-                count: 4, w: 300, h: 92,
+                count: 4, w: 300, h: 116,
                 defs: [
-                    { key: 'you', label: 'YOUR DELTA', x: -160, y: 220 },
-                    { key: 'opp', label: 'BEST OPP',   x:  160, y: 220 },
-                    { key: 'xp',  label: 'XP EARNED',  x: -160, y: 100 },
-                    { key: 'lvl', label: 'LEVEL',      x:  160, y: 100 },
+                    { key: 'you', label: 'YOUR DELTA', x: -160, y: -320 },
+                    { key: 'opp', label: 'BEST OPP',   x:  160, y: -320 },
+                    { key: 'xp',  label: 'XP EARNED',  x: -160, y: -440 },
+                    { key: 'lvl', label: 'LEVEL',      x:  160, y: -440 },
                 ],
-                header: { x: 0, y: 24,  w: 280, h: 22 },
-                value:  { x: 0, y: -18, w: 280, h: 36 },
+                header: { x: 0, y: 36,  w: 280, h: 22 },
+                value:  { x: 0, y: -22, w: 280, h: 44 },
             },
-            // 12 confetti shells, child of TrophyLabel; positioned at (0,0)
-            // and tweened by AppUI to slot positions on 1st-place.
+            // 12 confetti shells, child of TrophyLabel; AppUI rebases burst
+            // origin to mascot world position at show time so the burst still
+            // emanates from the celebrate mascot.
             confetti: {
                 count: 12, w: 60, h: 60,
                 x: 0, y: 0,
             },
         },
-        // Phase 21 (A2): mascot moved to bottom-right corner (y -500); no
-        // longer overlaps PMCards. Removed [PMCard_*, MascotContainer] pairs.
+        // Mascot now occupies center (y=130) above payout (y=-80); no overlaps.
         allowedOverlaps: [],
     },
 
@@ -1427,8 +2119,12 @@ const LayoutSpec = {
     /* ───── COUNTDOWN OVERLAY ───────────────────────────────────────── */
     // Phase 10 — pre-match cinematic. Big 3/2/1 digit center; squad +
     // "Match starting…" hint below. AppUI drives the animation chain.
+    // 2026-04-26: canvas h 1280 → 1800 to match RacePanel — at 1280 the
+    // dark scrim sprite was shorter than the device viewport (~1602+ tall
+    // under FIXED_WIDTH) and the lobby's training card / race mascot bled
+    // through at the bottom edge.
     CountdownOverlay: {
-        canvas: { w: 720, h: 1280 },
+        canvas: { w: 720, h: 1800 },
         elements: {
             bigLabel:    { x: 0, y: 40,   w: 400, h: 240, type: 'label' },
             squadLabel:  { x: 0, y: -140, w: 620, h: 36,  type: 'label' },
@@ -1457,8 +2153,8 @@ const LayoutSpec = {
         canvas: { w: 720, h: 1280 },
         bg: { color: '#04060C' },
         elements: {
-            mascotContainer: { x: 0, y: 200,  w: 140, h: 180, type: 'mascot',
-                notes: '5th MascotController instance — idle Seedance frames during load' },
+            mascotContainer: { x: 0, y: 200,  w: 200, h: 200, type: 'mascot',
+                notes: '5th MascotController instance — idle Seedance frames during load. Square 200x200 to match 384x384 source aspect.' },
             spinner:         { x: 0, y: -40,  w: 200, h: 120, type: 'label',
                 notes: 'gold ⟳ at 80pt; AppUI rotates -360°/sec' },
             statusLabel:     { x: 0, y: -220, w: 680, h: 36,  type: 'label' },

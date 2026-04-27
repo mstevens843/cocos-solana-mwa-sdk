@@ -2112,15 +2112,6 @@ export class AppUI extends Component {
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
             this._postMatchBackButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchBack(), this);
             this._postMatchAgainButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchAgain(), this);
-            // "Pick New Squad" is the secondary CTA — dark outline so the
-            // primary "▶ Play Again" (teal-fill) reads as the dominant tap target.
-            if (this._postMatchAgainButton) {
-                this._postMatchAgainButton.normalColor   = new Color(28, 34, 48, 255);
-                this._postMatchAgainButton.hoverColor    = new Color(40, 48, 66, 255);
-                this._postMatchAgainButton.pressedColor  = new Color(20, 24, 36, 255);
-                const lbl = this._postMatchAgainButton.node.getChildByName('Label')?.getComponent(Label);
-                if (lbl) lbl.color = new Color(200, 210, 230, 255);
-            }
             // Block 6 — Same Squad shortcut
             const sameSquadBtn = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button);
             sameSquadBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchSameSquad(), this);
@@ -7378,7 +7369,7 @@ export class AppUI extends Component {
         }
         const cached = this._logoCache.get(url);
         if (cached) {
-            this._assignLogoFrame(sprite, cached);
+            sprite.spriteFrame = cached;
             sprite.color = new Color(255, 255, 255, 255);
             return;
         }
@@ -7450,7 +7441,7 @@ export class AppUI extends Component {
                         URL.revokeObjectURL(objectUrl);
                         return;
                     }
-                    this._assignLogoFrame(sprite, frame);
+                    sprite.spriteFrame = frame;
                     sprite.color = new Color(255, 255, 255, 255);
                     URL.revokeObjectURL(objectUrl);
                     console.log(`${TAG} _loadLogoInto | FALLBACK_OK url_suffix="${url.substring(url.length - 24)}" cache_size=${this._logoCache.size}`);
@@ -7491,28 +7482,9 @@ export class AppUI extends Component {
             console.log(`${TAG} _loadLogoInto | STALE_CALLBACK url_suffix="${url.substring(url.length - 24)}" expected_suffix="${expected?.substring((expected?.length ?? 0) - 24) ?? '(none)'}"`);
             return;
         }
-        this._assignLogoFrame(sprite, frame);
+        sprite.spriteFrame = frame;
         sprite.color = new Color(255, 255, 255, 255);
         console.log(`${TAG} _loadLogoInto | APPLIED url_suffix="${url.substring(url.length - 24)}" cache_size=${this._logoCache.size} phase=${phase}`);
-    }
-
-    /**
-     * Defensive logo-frame applier. Cocos 3.8 can override a Sprite's effective
-     * render size to SpriteFrame.originalSize after assignment, even when the
-     * scene baked _sizeMode=CUSTOM — so a tiny native PNG (e.g. 64×64 from
-     * Birdeye) collapses the 76×76 LayoutSpec'd box. Snapshot the UITransform
-     * contentSize first, assign, then force-restore + re-pin sizeMode/type so
-     * the spec'd size in LayoutSpec.cjs (feedRow.logo 76×76, squadSlot.logo
-     * 40×40) wins over the engine's auto-resize.
-     */
-    private _assignLogoFrame(sprite: Sprite, frame: SpriteFrame): void {
-        const ut = sprite.node.getComponent(UITransform);
-        const w = ut?.contentSize.width ?? 0;
-        const h = ut?.contentSize.height ?? 0;
-        sprite.spriteFrame = frame;
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.type = Sprite.Type.SIMPLE;
-        if (ut && w > 0 && h > 0) ut.setContentSize(w, h);
     }
 
     /** Squad delta pulse (A6). Compares new price deltas to last snapshot. */
@@ -8358,14 +8330,21 @@ export class AppUI extends Component {
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
-        // Result color is an accent only — no full-canvas wash. Outcome bg
-        // stays cleared so the dark base shows through; color shows up only
-        // on the hero pp number, H2H bar, XP accent, card edges, and primary
-        // CTA fill.
+        // Drifting-gadget: outcome-aware bg tint (subtle green on win, violet
+        // on loss). Full-canvas Graphics rect underneath everything; fade in
+        // 0 → 60 over 600ms so it reads as a glow rather than a wash.
         if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
-            this._postMatchOutcomeBgGfx.clear();
-            Tween.stopAllByTarget(this._postMatchOutcomeBgOpacity);
-            this._postMatchOutcomeBgOpacity.opacity = 0;
+            const bg = this._postMatchOutcomeBgGfx;
+            bg.clear();
+            bg.fillColor = outcome.won
+                ? new Color(48, 198, 155, 255)
+                : new Color(180, 80, 200, 255);
+            bg.rect(-360, -640, 720, 1280);
+            bg.fill();
+            const op = this._postMatchOutcomeBgOpacity;
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).to(0.6, { opacity: 60 }).start();
         }
         // Drifting-gadget: mascot glow halo — radial fill behind the centered
         // mascot. Fade in 0 → 140 over 400ms for a soft hero presence.
@@ -8412,30 +8391,26 @@ export class AppUI extends Component {
                 title = 'SO CLOSE…';
             }
             this._postMatchTitleLabel.string = title;
-            // Title is white-bold; the only color-coded hero element is the
-            // pp number below.
-            this._postMatchTitleLabel.color = new Color(244, 245, 249, 255);
+            this._postMatchTitleLabel.color = outcome.won ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
         }
         if (this._postMatchTrackLabel) {
             const modeLbl = outcome.modeLabel ?? '1v1 Duel';
             this._postMatchTrackLabel.string = `${outcome.track === 'real' ? 'Real' : 'Paper'} · ${modeLbl}`;
         }
-
-        // Decode encoded u32 scores back into portfolio delta % for display.
-        const playerDeltaPct   = decodeScore(outcome.playerHeight);
-        const opponentDeltaPct = decodeScore(outcome.opponentHeight);
-        const deltaDiff        = Math.abs(playerDeltaPct - opponentDeltaPct);
-        const ppSigned         = playerDeltaPct - opponentDeltaPct;
-
         if (this._postMatchPayoutLabel) {
-            // Hero number: signed pp delta (−0.5×× pp on loss, +X.XX pp on
-            // win). SOL/wager information moves to the subtitle line.
-            const ppSign = ppSigned >= 0 ? '+' : '−';
+            const sol = outcome.payoutLamports / 1e9;
+            const wagerSol = outcome.track === 'real'
+                ? this._realMatchWagerLamports / 1e9
+                : Number(this._selectedStakeLamports ?? 0n) / 1e9;
+            // Drifting-gadget: signed payout — `+0.05 SOL` on win, `−0.02 SOL`
+            // on loss (loss amount = stake forfeited). U+2212 minus sign for a
+            // proper typographic dash; mono digits for stable width.
             this._postMatchPayoutLabel.color = outcome.won
                 ? new Color(48, 198, 155, 255)
                 : new Color(236, 88, 122, 255);
-            this._postMatchPayoutLabel.string = `${ppSign}${Math.abs(ppSigned).toFixed(2)} pp`;
-            this._postMatchPayoutLabel.fontSize = 56;
+            this._postMatchPayoutLabel.string = outcome.won
+                ? '+0.000 SOL'
+                : `−${wagerSol >= 0.01 ? wagerSol.toFixed(2) : wagerSol.toFixed(4)} SOL`;
             // Scale-in prelude: opacity 0 + scale 0.6 → 1.0 over 250ms.
             const payoutNode = this._postMatchPayoutLabel.node;
             const op = this._ensureOpacity(payoutNode);
@@ -8446,8 +8421,18 @@ export class AppUI extends Component {
             tween(op).to(0.25, { opacity: 255 }).start();
             tween(payoutNode)
                 .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .call(() => {
+                    if (outcome.won && sol > 0 && this._postMatchPayoutLabel) {
+                        this._animatePayoutTicker(this._postMatchPayoutLabel, sol, 1.0);
+                    }
+                })
                 .start();
         }
+
+        // betting-duel: decode encoded u32 scores back into portfolio delta % for display.
+        const playerDeltaPct   = decodeScore(outcome.playerHeight);
+        const opponentDeltaPct = decodeScore(outcome.opponentHeight);
+        const deltaDiff        = Math.abs(playerDeltaPct - opponentDeltaPct);
         console.log(`${TAG} _showPostMatchPanel | DECODED player_score=${outcome.playerHeight} player=${playerDeltaPct.toFixed(2)}% opp_score=${outcome.opponentHeight} opp=${opponentDeltaPct.toFixed(2)}% diff_pp=${deltaDiff.toFixed(2)} won=${outcome.won} track=${outcome.track}`);
 
         // Phase G2 — per-slot breakdown. Build a "BONK +4.2% · WIF -1.1% ·
@@ -8479,19 +8464,13 @@ export class AppUI extends Component {
                 this._postMatchSubtitleLabel.color = new Color(218, 165, 32, 255);
             } else {
                 const breakdown = buildSlotBreakdown();
-                // Hero number above already shows the pp delta — subtitle carries
-                // the SOL net (and per-token breakdown if available) so we don't
-                // duplicate the pp copy.
-                const sol = outcome.payoutLamports / 1e9;
-                const wagerSol = outcome.track === 'real'
-                    ? this._realMatchWagerLamports / 1e9
-                    : Number(this._selectedStakeLamports ?? 0n) / 1e9;
-                const solLine = outcome.won
-                    ? `Net +${sol.toFixed(3)} SOL`
-                    : `Lost ${(wagerSol >= 0.01 ? wagerSol.toFixed(2) : wagerSol.toFixed(4))} SOL`;
+                // Drifting-gadget: tighter copy. "You won by X pp" / "They beat you by X pp".
+                const headline = outcome.won
+                    ? `You won by ${deltaDiff.toFixed(2)} pp`
+                    : `They beat you by ${deltaDiff.toFixed(2)} pp`;
                 this._postMatchSubtitleLabel.string = breakdown
-                    ? `${solLine}\n${breakdown}`
-                    : solLine;
+                    ? `${headline}\n${breakdown}`
+                    : headline;
                 this._postMatchSubtitleLabel.color = new Color(220, 226, 240, 255);
             }
         }

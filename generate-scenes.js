@@ -1662,20 +1662,6 @@ function generate() {
     const mscEdge = mkCardEdge(sb, matchSetupCardN, MSC.w, MSC.h, 20, 241, 149);
     sb.e[matchSetupCardN]._components = [rf(mscUT), rf(mscSpr)];
     sb.e[matchSetupCardN]._children = [rf(mscModeTag), rf(mscSquadLbl), rf(mscStakeLbl), rf(mscHintLbl), rf(mscEdge)];
-    // 2026-04-26 — MatchSetupCard hidden; squad container now occupies the
-    // matchsetup slot. The TOKEN DUEL · 1V1 mode tag is recreated below as a
-    // top-left badge on the squad container.
-    sb.e[matchSetupCardN]._active = false;
-
-    // SquadModeTagLabel — top-left badge on the new squad container, mirrors
-    // the old MatchSetupModeTag content ("TOKEN DUEL · 1V1"). World position
-    // is in the upper-left corner of squadPanel (y=400, h=230, w=700; top
-    // edge at y=515) so it visually anchors the moved container.
-    const tdSquadModeTag = mkLabel(sb, 'SquadModeTagLabel', tdN, 'TOKEN DUEL · 1V1', 14, 0,
-        220, 18, 168, 174, 201);
-    sb.e[tdSquadModeTag]._lpos = v3(-220, 467, 0);
-    sb.e[sb.e[tdSquadModeTag]._components[1].__id__]._horizontalAlign = 0;
-    sb.e[sb.e[tdSquadModeTag]._components[1].__id__]._spacingX = 1;
 
     // 2026-04-26 unified card frame — wraps Row 1 (search/tabs/star/live) +
     // Row 2 (filter chips) + column headers + FeedScrollView in a single
@@ -1946,19 +1932,11 @@ function generate() {
         sb.e[chkN]._children = [rf(chkIconN)];
         // chkN stays active=true so the checkbox is visible on every row.
 
-        // Logo — token avatar. CRITICAL FIX 2026-04-26: _type forced to 0
-        // (SIMPLE) so when AppUI assigns a remote SpriteFrame the texture
-        // stretches to UITransform contentSize (FR.logo.w × FR.logo.h).
-        // Previously sb.spr defaulted to type=1 (SLICED), which without
-        // 9-slice insets renders the SpriteFrame at its native texture size
-        // pinned to the lower-left of the UITransform — making remote logos
-        // appear tiny inside their boxes regardless of how big the UITransform
-        // got. SIMPLE type respects sizeMode=CUSTOM and stretches to fill.
+        // Logo — round 28×28 at left. AppUI nudges right 20px in watchlist mode.
         const logoN = sb.e.length;
         sb.node('LogoSprite', rn, [], [], v3(FR.logo.x, FR.logo.y, 0));
         const logoUT = sb.ut(logoN, FR.logo.w, FR.logo.h);
         const logoSpr = sb.spr(logoN, 255, 255, 255);
-        sb.e[logoSpr]._type = 0; // SIMPLE — stretches to UITransform
         sb.e[logoN]._components = [rf(logoUT), rf(logoSpr)];
 
         // SymbolLabel — top line, bold, left-aligned. fontSize 18→22 in card redesign.
@@ -2175,7 +2153,6 @@ function generate() {
         sb.node('LogoSprite', bn, [], [], v3(SS.logo.x, SS.logo.y, 0));
         const logoUT = sb.ut(logoN, SS.logo.w, SS.logo.h);
         const logoSpr = sb.spr(logoN, 255, 255, 255);
-        sb.e[logoSpr]._type = 0; // SIMPLE — same fix as feed row, stretches remote logo to UITransform
         sb.e[logoN]._components = [rf(logoUT), rf(logoSpr)];
         sb.e[logoN]._active = false; // hidden until slot filled
         const symN = sb.e.length;
@@ -3283,7 +3260,6 @@ function generate() {
         rf(tdFeedSV),
         rf(tdFeedAccentTop), rf(tdFeedAccentBot),             // 2026-04-26 — teal stripes top + bottom of token list
         rf(squadPanelN),                                      // 2026-04-26 redesign — Sticky Squad Panel wrapper (renders BEHIND squad/wager nodes)
-        rf(tdSquadModeTag),                                   // 2026-04-26 — TOKEN DUEL · 1V1 badge top-left of squad container
         // Global Pick / Manage Squad removed 2026-04-26 — slot-level Pick + + per-slot × replaces them.
         rf(tdSquadHeader), rf(tdSquad0), rf(tdSquad1), rf(tdSquad2),
         rf(tdStakeHeader), rf(tdStakeValueLabel), rf(tdStakeSlider),
