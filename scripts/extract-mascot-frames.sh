@@ -17,7 +17,7 @@ extract() {
     local state="$1" fps="$2"
     echo "→ $state @ ${fps}fps"
     ffmpeg -y -loglevel error -i "$SRC/$state.mp4" \
-        -vf "fps=$fps,scale=384:384:flags=lanczos" \
+        -vf "fps=$fps,scale=384:384:flags=lanczos,colorkey=color=0xFFFFFF:similarity=0.03:blend=0.30" \
         "$DST/${state}_%03d.png"
 }
 

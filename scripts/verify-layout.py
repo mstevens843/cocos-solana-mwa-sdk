@@ -191,6 +191,21 @@ def verify_panel(nodes: list, panel_idx: int, panel_name: str, allowed: list[tup
             # skip rule is cleaner than enumerating allowedOverlaps.
             if na.startswith('BackgroundGlow_') or nb.startswith('BackgroundGlow_'):
                 continue
+            # Polish 2026-04-26 — FeedColumnHeaders.HeaderBg is a chrome strip
+            # sprite sized to the full group; it sits behind the 7 ColHeader_*
+            # labels by design so the column row reads as part of the list.
+            if na == 'HeaderBg' or nb == 'HeaderBg':
+                continue
+            # 2026-04-26 redesign — card backgrounds are sized to fully cover
+            # their child labels by design (multi-row stat cards). Skip any
+            # pair involving one of these wrapper sprites.
+            CARD_BG_NAMES = {
+                'MatchSetupCard', 'SquadPanel', 'PlayerStatusPill',
+                'TokenDuelLevelChip', 'BalanceChip', 'PillDivider',
+                'ScoreBadgeBg', 'CardEdgeAccent',
+            }
+            if na in CARD_BG_NAMES or nb in CARD_BG_NAMES:
+                continue
             if frozenset((na, nb)) in allow_exact:
                 continue
             na_base = re.sub(r'_\d+$', '', na)

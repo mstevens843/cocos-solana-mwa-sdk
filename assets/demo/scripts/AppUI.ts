@@ -12,7 +12,7 @@ import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
 import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransitions';
 import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
 import { Palette, themeColor } from '../../token-duel/scripts/Theme';
-import { enhancePrimaryCTA, addIdlePulse } from '../../token-duel/scripts/ButtonFX';
+import { enhancePrimaryCTA, addIdlePulse, addPressPop } from '../../token-duel/scripts/ButtonFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -65,7 +65,7 @@ import { VETTED_MINTS, randomVettedTrio } from '../../token-duel/scripts/VettedM
 type FeedTabOrVirtual = FeedTab | 'top10' | 'watchlist';
 
 /** Filter chip identifiers — match the node names in `generate-scenes.js`. */
-type FilterChipKey = 'newest' | 'liq_desc' | 'liq_asc' | 'all' | 'liq1k' | 'liq5k' | 'liq10k';
+type FilterChipKey = 'newest' | 'liq' | 'liq_desc' | 'liq_asc' | 'all' | 'liq1k' | 'liq5k' | 'liq10k';
 import { showToast } from './AndroidToast';
 
 const { ccclass } = _decorator;
@@ -123,7 +123,10 @@ export class AppUI extends Component {
      * AND when a real wallet connects (real wallet wins).
      */
     private _guestId: string | null = null;
-    private _landingStatus: Label = null!;
+    // Footer status pill on Landing — replaces the old StatusLabel + floating
+    // debug "Disconnected" indicator. Driven by _setConnectionPill.
+    private _connectionStatusPill: Node | null = null;
+    private _connectionStatusLabel: Label | null = null;
 
     // Home elements
     private _pubkeyLabel: Label = null!;
@@ -215,8 +218,57 @@ export class AppUI extends Component {
     private _screenVignetteGraphics: Graphics | null = null;
     private _vignetteBaseAlpha: number = 0;
     private _lastRenderedDeltaPct: number = 0;       // Stage 1B hero-delta tween source
+    private _lastRenderedOpponentDeltaPct: number = 0; // Phase 22 mirror for duel-layout opp hero
     private _lastFiveActivated: boolean = false;     // Stage 1F last-5s one-shot
     private _lastOvertakeSign: number = 0;           // Stage 1E sign(player - bestOpp)
+    // Phase 22 — 1v1 Duel layout refs.
+    private _isDuelLayout: boolean = false;
+    // Battle-UI polish (2026-04-26): PlayerIdentityCard dropped in favor of
+    // a small Lv pill on the top row; wallet shows in post-match summary.
+    private _racePlayerLevelChip: Node | null = null;
+    private _racePlayerLevelLabel: Label | null = null;
+    private _opponentIdentityCard: Node | null = null;
+    private _opponentIdentityName: Label | null = null;
+    private _opponentIdentityLevel: Label | null = null;
+    private _playerTokenRow: Node | null = null;
+    private _opponentTokenRow: Node | null = null;
+    private _playerDuelTokenCards: Node[] = [];
+    private _playerDuelTokenSprites: Sprite[] = [];
+    private _playerDuelTokenSyms: Label[] = [];
+    private _playerDuelTokenDeltas: Label[] = [];
+    private _playerDuelTokenBars: Graphics[] = [];
+    private _opponentDuelTokenCards: Node[] = [];
+    private _opponentDuelTokenSprites: Sprite[] = [];
+    private _opponentDuelTokenSyms: Label[] = [];
+    private _opponentDuelTokenDeltas: Label[] = [];
+    private _opponentDuelTokenBars: Graphics[] = [];
+    /** Per-card last rendered delta — used to detect sign flip / large swings. */
+    private _playerLastTokenDelta: number[] = [0, 0, 0];
+    private _opponentLastTokenDelta: number[] = [0, 0, 0];
+    private _opponentHeroDeltaLabel: Label | null = null;
+    private _opponentSubtitleGapLabel: Label | null = null;
+    /** Decorative mascot opacity controller (dimmed during duel). */
+    private _raceMascotOpacity: UIOpacity | null = null;
+    // Duel bar — center tug-of-war.
+    private _duelBarContainer: Node | null = null;
+    private _duelBarFillGraphics: Graphics | null = null;
+    private _duelBarGlowGraphics: Graphics | null = null;
+    private _duelBarTrackGraphics: Graphics | null = null;
+    private _duelBarCenterTickGraphics: Graphics | null = null;
+    private _duelBarLeadingPpLabel: Label | null = null;
+    private _duelBarOppTagLabel: Label | null = null;
+    /** Smoothed bar position ∈ [-1, +1]; spring-integrated each frame. */
+    private _duelBarPos: number = 0;
+    private _duelBarVel: number = 0;
+    private _duelBarTargetPos: number = 0;
+    /** Spring tuning. Default ω=6 ζ=1 (~370ms to 90%). Last-5s tightens to ω=9. */
+    private _duelBarOmega: number = 6.0;
+    private _duelBarZeta: number = 1.0;
+    private _duelBarLastTickAt: number = 0;
+    private _duelBarOvertakeUntil: number = 0; // ms epoch — when the overtake transient ends
+    private _duelBarLastSignSnap: 1 | -1 | 0 = 0; // tracks Bar zero-cross for color crossfade
+    /** Per-opponent-token deltas captured by _updateOpponentDeltaTick (Real). */
+    private _opponentPerTokenDeltas: Record<string, number> = {};
     // Block 3 — countdown overlay
     private _countdownOverlay: Node | null = null;
     private _countdownBigLabel: Label | null = null;
@@ -322,6 +374,9 @@ export class AppUI extends Component {
     private _minLiqDropdownLabel: Label | null = null;
     private _minLiqPopoverNode: Node | null = null;
     private _minLiqOptionButtons: Map<string, Button> = new Map();
+    // 2026-04-26 polish — LiqSort dropdown (replaces standalone Liq↓/Liq↑ chips).
+    private _liqSortPopoverNode: Node | null = null;
+    private _liqSortOptionButtons: Map<'desc' | 'asc', Button> = new Map();
     // Session 13 A3 — Columns popover.
     private _columnsPopoverNode: Node | null = null;
     private _columnsPopoverOpen: boolean = false;
@@ -372,8 +427,8 @@ export class AppUI extends Component {
     private _squadPickLabel: Label | null = null;
     private _squadDropButton: Button | null = null;
     private _squadDropLabel: Label | null = null;
-    private _squadRunButton: Button | null = null;
-    private _squadRunLabel: Label | null = null;
+    // SquadRunButton removed 2026-04-26 — redundant with WagerStartButton (Pick 3 more → ▶ Start Match);
+    // both handlers route to the same _onWagerStartTap → ModePicker flow.
     private _squadPickMode: boolean = false;
     private _squadPickChecked: Set<string> = new Set();
     private _squadLocked: boolean = false; // true after Run Squad → stake cluster revealed
@@ -388,7 +443,20 @@ export class AppUI extends Component {
     private _leaderboardPanel: Node | null = null;
     private _portfolioPanel: Node | null = null;
     private _openLeaderboardButton: Button | null = null;
-    private _openPortfolioButton: Button | null = null;
+    // Phase N4: Disconnect entry on Home (replaces former Portfolio open button).
+    private _disconnectHomeButton: Button | null = null;
+    // Phase N4: merged Portfolio/Leaderboard hub — top-level tab strip mounted
+    // on both panels at identical local coords so swapping which panel is
+    // active reads as a tab change inside one container.
+    private _hubActiveTab: 'portfolio' | 'leaderboard' = 'portfolio';
+    private _lbHubPortfolioTab: Button | null = null;
+    private _lbHubLeaderboardTab: Button | null = null;
+    private _pfHubPortfolioTab: Button | null = null;
+    private _pfHubLeaderboardTab: Button | null = null;
+    private _lbHubHighlight: Node | null = null;
+    private _pfHubHighlight: Node | null = null;
+    private _lbHubGlow: Node | null = null;
+    private _pfHubGlow: Node | null = null;
     private _lbRowNodes: Node[] = [];
     // Session D Part 7: mode-filter tabs on LeaderboardPanel.
     private _lbTabButtons: Map<string, Button> = new Map();
@@ -424,6 +492,15 @@ export class AppUI extends Component {
     private _matchHistoryCursor: string | null = null;
     private _matchHistoryCache: Map<string, MatchState | null> = new Map();
     private _matchHistoryLoading: boolean = false;
+    // Dashboard redesign (foamy-sphinx): hero P/L card, XP progress bar, empty-state.
+    private _pfHeroPnLValue: Label | null = null;
+    private _pfHeroPnLSubtitle: Label | null = null;
+    private _pfHeroPnLEdge: Sprite | null = null;
+    private _pfXpValueLabel: Label | null = null;
+    private _pfXpProgressFill: Node | null = null;
+    private _pfXpFooter: Label | null = null;
+    private _pfEmptyState: Node | null = null;
+    private _pfStatsViewNodes: Node[] = [];
 
     // Part 9 / Phase 28: tutorial overlay (gamified card carousel).
     private _tutorialOverlay: Node | null = null;
@@ -479,10 +556,27 @@ export class AppUI extends Component {
 
     // Part 13: rake surfacing. Caches the last-fetched level for quick UI
     // updates without re-polling UserStats on every panel transition.
+    // 2026-04-26 lobby restructure: HomeRakeChip removed; rake now lives in
+    // the ChallengeSeasonCard's RAKE chip. _homeRakeChip stays as a no-op
+    // ref for backward compat (always null) so tsc remains happy.
     private _homeRakeChip: Label | null = null;
     private _waitingRakeLabel: Label | null = null;
     private _postMatchRakeLabel: Label | null = null;
     private _cachedLevel: number = 1;
+    /** 2026-04-26 lobby restructure: WalletPill + new chip + training fields. */
+    private _walletPill: Node | null = null;
+    private _walletNameLabel: Label | null = null;
+    private _walletPillSecureDot: Node | null = null;
+    private _homeXpBarFill: Node | null = null;
+    private _homeXpProgressLabel: Label | null = null;
+    private _homeMatchTickerHeader: Label | null = null;
+    private _homeMatchChips: { mode: Label | null; players: Label | null; stake: Label | null; duration: Label | null; created: Label | null } = { mode: null, players: null, stake: null, duration: null, created: null };
+    private _homeChalChips: { day: Label | null; challenges: Label | null; season: Label | null; pool: Label | null; rake: Label | null } = { day: null, challenges: null, season: null, pool: null, rake: null };
+    private _homeTrainingTitleLabel: Label | null = null;
+    private _homeTrainingBodyLabel: Label | null = null;
+    private _homeTrainingHintLabel: Label | null = null;
+    private _homeChooseMatchLabel: Label | null = null;
+    private _cachedRakeText: string = '—';
 
     // Part 14: tournament discovery + countdown state.
     private _tournamentBadge: Node | null = null;
@@ -551,6 +645,10 @@ export class AppUI extends Component {
     private _wagerStartButton: Button | null = null;
     private _wagerStartLabel: Label | null = null;
     private _wagerHintLabel: Label | null = null;
+    // 2026-04-26 redesign — MatchSetupCard labels.
+    private _matchSetupSquadLabel: Label | null = null;
+    private _matchSetupStakeLabel: Label | null = null;
+    private _matchSetupHintLabel: Label | null = null;
     private _wagerDropdown: Node | null = null;
     private _wagerDropdownRows: Button[] = [];
     /** Phase A — JOIN mode: locked-wager chip; replaces WagerValueButton when _pickerJoinTarget set. */
@@ -618,6 +716,8 @@ export class AppUI extends Component {
     private _matchCardRows: Node[] = [];
     /** Per-row Join buttons; row index → matchPda last bound, used by the click handler. */
     private _matchCardRowMatchPdas: (string | null)[] = [];
+    /** Mirrors `_matchCardRowMatchPdas`; true when the bound lobby is hosted by us. */
+    private _matchCardRowMine: boolean[] = [];
     private _matchBrowser: MatchBrowser | null = null;
     private _matchBrowserUnsubscribe: (() => void) | null = null;
     /** Home-screen FindMatch button live count badge + label + 2nd subscription. */
@@ -729,12 +829,29 @@ export class AppUI extends Component {
     private _postMatchBackButton: Button | null = null;
     private _postMatchAgainButton: Button | null = null;
     private _postMatchCardValues: Map<string, Label> = new Map();
+    // Drifting-gadget redesign — outcome-bg tint, mascot glow halo, XP bar refs.
+    private _postMatchOutcomeBgGfx: Graphics | null = null;
+    private _postMatchOutcomeBgOpacity: UIOpacity | null = null;
+    private _postMatchMascotGlowGfx: Graphics | null = null;
+    private _postMatchMascotGlowOpacity: UIOpacity | null = null;
+    private _postMatchXPBarLabelLeft: Label | null = null;
+    private _postMatchXPBarLabelRight: Label | null = null;
+    private _postMatchXPBarFillGfx: Graphics | null = null;
+    private _postMatchCardEdges: Map<string, Sprite> = new Map();
     // Squad slot buttons (3) — label child shows symbol or "+"
     private _squadSlotButtons: Button[] = [];
     private _squadSlotLabels: Label[] = [];
     private _squadSlotLogoSprites: Sprite[] = [];
     private _squadSlotSymbolLabels: Label[] = [];
     private _squadSlotDeltaLabels: Label[] = [];
+    // Tracks per-slot filled state across renders so we can pop only on
+    // empty → filled transitions (game-feel polish 2026-04-26).
+    private _squadSlotPrevFilled: boolean[] = [false, false, false];
+    // Whether the WagerStartButton has the idle-pulse tween attached.
+    private _wagerStartPulsing: boolean = false;
+    // Per-slot pick targeting — set by tapping an empty slot ("Pick +"); the
+    // next tapped feed row goes into that slot. Cleared after one placement.
+    private _pickTargetSlot: number | null = null;
     private _lastSquadDeltas: number[] = [0, 0, 0]; // for pulse diff detection
     // Stake controls — slider is primary; chips snap to presets.
     private _stakeSlider: Slider | null = null;
@@ -825,24 +942,30 @@ export class AppUI extends Component {
             return;
         }
 
-        // Stage 2 — TokenDuel top-right Lv/XP chip (Home + Find chips bound below).
-        this._tokenDuelLevelChip = this._tokenDuelPanel.getChildByName('TokenDuelLevelChip') ?? null;
-        this._tokenDuelLevelChipLabel = this._tokenDuelLevelChip?.getChildByName('TokenDuelLevelChipLabel')?.getComponent(Label) ?? null;
+        // Stage 2 — TokenDuel Lv chip + balance now live INSIDE PlayerStatusPill
+        // (combined into one horizontal pill in the 2026-04-26 redesign). Use
+        // descendant lookup since they're no longer direct children of the panel.
+        this._tokenDuelLevelChip = this._findDescendantByName(this._tokenDuelPanel, 'TokenDuelLevelChip') ?? null;
+        this._tokenDuelLevelChipLabel = this._tokenDuelLevelChip
+            ? this._findDescendantByName(this._tokenDuelLevelChip, 'TokenDuelLevelChipLabel')?.getComponent(Label) ?? null
+            : null;
 
         // ── Landing elements ──
         this._connectButton = this._landingPanel.getChildByName('ConnectButton')?.getComponent(Button)!;
         this._reconnectButton = this._landingPanel.getChildByName('ReconnectButton')?.getComponent(Button)!;
-        this._landingStatus = this._landingPanel.getChildByName('StatusLabel')?.getComponent(Label)!;
-        console.log(`${TAG} start | ConnectButton=${!!this._connectButton} ReconnectButton=${!!this._reconnectButton} StatusLabel=${!!this._landingStatus}`);
+        this._connectionStatusPill = this._landingPanel.getChildByName('ConnectionStatusPill') ?? null;
+        this._connectionStatusLabel = this._connectionStatusPill?.getChildByName('Label')?.getComponent(Label) ?? null;
+        console.log(`${TAG} start | ConnectButton=${!!this._connectButton} ReconnectButton=${!!this._reconnectButton} StatusPill=${!!this._connectionStatusPill}`);
 
         this._connectButton?.node.on(Button.EventType.CLICK, this._onConnect, this);
         this._reconnectButton?.node.on(Button.EventType.CLICK, this._onReconnect, this);
 
-        // Guest mode — Landing entry + Home Sign Out.
+        // Guest mode — Landing entry. 2026-04-26 lobby restructure: Home's
+        // SignOutGuestButton was removed; sign-out now happens via the
+        // SettingsPanel's DisconnectSettingsButton (which already routes
+        // through _onDisconnect → _onSignOutGuest for guests).
         this._playAsGuestButton = this._landingPanel.getChildByName('PlayAsGuestButton')?.getComponent(Button) ?? null;
         this._playAsGuestButton?.node.on(Button.EventType.CLICK, this._onPlayAsGuest, this);
-        this._signOutGuestButton = this._homePanel.getChildByName('SignOutGuestButton')?.getComponent(Button) ?? null;
-        this._signOutGuestButton?.node.on(Button.EventType.CLICK, this._onSignOutGuest, this);
         // Cold-start hydration: if a guest_id is in localStorage and no
         // wallet is connected, restore guest mode and skip Landing.
         try {
@@ -855,21 +978,18 @@ export class AppUI extends Component {
         } catch (_) { /* ignore */ }
 
         // ── Wire home buttons ──
-        // Connected-screen primary trio: Start Match (host) / Find Match
-        // (browse open lobbies) / Bot Match (paper · vs bots · free) +
-        // account mgmt. Sign* + Capabilities buttons retired with the
-        // home overhaul.
+        // 2026-04-26 lobby restructure: Disconnect / Delete / SignOutGuest
+        // were removed from Home; SettingsPanel hosts those flows now.
+        // Home is intent-first: Start (host) / Find (browse) / Bot (paper).
         const homeBtnNames = [
             'StartMatchButton',
             'FindMatchButton',
             'BotMatchButton',
-            'DisconnectButton', 'DeleteButton',
         ];
         const homeHandlers = [
             this._onStartMatch,
             this._showFindMatchPanel,
             this._onBotMatch,
-            this._onDisconnect, this._onDelete,
         ];
 
         // Part 10 Bundle 3: streak strip tap → opens DailyChallengePanel (or
@@ -903,26 +1023,45 @@ export class AppUI extends Component {
             }, this);
         }
 
-        this._pubkeyLabel = this._homePanel.getChildByName('PubkeyLabel')?.getComponent(Label)!;
-        this._homeStatus = this._homePanel.getChildByName('HomeStatusLabel')?.getComponent(Label)!;
+        // 2026-04-26 lobby restructure: PubkeyLabel reparented INSIDE
+        // WalletPill (HUD header), HomeStatusLabel reparented INSIDE
+        // HomeTrainingCard. getChildByName is shallow → use descendant
+        // search for both.
+        this._walletPill = this._homePanel.getChildByName('WalletPill') ?? null;
+        this._walletNameLabel = this._walletPill?.getChildByName('WalletNameLabel')?.getComponent(Label) ?? null;
+        this._walletPillSecureDot = this._walletPill?.getChildByName('WalletPillSecureDot') ?? null;
+        this._pubkeyLabel = (this._walletPill?.getChildByName('PubkeyLabel')?.getComponent(Label)
+            ?? this._findDescendantByName(this._homePanel, 'PubkeyLabel')?.getComponent(Label))!;
+        this._homeStatus = this._findDescendantByName(this._homePanel, 'HomeStatusLabel')?.getComponent(Label)!;
 
-        // Stage 2 — Lv/XP chip top-right on Home + TokenDuel.
+        // Stage 2 — Lv/XP chip top-right on Home + TokenDuel. 2026-04-26:
+        // chip widened to full panel width; new XP progress bar + label
+        // children bound here.
         this._homeLevelChip = this._homePanel.getChildByName('HomeLevelChip') ?? null;
         this._homeLevelChipLabel = this._homeLevelChip?.getChildByName('HomeLevelChipLabel')?.getComponent(Label) ?? null;
+        this._homeXpProgressLabel = this._homeLevelChip?.getChildByName('HomeXpProgressLabel')?.getComponent(Label) ?? null;
+        const xpTrack = this._homeLevelChip?.getChildByName('HomeXpBarTrack');
+        this._homeXpBarFill = xpTrack?.getChildByName('HomeXpBarFill') ?? null;
+
+        // 2026-04-26 lobby restructure: bind chip references for MatchStatus
+        // + ChallengeSeason cards + training-card labels.
+        this._bindHomeChips();
 
         // Stage 4K — streak flame. Container hidden until UserStats loads and
         // reports currentStreak > 0. `_updateStreakFlame` is idempotent.
         this._streakFlameContainer = this._homePanel.getChildByName('StreakFlameContainer') ?? null;
         if (this._streakFlameContainer) {
             const iconN = this._streakFlameContainer.getChildByName('StreakFlameIcon');
-            if (iconN) IconLibrary.attach(iconN, 'flame', { size: 28 });
+            if (iconN) IconLibrary.attach(iconN, 'flame', { size: 32 });
             this._streakFlameIconNode = iconN ?? null;
             this._streakCountLabel = this._streakFlameContainer.getChildByName('StreakCountLabel')?.getComponent(Label) ?? null;
         }
 
         // UX overhaul Phase 2: bind the procedural mascot. Add the controller
         // at runtime since the .ts file's UUID isn't baked into the scene.
-        const mascotN = this._homePanel.getChildByName('MascotContainer');
+        // 2026-04-26 lobby restructure: MascotContainer reparented inside
+        // HomeTrainingCard; descendant-walk to find it.
+        const mascotN = this._findDescendantByName(this._homePanel, 'MascotContainer');
         if (mascotN) {
             this._mascot = mascotN.getComponent(MascotController) ?? mascotN.addComponent(MascotController);
             console.log(`${TAG} start | mascot bound state=idle`);
@@ -935,6 +1074,9 @@ export class AppUI extends Component {
         // Badges render as procedural cc.Graphics shapes at first; the Phase 3
         // load below swaps them for real PNGs once resources finish loading.
         this._attachStaticIconBadges();
+        // Phase 29 — Settings card row icons attach to pre-positioned children
+        // (NOT IconBadge offset children). Must run after panel bindings.
+        this._attachSettingsRowIcons();
 
         // UX overhaul Phase 3: load real PNG icons + mascot from
         // assets/demo/resources/{icons,mascot}/ and re-attach badges so they
@@ -947,6 +1089,10 @@ export class AppUI extends Component {
         // pulse + press pop + stronger zoomScale. Applied AFTER panels are
         // bound so nodes exist.
         this._enhancePrimaryCTAs();
+        // v2 Landing: override _zoomScale to 0.97 for landing CTAs so the
+        // press feedback SHRINKS (industry-standard mobile idiom) instead of
+        // growing. Other panels keep the grow-on-press behavior.
+        this._setLandingPressScale();
 
         // Phase 16 — animation polish item 1: starfield twinkle. Picks 16 of
         // the 64 BackgroundFX stars and oscillates their UIOpacity so the
@@ -1045,7 +1191,10 @@ export class AppUI extends Component {
         if (this._racePanel) {
             this._raceCountdownLabel     = this._racePanel.getChildByName('RaceCountdownLabel')?.getComponent(Label) ?? null;
             this._raceHeroDeltaLabel     = this._racePanel.getChildByName('RaceHeroDeltaLabel')?.getComponent(Label) ?? null;
-            this._raceHeroSubtitleLabel  = this._racePanel.getChildByName('RaceHeroSubtitleLabel')?.getComponent(Label) ?? null;
+            // Battle-UI polish: heroSubtitle removed in favor of compact top row.
+            this._raceHeroSubtitleLabel  = null;
+            this._racePlayerLevelChip    = this._racePanel.getChildByName('RacePlayerLevelChip') ?? null;
+            this._racePlayerLevelLabel   = this._racePlayerLevelChip?.getChildByName('RacePlayerLevelChipLabel')?.getComponent(Label) ?? null;
             for (let i = 0; i < 5; i++) {
                 const card = this._racePanel.getChildByName(`RaceTokenCard_${i}`);
                 if (card) {
@@ -1087,7 +1236,50 @@ export class AppUI extends Component {
                     this._raceOpponentRowGaps.push(row.getChildByName('GapLabel')?.getComponent(Label) as Label);
                 }
             }
-            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard} opp_strip=${!!this._raceOpponentStrip} opp_rows=${this._raceOpponentRows.length}/7`);
+            // Phase 22 — 1v1 duel-format surfaces. Battle-UI polish (2026-04-26):
+            // PlayerIdentityCard dropped — replaced by RacePlayerLevelChip on top row.
+            this._opponentIdentityCard = this._racePanel.getChildByName('OpponentIdentityCard') ?? null;
+            if (this._opponentIdentityCard) {
+                this._opponentIdentityName  = this._opponentIdentityCard.getChildByName('OpponentIdentityNameLabel')?.getComponent(Label) ?? null;
+                this._opponentIdentityLevel = this._opponentIdentityCard.getChildByName('OpponentIdentityLevelLabel')?.getComponent(Label) ?? null;
+            }
+            this._playerTokenRow   = this._racePanel.getChildByName('PlayerTokenCardsRow')   ?? null;
+            this._opponentTokenRow = this._racePanel.getChildByName('OpponentTokenCardsRow') ?? null;
+            for (let i = 0; i < 3; i++) {
+                const pCard = this._playerTokenRow?.getChildByName(`PlayerTokenCard_${i}`);
+                if (pCard) {
+                    this._playerDuelTokenCards.push(pCard);
+                    const pSpr = pCard.getComponent(Sprite);
+                    if (pSpr) this._playerDuelTokenSprites.push(pSpr);
+                    this._playerDuelTokenSyms.push(pCard.getChildByName(`PlayerTokenSymLabel_${i}`)?.getComponent(Label) as Label);
+                    this._playerDuelTokenDeltas.push(pCard.getChildByName(`PlayerTokenDeltaLabel_${i}`)?.getComponent(Label) as Label);
+                    const pBar = pCard.getChildByName(`PlayerTokenContributionBar_${i}`)?.getComponent(Graphics);
+                    if (pBar) this._playerDuelTokenBars.push(pBar);
+                }
+                const oCard = this._opponentTokenRow?.getChildByName(`OpponentTokenCard_${i}`);
+                if (oCard) {
+                    this._opponentDuelTokenCards.push(oCard);
+                    const oSpr = oCard.getComponent(Sprite);
+                    if (oSpr) this._opponentDuelTokenSprites.push(oSpr);
+                    this._opponentDuelTokenSyms.push(oCard.getChildByName(`OpponentTokenSymLabel_${i}`)?.getComponent(Label) as Label);
+                    this._opponentDuelTokenDeltas.push(oCard.getChildByName(`OpponentTokenDeltaLabel_${i}`)?.getComponent(Label) as Label);
+                    const oBar = oCard.getChildByName(`OpponentTokenContributionBar_${i}`)?.getComponent(Graphics);
+                    if (oBar) this._opponentDuelTokenBars.push(oBar);
+                }
+            }
+            this._opponentHeroDeltaLabel    = this._racePanel.getChildByName('OpponentDeltaHeroLabel')?.getComponent(Label) ?? null;
+            this._opponentSubtitleGapLabel  = this._racePanel.getChildByName('OpponentSubtitleGapLabel')?.getComponent(Label) ?? null;
+            // Duel bar.
+            this._duelBarContainer = this._racePanel.getChildByName('RaceDuelBarContainer') ?? null;
+            if (this._duelBarContainer) {
+                this._duelBarTrackGraphics       = this._duelBarContainer.getChildByName('DuelBarTrack')?.getComponent(Graphics) ?? null;
+                this._duelBarFillGraphics        = this._duelBarContainer.getChildByName('DuelBarFill')?.getComponent(Graphics) ?? null;
+                this._duelBarGlowGraphics        = this._duelBarContainer.getChildByName('DuelBarGlow')?.getComponent(Graphics) ?? null;
+                this._duelBarCenterTickGraphics  = this._duelBarContainer.getChildByName('DuelBarCenterTick')?.getComponent(Graphics) ?? null;
+                this._duelBarLeadingPpLabel      = this._duelBarContainer.getChildByName('DuelBarLeadingPpLabel')?.getComponent(Label) ?? null;
+                this._duelBarOppTagLabel         = this._duelBarContainer.getChildByName('DuelBarOppTagLabel')?.getComponent(Label) ?? null;
+            }
+            console.log(`${TAG} start | RacePanel wired cards=${this._raceTokenCards.length} countdown=${!!this._raceCountdownLabel} hero=${!!this._raceHeroDeltaLabel} cancel=${!!this._raceCancelButton} opp_card=${!!this._raceOpponentCard} opp_strip=${!!this._raceOpponentStrip} opp_rows=${this._raceOpponentRows.length}/7 duel_bar=${!!this._duelBarContainer} duel_player_cards=${this._playerDuelTokenCards.length} duel_opp_cards=${this._opponentDuelTokenCards.length} duel_player_chip=${!!this._racePlayerLevelChip} duel_opp_id=${!!this._opponentIdentityCard}`);
         }
 
         // Phase E: Claim Payout button (revealed on game-over).
@@ -1112,7 +1304,8 @@ export class AppUI extends Component {
         // ── Session 2 — Phase III wiring: balance chip, feed tabs, feed rows,
         //    squad slots, stake chips. Any missing child is tolerated (scene
         //    regen drift); AppUI simply skips features whose nodes aren't there.
-        const balanceNode = this._tokenDuelPanel.getChildByName('BalanceChipLabel');
+        // BalanceChipLabel now lives inside PlayerStatusPill > BalanceChip.
+        const balanceNode = this._findDescendantByName(this._tokenDuelPanel, 'BalanceChipLabel');
         this._balanceChipLabel = balanceNode?.getComponent(Label) ?? null;
 
         // Session 11: dropdown replaces the 4 inline tab buttons. 6 options,
@@ -1158,15 +1351,15 @@ export class AppUI extends Component {
         }
         console.log(`${TAG} start | TokenDuel watchlist_star wired=${!!this._watchlistStarButton}`);
 
-        // Filter chip row — 7 chips + Columns button (stub).
+        // Filter chip row — 2 chips ([Newest] [Liquidity ▾]) emitted by the
+        // feedFilterChip template. Liq↓ + Liq↑ collapsed into a 'liq' chip
+        // that opens LiqSortDropdownPopover (created in scene-gen). The
+        // 'liq_desc'/'liq_asc' keys remain in FilterChipKey because
+        // _onFilterChipClick still dispatches to them when a popover row is
+        // selected — the chip just changes its trigger.
         const filterChipDefs: Array<{ name: string; key: FilterChipKey }> = [
-            { name: 'FilterChip_newest',   key: 'newest'   },
-            { name: 'FilterChip_liq_desc', key: 'liq_desc' },
-            { name: 'FilterChip_liq_asc',  key: 'liq_asc'  },
-            { name: 'FilterChip_all',      key: 'all'      },
-            { name: 'FilterChip_liq1k',    key: 'liq1k'    },
-            { name: 'FilterChip_liq5k',    key: 'liq5k'    },
-            { name: 'FilterChip_liq10k',   key: 'liq10k'   },
+            { name: 'FilterChip_newest', key: 'newest' },
+            { name: 'FilterChip_liq',    key: 'liq'    },
         ];
         let chipsWired = 0;
         for (const def of filterChipDefs) {
@@ -1183,7 +1376,7 @@ export class AppUI extends Component {
         if (this._columnsButton) {
             this._columnsButton.node.on(Button.EventType.CLICK, () => this._onColumnsButtonClick(), this);
         }
-        console.log(`${TAG} start | TokenDuel filter_chips wired=${chipsWired}/7 columns_btn=${!!this._columnsButton}`);
+        console.log(`${TAG} start | TokenDuel filter_chips wired=${chipsWired}/2 columns_btn=${!!this._columnsButton}`);
 
         // Feed rows live inside the ScrollView's content node.
         const feedSvNode = this._tokenDuelPanel.getChildByName('FeedScrollView');
@@ -1296,6 +1489,23 @@ export class AppUI extends Component {
         }
         console.log(`${TAG} start | TokenDuel min_liq_dropdown button=${!!this._minLiqDropdownButton} options=${this._minLiqOptionButtons.size}/4`);
 
+        // LiqSort dropdown wiring (2 options: liq_desc / liq_asc).
+        // Trigger is the FilterChip_liq button (already wired above via filterChipDefs).
+        this._liqSortPopoverNode = this._tokenDuelPanel.getChildByName('LiqSortDropdownPopover') ?? null;
+        const liqSortOptDefs: Array<{ name: string; key: 'desc' | 'asc' }> = [
+            { name: 'LiqSortOption_liq_desc', key: 'desc' },
+            { name: 'LiqSortOption_liq_asc',  key: 'asc'  },
+        ];
+        for (const d of liqSortOptDefs) {
+            const optN = this._liqSortPopoverNode?.getChildByName(d.name);
+            const optB = optN?.getComponent(Button);
+            if (optB) {
+                this._liqSortOptionButtons.set(d.key, optB);
+                optB.node.on(Button.EventType.CLICK, () => this._onLiqSortOptionClick(d.key), this);
+            }
+        }
+        console.log(`${TAG} start | TokenDuel liq_sort_dropdown popover=${!!this._liqSortPopoverNode} options=${this._liqSortOptionButtons.size}/2`);
+
         // Session 13 A3: Columns popover wiring.
         this._columnsPopoverNode = this._tokenDuelPanel.getChildByName('ColumnsPopover') ?? null;
         const colKeys = ['score', 'liq', 'vol', 'change', 'age', 'mc', 'fdv', 'price', 'holders', 'source'];
@@ -1389,19 +1599,15 @@ export class AppUI extends Component {
             this._backdropButton.node.on(Button.EventType.CLICK, () => this._onBackdropTap(), this);
         }
 
-        // Session 14 B1: Squad action buttons.
-        const squadPickNode = this._tokenDuelPanel.getChildByName('SquadPickButton');
-        this._squadPickButton = squadPickNode?.getComponent(Button) ?? null;
-        this._squadPickLabel = squadPickNode?.getChildByName('Label')?.getComponent(Label) ?? null;
-        this._squadPickButton?.node.on(Button.EventType.CLICK, () => this._onSquadPickClick(), this);
-        const squadDropNode = this._tokenDuelPanel.getChildByName('SquadDropButton');
-        this._squadDropButton = squadDropNode?.getComponent(Button) ?? null;
-        this._squadDropLabel = squadDropNode?.getChildByName('Label')?.getComponent(Label) ?? null;
-        this._squadDropButton?.node.on(Button.EventType.CLICK, () => this._onSquadDropClick(), this);
-        const squadRunNode = this._tokenDuelPanel.getChildByName('SquadRunButton');
-        this._squadRunButton = squadRunNode?.getComponent(Button) ?? null;
-        this._squadRunLabel = squadRunNode?.getChildByName('Label')?.getComponent(Label) ?? null;
-        this._squadRunButton?.node.on(Button.EventType.CLICK, () => this._onSquadRunClick(), this);
+        // 2026-04-26 — Global Pick / Manage Squad bindings REMOVED.
+        // Each empty squad slot now shows "Pick +" and acts as the pick
+        // affordance (see _onSquadSlotTap → _pickTargetSlot). The per-slot
+        // RemoveButton (×) replaces the Manage Squad modal. Field
+        // declarations (_squadPickButton, _squadDropButton, etc.) stay in
+        // place; downstream null-guarded references in
+        // _refreshSquadActionButtons no-op safely. Legacy multi-pick code
+        // (_squadPickMode, _squadPickChecked, _onSquadPickClick) is
+        // unreferenced from UI but kept for back-compat.
 
         // Session 14 B3: Drop overlay.
         this._squadDropOverlay = this._tokenDuelPanel.getChildByName('SquadDropOverlay') ?? null;
@@ -1420,15 +1626,17 @@ export class AppUI extends Component {
                 }
             }
         }
-        console.log(`${TAG} start | TokenDuel squad_actions pick=${!!this._squadPickButton} drop=${!!this._squadDropButton} run=${!!this._squadRunButton} drop_overlay=${!!this._squadDropOverlay} pills=${this._squadDropPills.length}/3`);
+        console.log(`${TAG} start | TokenDuel squad_actions drop=${!!this._squadDropButton} drop_overlay=${!!this._squadDropOverlay} pills=${this._squadDropPills.length}/3`);
 
-        // Session 14 C: Leaderboard + Portfolio entry buttons + panel bindings.
-        const lbOpenNode = this._tokenDuelPanel.getChildByName('OpenLeaderboardButton');
+        // Phase N4: trophy on Home opens the merged Portfolio+Leaderboard hub
+        // (defaults to Portfolio tab). Disconnect button replaces the old
+        // user-icon Portfolio shortcut and sits to the left of the trophy.
+        const lbOpenNode = this._homePanel.getChildByName('OpenLeaderboardButton');
         this._openLeaderboardButton = lbOpenNode?.getComponent(Button) ?? null;
-        this._openLeaderboardButton?.node.on(Button.EventType.CLICK, () => this._onOpenLeaderboardClick(), this);
-        const pfOpenNode = this._tokenDuelPanel.getChildByName('OpenPortfolioButton');
-        this._openPortfolioButton = pfOpenNode?.getComponent(Button) ?? null;
-        this._openPortfolioButton?.node.on(Button.EventType.CLICK, () => this._onOpenPortfolioClick(), this);
+        this._openLeaderboardButton?.node.on(Button.EventType.CLICK, () => this._onOpenHub(), this);
+        const disconnectNode = this._homePanel.getChildByName('DisconnectButton');
+        this._disconnectHomeButton = disconnectNode?.getComponent(Button) ?? null;
+        this._disconnectHomeButton?.node.on(Button.EventType.CLICK, () => this._onDisconnectFromHome(), this);
 
         // Part 10 Bundle 2: Presets (📚) + Suggest (💡) top-bar icons.
         const presetsBtn = this._tokenDuelPanel.getChildByName('OpenSquadPresetsButton')?.getComponent(Button);
@@ -1443,13 +1651,15 @@ export class AppUI extends Component {
         if (this._leaderboardPanel) {
             const lbBack = this._leaderboardPanel.getChildByName('BackButton')?.getComponent(Button);
             lbBack?.node.on(Button.EventType.CLICK, () => this._onLeaderboardBackClick(), this);
-            for (let r = 0; r < 10; r++) {
+            // Rows hold ranks 2..10 (LBRow_1..LBRow_9). Rank-1 is rendered into
+            // TopPlayerCard separately so the leader visually pops.
+            for (let r = 1; r <= 9; r++) {
                 const rN = this._leaderboardPanel.getChildByName(`LBRow_${r}`);
                 if (rN) this._lbRowNodes.push(rN);
             }
-            // Session D Part 7: per-mode filter tabs. Part 10 pt2 adds
-            // `season` (modeU8=4 sentinel) as the 5th tab for This Week wins.
-            // Stage 3: br10 retired, Trio added at u8=1, 4p slid to u8=2, 8p to u8=3.
+            // 4 mode tabs (segmented control) at y=590 + standalone season chip
+            // (LBTab_season) — moved to its own row at y=534 so all five fit on
+            // the canvas without overflowing the right edge.
             const tabKeys: { key: string; modeU8: number }[] = [
                 { key: '1v1', modeU8: 0 },
                 { key: 'trio', modeU8: 1 },
@@ -1464,7 +1674,22 @@ export class AppUI extends Component {
                     this._lbTabButtons.set(t.key, btn);
                     btn.node.on(Button.EventType.CLICK, () => this._onLeaderboardTabClick(t.modeU8, t.key), this);
                 }
+                if (t.key === 'season' && btnN) {
+                    btnN.setPosition(new Vec3(0, 534, 0));
+                }
             }
+            // Empty-state CTA → close leaderboard, open FindMatchPanel.
+            const emptyCta = this._leaderboardPanel.getChildByName('EmptyStateGroup')
+                ?.getChildByName('EmptyStartMatchButton')?.getComponent(Button);
+            emptyCta?.node.on(Button.EventType.CLICK, () => this._onLeaderboardCTAToFindMatch(), this);
+            // PersonalRankCard CTA — same destination, only visible when not in top-10.
+            const playCta = this._leaderboardPanel.getChildByName('PersonalRankCard')
+                ?.getChildByName('PlayCTAButton')?.getComponent(Button);
+            playCta?.node.on(Button.EventType.CLICK, () => this._onLeaderboardCTAToFindMatch(), this);
+            // Phase N4: build hub-tab strip (Portfolio | Leaderboard) at top.
+            const lbHub = this._buildHubTabs(this._leaderboardPanel);
+            this._lbHubPortfolioTab = lbHub.portfolio;
+            this._lbHubLeaderboardTab = lbHub.leaderboard;
         }
 
         // Part 10 pt2: DailyChallengePanel bindings.
@@ -1530,6 +1755,9 @@ export class AppUI extends Component {
             this._settingsWalletNameLabel = walletCard?.getChildByName('WalletNameLabel')?.getComponent(Label) ?? null;
             this._settingsWalletPubkeyLabel = walletCard?.getChildByName('WalletPubkeyLabel')?.getComponent(Label) ?? null;
             this._settingsWalletBalanceLabel = walletCard?.getChildByName('WalletBalanceLabel')?.getComponent(Label) ?? null;
+            // Phase 29 — copy-to-clipboard button next to truncated pubkey.
+            const copyPubkeyBtn = walletCard?.getChildByName('CopyPubkeyButton')?.getComponent(Button);
+            copyPubkeyBtn?.node.on(Button.EventType.CLICK, () => this._onCopyPubkey(), this);
             const profileCard = this._settingsPanel.getChildByName('ProfileCard');
             this._settingsUsernameEditBox = profileCard?.getChildByName('UsernameEditBox')?.getComponent(EditBox) ?? null;
             this._settingsUsernameSavedLabel = profileCard?.getChildByName('UsernameSaveLabel')?.getComponent(Label) ?? null;
@@ -1542,17 +1770,35 @@ export class AppUI extends Component {
                 this._bindEvent(this._settingsUsernameEditBox.node, ['editing-did-ended', 'editingDidEnded'], this._onUsernameCommit, 'username_commit');
                 this._bindEvent(this._settingsUsernameEditBox.node, ['editing-return', 'editingReturn'], this._onUsernameCommit, 'username_return');
                 this._bindEvent(this._settingsUsernameEditBox.node, ['text-changed', 'textChanged'], this._onUsernameTyping, 'username_typing');
+                // Phase 30 — fade the violet focus ring in on focus, out on blur.
+                const focusRing = profileCard?.getChildByName('UsernameFocusRing');
+                const ringOpacity = focusRing?.getComponent(UIOpacity);
+                if (ringOpacity) {
+                    const fadeRing = (toAlpha: number) => {
+                        Tween.stopAllByTarget(ringOpacity);
+                        tween(ringOpacity).to(0.18, { opacity: toAlpha }, { easing: 'sineOut' }).start();
+                    };
+                    this._bindEvent(this._settingsUsernameEditBox.node, ['editing-did-began', 'editingDidBegan'], () => fadeRing(80), 'username_focus');
+                    this._bindEvent(this._settingsUsernameEditBox.node, ['editing-did-ended', 'editingDidEnded'], () => fadeRing(0), 'username_blur');
+                }
             }
-            const reconnBtn = this._settingsPanel.getChildByName('ReconnectSettingsButton')?.getComponent(Button);
+            // Phase 29 — Fees / Reconnect / Disconnect now nest inside AccountSettingsCard.
+            const accountCard = this._settingsPanel.getChildByName('AccountSettingsCard');
+            const reconnBtn = accountCard?.getChildByName('ReconnectSettingsButton')?.getComponent(Button);
             reconnBtn?.node.on(Button.EventType.CLICK, () => this._onReconnect(), this);
-            const disconnBtn = this._settingsPanel.getChildByName('DisconnectSettingsButton')?.getComponent(Button);
+            const disconnBtn = accountCard?.getChildByName('DisconnectSettingsButton')?.getComponent(Button);
             disconnBtn?.node.on(Button.EventType.CLICK, () => this._onDisconnect(), this);
             const delBtn = this._settingsPanel.getChildByName('DeleteAccountSettingsButton')?.getComponent(Button);
             delBtn?.node.on(Button.EventType.CLICK, () => this._onDelete(), this);
 
             // Part 13 D: Fee schedule link. Opens /fees page externally.
-            const feesBtn = this._settingsPanel.getChildByName('FeesLinkButton')?.getComponent(Button);
+            const feesBtn = accountCard?.getChildByName('FeesLinkButton')?.getComponent(Button);
             feesBtn?.node.on(Button.EventType.CLICK, () => this._onOpenFees(), this);
+
+            // Phase 30 — press-pop scale flash on every chevron / dropdown row.
+            if (feesBtn) addPressPop(feesBtn);
+            if (reconnBtn) addPressPop(reconnBtn);
+            if (disconnBtn) addPressPop(disconnBtn);
 
             // Part 11 C: AudioSettingsCard toggles.
             const audioCard = this._settingsPanel.getChildByName('AudioSettingsCard');
@@ -1579,12 +1825,16 @@ export class AppUI extends Component {
                 this._qpWindowPopover = this._settingsPanel.getChildByName('QPWindowPopover');
                 this._qpWagerPopover  = this._settingsPanel.getChildByName('QPWagerPopover');
                 // Row taps → toggle popover with mutual exclusivity.
-                this._qpModeRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
-                    () => this._toggleQPPopover('mode'), this);
-                this._qpWindowRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
-                    () => this._toggleQPPopover('window'), this);
-                this._qpWagerRow?.getComponent(Button)?.node.on(Button.EventType.CLICK,
-                    () => this._toggleQPPopover('wager'), this);
+                const qpModeBtn = this._qpModeRow?.getComponent(Button);
+                const qpWindowBtn = this._qpWindowRow?.getComponent(Button);
+                const qpWagerBtn = this._qpWagerRow?.getComponent(Button);
+                qpModeBtn?.node.on(Button.EventType.CLICK, () => this._toggleQPPopover('mode'), this);
+                qpWindowBtn?.node.on(Button.EventType.CLICK, () => this._toggleQPPopover('window'), this);
+                qpWagerBtn?.node.on(Button.EventType.CLICK, () => this._toggleQPPopover('wager'), this);
+                // Phase 30 — press-pop scale flash on each dropdown row.
+                if (qpModeBtn) addPressPop(qpModeBtn);
+                if (qpWindowBtn) addPressPop(qpWindowBtn);
+                if (qpWagerBtn) addPressPop(qpWagerBtn);
                 // Mode options. Stage 3: trio replaces br10.
                 const modeKeys: Array<[string, string]> = [['1v1','oneVone'],['trio','trio'],['4p','fourPlayer'],['8p','eightPlayer']];
                 for (const [ui, logical] of modeKeys) {
@@ -1667,13 +1917,46 @@ export class AppUI extends Component {
                 }
                 this._pfHistoryView.active = false;
             }
-            for (const key of ['games', 'wins', 'losses', 'winrate', 'pnl', 'xp']) {
+            for (const key of ['games', 'wins', 'losses', 'winrate']) {
                 const cN = this._portfolioPanel.getChildByName(`PFStatCard_${key}`);
                 const vL = cN?.getChildByName('Value')?.getComponent(Label) ?? null;
                 if (vL) this._pfStatValues.set(key, vL);
             }
+            // Dashboard redesign: hero P/L card resolution (extends PFStatCard_pnl).
+            const heroCard = this._portfolioPanel.getChildByName('PFStatCard_pnl');
+            this._pfHeroPnLValue = heroCard?.getChildByName('Value')?.getComponent(Label) ?? null;
+            this._pfHeroPnLSubtitle = heroCard?.getChildByName('Subtitle')?.getComponent(Label) ?? null;
+            this._pfHeroPnLEdge = heroCard?.getChildByName('CardEdgeAccent')?.getComponent(Sprite) ?? null;
+            // XP card progress-bar wiring.
+            const xpCard = this._portfolioPanel.getChildByName('PFStatCard_xp');
+            this._pfXpValueLabel = xpCard?.getChildByName('Value')?.getComponent(Label) ?? null;
+            this._pfXpProgressFill = xpCard?.getChildByName('PFXpProgressBarFill') ?? null;
+            this._pfXpFooter = xpCard?.getChildByName('PFXpFooterLabel')?.getComponent(Label) ?? null;
+            // Empty-state container + CTA.
+            this._pfEmptyState = this._portfolioPanel.getChildByName('PortfolioEmptyState') ?? null;
+            const emptyCta = this._pfEmptyState?.getChildByName('PortfolioEmptyStateCta')?.getComponent(Button);
+            emptyCta?.node.on(Button.EventType.CLICK, () => this._onPortfolioEmptyStateStart(), this);
+            // Batch-toggle list — every node that participates in the populated Stats body.
+            // Excludes Paper/Real toggle buttons (already handled by the existing
+            // _pfPaperTab/_pfRealTab show/hide path in _refreshPortfolioTopLevel)
+            // and excludes the empty-state container (driven by _applyPortfolioRecord).
+            this._pfStatsViewNodes = [];
+            for (const name of [
+                'PortfolioSubtitleLabel', 'PortfolioModeLabel',
+                'PortfolioGroupHeaderPerformance', 'PortfolioGroupHeaderActivity',
+                'PFStatCard_pnl', 'PFStatCard_wins', 'PFStatCard_losses',
+                'PFStatCard_winrate', 'PFStatCard_games', 'PFStatCard_xp',
+            ]) {
+                const n = this._portfolioPanel.getChildByName(name);
+                if (n) this._pfStatsViewNodes.push(n);
+            }
+            // Phase N4: build hub-tab strip mirror so Portfolio panel can swap
+            // back to Leaderboard without leaving the hub.
+            const pfHub = this._buildHubTabs(this._portfolioPanel);
+            this._pfHubPortfolioTab = pfHub.portfolio;
+            this._pfHubLeaderboardTab = pfHub.leaderboard;
         }
-        console.log(`${TAG} start | TokenDuel lb_panel=${!!this._leaderboardPanel} rows=${this._lbRowNodes.length}/10 pf_panel=${!!this._portfolioPanel} stats=${this._pfStatValues.size}/6`);
+        console.log(`${TAG} start | TokenDuel lb_panel=${!!this._leaderboardPanel} rows=${this._lbRowNodes.length}/9 pf_panel=${!!this._portfolioPanel} stats=${this._pfStatValues.size}/4 hero=${!!this._pfHeroPnLValue} xp_fill=${!!this._pfXpProgressFill} empty=${!!this._pfEmptyState}`);
 
         // Session 14 B5: start with empty squad + stake cluster hidden; Run Squad reveals it.
         this._setStakeClusterVisible(false);
@@ -1768,6 +2051,12 @@ export class AppUI extends Component {
             this._wagerStartButton.node.on(Button.EventType.CLICK, () => this._onWagerStartTap(), this);
         }
         this._wagerHintLabel = this._tokenDuelPanel.getChildByName('WagerHintLabel')?.getComponent(Label) ?? null;
+        // 2026-04-26 redesign — MatchSetupCard labels (squad/stake/hint).
+        // Hint moves here from WagerHintLabel; squad + stake are derived state.
+        const matchSetupCardNode = this._tokenDuelPanel.getChildByName('MatchSetupCard');
+        this._matchSetupSquadLabel = matchSetupCardNode?.getChildByName('MatchSetupSquadLabel')?.getComponent(Label) ?? null;
+        this._matchSetupStakeLabel = matchSetupCardNode?.getChildByName('MatchSetupStakeLabel')?.getComponent(Label) ?? null;
+        this._matchSetupHintLabel  = matchSetupCardNode?.getChildByName('MatchSetupHintLabel')?.getComponent(Label) ?? null;
         this._wagerLockChip = this._tokenDuelPanel.getChildByName('WagerLockChip') ?? null;
         if (this._wagerLockChip) {
             this._wagerLockChipLabel = this._wagerLockChip.getChildByName('WagerLockChipLabel')?.getComponent(Label) ?? null;
@@ -1805,8 +2094,9 @@ export class AppUI extends Component {
             this._waitingPlayBotButton?.node.on(Button.EventType.CLICK, () => this._onWaitingPlayBot(), this);
             this._waitingForceSettleButton?.node.on(Button.EventType.CLICK, () => this._onWaitingForceSettle(), this);
         }
-        // Part 13: rake labels across panels.
-        this._homeRakeChip      = this._homePanel.getChildByName('HomeRakeChip')?.getComponent(Label) ?? null;
+        // Part 13: rake labels across panels. 2026-04-26: HomeRakeChip
+        // removed from Home; rake now lives inside the ChallengeSeasonCard's
+        // RAKE chip — see _refreshRakeChip + _setChallengeChips.
         if (this._waitingPanel) {
             this._waitingRakeLabel = this._waitingPanel.getChildByName('WaitingRakeLabel')?.getComponent(Label) ?? null;
         }
@@ -1822,6 +2112,15 @@ export class AppUI extends Component {
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
             this._postMatchBackButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchBack(), this);
             this._postMatchAgainButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchAgain(), this);
+            // "Pick New Squad" is the secondary CTA — dark outline so the
+            // primary "▶ Play Again" (teal-fill) reads as the dominant tap target.
+            if (this._postMatchAgainButton) {
+                this._postMatchAgainButton.normalColor   = new Color(28, 34, 48, 255);
+                this._postMatchAgainButton.hoverColor    = new Color(40, 48, 66, 255);
+                this._postMatchAgainButton.pressedColor  = new Color(20, 24, 36, 255);
+                const lbl = this._postMatchAgainButton.node.getChildByName('Label')?.getComponent(Label);
+                if (lbl) lbl.color = new Color(200, 210, 230, 255);
+            }
             // Block 6 — Same Squad shortcut
             const sameSquadBtn = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button);
             sameSquadBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchSameSquad(), this);
@@ -1832,7 +2131,20 @@ export class AppUI extends Component {
                 const cN = this._postMatchPanel.getChildByName(`PMCard_${key}`);
                 const vL = cN?.getChildByName('Value')?.getComponent(Label) ?? null;
                 if (vL) this._postMatchCardValues.set(key, vL);
+                // Drifting-gadget: card-edge accents are now runtime-tinted by outcome.
+                const edge = cN?.getChildByName(`PMCardEdge_${key}`)?.getComponent(Sprite) ?? null;
+                if (edge) this._postMatchCardEdges.set(key, edge);
             }
+            // Drifting-gadget: bg-tint + mascot glow + XP bar refs.
+            const bgN = this._postMatchPanel.getChildByName('OutcomeBgTint');
+            this._postMatchOutcomeBgGfx     = bgN?.getComponent(Graphics) ?? null;
+            this._postMatchOutcomeBgOpacity = bgN?.getComponent(UIOpacity) ?? null;
+            const glowN = this._postMatchPanel.getChildByName('MascotGlow');
+            this._postMatchMascotGlowGfx     = glowN?.getComponent(Graphics) ?? null;
+            this._postMatchMascotGlowOpacity = glowN?.getComponent(UIOpacity) ?? null;
+            this._postMatchXPBarLabelLeft  = this._postMatchPanel.getChildByName('PostMatchXPBarLabelLeft')?.getComponent(Label) ?? null;
+            this._postMatchXPBarLabelRight = this._postMatchPanel.getChildByName('PostMatchXPBarLabelRight')?.getComponent(Label) ?? null;
+            this._postMatchXPBarFillGfx    = this._postMatchPanel.getChildByName('PostMatchXPBarFill')?.getComponent(Graphics) ?? null;
             // UX Phase 2b: bind second mascot on PostMatchPanel.
             const pmMascotN = this._postMatchPanel.getChildByName('PostMatchMascotContainer');
             if (pmMascotN) {
@@ -1852,6 +2164,7 @@ export class AppUI extends Component {
         const raceMascotN = this._racePanel?.getChildByName('RaceMascotContainer');
         if (raceMascotN) {
             this._raceMascot = raceMascotN.getComponent(MascotController) ?? raceMascotN.addComponent(MascotController);
+            this._raceMascotOpacity = raceMascotN.getComponent(UIOpacity) ?? raceMascotN.addComponent(UIOpacity);
             console.log(`${TAG} start | raceMascot bound`);
         }
         if (this._postMatchPanel) {
@@ -2097,9 +2410,6 @@ export class AppUI extends Component {
         this._notifBellButton = this._homePanel?.getChildByName('NotificationBellButton')?.getComponent(Button) ?? null;
         if (this._notifBellButton) {
             this._notifBellButton.node.on(Button.EventType.CLICK, () => this._showNotificationPanel(), this);
-            // Attach the bell icon; runtime-injected so the procedural draw fires.
-            try { IconLibrary.attach(this._notifBellButton.node, 'bell', { size: 36 }); }
-            catch (e) { console.log(`${TAG} start | bell icon attach failed ${e}`); }
         }
         this._notifBellBadge = this._homePanel?.getChildByName('NotificationBellBadge') ?? null;
         if (this._notifBellBadge) {
@@ -2216,6 +2526,9 @@ export class AppUI extends Component {
                 this._squadSlotDeltaLabels.push(dltLbl!);
                 const idx = i;
                 btn.node.on(Button.EventType.CLICK, () => this._onSquadSlotTap(idx), this);
+                // RemoveButton (×) — appears only on filled slots; clears the slot.
+                const rmBtn = node?.getChildByName('RemoveButton')?.getComponent(Button);
+                rmBtn?.node.on(Button.EventType.CLICK, () => this._onSquadSlotRemove(idx), this);
             }
         }
 
@@ -2355,9 +2668,27 @@ export class AppUI extends Component {
             this._game.destroy();
             this._game = null;
         }
-        if (this._landingStatus) this._landingStatus.string = 'Tap Connect to link your wallet';
+        this._setConnectionPill('disconnected');
         if (this._reconnectButton) this._reconnectButton.node.active = hasCached;
         this._setLandingEnabled(true);
+    }
+
+    /**
+     * Drive the Landing footer status pill. Replaces the old StatusLabel-as-
+     * connection-readout pattern. Three states cover every Landing path:
+     *   disconnected — idle, fresh or returning user (gray)
+     *   connecting   — wallet picker open, mid-authorize/reauthorize (amber)
+     *   failed       — last attempt errored; user can retry (rose)
+     */
+    private _setConnectionPill(state: 'disconnected' | 'connecting' | 'failed'): void {
+        if (!this._connectionStatusLabel) return;
+        const map = {
+            disconnected: { text: '● Disconnected', color: themeColor.neutral() },
+            connecting:   { text: '● Connecting…', color: themeColor.warn() },
+            failed:       { text: '● Auth failed', color: themeColor.loss() },
+        };
+        this._connectionStatusLabel.string = map[state].text;
+        this._connectionStatusLabel.color = map[state].color;
     }
 
     private _showHome(): void {
@@ -2378,29 +2709,29 @@ export class AppUI extends Component {
         const pubkey = mwa?.connectedPubkey ?? '';
         if (this._pubkeyLabel) {
             if (this._isGuest()) {
-                this._pubkeyLabel.string = '👤 Guest';
+                this._pubkeyLabel.string = 'Guest';
+                this._setWalletPillName('Play as Guest');
             } else {
                 const short = pubkey.length > 8
                     ? pubkey.substring(0, 4) + '...' + pubkey.substring(pubkey.length - 4)
                     : pubkey || 'Not connected';
-                const walletName = mwa?.walletDisplayName() ?? '';
-                this._pubkeyLabel.string = walletName ? `${short} (${walletName})` : short;
+                this._pubkeyLabel.string = short;
+                this._setWalletPillName(mwa?.walletDisplayName() ?? '');
             }
         }
         // Apply guest-mode hiding rules — must run AFTER pubkey label set so
         // the guest label sticks even if other refresh paths overwrite it.
         this._applyGuestModeUiHiding();
-        // Phase J4 \u2014 bot handicap visibility for new players. Shows
-        // "Training: N free matches left \u00b7 easier bots, no real wager."
-        // until they've played BOT_HANDICAP_GAMES paper matches.
+        // 2026-04-26 lobby restructure: training-card body line + thin
+        // status-footer messaging. Body = free-match counter; status line
+        // is short hint when training, otherwise generic.
+        const paperRec = Stats.load('paper');
+        const botGamesRemaining = Math.max(0, 5 - paperRec.games);
+        this._setHomeTrainingBody(botGamesRemaining);
         if (this._homeStatus) {
-            const paperRec = Stats.load('paper');
-            const botGamesRemaining = Math.max(0, 5 - paperRec.games);
-            if (botGamesRemaining > 0) {
-                this._homeStatus.string = `Training: ${botGamesRemaining} free match${botGamesRemaining === 1 ? '' : 'es'} left \u2014 easier bots, paper-track only`;
-            } else {
-                this._homeStatus.string = 'Connected \u2014 choose an action';
-            }
+            this._homeStatus.string = botGamesRemaining > 0
+                ? 'Tap Bot Match to practice'
+                : 'Connected \u2014 choose an action';
         }
         this._setHomeEnabled(true);
 
@@ -2644,40 +2975,154 @@ export class AppUI extends Component {
      * Solo-emoji chrome buttons use offsetX=0 (centered); prefix-emoji labels
      * use a negative offsetX (icon sits left of the text).
      */
+    /**
+     * 2026-04-26 lobby restructure: bind the 5+5 chip Val labels inside
+     * HomeMatchTicker + DailyStreakStrip, plus the training-card labels +
+     * choose-match section title. Idempotent. Called from start() after panel
+     * lookups complete.
+     */
+    private _bindHomeChips(): void {
+        const ticker = this._homePanel?.getChildByName('HomeMatchTicker');
+        if (ticker) {
+            this._homeMatchTickerHeader = ticker.getChildByName('HomeMatchTickerHeader')?.getComponent(Label) ?? null;
+            const matchKeys: Array<keyof typeof this._homeMatchChips> = ['mode', 'players', 'stake', 'duration', 'created'];
+            for (const k of matchKeys) {
+                const chip = ticker.getChildByName(`HomeMatchChip_${k}`);
+                this._homeMatchChips[k] = chip?.getChildByName(`HomeMatchChipVal_${k}`)?.getComponent(Label) ?? null;
+            }
+        }
+        const strip = this._homePanel?.getChildByName('DailyStreakStrip');
+        if (strip) {
+            // V2: SEASON chip dropped to slim the secondary stats card. The
+            // _homeChalChips.season slot stays in the type for back-compat —
+            // it just stays null at runtime, and _setChallengeChips no-ops on
+            // the season field since c.season is null.
+            const chalKeys: Array<keyof typeof this._homeChalChips> = ['day', 'challenges', 'pool', 'rake'];
+            for (const k of chalKeys) {
+                const chip = strip.getChildByName(`HomeChalChip_${k}`);
+                this._homeChalChips[k] = chip?.getChildByName(`HomeChalChipVal_${k}`)?.getComponent(Label) ?? null;
+            }
+        }
+        const trainingCard = this._homePanel?.getChildByName('HomeTrainingCard');
+        if (trainingCard) {
+            this._homeTrainingTitleLabel = trainingCard.getChildByName('HomeTrainingTitleLabel')?.getComponent(Label) ?? null;
+            this._homeTrainingBodyLabel = trainingCard.getChildByName('HomeTrainingBodyLabel')?.getComponent(Label) ?? null;
+            this._homeTrainingHintLabel = trainingCard.getChildByName('HomeTrainingHintLabel')?.getComponent(Label) ?? null;
+        }
+        this._homeChooseMatchLabel = this._homePanel?.getChildByName('HomeChooseMatchLabel')?.getComponent(Label) ?? null;
+        console.log(`${TAG} _bindHomeChips | match=${Object.values(this._homeMatchChips).filter(Boolean).length}/5 chal=${Object.values(this._homeChalChips).filter(Boolean).length}/5 training=${[this._homeTrainingTitleLabel, this._homeTrainingBodyLabel, this._homeTrainingHintLabel].filter(Boolean).length}/3`);
+    }
+
+    /** Set the 5 MatchStatus chip values from a TickerParts payload. */
+    private _setMatchStatusChips(parts: { mode: string; players: string; stake: string; duration: string; created: string }): void {
+        const c = this._homeMatchChips;
+        if (c.mode) c.mode.string = parts.mode;
+        if (c.players) c.players.string = parts.players;
+        if (c.stake) c.stake.string = parts.stake;
+        if (c.duration) c.duration.string = parts.duration;
+        if (c.created) c.created.string = parts.created;
+    }
+
+    /** Set ChallengeSeason chip values. Accepts a partial — only writes
+     *  fields present in the payload (so _refreshRakeChip can update RAKE
+     *  without clobbering the other 4). */
+    private _setChallengeChips(parts: Partial<{ day: string; challenges: string; season: string; pool: string; rake: string }>): void {
+        const c = this._homeChalChips;
+        if (parts.day !== undefined && c.day) c.day.string = parts.day;
+        if (parts.challenges !== undefined && c.challenges) c.challenges.string = parts.challenges;
+        if (parts.season !== undefined && c.season) c.season.string = parts.season;
+        if (parts.pool !== undefined && c.pool) c.pool.string = parts.pool;
+        if (parts.rake !== undefined && c.rake) c.rake.string = parts.rake;
+    }
+
+    /** Update the XP progress label + tween the progress bar fill width.
+     *  V2: Bar track is 640px wide (from LayoutSpec, was 360); fill grows
+     *  leftward-anchored so width=640 = 100%. Tween is 600ms cubicOut so
+     *  the fill noticeably *animates* on first show / level-up. */
+    private _setLevelProgress(curr: number, max: number): void {
+        if (this._homeXpProgressLabel) {
+            this._homeXpProgressLabel.string = max > 0 ? `${curr} / ${max} XP` : '— XP';
+        }
+        const fill = this._homeXpBarFill;
+        if (!fill) return;
+        const ut = fill.getComponent(UITransform);
+        if (!ut) return;
+        const targetW = max > 0 ? Math.max(0, Math.min(1, curr / max)) * 640 : 0;
+        try {
+            tween(ut).to(0.6, { width: targetW }, { easing: 'cubicOut' as any }).start();
+        } catch (_) {
+            // tween may not be loaded in some contexts — fall back to instant set.
+            ut.width = targetW;
+        }
+    }
+
+    /** Set the wallet name line under the address inside WalletPill, and
+     *  toggle the secure-connected dot's visibility based on whether a name
+     *  is present. */
+    private _setWalletPillName(name: string): void {
+        if (this._walletNameLabel) {
+            this._walletNameLabel.string = name || 'Wallet';
+        }
+        if (this._walletPillSecureDot) {
+            this._walletPillSecureDot.active = !!name;
+        }
+    }
+
+    /** Update the training-card body line. Falls back to "Practice mode" if
+     *  no free-bot games remain. */
+    private _setHomeTrainingBody(freeMatchesLeft: number): void {
+        if (!this._homeTrainingBodyLabel) return;
+        if (freeMatchesLeft > 0) {
+            this._homeTrainingBodyLabel.string = `${freeMatchesLeft} free match${freeMatchesLeft === 1 ? '' : 'es'} left`;
+        } else {
+            this._homeTrainingBodyLabel.string = 'Practice mode';
+        }
+    }
+
     private _attachStaticIconBadges(): void {
         type Def = { panel: Node | null; name: string; icon: IconName; size?: number; offsetX?: number };
         const root = this.node;
         const defs: Def[] = [
-            // Home chrome
-            { panel: this._homePanel, name: 'DailyStreakStrip',       icon: 'flame',  size: 22, offsetX: -320 },
-            { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 20, offsetX: -320 },
+            // Home chrome — 2026-04-26 lobby restructure: cards widened to
+            // 680, chips occupy x∈[-240,+240]. Flame/sword icons sit at
+            // -310 (just left of the leftmost chip).
+            { panel: this._homePanel, name: 'DailyStreakStrip',       icon: 'flame',  size: 36, offsetX: -310 },
+            { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 36, offsetX: -310 },
             // CTA trio — IconBadge sits left of each label so the icon reads first.
-            { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 26, offsetX: -200 },
-            { panel: this._homePanel, name: 'FindMatchButton',        icon: 'eye',    size: 26, offsetX: -200 },
-            { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 26, offsetX: -200 },
+            { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 72, offsetX: -200 },
+            { panel: this._homePanel, name: 'FindMatchButton',        icon: 'flag',   size: 72, offsetX: -200 },
+            { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 72, offsetX: -200 },
+            // Right cluster (Disconnect · Hub · Settings · Bell). Phase N4:
+            // Disconnect (power) replaces the former user-icon Portfolio
+            // shortcut; trophy now opens the merged Portfolio+Leaderboard hub.
+            { panel: this._homePanel, name: 'DisconnectButton',       icon: 'disconnect', size: 30, offsetX: 0 },
+            { panel: this._homePanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 30, offsetX: 0 },
             { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 30, offsetX: 0 },  // home top-right gear, 64×64
+            { panel: this._homePanel, name: 'NotificationBellButton', icon: 'bell',   size: 30, offsetX: 0 },
 
-            // TokenDuel top-bar (5 solo-icon buttons, 48×40 cells)
-            { panel: this._tokenDuelPanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 24, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'OpenPortfolioButton',    icon: 'user',   size: 24, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 24, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'OpenSquadPresetsButton', icon: 'book',   size: 24, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'SuggestSquadButton',     icon: 'bulb',   size: 24, offsetX: 0 },
+            // TokenDuel top-bar (3 solo-icon buttons + Help glyph, 40×36 cells) —
+            // icons 28 so they stop reading as dots inside the button. Leaderboard
+            // and Portfolio moved to Home global-nav; Settings stays duplicated.
+            { panel: this._tokenDuelPanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 28, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenSquadPresetsButton', icon: 'book',   size: 28, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'SuggestSquadButton',     icon: 'bulb',   size: 28, offsetX: 0 },
             // HelpButton stays '?' text glyph — no IconBadge.
 
             // Feed chrome
-            { panel: this._tokenDuelPanel, name: 'ColumnsButton',          icon: 'cog',    size: 14, offsetX: -38 },
+            // ColumnsButton no longer gets a cog badge — the dropdown caret lives
+            // in the label text ("Columns  ▾") so it scales with the font and
+            // can't overlap.
             // FeedTabDropdownButton + WatchlistStarButton icons are state-driven; see _refreshFeedTabDropdown / _refreshWatchlistStarLabel.
 
             // Wager
-            { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 22, offsetX: -120 },
+            { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 26, offsetX: -120 },
 
             // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
             { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 28, offsetX: -150 },
             { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
             { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 28, offsetX: -110 },
             { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
-            { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 26, offsetX: -110 },
+            { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 78, offsetX: -150 },
             { panel: root, name: 'SpectatorTitleLabel',         icon: 'eye',    size: 26, offsetX: -130 },
             { panel: root, name: 'TournamentTitleLabel',        icon: 'sword',  size: 26, offsetX: -130 },
             { panel: root, name: 'TournamentJoinButton',        icon: 'sword',  size: 22, offsetX: -150 },
@@ -2686,9 +3131,12 @@ export class AppUI extends Component {
             { panel: root, name: 'WaitingForceSettleButton',    icon: 'bolt',   size: 22, offsetX: -130 },
             { panel: root, name: 'WaitingStreakBanner',         icon: 'flame',  size: 20, offsetX: -270 },
 
-            // Settings card buttons
-            { panel: root, name: 'FeesLinkButton',              icon: 'chart',  size: 22, offsetX: -110 },
-            // SoundToggleButton / HapticsToggleButton icons are state-driven.
+            // Settings card buttons — Phase 29 redesign attaches icons to pre-
+            // positioned child nodes (PrefSoundIcon / PrefHapticsIcon /
+            // AccountFeesIcon / AccountReconnectIcon / AccountDisconnectIcon /
+            // CopyPubkeyButton) directly via _attachSettingsRowIcons() so the
+            // icons land at the row's local x-offset, not at the button center.
+            // SoundToggleButton / HapticsToggleButton glyphs are state-driven.
 
             // Presets overlay
             { panel: root, name: 'PresetSaveButton',            icon: 'save',   size: 22, offsetX: -170 },
@@ -2750,7 +3198,7 @@ export class AppUI extends Component {
             ];
             for (const c of chipIcons) {
                 const n = fmPanel.getChildByName(c.name);
-                if (n) this._ensureIconBadge(n, c.icon, { size: 16, offsetX: -42 });
+                if (n) this._ensureIconBadge(n, c.icon, { size: 22, offsetX: -42 });
             }
         }
 
@@ -2761,7 +3209,7 @@ export class AppUI extends Component {
         };
         for (const key of Object.keys(tabIcon)) {
             const optN = this._tokenDuelPanel?.getChildByName(`FeedTabOption_${key}`);
-            if (optN) this._ensureIconBadge(optN, tabIcon[key], { size: 16, offsetX: -90 });
+            if (optN) this._ensureIconBadge(optN, tabIcon[key], { size: 22, offsetX: -90 });
         }
 
         console.log(`${TAG} _attachStaticIconBadges | bound ${defs.length} + preset 5 + feed_tab 6`);
@@ -2783,6 +3231,40 @@ export class AppUI extends Component {
     }
 
     /**
+     * Phase 29 — attach IconLibrary glyphs to the Settings card icon
+     * placeholder children. Unlike _ensureIconBadge (which creates a child
+     * IconBadge inside the parent at an offset), these icons attach directly
+     * to nodes that have already been positioned by the scene generator —
+     * so the icon lands at the row's left-side gutter position.
+     */
+    private _attachSettingsRowIcons(): void {
+        if (!this._settingsPanel) return;
+        type Pair = { parent: string | null; name: string; icon: IconName; size: number };
+        const pairs: Pair[] = [
+            // Wallet card
+            { parent: 'WalletCard',          name: 'CopyPubkeyButton',       icon: 'clipboard', size: 18 },
+            // Account card rows
+            { parent: 'AccountSettingsCard', name: 'AccountFeesIcon',        icon: 'chart',     size: 22 },
+            { parent: 'AccountSettingsCard', name: 'AccountReconnectIcon',   icon: 'lightning', size: 22 },
+            { parent: 'AccountSettingsCard', name: 'AccountDisconnectIcon',  icon: 'lock',      size: 22 },
+            // Preference rows — initial state mirrors current toggle state.
+            // _setPrefRowState refreshes them on every toggle.
+            { parent: 'AudioSettingsCard',   name: 'PrefSoundIcon',          icon: isSoundEnabled() ? 'speaker'   : 'speakerMuted', size: 22 },
+            { parent: 'AudioSettingsCard',   name: 'PrefHapticsIcon',        icon: Haptics.isEnabled() ? 'vibration' : 'hand',       size: 22 },
+        ];
+        for (const p of pairs) {
+            const card = p.parent ? this._settingsPanel.getChildByName(p.parent) : this._settingsPanel;
+            const target = this._findDescendantByName(card ?? this._settingsPanel, p.name);
+            if (!target) {
+                console.log(`${TAG} _attachSettingsRowIcons | NOT FOUND ${p.parent}/${p.name}`);
+                continue;
+            }
+            try { IconLibrary.attach(target, p.icon, { size: p.size }); }
+            catch (e) { console.log(`${TAG} _attachSettingsRowIcons | attach FAIL ${p.name} ${e}`); }
+        }
+    }
+
+    /**
      * UX Phase 2d: apply idle-pulse + press-pop + stronger zoomScale to the
      * primary CTA buttons. Idle-pulse draws the eye to the action; press-pop
      * gives a satisfying tap response (layered on top of cc.Button's native
@@ -2792,6 +3274,8 @@ export class AppUI extends Component {
         // Phase 13 (B3): Connect is the gateway action — first thing in any
         // demo recording. It must breathe.
         enhancePrimaryCTA(this._landingPanel?.getChildByName('ConnectButton') ?? null);
+        enhancePrimaryCTA(this._landingPanel?.getChildByName('ReconnectButton') ?? null);
+        enhancePrimaryCTA(this._landingPanel?.getChildByName('PlayAsGuestButton') ?? null);
         enhancePrimaryCTA(this._homePanel?.getChildByName('StartMatchButton') ?? null);
         enhancePrimaryCTA(this._homePanel?.getChildByName('FindMatchButton') ?? null);
         enhancePrimaryCTA(this._homePanel?.getChildByName('BotMatchButton') ?? null);
@@ -2801,6 +3285,23 @@ export class AppUI extends Component {
         // PickerStartButton (inside the ModePicker modal) — find via Canvas lookup
         // since ModePicker can be deeply nested.
         enhancePrimaryCTA(this._findDescendantByName(this.node, 'PickerStartButton'));
+    }
+
+    /**
+     * v2 Landing — squeeze-on-press feedback (0.97 scale) for the 3 landing
+     * CTAs. Cocos's Button.transition=2 (SCALE) multiplies normal scale by
+     * _zoomScale at press time; 0.97 means press shrinks node to 97%.
+     * Mirrors iOS/Android conventions for entry buttons. Other panels keep
+     * the grow-on-press (1.05) default.
+     */
+    private _setLandingPressScale(): void {
+        const set = (name: string) => {
+            const btn = this._landingPanel?.getChildByName(name)?.getComponent(Button);
+            if (btn) (btn as any)._zoomScale = 0.97;
+        };
+        set('ConnectButton');
+        set('ReconnectButton');
+        set('PlayAsGuestButton');
     }
 
     /**
@@ -2826,6 +3327,8 @@ export class AppUI extends Component {
             'coin', 'chart', 'brain', 'star', 'starOutline',
             'sparkle', 'starBurst', 'flag', 'eye',
             'bell', 'check', 'clock', 'crown',
+            // Phase N4 — disconnect.png in resources/icons.
+            'disconnect',
         ];
 
         // Kill switches — flip a flag to bypass each loader path. Default ALL
@@ -2996,6 +3499,10 @@ export class AppUI extends Component {
         // registered icons get cc.Sprite path, unregistered stay blank.
         console.log(`${TAG} phase3 | step=_attachStaticIconBadges`);
         this._attachStaticIconBadges();
+        // Phase 29 — Settings card row icons (clipboard, chart, lightning,
+        // lock, speaker/vibration) re-attach so they pop from procedural to
+        // PNG sprite once the asset bundle finishes loading.
+        this._attachSettingsRowIcons();
         console.log(`${TAG} phase3 | step=_refreshAudioCard`);
         this._refreshAudioCard();
         console.log(`${TAG} phase3 | step=_refreshWatchlistStarTint`);
@@ -3095,7 +3602,7 @@ export class AppUI extends Component {
     private async _onConnect(): Promise<void> {
         console.log(`${TAG} onConnect | START — opening OS wallet picker`);
         this._setLandingEnabled(false);
-        if (this._landingStatus) this._landingStatus.string = 'Opening wallet...';
+        this._setConnectionPill('connecting');
 
         const result = await MWAManager.instance?.authorize();
         if (result) {
@@ -3135,7 +3642,7 @@ export class AppUI extends Component {
         } else {
             console.log(`${TAG} onConnect | FAIL result=null`);
             showToast('Authorization failed');
-            if (this._landingStatus) this._landingStatus.string = 'Authorization failed';
+            this._setConnectionPill('failed');
             this._setLandingEnabled(true);
         }
     }
@@ -3143,7 +3650,7 @@ export class AppUI extends Component {
     private async _onReconnect(): Promise<void> {
         console.log(`${TAG} onReconnect | START`);
         this._setLandingEnabled(false);
-        if (this._landingStatus) this._landingStatus.string = 'Reconnecting...';
+        this._setConnectionPill('connecting');
 
         // Phase 19 — cover the silent reauth + data-fetch gap (~300-1500ms).
         this._showLoadingOverlay('Reconnecting your wallet…');
@@ -3155,7 +3662,7 @@ export class AppUI extends Component {
         } else {
             console.log(`${TAG} onReconnect | FAIL result=null`);
             showToast('Reconnect failed');
-            if (this._landingStatus) this._landingStatus.string = 'Reconnect failed';
+            this._setConnectionPill('failed');
             this._setLandingEnabled(true);
         }
         this._hideLoadingOverlay();
@@ -3696,6 +4203,12 @@ export class AppUI extends Component {
         // The HomePanel mascot is inactive during the race, so the 'think'
         // animation needs to land on the RacePanel mascot to be visible.
         this._raceMascot?.setState('think');
+        // Battle-UI polish: dim mascot to ~55% — decorative, not a focal point.
+        if (this._raceMascotOpacity) {
+            const op = this._raceMascotOpacity;
+            Tween.stopAllByTarget(op);
+            tween(op).to(0.25, { opacity: 140 }, { easing: 'cubicOut' }).start();
+        }
         this._raceActiveHoldings = holdings.slice();
         this._raceLastDeltaSign = 0;
         this._raceTickBindingGapLogged = false;
@@ -3727,6 +4240,28 @@ export class AppUI extends Component {
         const modeDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
         const botCount = Math.max(0, modeDef.requiredPlayers - 1);
 
+        // Phase 22 — 1v1 ⇒ duel layout; 4p/8p ⇒ legacy stack + strip.
+        this._isDuelLayout = modeDef.requiredPlayers === 2;
+        // Reset duel bar state on every race start.
+        this._duelBarPos = 0;
+        this._duelBarVel = 0;
+        this._duelBarTargetPos = 0;
+        this._duelBarOmega = 6.0;
+        this._duelBarZeta = 1.0;
+        this._duelBarOvertakeUntil = 0;
+        this._duelBarLastSignSnap = 0;
+        this._lastRenderedOpponentDeltaPct = 0;
+        this._opponentPerTokenDeltas = {};
+
+        // Toggle duel-layout surfaces.
+        if (this._racePlayerLevelChip)  this._racePlayerLevelChip.active  = this._isDuelLayout;
+        if (this._opponentIdentityCard) this._opponentIdentityCard.active = this._isDuelLayout;
+        if (this._playerTokenRow)       this._playerTokenRow.active       = this._isDuelLayout;
+        if (this._opponentTokenRow)     this._opponentTokenRow.active     = this._isDuelLayout;
+        if (this._duelBarContainer)     this._duelBarContainer.active     = this._isDuelLayout;
+        if (this._opponentHeroDeltaLabel)   this._opponentHeroDeltaLabel.node.active   = this._isDuelLayout;
+        if (this._opponentSubtitleGapLabel) this._opponentSubtitleGapLabel.node.active = this._isDuelLayout;
+
         // Clear prior bot state on every race start.
         this._liveSquadBot = null;
         this._liveSquadBots = [];
@@ -3734,15 +4269,25 @@ export class AppUI extends Component {
         if (this._raceOpponentStrip) this._raceOpponentStrip.active = false;
         for (const row of this._raceOpponentRows) row.active = false;
 
+        // Battle-UI polish: only seed the small Lv pill (wallet name shows in
+        // post-match summary, not gameplay top row).
+        if (this._isDuelLayout && this._racePlayerLevelLabel) {
+            const lvlSrc = this.node.getChildByName('HomePanel')?.getChildByName('HomeLevelChip')?.getChildByName('HomeLevelChipLabel')?.getComponent(Label);
+            this._racePlayerLevelLabel.string = lvlSrc?.string || 'Lv 1';
+        }
+
         if (isPaper && botCount === 1) {
-            // 1v1 — big opponent card (unchanged from round 3).
-            if (this._raceOpponentCard) this._raceOpponentCard.active = true;
+            // 1v1 — legacy big opponent card stays HIDDEN in duel layout (the
+            // duel surfaces — OpponentIdentityCard + OpponentTokenCardsRow —
+            // already cover everything that card showed). Only re-show in the
+            // 4p/8p Paper fallback path.
+            if (this._raceOpponentCard) this._raceOpponentCard.active = !this._isDuelLayout;
             const windowMs = TIME_WINDOWS[this._pickerSelectedWindow]?.durationMs ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW].durationMs;
             if (this._raceOpponentName) this._raceOpponentName.string = 'Bot';
             // UX Phase 2b: procedural robot icon on the avatar node (replaces emoji label).
             if (this._raceOpponentAvatar) {
                 this._raceOpponentAvatar.string = '';
-                IconLibrary.attach(this._raceOpponentAvatar.node, 'robot', { size: 44 });
+                IconLibrary.attach(this._raceOpponentAvatar.node, 'robot', { size: 48 });
             }
             if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'picking squad…';
             import('../../token-duel/scripts/SquadBot').then(({ LiveSquadBot }) => {
@@ -3755,6 +4300,13 @@ export class AppUI extends Component {
                         const syms = squad.map((s) => s.symbol).filter(Boolean);
                         if (this._raceOpponentSymbols) {
                             this._raceOpponentSymbols.string = syms.length > 0 ? syms.join(' · ') : '— · — · —';
+                        }
+                        // Phase 22 — duel layout: populate opponent token card symbols.
+                        if (this._isDuelLayout) {
+                            for (let i = 0; i < this._opponentDuelTokenSyms.length; i++) {
+                                const lbl = this._opponentDuelTokenSyms[i];
+                                if (lbl) lbl.string = syms[i] ?? '—';
+                            }
                         }
                         console.log(`${TAG} _showRacePanel | live_bot ready squad=[${syms.join(',')}]`);
                     }).catch((e) => console.log(`${TAG} _showRacePanel | live_bot_start_error ${e}`));
@@ -3798,23 +4350,24 @@ export class AppUI extends Component {
             // UX Phase 2b: procedural user icon for real-opponent avatar.
             if (this._raceOpponentAvatar) {
                 this._raceOpponentAvatar.string = '';
-                IconLibrary.attach(this._raceOpponentAvatar.node, 'user', { size: 44 });
+                IconLibrary.attach(this._raceOpponentAvatar.node, 'user', { size: 48 });
             }
             if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = 'waiting for squad…';
             if (this._raceOpponentDelta) this._raceOpponentDelta.string = '—';
             if (this._raceOpponentGap) this._raceOpponentGap.string = '';
-            // Opponent card should be visible on Real now that backend WS
-            // can deliver their squad mints for client-side delta compute.
-            if (this._raceOpponentCard) this._raceOpponentCard.active = true;
+            // Opponent card visible on Real ONLY in legacy layout (4p/8p
+            // doesn't yet support Real). Phase 22 duel layout owns its own
+            // opponent surfaces, so the legacy big card stays hidden.
+            if (this._raceOpponentCard && !this._isDuelLayout) this._raceOpponentCard.active = true;
             this._subscribeOpponentSquad();
         }
 
-        // Populate + activate N cards; hide the rest.
+        // Populate + activate N cards (legacy 5-stack — only in 4p/8p).
         const n = Math.min(holdings.length, this._raceTokenCards.length);
         for (let i = 0; i < this._raceTokenCards.length; i++) {
             const card = this._raceTokenCards[i];
             if (!card) continue;
-            const show = i < n;
+            const show = !this._isDuelLayout && i < n;
             card.active = show;
             if (show && this._raceTokenSymbolLabels[i]) {
                 this._raceTokenSymbolLabels[i].string = holdings[i]?.symbol || '---';
@@ -3826,6 +4379,61 @@ export class AppUI extends Component {
                 this._raceTokenDeltaLabels[i].color = new Color(200, 200, 210);
             }
         }
+
+        // Phase 22 — populate duel-layout player token cards (3 horizontal).
+        if (this._isDuelLayout) {
+            for (let i = 0; i < this._playerDuelTokenCards.length; i++) {
+                const show = i < n;
+                this._playerDuelTokenCards[i].active = show;
+                if (show) {
+                    if (this._playerDuelTokenSyms[i])   this._playerDuelTokenSyms[i].string   = holdings[i]?.symbol || '---';
+                    if (this._playerDuelTokenDeltas[i]) {
+                        this._playerDuelTokenDeltas[i].string = '+0.00%';
+                        this._playerDuelTokenDeltas[i].color = new Color(168, 174, 201);
+                    }
+                }
+            }
+            // Reset opponent-side duel cards (populated when bot picks land or WS arrives).
+            for (let i = 0; i < this._opponentDuelTokenCards.length; i++) {
+                this._opponentDuelTokenCards[i].active = true;
+                if (this._opponentDuelTokenSyms[i])   this._opponentDuelTokenSyms[i].string   = '—';
+                if (this._opponentDuelTokenDeltas[i]) {
+                    this._opponentDuelTokenDeltas[i].string = '+0.00%';
+                    this._opponentDuelTokenDeltas[i].color = new Color(168, 174, 201);
+                }
+            }
+            // Opponent identity card — combined "BOT · Lv 3" copy in NameLabel
+            // (LevelLabel hidden) so the smaller card doesn't stack two lines.
+            const oppLv = isPaper
+                ? (this._pickerSelectedDifficulty === 'easy' ? 1 : this._pickerSelectedDifficulty === 'hard' ? 5 : 3)
+                : 0;
+            if (this._opponentIdentityName) {
+                this._opponentIdentityName.string = isPaper
+                    ? `BOT · Lv ${oppLv}`
+                    : 'OPPONENT';
+            }
+            if (this._opponentIdentityLevel) {
+                this._opponentIdentityLevel.string = '';
+                this._opponentIdentityLevel.node.active = false;
+            }
+            // Opponent hero label seed.
+            if (this._opponentHeroDeltaLabel) {
+                this._opponentHeroDeltaLabel.string = '+0.00%';
+                this._opponentHeroDeltaLabel.color = new Color(168, 174, 201);
+                Tween.stopAllByTarget(this._opponentHeroDeltaLabel.node);
+                this._opponentHeroDeltaLabel.node.setScale(new Vec3(1, 1, 1));
+            }
+            if (this._opponentSubtitleGapLabel) {
+                this._opponentSubtitleGapLabel.string = '—';
+                this._opponentSubtitleGapLabel.color = new Color(168, 174, 201);
+            }
+            if (this._duelBarLeadingPpLabel) this._duelBarLeadingPpLabel.string = '';
+            // Kick off the 60Hz spring + redraw loop.
+            this._startDuelBarLoop();
+        } else {
+            this._stopDuelBarLoop();
+        }
+
         if (this._raceCountdownLabel)    this._raceCountdownLabel.string = '—:—';
         if (this._raceHeroDeltaLabel) {
             this._raceHeroDeltaLabel.string = '+0.00%';
@@ -3835,7 +4443,7 @@ export class AppUI extends Component {
         this._racePanel.active = true;
         if (this._gameArea) this._gameArea.active = false;
         const symbols = holdings.slice(0, n).map((h) => h?.symbol || '?').join(',');
-        console.log(`${TAG} _showRacePanel | SHOW tokens=${n} cards_available=${this._raceTokenCards.length} symbols=[${symbols}]`);
+        console.log(`${TAG} _showRacePanel | SHOW tokens=${n} cards_available=${this._raceTokenCards.length} symbols=[${symbols}] duel_layout=${this._isDuelLayout}`);
     }
 
     /**
@@ -3878,6 +4486,13 @@ export class AppUI extends Component {
                     const tags = mints.map((m) => (prices[m] ? m.slice(0, 4) : '?')).join(',');
                     console.log(`${TAG} _subscribeOpponentSquad | OPPONENT_ENTRY resolved=${Object.keys(prices).length}/${mints.length} [${tags}]`);
                     if (this._raceOpponentSymbols) this._raceOpponentSymbols.string = mints.map((m) => m.slice(0, 4)).join(' · ');
+                    // Phase 22 — duel layout: populate opponent token card symbols (truncated mint).
+                    if (this._isDuelLayout) {
+                        for (let i = 0; i < this._opponentDuelTokenSyms.length; i++) {
+                            const lbl = this._opponentDuelTokenSyms[i];
+                            if (lbl) lbl.string = mints[i] ? mints[i].slice(0, 4).toUpperCase() : '—';
+                        }
+                    }
                 });
             };
             this._opponentUnsubscribe = subscribeToMatch(this._tdRpc, matchPda, {
@@ -3908,16 +4523,20 @@ export class AppUI extends Component {
         void this._priceFeed.getSpotPrices(mints).then((current) => {
             let sum = 0;
             let count = 0;
+            const perToken: Record<string, number> = {};
             for (const m of mints) {
                 const e = entry[m];
                 const c = current[m];
                 if (!Number.isFinite(e) || !Number.isFinite(c) || e <= 0) continue;
-                sum += ((c - e) / e) * 100;
+                const d = ((c - e) / e) * 100;
+                perToken[m] = d;
+                sum += d;
                 count++;
             }
             if (count === 0) return;
             const oppDelta = sum / count;
             this._opponentDeltaPct = oppDelta;
+            this._opponentPerTokenDeltas = perToken;
             const green = new Color(120, 220, 120, 255);
             const red   = new Color(240, 110, 110, 255);
             if (this._raceOpponentDelta) {
@@ -3972,6 +4591,21 @@ export class AppUI extends Component {
         }
         if (this._raceTimerRing) this._raceTimerRing.clear();
         if (this._screenVignetteGraphics) this._screenVignetteGraphics.clear();
+        // Phase 22 — stop the duel bar's 60Hz loop and clear its Graphics.
+        this._stopDuelBarLoop();
+        this._isDuelLayout = false;
+        this._duelBarPos = 0;
+        this._duelBarVel = 0;
+        this._duelBarTargetPos = 0;
+        this._duelBarLastSignSnap = 0;
+        if (this._duelBarTrackGraphics)      this._duelBarTrackGraphics.clear();
+        if (this._duelBarFillGraphics)       this._duelBarFillGraphics.clear();
+        if (this._duelBarGlowGraphics)       this._duelBarGlowGraphics.clear();
+        if (this._duelBarCenterTickGraphics) this._duelBarCenterTickGraphics.clear();
+        if (this._opponentHeroDeltaLabel) {
+            Tween.stopAllByTarget(this._opponentHeroDeltaLabel.node);
+            this._opponentHeroDeltaLabel.node.setScale(new Vec3(1, 1, 1));
+        }
         this._racePanel.active = false;
         console.log(`${TAG} _hideRacePanel | HIDDEN last_snapshot_portfolio=${this._raceLatestSnapshot?.portfolioDeltaPct?.toFixed(2) ?? 'null'}%`);
     }
@@ -4086,7 +4720,7 @@ export class AppUI extends Component {
                 : `Portfolio change (${snap.resolvedCount} token${snap.resolvedCount === 1 ? '' : 's'})`;
         }
 
-        // Per-token cards
+        // Per-token cards (legacy 5-stack — used in 4p/8p)
         for (let i = 0; i < this._raceActiveHoldings.length && i < this._raceTokenCards.length; i++) {
             const h = this._raceActiveHoldings[i];
             const key = h?.mint || h?.symbol || '';
@@ -4098,6 +4732,47 @@ export class AppUI extends Component {
                 const s = info.deltaPct >= 0 ? '+' : '';
                 this._raceTokenDeltaLabels[i].string = `${s}${info.deltaPct.toFixed(2)}%`;
                 this._raceTokenDeltaLabels[i].color = info.deltaPct >= 0 ? green : red;
+            }
+        }
+
+        // Phase 22 — duel-layout player token cards (3 horizontal). Battle-UI
+        // polish: per-tick tint, swing-pulse, and contribution bar so each
+        // card reads as a live unit.
+        if (this._isDuelLayout) {
+            // Compute squad-side max for contribution-bar normalization.
+            let pMaxAbs = 0;
+            for (let i = 0; i < this._raceActiveHoldings.length && i < this._playerDuelTokenCards.length; i++) {
+                const h = this._raceActiveHoldings[i];
+                const key = h?.mint || h?.symbol || '';
+                const info = snap.perToken[key];
+                if (info) pMaxAbs = Math.max(pMaxAbs, Math.abs(info.deltaPct));
+            }
+            for (let i = 0; i < this._raceActiveHoldings.length && i < this._playerDuelTokenCards.length; i++) {
+                const h = this._raceActiveHoldings[i];
+                const key = h?.mint || h?.symbol || '';
+                const info = snap.perToken[key];
+                const symLbl = this._playerDuelTokenSyms[i];
+                const dtLbl = this._playerDuelTokenDeltas[i];
+                if (symLbl) symLbl.string = h?.symbol || '—';
+                if (dtLbl && info) {
+                    const s = info.deltaPct >= 0 ? '+' : '';
+                    dtLbl.string = `${s}${info.deltaPct.toFixed(2)}%`;
+                    dtLbl.color = info.deltaPct >= 0 ? green : red;
+                } else if (dtLbl) {
+                    dtLbl.string = '—';
+                    dtLbl.color = new Color(168, 174, 201);
+                }
+                if (info) {
+                    this._applyDuelTokenCardFeedback(
+                        this._playerDuelTokenCards[i],
+                        this._playerDuelTokenSprites[i] ?? null,
+                        this._playerDuelTokenBars[i] ?? null,
+                        info.deltaPct,
+                        pMaxAbs,
+                        i,
+                        true,
+                    );
+                }
             }
         }
 
@@ -4113,15 +4788,23 @@ export class AppUI extends Component {
         // Block 2: opponent card (Paper only — live bot delta).
         // Round 4: dispatch on big-card vs strip — big card for 1v1, strip
         // for 4p/8p with N-1 bots iterated.
-        if (this._pickerSelectedTrack === 'paper' && this._raceOpponentCard?.active && this._liveSquadBot) {
-            // 1v1 big card (unchanged).
+        // Phase 22: also drives the 1v1 duel-format opponent surfaces.
+        let oppDeltaForDuel: number | null = null;
+        let oppPerTokenForDuel: Record<string, number> | null = null;
+        let oppSymbolsForDuel: string[] | null = null;
+
+        if (this._pickerSelectedTrack === 'paper' && this._liveSquadBot && (this._raceOpponentCard?.active || this._isDuelLayout)) {
+            // 1v1 paper: live bot delta (legacy big card OR duel layout).
             const botSnap = this._liveSquadBot.deltaAt(snap.elapsedMs);
-            if (this._raceOpponentDelta) {
+            oppDeltaForDuel = botSnap.portfolioDeltaPct;
+            oppPerTokenForDuel = botSnap.perTokenDeltas;
+            oppSymbolsForDuel = this._liveSquadBot.getSquad().map(s => s.symbol);
+            if (this._raceOpponentCard?.active && this._raceOpponentDelta) {
                 const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
                 this._raceOpponentDelta.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
                 this._raceOpponentDelta.color = botSnap.portfolioDeltaPct >= 0 ? green : red;
             }
-            if (this._raceOpponentGap) {
+            if (this._raceOpponentCard?.active && this._raceOpponentGap) {
                 const gap = deltaPct - botSnap.portfolioDeltaPct;
                 const absGap = Math.abs(gap).toFixed(2);
                 if (gap > 0.05) {
@@ -4168,12 +4851,183 @@ export class AppUI extends Component {
         // prices are captured via WS once both players have published their
         // squads; this tick updates their current delta from the same Birdeye
         // spot-price feed that drives the player's own portfolio race.
-        if (this._pickerSelectedTrack === 'real' && this._raceOpponentCard?.active) {
+        if (this._pickerSelectedTrack === 'real' && (this._raceOpponentCard?.active || this._isDuelLayout)) {
             this._updateOpponentDeltaTick(deltaPct);
+            // Real track: aggregate opponent delta is set asynchronously by
+            // _updateOpponentDeltaTick. Use the most recent value for the duel bar.
+            oppDeltaForDuel = this._opponentDeltaPct;
+            oppPerTokenForDuel = this._opponentPerTokenDeltas;
+            oppSymbolsForDuel = (this._opponentMints ?? []).map((m) => m.slice(0, 4).toUpperCase());
+        }
+
+        // Phase 22 — drive the 1v1 duel-format surfaces (opp hero %, opp
+        // token cards, gap subtitle, duel bar).
+        if (this._isDuelLayout && oppDeltaForDuel != null) {
+            const oppDelta = oppDeltaForDuel;
+            const oppHeroColor = snap.resolvedCount === 0 ? neutral : (oppDelta >= 0 ? green : red);
+            this._tweenOpponentDelta(oppDelta, oppHeroColor);
+
+            // Opponent token cards — same live-feedback layers as player.
+            if (oppPerTokenForDuel && oppSymbolsForDuel) {
+                const keys = Object.keys(oppPerTokenForDuel);
+                let oMaxAbs = 0;
+                for (let i = 0; i < this._opponentDuelTokenCards.length; i++) {
+                    const k = keys[i];
+                    const v = k != null ? oppPerTokenForDuel[k] : undefined;
+                    if (Number.isFinite(v as number)) oMaxAbs = Math.max(oMaxAbs, Math.abs(v as number));
+                }
+                for (let i = 0; i < this._opponentDuelTokenCards.length; i++) {
+                    const sym = oppSymbolsForDuel[i] ?? '—';
+                    const symLbl = this._opponentDuelTokenSyms[i];
+                    const dtLbl = this._opponentDuelTokenDeltas[i];
+                    if (symLbl) symLbl.string = sym;
+                    const k = keys[i];
+                    const v = k != null ? oppPerTokenForDuel[k] : undefined;
+                    if (dtLbl && Number.isFinite(v as number)) {
+                        const s = (v as number) >= 0 ? '+' : '';
+                        dtLbl.string = `${s}${(v as number).toFixed(2)}%`;
+                        dtLbl.color = (v as number) >= 0 ? green : red;
+                    } else if (dtLbl) {
+                        dtLbl.string = '—';
+                        dtLbl.color = new Color(168, 174, 201);
+                    }
+                    if (Number.isFinite(v as number)) {
+                        this._applyDuelTokenCardFeedback(
+                            this._opponentDuelTokenCards[i],
+                            this._opponentDuelTokenSprites[i] ?? null,
+                            this._opponentDuelTokenBars[i] ?? null,
+                            v as number,
+                            oMaxAbs,
+                            i,
+                            false,
+                        );
+                    }
+                }
+            }
+
+            // Lead-state line — promoted to a 2-line emphasis above the bar.
+            if (this._opponentSubtitleGapLabel) {
+                const gap = deltaPct - oppDelta;
+                const absGap = Math.abs(gap).toFixed(2);
+                if (gap > 0.05) {
+                    this._opponentSubtitleGapLabel.string = `YOU LEAD\n+${absGap} pp`;
+                    this._opponentSubtitleGapLabel.color = green;
+                } else if (gap < -0.05) {
+                    this._opponentSubtitleGapLabel.string = `YOU TRAIL\n−${absGap} pp`;
+                    this._opponentSubtitleGapLabel.color = red;
+                } else {
+                    this._opponentSubtitleGapLabel.string = 'DEAD HEAT';
+                    this._opponentSubtitleGapLabel.color = new Color(200, 200, 210);
+                }
+            }
+
+            // Drive the duel bar.
+            this._duelBarSetTarget(deltaPct, oppDelta);
+            // Update leading pp label content (positioning happens per frame).
+            // Battle-UI polish: 100ms UIOpacity fade-in on empty→text so the
+            // label doesn't pop in jarringly when a lead emerges.
+            if (this._duelBarLeadingPpLabel) {
+                const lbl = this._duelBarLeadingPpLabel;
+                const gap = deltaPct - oppDelta;
+                const wasEmpty = lbl.string === '';
+                if (Math.abs(gap) < 0.05) {
+                    lbl.string = '';
+                } else {
+                    const absGap = Math.abs(gap).toFixed(2);
+                    lbl.string = `${gap >= 0 ? '+' : '−'}${absGap} pp`;
+                    lbl.color = gap >= 0 ? green : red;
+                    if (wasEmpty) {
+                        const op = this._ensureOpacity(lbl.node);
+                        Tween.stopAllByTarget(op);
+                        op.opacity = 0;
+                        tween(op).to(0.10, { opacity: 255 }, { easing: 'cubicOut' }).start();
+                    }
+                }
+            }
         }
 
         // Block E — detect player↔best-opponent overtake (Paper track only).
         this._detectOvertake(snap);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Battle-UI polish (2026-04-26): per-token tint + pulse + contribution
+    // bar — make each card read as a live unit.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Token card live-feedback: tint sprite, pulse on swing, draw contribution bar. */
+    private _applyDuelTokenCardFeedback(
+        card: Node | null,
+        sprite: Sprite | null,
+        bar: Graphics | null,
+        deltaPct: number,
+        squadMaxAbs: number,
+        slot: number,
+        isPlayer: boolean,
+    ): void {
+        if (!card) return;
+        const cache = isPlayer ? this._playerLastTokenDelta : this._opponentLastTokenDelta;
+        const prev = cache[slot] ?? 0;
+
+        // 1) Sprite tint — subtle wash by sign.
+        if (sprite) {
+            const baseR = isPlayer ? 30 : 21;
+            const baseG = isPlayer ? 36 : 25;
+            const baseB = isPlayer ? 56 : 41;
+            if (deltaPct > 0.5) {
+                // Lerp toward win green.
+                sprite.color = new Color(
+                    Math.round(baseR + (20  - baseR) * 0.18),
+                    Math.round(baseG + (241 - baseG) * 0.18),
+                    Math.round(baseB + (149 - baseB) * 0.18),
+                );
+            } else if (deltaPct < -0.5) {
+                // Lerp toward loss rose.
+                sprite.color = new Color(
+                    Math.round(baseR + (255 - baseR) * 0.18),
+                    Math.round(baseG + (92  - baseG) * 0.18),
+                    Math.round(baseB + (138 - baseB) * 0.18),
+                );
+            } else {
+                sprite.color = new Color(baseR, baseG, baseB);
+            }
+        }
+
+        // 2) Micro pulse on big swings (>0.10 pp tick-over-tick).
+        if (Math.abs(deltaPct - prev) > 0.10) {
+            Tween.stopAllByTarget(card);
+            tween(card)
+                .to(0.06, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'cubicOut' })
+                .to(0.06, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                .start();
+        }
+
+        // 3) Sign flip — soft haptic.
+        if ((prev > 0.05 && deltaPct < -0.05) || (prev < -0.05 && deltaPct > 0.05)) {
+            try { Haptics.fire(HapticType.SOFT); } catch (_) { /* editor no-op */ }
+        }
+
+        // 4) Contribution bar — |delta| normalized vs squad max, colored by sign.
+        if (bar) {
+            const fullW = 180;
+            const halfW = fullW / 2;
+            const norm = squadMaxAbs > 0 ? Math.min(1, Math.abs(deltaPct) / squadMaxAbs) : 0;
+            const w = Math.max(2, norm * fullW);
+            const col = deltaPct >= 0
+                ? { r: 20, g: 241, b: 149 }
+                : { r: 255, g: 92, b: 138 };
+            bar.clear();
+            // Track (subtle background rail).
+            bar.fillColor = new Color(255, 255, 255, 18);
+            bar.roundRect(-halfW, -3, fullW, 6, 3);
+            bar.fill();
+            // Filled portion centered.
+            bar.fillColor = new Color(col.r, col.g, col.b, 220);
+            bar.roundRect(-halfW, -3, w, 6, 3);
+            bar.fill();
+        }
+
+        cache[slot] = deltaPct;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -4333,6 +5187,12 @@ export class AppUI extends Component {
                 .start();
         }
         if (this._raceHeroDeltaLabel) shake(this._raceHeroDeltaLabel.node, 8);
+        // Phase 22 — slam the duel bar with a transient under-damped spring
+        // (small overshoot) for 600ms, then revert to the active mode's tuning.
+        if (this._isDuelLayout) {
+            this._setDuelBarTuning(12.0, 0.7);
+            this._duelBarOvertakeUntil = Date.now() + 600;
+        }
         console.log(`${TAG} _onRaceTick | OVERTAKE sign=${curSign} player=${snap.portfolioDeltaPct.toFixed(2)}% bestOpp=${bestOpp.toFixed(2)}%`);
     }
 
@@ -4378,7 +5238,271 @@ export class AppUI extends Component {
             }, 1000);
         };
         scheduleTick(Math.floor(remainingMs));
+        // Phase 22 — tighten the duel bar's spring in the closing seconds.
+        if (this._isDuelLayout) this._setDuelBarTuning(9.0, 1.0);
         console.log(`${TAG} _onRaceTick | LAST_FIVE_ACTIVATED remaining=${Math.round(remainingMs)}ms`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Phase 22 — Duel bar (1v1 tug-of-war).
+    //
+    // Math:
+    //   gap    = playerDelta - opponentDelta            (signed pp)
+    //   target = tanh(gap / SCALE)                       (∈ [-1, +1])
+    //   SCALE  = 2.0pp (where |bar| ≈ 0.76 of half-width)
+    //
+    // Animation: critically-damped spring integrated at 60Hz.
+    //   accel = ω²·(target - x) − 2·ζ·ω·v
+    // Default ω=6 ζ=1 (~370ms to 90%); last-5s ω=9; overtake ω=12 ζ=0.7
+    // for 600ms (transient slam + small overshoot), then revert.
+    //
+    // Resists 1-tick price-jitter sign flips because the spring's effective
+    // lowpass smooths them before the bar moves.
+    // ═══════════════════════════════════════════════════════════════════
+
+    private static readonly DUEL_BAR_SCALE = 2.0;       // pp at which |target| ≈ 0.76
+    private static readonly DUEL_BAR_HALF_W = 320;      // half of 640px track
+
+    /** Compute the bar's target position from the gap (player - opponent). */
+    private _duelBarSetTarget(playerDeltaPct: number, opponentDeltaPct: number): void {
+        const gap = playerDeltaPct - opponentDeltaPct;
+        const t = Math.tanh(gap / AppUI.DUEL_BAR_SCALE);
+        const newTarget = Math.max(-1, Math.min(1, t));
+        // Battle-UI polish: when the lead flips (target crosses center vs
+        // current position), apply a brief under-damped spring so the bar
+        // overshoots a hair and settles — feels like a tug-of-war counter,
+        // not a slider. 500ms transient; reuses _duelBarOvertakeUntil.
+        const prevTarget = this._duelBarTargetPos;
+        const prevSign = prevTarget > 0.04 ? 1 : (prevTarget < -0.04 ? -1 : 0);
+        const newSign  = newTarget  > 0.04 ? 1 : (newTarget  < -0.04 ? -1 : 0);
+        if (prevSign !== 0 && newSign !== 0 && prevSign !== newSign) {
+            this._setDuelBarTuning(10.0, 0.65);
+            this._duelBarOvertakeUntil = Date.now() + 500;
+        }
+        this._duelBarTargetPos = newTarget;
+    }
+
+    /** Set spring tuning. Used for default / last-5s / overtake regimes. */
+    private _setDuelBarTuning(omega: number, zeta: number): void {
+        this._duelBarOmega = omega;
+        this._duelBarZeta = zeta;
+    }
+
+    /** Schedule the 60Hz spring + redraw loop. */
+    private _startDuelBarLoop(): void {
+        this._duelBarLastTickAt = Date.now();
+        // Reuse Cocos schedule on this Component (interval 0 = every frame).
+        this.unschedule(this._duelBarUpdate);
+        this.schedule(this._duelBarUpdate, 0);
+    }
+
+    private _stopDuelBarLoop(): void {
+        this.unschedule(this._duelBarUpdate);
+    }
+
+    /** Per-frame: spring integrate, then redraw fill + glow. Bound via .bind(this) on schedule. */
+    private _duelBarUpdate = (_dt?: number): void => {
+        if (!this._isDuelLayout) return;
+        const now = Date.now();
+        const dt = Math.max(0, Math.min(1 / 30, (now - this._duelBarLastTickAt) / 1000));
+        this._duelBarLastTickAt = now;
+
+        // Revert overtake transient when its window expires.
+        if (this._duelBarOvertakeUntil && now > this._duelBarOvertakeUntil) {
+            this._duelBarOvertakeUntil = 0;
+            this._setDuelBarTuning(this._lastFiveActivated ? 9.0 : 6.0, 1.0);
+        }
+
+        const omega = this._duelBarOmega;
+        const zeta = this._duelBarZeta;
+        const accel = omega * omega * (this._duelBarTargetPos - this._duelBarPos)
+                    - 2 * zeta * omega * this._duelBarVel;
+        this._duelBarVel += accel * dt;
+        this._duelBarPos += this._duelBarVel * dt;
+
+        this._drawDuelBarTrack();
+        this._drawDuelBarFill();
+        this._drawDuelBarGlow(now);
+        this._drawDuelBarCenterTick();
+        this._positionDuelBarLeadingPp();
+    };
+
+    /** Draw the static track (rounded background channel). */
+    private _drawDuelBarTrack(): void {
+        const g = this._duelBarTrackGraphics;
+        if (!g) return;
+        // Track is static; only redraw if cleared. Cheap to redraw, so just do it.
+        g.clear();
+        g.fillColor = new Color(255, 255, 255, 20);
+        g.roundRect(-AppUI.DUEL_BAR_HALF_W, -4, AppUI.DUEL_BAR_HALF_W * 2, 8, 4);
+        g.fill();
+    }
+
+    /** Draw the fill bar from center toward winning side. */
+    private _drawDuelBarFill(): void {
+        const g = this._duelBarFillGraphics;
+        if (!g) return;
+        const pos = this._duelBarPos;
+        const halfW = AppUI.DUEL_BAR_HALF_W;
+        const px = pos * halfW;
+
+        const isWin  = pos > 0.04;
+        const isLoss = pos < -0.04;
+        const col = isWin  ? { r: 20,  g: 241, b: 149 }
+                  : isLoss ? { r: 255, g: 92,  b: 138 }
+                           : { r: 168, g: 174, b: 201 };
+
+        g.clear();
+        if (Math.abs(px) < 2) {
+            // Neck-and-neck: tiny pill at center.
+            g.fillColor = new Color(col.r, col.g, col.b, 200);
+            g.roundRect(-3, -6, 6, 12, 3);
+            g.fill();
+            return;
+        }
+        const x = pos > 0 ? 0 : px;
+        const w = Math.abs(px);
+        g.fillColor = new Color(col.r, col.g, col.b, 230);
+        g.roundRect(x, -6, w, 12, 4);
+        g.fill();
+
+        // Pin-overflow chevron when target saturates the bar.
+        if (Math.abs(this._duelBarTargetPos) > 0.95) {
+            g.fillColor = new Color(col.r, col.g, col.b, 178);
+            const tip = pos > 0 ? halfW + 6 : -halfW - 6;
+            const sgn = pos > 0 ? 1 : -1;
+            g.moveTo(tip, 0);
+            g.lineTo(tip - sgn * 10, 8);
+            g.lineTo(tip - sgn * 10, -8);
+            g.close();
+            g.fill();
+        }
+
+        // Detect zero-cross to drive haptic on bar (separate from hero zero-cross).
+        const sign: 1 | -1 | 0 = pos > 0.04 ? 1 : (pos < -0.04 ? -1 : 0);
+        if (this._duelBarLastSignSnap !== 0 && sign !== 0 && sign !== this._duelBarLastSignSnap) {
+            // Bar zero-cross — haptic only (sound + flash already fire via hero zero-cross).
+            try { Haptics.fire(HapticType.SOFT); } catch (_) { /* editor no-op */ }
+        }
+        if (sign !== 0) this._duelBarLastSignSnap = sign;
+    }
+
+    /** Draw the leading-tip glow — breathing radial alpha at 1.5Hz, plus a
+     *  wider halo when commanding the lead, and a 4-dot fading trail
+     *  receding from the leading tip toward center for "speed lines". */
+    private _drawDuelBarGlow(now: number): void {
+        const g = this._duelBarGlowGraphics;
+        if (!g) return;
+        const pos = this._duelBarPos;
+        const halfW = AppUI.DUEL_BAR_HALF_W;
+        const px = pos * halfW;
+
+        if (Math.abs(pos) < 0.04) {
+            g.clear();
+            return;
+        }
+        const isWin = pos > 0;
+        const col = isWin ? { r: 20, g: 241, b: 149 } : { r: 255, g: 92, b: 138 };
+        const breathe = 0.5 + 0.5 * Math.sin((now / 1000) * 1.5 * Math.PI * 2);
+        const alphaBase = 0.35 + 0.25 * Math.abs(pos);
+        const alpha = Math.round(255 * Math.min(0.6, alphaBase * (0.7 + 0.3 * breathe)));
+        const r = 20 + 8 * breathe;
+        g.clear();
+        // Battle-UI polish: wider, dimmer outer halo when commanding the
+        // lead — the leading side reads as glowing/dominant, not just lit.
+        if (Math.abs(pos) > 0.4) {
+            const haloAlpha = Math.round(alpha * 0.45);
+            g.fillColor = new Color(col.r, col.g, col.b, haloAlpha);
+            g.circle(px, 0, r * 1.8);
+            g.fill();
+        }
+        g.fillColor = new Color(col.r, col.g, col.b, alpha);
+        g.circle(px, 0, r);
+        g.fill();
+        // Trailing dots — recede toward center, fading to zero. 4 dots,
+        // 8px apart along the bar axis. Cheap; no particle system.
+        const dir = isWin ? -1 : 1;
+        for (let k = 1; k <= 4; k++) {
+            const tx = px + dir * k * 9;
+            // Stop the trail at the center tick.
+            if ((isWin && tx < 0) || (!isWin && tx > 0)) break;
+            const tAlpha = Math.round(alpha * (1 - k * 0.22));
+            if (tAlpha <= 8) break;
+            g.fillColor = new Color(col.r, col.g, col.b, tAlpha);
+            g.circle(tx, 0, Math.max(2, r - k * 3));
+            g.fill();
+        }
+    }
+
+    /** Draw the center splitter — vertical 2px line. */
+    private _drawDuelBarCenterTick(): void {
+        const g = this._duelBarCenterTickGraphics;
+        if (!g) return;
+        g.clear();
+        g.fillColor = new Color(168, 174, 201, 200);
+        g.rect(-1, -16, 2, 32);
+        g.fill();
+    }
+
+    /** Position the leading-pp label above the leading bar tip. */
+    private _positionDuelBarLeadingPp(): void {
+        const lbl = this._duelBarLeadingPpLabel;
+        if (!lbl) return;
+        const pos = this._duelBarPos;
+        const px = pos * AppUI.DUEL_BAR_HALF_W;
+        // Hide in neck-and-neck.
+        if (Math.abs(pos) < 0.04) {
+            lbl.string = '';
+            return;
+        }
+        // Position at tip with ±50px nudge so the label doesn't fall off the bar.
+        const x = pos > 0 ? Math.min(AppUI.DUEL_BAR_HALF_W - 50, px) : Math.max(-AppUI.DUEL_BAR_HALF_W + 50, px);
+        lbl.node.setPosition(new Vec3(x, 24, 0));
+    }
+
+    /** Phase 22 — mirror of _tweenHeroDelta for opponent hero %. */
+    private _tweenOpponentDelta(newDelta: number, color: Color): void {
+        const lbl = this._opponentHeroDeltaLabel;
+        if (!lbl) return;
+        const prev = this._lastRenderedOpponentDeltaPct;
+        const diff = Math.abs(newDelta - prev);
+        const sign = (v: number) => (v >= 0 ? '+' : '');
+        // Battle-UI polish: brighter coral pulse when player is losing the
+        // duel — opponent's delta is the rival's stake; brief pulse keeps
+        // the threat tactile without going over-the-top.
+        const losing = this._duelBarPos < -0.04 && newDelta < -0.3;
+        if (diff <= 0.3) {
+            lbl.string = `${sign(newDelta)}${newDelta.toFixed(2)}%`;
+            lbl.color = color;
+            this._lastRenderedOpponentDeltaPct = newDelta;
+            if (losing) this._pulseOpponentDeltaLosing();
+            return;
+        }
+        const carrier = { v: prev };
+        Tween.stopAllByTarget(carrier);
+        tween(carrier)
+            .to(0.4, { v: newDelta }, {
+                easing: 'quartOut',
+                onUpdate: () => {
+                    lbl.string = `${sign(carrier.v)}${carrier.v.toFixed(2)}%`;
+                    lbl.color = color;
+                },
+            })
+            .call(() => { this._lastRenderedOpponentDeltaPct = newDelta; })
+            .start();
+        if (losing) this._pulseOpponentDeltaLosing();
+    }
+
+    /** 200ms scale pulse on opponent hero label when player is trailing. */
+    private _pulseOpponentDeltaLosing(): void {
+        const lbl = this._opponentHeroDeltaLabel;
+        if (!lbl) return;
+        const node = lbl.node;
+        Tween.stopAllByTarget(node);
+        tween(node)
+            .to(0.10, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'cubicOut' })
+            .to(0.10, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+            .start();
     }
 
     /** Ensure a node has a UIOpacity component; return it. */
@@ -4415,10 +5539,12 @@ export class AppUI extends Component {
             const delay = rand() * 2.0;            // 0-2s initial phase offset
             // Half-cycle dim → bright → dim, repeating forever. The initial
             // delay() lets each star start at a different point in the cycle.
+            // v2 Landing: peak opacity dropped 255 → 180 so stars feel
+            // atmospheric instead of competing with the CTA card.
             tween(op)
                 .delay(delay)
-                .to(dur / 2, { opacity: 128 }, { easing: 'sineInOut' })
-                .to(dur / 2, { opacity: 255 }, { easing: 'sineInOut' })
+                .to(dur / 2, { opacity: 90 },  { easing: 'sineInOut' })
+                .to(dur / 2, { opacity: 180 }, { easing: 'sineInOut' })
                 .union()
                 .repeatForever()
                 .start();
@@ -5191,6 +6317,12 @@ export class AppUI extends Component {
 
     /** Filter chip tapped — re-sort/filter cached rows without re-fetching. */
     private _onFilterChipClick(key: FilterChipKey): void {
+        // 'liq' chip is a dropdown trigger — defer to the popover handler so
+        // the user picks High → Low or Low → High explicitly.
+        if (key === 'liq') {
+            this._onLiqSortDropdownClick();
+            return;
+        }
         console.log(`${TAG} _onFilterChipClick | key=${key} prev sort=${this._sortCol}/${this._sortDir} min_liq=${this._minLiq}`);
         switch (key) {
             case 'newest':   this._sortCol = 'age'; this._sortDir = 'desc'; break;
@@ -5210,6 +6342,42 @@ export class AppUI extends Component {
             this._renderFeedRows(filtered);
         }
         console.log(`${TAG} _onFilterChipClick | DONE raw=${this._lastFetchedRows.length} filtered=${filtered.length} sort=${this._sortCol}/${this._sortDir} min_liq=${this._minLiq}`);
+    }
+
+    /** Liquidity-sort dropdown opened/closed (mirrors _onMinLiqDropdownClick). */
+    private _onLiqSortDropdownClick(): void {
+        if (!this._liqSortPopoverNode) return;
+        const willOpen = !this._liqSortPopoverNode.active;
+        this._liqSortPopoverNode.active = willOpen;
+        if (willOpen) {
+            if (this._minLiqPopoverNode) this._minLiqPopoverNode.active = false;
+            if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
+            if (this._searchPopoverNode) this._searchPopoverNode.active = false;
+            if (this._feedTabDropdownPopover) this._feedTabDropdownPopover.active = false;
+        }
+        this._syncBackdrop();
+        console.log(`${TAG} _onLiqSortDropdownClick | popover_open=${willOpen} sort=${this._sortCol}/${this._sortDir}`);
+    }
+
+    /** Liquidity-sort option chosen (popover row tap). Routes to existing sort. */
+    private _onLiqSortOptionClick(dir: 'desc' | 'asc'): void {
+        this._sortCol = 'liq';
+        this._sortDir = dir;
+        if (this._liqSortPopoverNode) this._liqSortPopoverNode.active = false;
+        this._syncBackdrop();
+        // Update the FilterChip_liq label to reflect the chosen direction.
+        const liqChip = this._filterChipButtons.get('liq');
+        const liqChipLbl = liqChip?.node.getChildByName('Label')?.getComponent(Label) ?? null;
+        if (liqChipLbl) liqChipLbl.string = dir === 'desc' ? 'Liq ↓ ▾' : 'Liq ↑ ▾';
+        this._highlightActiveFilterChip('liq');
+        const filtered = this._applySortAndFilter(this._lastFetchedRows);
+        this._currentFeedRows = filtered;
+        if (filtered.length === 0) {
+            this._renderEmptyStateRow(`No results (min liq $${this._minLiq})`, 'EMPTY_FILTER');
+        } else {
+            this._renderFeedRows(filtered);
+        }
+        console.log(`${TAG} _onLiqSortOptionClick | dir=${dir} filtered=${filtered.length}`);
     }
 
     private _highlightActiveFilterChip(active: FilterChipKey): void {
@@ -5297,24 +6465,20 @@ export class AppUI extends Component {
     private _refreshWatchlistStarTint(): void {
         if (!this._watchlistStarButton) return;
         const spr = this._watchlistStarButton.node.getComponent(Sprite);
+        // 2026-04-26 — Watchlist is now an icon-only 44×44 button. Label is
+        // empty; state is conveyed entirely by the icon + bg tint.
+        if (this._watchlistStarLabel) this._watchlistStarLabel.string = '';
         if (this._watchlistMode) {
             const n = this._watchlistChecked.size;
             if (spr) spr.color = n > 0 ? new Color(48, 198, 155, 255) : new Color(36, 76, 68, 255);
-            if (this._watchlistStarLabel) {
-                this._watchlistStarLabel.string = `+ ${n} to Watchlist`;
-                this._watchlistStarLabel.color = n > 0 ? new Color(12, 18, 26, 255) : new Color(160, 200, 190, 255);
-            }
+            const btn = this._tokenDuelPanel?.getChildByName('WatchlistStarButton');
+            if (btn) this._ensureIconBadge(btn, 'star', { size: 32, offsetX: 0 });
             return;
         }
         const anyIn = Watchlist.size() > 0;
         if (spr) spr.color = anyIn ? new Color(70, 52, 14, 255) : new Color(28, 34, 48, 255);
-        if (this._watchlistStarLabel) {
-            // UX Phase 2b: emoji-free label + IconBadge swap star ↔ starOutline.
-            this._watchlistStarLabel.string = 'Watchlist';
-            this._watchlistStarLabel.color = anyIn ? new Color(218, 165, 32, 255) : new Color(180, 190, 210, 255);
-            const btn = this._tokenDuelPanel?.getChildByName('WatchlistStarButton');
-            if (btn) this._ensureIconBadge(btn, anyIn ? 'star' : 'starOutline', { size: 18, offsetX: -60 });
-        }
+        const btn = this._tokenDuelPanel?.getChildByName('WatchlistStarButton');
+        if (btn) this._ensureIconBadge(btn, anyIn ? 'star' : 'starOutline', { size: 32, offsetX: 0 });
     }
 
     /** Search-suggest row tapped — add to squad (same semantics as feed row tap). */
@@ -5617,27 +6781,25 @@ export class AppUI extends Component {
             const selEdge = this._feedRowSelectedEdges[i];
             if (selEdge) selEdge.active = row.address === this._selectedRowMint;
 
-            // Session 14: checkbox visible in watchlist mode OR squad-pick mode.
+            // 2026-04-26 — checkbox is ALWAYS visible (no longer gated on
+            // pick/watchlist mode). Its checked state mirrors squad membership
+            // for the row's mint, except in watchlist mode where it mirrors
+            // the pending-add set instead.
             const chkSpr = this._feedRowCheckboxes[i];
-            const anyCheckMode = this._watchlistMode || this._squadPickMode;
+            const isInSquad = this._squad.slots.some((s) => !!s && s.address === row.address);
             if (chkSpr?.node) {
-                chkSpr.node.active = anyCheckMode;
-                const checked = this._squadPickMode
-                    ? this._squadPickChecked.has(row.address)
-                    : this._watchlistChecked.has(row.address);
+                chkSpr.node.active = true;
+                const checked = this._watchlistMode
+                    ? this._watchlistChecked.has(row.address)
+                    : isInSquad;
                 chkSpr.color = checked ? new Color(48, 198, 155, 255) : new Color(45, 52, 70, 255);
                 const iconN = chkSpr.node.getChildByName('CheckmarkIcon');
                 if (iconN) iconN.active = checked;
             }
-            // Session 14 A2: shift logo right when any check mode is active
-            // so the checkbox gets its own column and doesn't overlap the logo.
-            // Row width is 680 (see generate-scenes.js); half-width = 340.
-            const logoNode = this._feedRowLogoSprites[i]?.node;
-            if (logoNode) {
-                const targetX = anyCheckMode ? -280 : -310;
-                const p = logoNode.position;
-                if (p.x !== targetX) logoNode.setPosition(targetX, p.y, p.z);
-            }
+            // Logo position is sourced entirely from the layout spec
+            // (FR.logo.x). The runtime override that shifted the logo right
+            // in check mode is gone — checkboxes are always visible and the
+            // spec already places the logo to clear them.
 
             // Logo.
             const logo = this._feedRowLogoSprites[i];
@@ -5839,14 +7001,54 @@ export class AppUI extends Component {
             this._renderFeedRows(this._currentFeedRows);
             return;
         }
-        this._selectedRowMint = row.address;
-        console.log(`${TAG} _onFeedRowTap | SELECT_OPEN_DETAIL index=${i} symbol="${row.symbol}" address=${row.address}`);
+        // 2026-04-26 — default tap behavior is now TOGGLE_SQUAD_MEMBERSHIP.
+        // Token detail is no longer reachable from the feed list; it remains
+        // accessible via the search popover suggest rows.
+        const existingIdx = this._squad.slots.findIndex((s) => !!s && s.address === row.address);
+        if (existingIdx >= 0) {
+            console.log(`${TAG} _onFeedRowTap | TOGGLE_OFF symbol="${row.symbol}" slot=${existingIdx}`);
+            this._squad.clearAt(existingIdx);
+        } else {
+            let placedAt = -1;
+            if (this._pickTargetSlot != null && !this._squad.slots[this._pickTargetSlot]) {
+                this._squad.setAt(this._pickTargetSlot, row);
+                placedAt = this._pickTargetSlot;
+                this._pickTargetSlot = null;
+            } else {
+                placedAt = this._squad.add(row);
+            }
+            console.log(`${TAG} _onFeedRowTap | TOGGLE_ON symbol="${row.symbol}" slot=${placedAt}`);
+            if (placedAt < 0) {
+                showToast('Squad full — tap × to remove first');
+            }
+        }
+        // Re-render rows so the checkbox state reflects the new squad.
         this._renderFeedRows(this._currentFeedRows);
-        this._showTokenDetail(row);
     }
 
     private _onSquadSlotTap(i: number): void {
-        console.log(`${TAG} _onSquadSlotTap | index=${i} had=${this._squad.slots[i]?.symbol ?? 'empty'}`);
+        // Empty slot tap → toggle the per-slot pick target. The next feed-row
+        // tap will land into this slot specifically. Tapping the same target
+        // again clears the target. Tapping a different empty slot moves it.
+        if (!this._squad.slots[i]) {
+            this._pickTargetSlot = (this._pickTargetSlot === i) ? null : i;
+            console.log(`${TAG} _onSquadSlotTap | TARGET_SET slot=${i} target=${this._pickTargetSlot}`);
+            this._renderSquad();
+            return;
+        }
+        // Filled slot tap → clear (back-compat fallback; the per-slot × is
+        // the primary removal affordance).
+        console.log(`${TAG} _onSquadSlotTap | CLEAR slot=${i} symbol=${this._squad.slots[i]?.symbol}`);
+        this._squad.clearAt(i);
+    }
+
+    private _onSquadSlotRemove(i: number): void {
+        if (!this._squad.slots[i]) return;
+        console.log(`${TAG} _onSquadSlotRemove | index=${i} symbol=${this._squad.slots[i]?.symbol}`);
+        const slotNode = this._squadSlotButtons[i]?.node ?? null;
+        if (slotNode) {
+            try { addPressPop(slotNode); } catch (_) { /* ignore */ }
+        }
         this._squad.clearAt(i);
     }
 
@@ -5858,18 +7060,38 @@ export class AppUI extends Component {
             const logo = this._squadSlotLogoSprites[i];
             const btn = this._squadSlotButtons[i];
             const slot = slots[i];
+            const slotNode = btn?.node ?? null;
+            const wasFilled = this._squadSlotPrevFilled[i] ?? false;
+            const isFilled = !!slot;
+            // Slot card stays visible always — empty slots show "+" drop zone.
+            if (slotNode && !slotNode.active) slotNode.active = true;
+            const removeBtn = slotNode?.getChildByName('RemoveButton') ?? null;
             if (!slot) {
-                symLbl.string = '+';
-                symLbl.color = new Color(200, 200, 200, 255);
+                // EMPTY: 'Pick +' affordance — tap to target this slot for
+                // the next pick (see _onSquadSlotTap → _pickTargetSlot).
+                const targeted = this._pickTargetSlot === i;
+                symLbl.string = 'Pick +';
+                symLbl.color = targeted
+                    ? new Color(48, 198, 155, 255)   // bright emerald when targeted
+                    : new Color(168, 230, 200, 255); // mint when idle
+                symLbl.fontSize = 18;
                 if (dltLbl) { dltLbl.string = ''; dltLbl.node.active = false; }
                 if (logo) { logo.spriteFrame = null; logo.node.active = false; }
-                if (btn) btn.node.active = false;
+                if (removeBtn) removeBtn.active = false;
+                // Brighten the slot bg when this slot is the active target.
+                const slotSpr = slotNode?.getComponent(Sprite) ?? null;
+                if (slotSpr) {
+                    slotSpr.color = targeted
+                        ? new Color(36, 76, 68, 255)
+                        : new Color(26, 32, 48, 255);
+                }
             } else {
                 const d = slot.change24hPct;
                 const sign = d > 0 ? '+' : '';
                 const pctStr = Number.isFinite(d) && d !== 0 ? `${sign}${d.toFixed(1)}%` : '—';
                 symLbl.string = slot.symbol ?? '?';
                 symLbl.color = new Color(240, 242, 250, 255);
+                symLbl.fontSize = 18;
                 if (dltLbl) {
                     dltLbl.string = pctStr;
                     dltLbl.color = d > 0
@@ -5884,8 +7106,23 @@ export class AppUI extends Component {
                     if (slot.logoUri) this._loadLogoInto(logo, slot.logoUri);
                     else { logo.spriteFrame = null; logo.color = new Color(60, 72, 96, 255); }
                 }
-                if (btn) btn.node.active = true;
+                if (removeBtn) removeBtn.active = true;
+                // Reset slot bg to neutral once filled (clears any leftover
+                // targeted highlight from when it was empty).
+                const slotSpr = slotNode?.getComponent(Sprite) ?? null;
+                if (slotSpr) slotSpr.color = new Color(26, 32, 48, 255);
+                // Slot pop on empty → filled transition.
+                if (!wasFilled && slotNode) {
+                    try {
+                        slotNode.setScale(1, 1, 1);
+                        tween(slotNode)
+                            .to(0.12, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'cubicOut' as any })
+                            .to(0.10, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' as any })
+                            .start();
+                    } catch (_) { /* ignore */ }
+                }
             }
+            this._squadSlotPrevFilled[i] = isFilled;
         }
         console.log(`${TAG} _renderSquad | DONE filled=${this._squad.filled}/${slots.length} slots_rendered=${this._squadSlotSymbolLabels.length}`);
         // Pulse any slots whose 24h % has drifted since the last render (A6).
@@ -5923,8 +7160,8 @@ export class AppUI extends Component {
         try {
             const bal = await this._rpc.getBalance(owner);
             const sol = bal / 1_000_000_000;
-            this._balanceChipLabel.string = `◼ ${sol.toFixed(4)} SOL`;
-            console.log(`${TAG} _refreshBalanceChip | DONE owner="${owner.substring(0, 8)}..." lamports=${bal} sol=${sol.toFixed(4)}`);
+            this._balanceChipLabel.string = `◼ ${sol.toFixed(2)} SOL`;
+            console.log(`${TAG} _refreshBalanceChip | DONE owner="${owner.substring(0, 8)}..." lamports=${bal} sol=${sol.toFixed(2)}`);
         } catch (e) {
             console.log(`${TAG} _refreshBalanceChip | ERROR owner="${owner.substring(0, 8)}..." error=${e}`);
         }
@@ -6141,7 +7378,7 @@ export class AppUI extends Component {
         }
         const cached = this._logoCache.get(url);
         if (cached) {
-            sprite.spriteFrame = cached;
+            this._assignLogoFrame(sprite, cached);
             sprite.color = new Color(255, 255, 255, 255);
             return;
         }
@@ -6213,7 +7450,7 @@ export class AppUI extends Component {
                         URL.revokeObjectURL(objectUrl);
                         return;
                     }
-                    sprite.spriteFrame = frame;
+                    this._assignLogoFrame(sprite, frame);
                     sprite.color = new Color(255, 255, 255, 255);
                     URL.revokeObjectURL(objectUrl);
                     console.log(`${TAG} _loadLogoInto | FALLBACK_OK url_suffix="${url.substring(url.length - 24)}" cache_size=${this._logoCache.size}`);
@@ -6254,9 +7491,28 @@ export class AppUI extends Component {
             console.log(`${TAG} _loadLogoInto | STALE_CALLBACK url_suffix="${url.substring(url.length - 24)}" expected_suffix="${expected?.substring((expected?.length ?? 0) - 24) ?? '(none)'}"`);
             return;
         }
-        sprite.spriteFrame = frame;
+        this._assignLogoFrame(sprite, frame);
         sprite.color = new Color(255, 255, 255, 255);
         console.log(`${TAG} _loadLogoInto | APPLIED url_suffix="${url.substring(url.length - 24)}" cache_size=${this._logoCache.size} phase=${phase}`);
+    }
+
+    /**
+     * Defensive logo-frame applier. Cocos 3.8 can override a Sprite's effective
+     * render size to SpriteFrame.originalSize after assignment, even when the
+     * scene baked _sizeMode=CUSTOM — so a tiny native PNG (e.g. 64×64 from
+     * Birdeye) collapses the 76×76 LayoutSpec'd box. Snapshot the UITransform
+     * contentSize first, assign, then force-restore + re-pin sizeMode/type so
+     * the spec'd size in LayoutSpec.cjs (feedRow.logo 76×76, squadSlot.logo
+     * 40×40) wins over the engine's auto-resize.
+     */
+    private _assignLogoFrame(sprite: Sprite, frame: SpriteFrame): void {
+        const ut = sprite.node.getComponent(UITransform);
+        const w = ut?.contentSize.width ?? 0;
+        const h = ut?.contentSize.height ?? 0;
+        sprite.spriteFrame = frame;
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.type = Sprite.Type.SIMPLE;
+        if (ut && w > 0 && h > 0) ut.setContentSize(w, h);
     }
 
     /** Squad delta pulse (A6). Compares new price deltas to last snapshot. */
@@ -6508,7 +7764,9 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════════
 
     private _onStatus(message: string): void {
-        if (this._landingPanel.active && this._landingStatus) this._landingStatus.string = message;
+        // Landing's connection-state UI is driven by explicit _setConnectionPill
+        // from _onConnect/_onReconnect; granular MWA status messages are too
+        // noisy for the footer pill. Home keeps the verbose readout.
         if (this._homePanel.active && this._homeStatus) this._homeStatus.string = message;
         // Block 8 — show signing overlay on any MWA sign-path status. Auto-hides
         // when we see a done-ish signal.
@@ -6551,20 +7809,15 @@ export class AppUI extends Component {
             const n = this._homePanel.getChildByName(name);
             if (n) n.active = active;
         };
-        // Wallet-only buttons hidden in guest mode.
+        // 2026-04-26 lobby restructure: Disconnect / Delete / SignOutGuest /
+        // HomeRakeChip removed from Home — those concerns live in
+        // SettingsPanel now (which has its own guest-mode toggling). Subtitles
+        // are children of buttons → implicitly hidden when button.active=false.
         setActive('StartMatchButton',           !guest);
-        setActive('StartMatchSubtitle',         !guest);
         setActive('FindMatchButton',            !guest);
-        setActive('FindMatchSubtitle',          !guest);
-        // Count badge has its own visibility logic; force-off in guest.
         if (guest) setActive('FindMatchButtonCountBadge', false);
-        setActive('DisconnectButton',           !guest);
-        setActive('DeleteButton',               !guest);
         setActive('NotificationBellButton',     !guest);
         setActive('NotificationBellBadge',      !guest);
-        setActive('HomeRakeChip',               !guest);
-        // Guest-only.
-        setActive('SignOutGuestButton',         guest);
         console.log(`${TAG} _applyGuestModeUiHiding | guest=${guest}`);
     }
 
@@ -6579,6 +7832,7 @@ export class AppUI extends Component {
         if (willOpen) {
             if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
             if (this._feedTabDropdownPopover) this._feedTabDropdownPopover.active = false;
+            if (this._liqSortPopoverNode) this._liqSortPopoverNode.active = false;
         }
         this._syncBackdrop();
         console.log(`${TAG} _onMinLiqDropdownClick | popover_open=${willOpen} min_liq=${this._minLiq}`);
@@ -7048,30 +8302,21 @@ export class AppUI extends Component {
 
     private _onWaitingCancel(): void {
         console.log(`${TAG} _onWaitingCancel | active_real=${this._activeRealMatchPda ?? 'none'}`);
-        // If a real match is live, try to refund (only succeeds after 120s timeout).
-        if (this._activeRealMatchPda) {
-            const matchPda = this._activeRealMatchPda;
-            this._realPollAbortFlag = true;
-            (async () => {
-                if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'Requesting refund — sign cancel tx';
-                const ok = await this._submitCancelMatch(matchPda);
-                if (!ok) {
-                    // Phase D: if the lone creator can self-cancel via the
-                    // program's Branch B path the cancel succeeds instantly;
-                    // otherwise we hit the 24h timeout requirement.
-                    if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'Cancel failed — only the lone creator may self-cancel; otherwise wait for 24h timeout';
-                    return;
-                }
-                this._activeRealMatchPda = null;
-                this._hideWaitingPanel();
-                showToast('Refunded — match cancelled');
-            })().catch((e) => {
-                console.log(`${TAG} _onWaitingCancel | ERROR error=${e}`);
-                if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Cancel error: ${e?.message ?? e}`;
-            });
-            return;
+        // Always route home immediately so this isn't a dead-end. The lobby
+        // remains on-chain (visible in Open Lobbies as "Your Lobby") if the
+        // refund tx can't run synchronously; the lone-creator self-cancel
+        // path runs in the background and toasts the outcome.
+        const matchPda = this._activeRealMatchPda;
+        this._realPollAbortFlag = true;
+        this._stopForceSettleWatch();
+        if (this._waitingPanel) this._waitingPanel.active = false;
+        this._activeRealMatchPda = null;
+        this._showHome();
+        if (matchPda) {
+            void this._submitCancelMatch(matchPda)
+                .then((ok) => showToast(ok ? 'Refund signed — match cancelled' : 'Lobby still open — cancel from Open Lobbies later'))
+                .catch((e) => console.log(`${TAG} _onWaitingCancel | bg_cancel_err ${e?.message ?? e}`));
         }
-        this._hideWaitingPanel();
     }
 
     private _onWaitingPlayBot(): void {
@@ -7113,6 +8358,31 @@ export class AppUI extends Component {
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
+        // Result color is an accent only — no full-canvas wash. Outcome bg
+        // stays cleared so the dark base shows through; color shows up only
+        // on the hero pp number, H2H bar, XP accent, card edges, and primary
+        // CTA fill.
+        if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
+            this._postMatchOutcomeBgGfx.clear();
+            Tween.stopAllByTarget(this._postMatchOutcomeBgOpacity);
+            this._postMatchOutcomeBgOpacity.opacity = 0;
+        }
+        // Drifting-gadget: mascot glow halo — radial fill behind the centered
+        // mascot. Fade in 0 → 140 over 400ms for a soft hero presence.
+        if (this._postMatchMascotGlowGfx && this._postMatchMascotGlowOpacity) {
+            const g = this._postMatchMascotGlowGfx;
+            g.clear();
+            g.fillColor = outcome.won
+                ? new Color(48, 198, 155, 255)
+                : new Color(236, 88, 122, 255);
+            g.circle(0, 0, 210);
+            g.fill();
+            const op = this._postMatchMascotGlowOpacity;
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).to(0.4, { opacity: 140 }).start();
+        }
+
         // Phase H4 — fire cinematic BEFORE rendering the rest of the panel.
         // The overlay sits above PostMatchPanel; auto-dismisses after 2.8s
         // and the user can tap-through immediately.
@@ -7121,7 +8391,8 @@ export class AppUI extends Component {
         }
 
         if (this._postMatchTitleLabel) {
-            // Session D Part 6: title reflects placement for multi-player modes.
+            // Drifting-gadget redesign: outcome-driven uppercase header.
+            // Multi-player modes still surface placement ("1st of 4") for clarity.
             let title: string;
             const nth = (n: number): string => {
                 const r = n + 1;
@@ -7130,38 +8401,53 @@ export class AppUI extends Component {
                 if (r === 3) return '3rd';
                 return `${r}th`;
             };
-            // Phase G3 — personalize with username when set.
             const myPubkey = MWAManager.instance?.connectedPubkey ?? '';
             const myName = myPubkey ? this._getDisplayName(myPubkey) : '';
             const isUsername = myName && !myName.includes('…');
             if (outcome.placement != null && outcome.totalPlayers != null && outcome.totalPlayers > 2) {
-                title = `${nth(outcome.placement)} of ${outcome.totalPlayers}`;
+                title = `${nth(outcome.placement)} OF ${outcome.totalPlayers}`;
             } else if (outcome.won) {
-                title = isUsername ? `You Won, ${myName}!` : 'You Won!';
+                title = isUsername ? `YOU WON, ${myName.toUpperCase()}!` : 'YOU WON!';
             } else {
-                title = 'Close one…';
+                title = 'SO CLOSE…';
             }
             this._postMatchTitleLabel.string = title;
-            this._postMatchTitleLabel.color = outcome.won ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
+            // Title is white-bold; the only color-coded hero element is the
+            // pp number below.
+            this._postMatchTitleLabel.color = new Color(244, 245, 249, 255);
         }
         if (this._postMatchTrackLabel) {
             const modeLbl = outcome.modeLabel ?? '1v1 Duel';
             this._postMatchTrackLabel.string = `${outcome.track === 'real' ? 'Real' : 'Paper'} · ${modeLbl}`;
         }
-        if (this._postMatchPayoutLabel) {
-            const sol = outcome.payoutLamports / 1e9;
-            // Set a start frame immediately (prevents flash of stale prior value)
-            // then tween to final over 1.2s when there's a positive payout.
-            this._postMatchPayoutLabel.string = outcome.won ? '+0.000 SOL' : '— 0.000 SOL';
-            if (outcome.won && sol > 0) {
-                this._animatePayoutTicker(this._postMatchPayoutLabel, sol, 1.2);
-            }
-        }
 
-        // betting-duel: decode encoded u32 scores back into portfolio delta % for display.
+        // Decode encoded u32 scores back into portfolio delta % for display.
         const playerDeltaPct   = decodeScore(outcome.playerHeight);
         const opponentDeltaPct = decodeScore(outcome.opponentHeight);
         const deltaDiff        = Math.abs(playerDeltaPct - opponentDeltaPct);
+        const ppSigned         = playerDeltaPct - opponentDeltaPct;
+
+        if (this._postMatchPayoutLabel) {
+            // Hero number: signed pp delta (−0.5×× pp on loss, +X.XX pp on
+            // win). SOL/wager information moves to the subtitle line.
+            const ppSign = ppSigned >= 0 ? '+' : '−';
+            this._postMatchPayoutLabel.color = outcome.won
+                ? new Color(48, 198, 155, 255)
+                : new Color(236, 88, 122, 255);
+            this._postMatchPayoutLabel.string = `${ppSign}${Math.abs(ppSigned).toFixed(2)} pp`;
+            this._postMatchPayoutLabel.fontSize = 56;
+            // Scale-in prelude: opacity 0 + scale 0.6 → 1.0 over 250ms.
+            const payoutNode = this._postMatchPayoutLabel.node;
+            const op = this._ensureOpacity(payoutNode);
+            Tween.stopAllByTarget(payoutNode);
+            Tween.stopAllByTarget(op);
+            payoutNode.setScale(0.6, 0.6, 1);
+            op.opacity = 0;
+            tween(op).to(0.25, { opacity: 255 }).start();
+            tween(payoutNode)
+                .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .start();
+        }
         console.log(`${TAG} _showPostMatchPanel | DECODED player_score=${outcome.playerHeight} player=${playerDeltaPct.toFixed(2)}% opp_score=${outcome.opponentHeight} opp=${opponentDeltaPct.toFixed(2)}% diff_pp=${deltaDiff.toFixed(2)} won=${outcome.won} track=${outcome.track}`);
 
         // Phase G2 — per-slot breakdown. Build a "BONK +4.2% · WIF -1.1% ·
@@ -7193,13 +8479,20 @@ export class AppUI extends Component {
                 this._postMatchSubtitleLabel.color = new Color(218, 165, 32, 255);
             } else {
                 const breakdown = buildSlotBreakdown();
-                const headline = outcome.won
-                    ? `Your portfolio beat theirs by ${deltaDiff.toFixed(2)} pp.`
-                    : `They beat you by ${deltaDiff.toFixed(2)} pp.`;
+                // Hero number above already shows the pp delta — subtitle carries
+                // the SOL net (and per-token breakdown if available) so we don't
+                // duplicate the pp copy.
+                const sol = outcome.payoutLamports / 1e9;
+                const wagerSol = outcome.track === 'real'
+                    ? this._realMatchWagerLamports / 1e9
+                    : Number(this._selectedStakeLamports ?? 0n) / 1e9;
+                const solLine = outcome.won
+                    ? `Net +${sol.toFixed(3)} SOL`
+                    : `Lost ${(wagerSol >= 0.01 ? wagerSol.toFixed(2) : wagerSol.toFixed(4))} SOL`;
                 this._postMatchSubtitleLabel.string = breakdown
-                    ? `${headline}\n${breakdown}`
-                    : headline;
-                this._postMatchSubtitleLabel.color = new Color(180, 190, 210, 255);
+                    ? `${solLine}\n${breakdown}`
+                    : solLine;
+                this._postMatchSubtitleLabel.color = new Color(220, 226, 240, 255);
             }
         }
 
@@ -7264,6 +8557,14 @@ export class AppUI extends Component {
         const lvlLabel = this._postMatchCardValues.get('lvl');
         if (lvlLabel) {
             lvlLabel.color = leveledUp ? new Color(255, 210, 74, 255) : new Color(255, 255, 255, 255);
+        }
+
+        // Drifting-gadget: per-outcome card edge accents (green on win, rose on loss).
+        const edgeColor = outcome.won
+            ? new Color(48, 198, 155, 255)
+            : new Color(236, 88, 122, 255);
+        for (const [, edge] of this._postMatchCardEdges) {
+            edge.color = edgeColor;
         }
 
         console.log(`${TAG} _showPostMatchPanel | won=${outcome.won} player=${outcome.playerHeight} opp=${outcome.opponentHeight} xp=${outcome.xpGained} total_xp=${outcome.totalXp ?? '?'} level_was=${previousLevel} level_now=${outcome.newLevel} level_up=${leveledUp} payout_sol=${(outcome.payoutLamports / 1e9).toFixed(4)} track=${outcome.track}`);
@@ -7356,6 +8657,95 @@ export class AppUI extends Component {
         // ~800ms in a deliberate order: opp → you → xp → lvl. Pure overlay on
         // top of existing logic — no value reshuffling.
         this._revealPostMatchStaggered(outcome.won);
+
+        // Drifting-gadget: XP progress bar. Rolls from previous-level progress
+        // to new-level progress over 700ms; on level-up, rolls to 100% first,
+        // flashes gold, then resets and rolls to the new bucket.
+        if (outcome.totalXp != null && outcome.xpGained > 0) {
+            // Onchain XP gain is base-only (streakBonusFor is display-only per
+            // the Phase J1 audit above). prevTotal = totalXp − xpGained.
+            const prevTotal = Math.max(0, outcome.totalXp - outcome.xpGained);
+            this._animateXPBar(prevTotal, outcome.totalXp, leveledUp, outcome.xpGained, outcome.won);
+        } else if (this._postMatchXPBarLabelLeft && this._postMatchXPBarLabelRight && this._postMatchXPBarFillGfx) {
+            // No XP this match — clear the bar entirely.
+            this._postMatchXPBarLabelLeft.string = '';
+            this._postMatchXPBarLabelRight.string = '';
+            this._postMatchXPBarFillGfx.clear();
+        }
+    }
+
+    /**
+     * Drifting-gadget — XP progress bar fill animation.
+     * Track is 480×16, rounded; dark fill behind, accent fill on top.
+     * On level-up: roll prev → 100%, flash gold, reset to 0, roll → new.
+     * Otherwise: roll prev → new in 700ms.
+     */
+    private _animateXPBar(prevTotalXp: number, newTotalXp: number, leveledUp: boolean, xpGained: number, won: boolean): void {
+        const left = this._postMatchXPBarLabelLeft;
+        const right = this._postMatchXPBarLabelRight;
+        const g = this._postMatchXPBarFillGfx;
+        if (!left || !right || !g) return;
+
+        const prog0 = levelProgress(prevTotalXp);
+        const prog1 = levelProgress(newTotalXp);
+        const trackW = 480;
+        const trackH = 16;
+        const halfW = trackW / 2;
+
+        const drawBar = (pct: number, fill: Color) => {
+            g.clear();
+            // Dark track behind.
+            g.fillColor = new Color(28, 32, 48, 200);
+            g.roundRect(-halfW, -trackH / 2, trackW, trackH, trackH / 2);
+            g.fill();
+            // Accent fill on top, clamped 0..1.
+            const w = Math.max(0, Math.min(1, pct)) * trackW;
+            if (w > 1) {
+                g.fillColor = fill;
+                g.roundRect(-halfW, -trackH / 2, w, trackH, trackH / 2);
+                g.fill();
+            }
+        };
+
+        const accent = won ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
+        const gold   = new Color(255, 210, 74, 255);
+
+        // Labels — left always shows the "next-level" target post-animation,
+        // right shows the gained XP delta in accent color.
+        left.string = `Lv ${prog1.level} → Lv ${prog1.level + 1}`;
+        left.color = new Color(150, 160, 185, 255);
+        right.string = `+${xpGained} XP`;
+        right.color = accent;
+
+        // Initial frame at prog0 fill.
+        drawBar(prog0.progress, accent);
+
+        const proxy = { p: prog0.progress };
+        if (leveledUp) {
+            // Stage 1: roll to 100% (treat prev-level remainder as the run).
+            tween(proxy)
+                .to(0.5, { p: 1 }, {
+                    easing: 'cubicOut',
+                    onUpdate: () => drawBar(proxy.p, gold),
+                })
+                .call(() => {
+                    proxy.p = 0;
+                    drawBar(0, accent);
+                })
+                .delay(0.15)
+                .to(0.55, { p: prog1.progress }, {
+                    easing: 'cubicOut',
+                    onUpdate: () => drawBar(proxy.p, accent),
+                })
+                .start();
+        } else {
+            tween(proxy)
+                .to(0.7, { p: prog1.progress }, {
+                    easing: 'cubicOut',
+                    onUpdate: () => drawBar(proxy.p, accent),
+                })
+                .start();
+        }
     }
 
     /**
@@ -7422,20 +8812,20 @@ export class AppUI extends Component {
         }
 
         // Re-attach a procedural trophy/medal on the node (replaces any prior draw).
-        // Placement → rank: 0-indexed internal → 1-indexed IconLibrary rank.
+        // Drifting-gadget: trophy is now a small corner badge in the title
+        // row (64×64) — the centered celebrate mascot is the primary
+        // celebration. Icon size dropped 120 → 56 to fit the badge box.
         const iconName = placement === 0 ? 'trophy' : placement === 1 ? 'medalSilver' : 'medalBronze';
-        IconLibrary.attach(trophyN, iconName, { size: 120 });
+        IconLibrary.attach(trophyN, iconName, { size: 56 });
         trophyN.setScale(0.01, 0.01, 1);
         trophyN.angle = 0;
 
         if (placement === 0) {
-            // 1st place: full celebration — scale-from-0 + bounce + 360° spin.
-            // Peak scale dropped 1.4 → 1.15 so the trophy stays inside its
-            // 200×100 box and doesn't overshoot into neighboring cards.
+            // 1st place: scale-from-0 + bounce + 360° spin in its corner box.
             tween(trophyN)
-                .to(0.3, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'backOut' })
+                .to(0.3, { scale: new Vec3(1.35, 1.35, 1) }, { easing: 'backOut' })
                 .to(0.2, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'cubicIn' })
-                .to(0.1, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'cubicOut' })
+                .to(0.1, { scale: new Vec3(1.12, 1.12, 1) }, { easing: 'cubicOut' })
                 .to(0.1, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'cubicIn' })
                 .start();
             tween(trophyN)
@@ -7505,6 +8895,18 @@ export class AppUI extends Component {
      * hot path only resets transform state + starts tweens.
      */
     private _animateConfetti(trophyN: Node): void {
+        // Drifting-gadget: rebase burst origin to the celebrate-mascot center so
+        // particles fan out from the visual centerpiece (the small corner trophy
+        // is no longer the dramatic anchor). Confetti remain parented to
+        // TrophyLabel — the silly-gathering-ember.md SIGSEGV fix forbids
+        // re-parenting in the hot path. Both trophy + mascot are siblings under
+        // PostMatchPanel, so the offset is just mascot.pos − trophy.pos.
+        let ox = 0, oy = 0;
+        const mascotN = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
+        if (mascotN) {
+            ox = mascotN.position.x - trophyN.position.x;
+            oy = mascotN.position.y - trophyN.position.y;
+        }
         let started = 0;
         for (let i = 0; i < 12; i++) {
             const confN = trophyN.getChildByName(`Confetti_${i}`);
@@ -7512,7 +8914,7 @@ export class AppUI extends Component {
             try {
                 Tween.stopAllByTarget(confN);
                 confN.active = true;
-                confN.setPosition(0, 0, 0);
+                confN.setPosition(ox, oy, 0);
                 confN.setScale(0.01, 0.01, 1);
                 confN.angle = 0;
                 // Radial layout: 12 slots around a circle, ±20° jitter, radius 180-260.
@@ -7525,7 +8927,7 @@ export class AppUI extends Component {
                 const spin = (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 180);
                 tween(confN)
                     .to(0.9, {
-                        position: new Vec3(tx, ty, 0),
+                        position: new Vec3(ox + tx, oy + ty, 0),
                         scale: new Vec3(1.0, 1.0, 1),
                     }, { easing: 'cubicOut' })
                     .call(() => { confN.active = false; })
@@ -7564,11 +8966,13 @@ export class AppUI extends Component {
         const stopAt = Date.now() + Math.ceil(durationS * 1000) + 50;
         let lastTickMs = 0;
         const tickEvery = 300;
+        // Drifting-gadget: 2dp for amounts ≥0.01 SOL, 4dp for paper micro-stakes.
+        const dp = toSol >= 0.01 ? 2 : 4;
         tween(proxy)
             .to(durationS, { v: toSol }, {
                 easing: 'quadOut',
                 onUpdate: () => {
-                    label.string = `+${proxy.v.toFixed(3)} SOL`;
+                    label.string = `+${proxy.v.toFixed(dp)} SOL`;
                     const now = Date.now();
                     if (now < stopAt && now - lastTickMs >= tickEvery) {
                         lastTickMs = now;
@@ -7577,7 +8981,7 @@ export class AppUI extends Component {
                 },
             })
             .call(() => {
-                label.string = `+${toSol.toFixed(3)} SOL`;
+                label.string = `+${toSol.toFixed(dp)} SOL`;
                 console.log(`${TAG} _animatePayoutTicker | TICKER_END final=${toSol.toFixed(6)} SOL`);
             })
             .start();
@@ -7957,6 +9361,30 @@ export class AppUI extends Component {
                 },
             });
             console.log(`${TAG} _submitRealJoinMatch | OK match=${result.matchPda} action=${result.action} sig=${result.signature} attempts=${result.attempts}`);
+            if (result.action === 'create') {
+                // Confirm to the user that hosting succeeded — without this
+                // the host has no signal the lobby is live + on-chain.
+                showToast('Match created — waiting for opponents');
+                const requiredPlayers = (MODES[modeId] ?? MODES.oneVone).requiredPlayers;
+                const wagerLamports = WAGER_TIERS_LAMPORTS[wagerTierIndex] ?? 0;
+                void (async () => {
+                    try {
+                        const { postLobbyCreated } = await import('../../token-duel/scripts/MatchLobbyDbRpc');
+                        await postLobbyCreated({
+                            matchPda: result.matchPda,
+                            creatorPubkey: pubkey,
+                            modeU8: mode,
+                            wagerTier: wagerTierIndex,
+                            wagerLamports,
+                            timeWindow: windowU8,
+                            requiredPlayers,
+                            createdAt: new Date().toISOString(),
+                        });
+                    } catch (e) {
+                        console.log(`${TAG} _submitRealJoinMatch | postLobbyCreated_err ${e}`);
+                    }
+                })();
+            }
             return { matchPda: result.matchPda, action: result.action };
         } catch (e: any) {
             const msg = e?.message ?? String(e);
@@ -8699,12 +10127,19 @@ export class AppUI extends Component {
         const lbl = this._findMatchCountBadgeLabel;
         if (!badge || !lbl) return;
         const visible = count > 0;
+        const wasVisible = this._findMatchCountLastValue > 0;
         badge.active = visible;
         if (visible) {
             lbl.string = String(count);
             // Pop only on increase to avoid pulsing on every refresh tick.
             if (count > this._findMatchCountLastValue) {
                 try { popScale(badge, 1.18); } catch (_) { /* tween module not loaded */ }
+            }
+            // V2: start a soft idle pulse on the badge when it first becomes
+            // visible. Calls are idempotent — addIdlePulse no-ops if already
+            // pulsing — so this is safe across repeat ticks.
+            if (!wasVisible) {
+                try { addIdlePulse(badge, 1.06, 1.2); } catch (_) { /* tween not loaded */ }
             }
         }
         this._findMatchCountLastValue = count;
@@ -8727,10 +10162,10 @@ export class AppUI extends Component {
         if (bucket) rows = rows.filter((m) => bucket.has(m.wagerTier));
 
         const myPubkey = MWAManager.instance?.connectedPubkey ?? '';
-        if (mode === 'open') {
-            // Hide lobbies we already created (can't join twice).
-            rows = rows.filter((m) => !m.players.includes(myPubkey));
-        }
+        // We used to filter out lobbies we already created — but that hides
+        // your own hosted match from the queue you'd check to verify it
+        // landed on-chain. Keep them visible; the row binding marks them as
+        // "Your Lobby" and swaps Join → Resume for the host.
 
         const visible = rows.slice(0, this._matchCardRows.length);
         if (this._findMatchCountLabel) {
@@ -8766,10 +10201,13 @@ export class AppUI extends Component {
             if (!m) {
                 node.active = false;
                 this._matchCardRowMatchPdas[i] = null;
+                this._matchCardRowMine[i] = false;
                 continue;
             }
             node.active = true;
             this._matchCardRowMatchPdas[i] = m.pda;
+            const isMine = !!myPubkey && m.players.includes(myPubkey);
+            this._matchCardRowMine[i] = isMine;
             const modeMap: Record<number, string> = { 0: '1v1', 1: '4p Pot', 2: '8p Pot', 3: 'BR10' };
             const modeL = node.getChildByName(`MatchCardModeLabel_${i}`)?.getComponent(Label);
             if (modeL) modeL.string = modeMap[m.mode] ?? `mode ${m.mode}`;
@@ -8780,16 +10218,17 @@ export class AppUI extends Component {
             if (winL) winL.string = `⏱  ${winLbl} race`;
             const subL = node.getChildByName(`MatchCardSubLabel_${i}`)?.getComponent(Label);
             const hostName = this._getDisplayName(m.players[0]);
+            const hostPrefix = isMine ? '★ Your lobby' : hostName;
             if (mode === 'live') {
                 const startedAt = Number(m.startedAt);
                 const windowSec = [30, 60, 300, 3600][m.timeWindow] ?? 60;
                 const elapsedSec = Math.max(0, now - startedAt);
                 const pct = Math.max(0, Math.min(100, (elapsedSec / windowSec) * 100));
-                if (subL) subL.string = `${hostName} · ${m.playerCount}/${m.requiredPlayers} racing · ${pct.toFixed(0)}% elapsed`;
+                if (subL) subL.string = `${hostPrefix} · ${m.playerCount}/${m.requiredPlayers} racing · ${pct.toFixed(0)}% elapsed`;
             } else {
                 const ageSec = Math.max(0, now - Number(m.createdAt));
                 const ageStr = ageSec < 60 ? `${Math.floor(ageSec)}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m ${Math.floor(ageSec) % 60}s` : `${Math.floor(ageSec / 3600)}h ${Math.floor((ageSec % 3600) / 60)}m`;
-                if (subL) subL.string = `${hostName} · ${m.playerCount}/${m.requiredPlayers} players · ${ageStr} ago`;
+                if (subL) subL.string = `${hostPrefix} · ${m.playerCount}/${m.requiredPlayers} players · ${ageStr} ago`;
             }
             // Phase A2 — edge stripe (mode-color) + capacity bar (tweened) + track chip per row.
             const tint = AppUI.MODE_EDGE_TINT[m.mode] ?? [153, 69, 255];
@@ -8811,6 +10250,10 @@ export class AppUI extends Component {
             if (mode === 'live') {
                 if (actionBtn) actionBtn.interactable = true;
                 if (lbl) lbl.string = 'Spectate';
+            } else if (isMine) {
+                // Host's own lobby — re-enter the WaitingPanel for it.
+                if (actionBtn) actionBtn.interactable = true;
+                if (lbl) lbl.string = 'Resume';
             } else {
                 // Phase A2 — squad-not-full no longer gates Join. Picker opens
                 // after Confirm overlay so picking happens THEN.
@@ -8900,7 +10343,12 @@ export class AppUI extends Component {
         if (homeChip) homeChip.active = true;
         if (findChip) findChip.active = true;
         if (tdChip)   tdChip.active = true;
-        if (homeLbl)  homeLbl.string = text;
+        // 2026-04-26 lobby restructure: Home chip splits the combined label.
+        // "Lv N" goes to HomeLevelChipLabel; "X/Y XP" + progress bar are
+        // driven by _setLevelProgress. FindMatch + TokenDuel chips keep the
+        // legacy combined "Lv N · X/Y" form.
+        if (homeLbl)  homeLbl.string = `Lv ${level}`;
+        this._setLevelProgress(into, need);
         if (findLbl)  findLbl.string = text;
         if (tdLbl)    tdLbl.string = text;
         console.log(`${TAG} _refreshLevelChip | onchain=${onchainXp} local=${localXp} total=${totalXp} lvl=${level} progress=${into}/${need}`);
@@ -8943,8 +10391,66 @@ export class AppUI extends Component {
             console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} match_not_in_browser_rows`);
             return;
         }
+        if (this._matchCardRowMine[rowIdx]) {
+            console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} RESUME_OWN match=${matchPda}`);
+            this._resumeOwnLobby(target);
+            return;
+        }
         console.log(`${TAG} _onMatchCardJoinClick | row=${rowIdx} → confirm_overlay match=${matchPda} mode=${target.mode} tier=${target.wagerTier}`);
         this._showJoinConfirmOverlay(target);
+    }
+
+    /**
+     * Re-enter the WaitingPanel for a lobby we already created. Called from
+     * the Open Lobbies "Resume" action; restarts the poll loop so a status
+     * flip to Active still pops the host into the game.
+     */
+    private _resumeOwnLobby(m: MatchState): void {
+        console.log(`${TAG} _resumeOwnLobby | match=${m.pda} mode=${m.mode} tier=${m.wagerTier}`);
+        const modeIdMap: Record<number, 'oneVone' | 'trio' | 'fourPlayer' | 'eightPlayer'> = {
+            0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer',
+        };
+        const winIdMap: Record<number, TimeWindowId> = { 0: '1h', 1: '1d', 2: '3d', 3: '7d' };
+        const modeKey = modeIdMap[m.mode] ?? 'oneVone';
+        this._pickerSelectedMode = modeKey;
+        this._pickerSelectedWagerIndex = m.wagerTier;
+        this._pickerSelectedWindow = winIdMap[m.timeWindow] ?? '1h';
+        this._pickerSelectedTrack = 'real';
+        this._realMatchMode = m.mode;
+        this._realMatchWagerTier = m.wagerTier;
+        this._realMatchWagerLamports = Number(m.wagerLamports);
+        this._activeRealMatchPda = m.pda;
+        this._hideFindMatchPanel();
+        const modeDef = MODES[modeKey] ?? MODES.oneVone;
+        this._showWaitingPanel({
+            mode: modeDef.label,
+            wagerSol: Number(m.wagerLamports) / 1e9,
+            track: 'real',
+            status: `Hosting · waiting for opponents…`,
+            requiredPlayers: modeDef.requiredPlayers,
+        });
+        if (this._waitingProgressLabel) {
+            this._waitingProgressLabel.string = `${m.playerCount}/${modeDef.requiredPlayers} players · 0:00 / 2:00`;
+        }
+        (async () => {
+            const outcome = await this._runRealPollLoop(m.pda);
+            if (outcome === 'active') {
+                this._pendingRealMatch = true;
+                this._hideWaitingPanel();
+                this._setStakeClusterVisible(true);
+                this._refreshSquadActionButtons();
+                showToast('Opponent found — tap Commit to start');
+            } else if (outcome === 'timeout') {
+                if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No opponent in 2 min — Play Bot or Cancel+Refund';
+            } else if (outcome === 'settled' || outcome === 'cancelled') {
+                this._activeRealMatchPda = null;
+                this._hideWaitingPanel();
+                showToast(outcome === 'settled' ? 'Match already settled' : 'Match cancelled');
+            }
+        })().catch((e) => {
+            console.log(`${TAG} _resumeOwnLobby | POLL_ERROR ${e?.message ?? e}`);
+            if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Error: ${e?.message ?? e}`;
+        });
     }
 
     /**
@@ -9181,7 +10687,7 @@ export class AppUI extends Component {
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {
-                    this._wagerStartLabel.string = ready ? '▶ Join Match' : `Pick ${3 - filled} more`;
+                    this._wagerStartLabel.string = ready ? 'Join Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
                 }
             }
             if (this._wagerHintLabel) {
@@ -9189,6 +10695,7 @@ export class AppUI extends Component {
                     ? `Joining ${hostShort}'s match · ${wagerLabel} · tap Join to commit`
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to join`;
             }
+            this._syncWagerStartPulse(ready);
             return;
         }
 
@@ -9204,7 +10711,7 @@ export class AppUI extends Component {
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {
-                    this._wagerStartLabel.string = ready ? '▶ Start Bot Match' : `Pick ${3 - filled} more`;
+                    this._wagerStartLabel.string = ready ? 'Start Bot Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
                 }
             }
             if (this._wagerHintLabel) {
@@ -9212,6 +10719,7 @@ export class AppUI extends Component {
                     ? 'Paper · vs Bots · free practice · tap to start'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to play bots`;
             }
+            this._syncWagerStartPulse(ready);
             return;
         }
 
@@ -9221,16 +10729,36 @@ export class AppUI extends Component {
         if (this._wagerLockChip) this._wagerLockChip.active = false;
         if (this._wagerBotChip) this._wagerBotChip.active = false;
         if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
+        if (this._matchSetupStakeLabel) this._matchSetupStakeLabel.string = `Stake: ${label}`;
         if (this._wagerStartButton) {
             this._wagerStartButton.interactable = ready;
             if (this._wagerStartLabel) {
-                this._wagerStartLabel.string = ready ? '▶ Start Match' : `Pick ${3 - filled} more`;
+                this._wagerStartLabel.string = ready ? 'Start Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
             }
         }
         if (this._wagerHintLabel) {
             this._wagerHintLabel.string = ready
                 ? `Ready · ${label} · tap Start to launch`
                 : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
+        }
+        this._syncWagerStartPulse(ready);
+    }
+
+    /**
+     * Attach/detach the idle-pulse breathing tween on the primary CTA based on
+     * whether the squad is full. Pulses while ready, stops when not. Tracks
+     * state so we don't stack tweens across re-renders.
+     */
+    private _syncWagerStartPulse(ready: boolean): void {
+        const node = this._wagerStartButton?.node;
+        if (!node) return;
+        if (ready && !this._wagerStartPulsing) {
+            try { addIdlePulse(node); } catch (_) { /* ignore */ }
+            this._wagerStartPulsing = true;
+        } else if (!ready && this._wagerStartPulsing) {
+            try { Tween.stopAllByTarget(node); } catch (_) { /* ignore */ }
+            try { node.setScale(1, 1, 1); } catch (_) { /* ignore */ }
+            this._wagerStartPulsing = false;
         }
     }
 
@@ -9302,6 +10830,7 @@ export class AppUI extends Component {
         return !!(
             (this._feedTabDropdownPopover && this._feedTabDropdownPopover.active) ||
             (this._minLiqPopoverNode && this._minLiqPopoverNode.active) ||
+            (this._liqSortPopoverNode && this._liqSortPopoverNode.active) ||
             (this._columnsPopoverNode && this._columnsPopoverNode.active) ||
             (this._searchPopoverNode && this._searchPopoverNode.active) ||
             (this._wagerDropdown && this._wagerDropdown.active)
@@ -9319,6 +10848,7 @@ export class AppUI extends Component {
         console.log(`${TAG} _onBackdropTap | closing all popovers`);
         if (this._feedTabDropdownPopover) this._feedTabDropdownPopover.active = false;
         if (this._minLiqPopoverNode) this._minLiqPopoverNode.active = false;
+        if (this._liqSortPopoverNode) this._liqSortPopoverNode.active = false;
         if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
         if (this._searchPopoverNode) this._searchPopoverNode.active = false;
         if (this._wagerDropdown) this._wagerDropdown.active = false;
@@ -9387,6 +10917,18 @@ export class AppUI extends Component {
     private _refreshSquadActionButtons(): void {
         const filled = this._squad.filled;
         const checking = this._squadPickChecked.size;
+        // 2026-04-26 redesign — keep MatchSetupCard squad/hint labels in sync.
+        if (this._matchSetupSquadLabel) {
+            this._matchSetupSquadLabel.string = `Squad: ${filled}/3`;
+        }
+        if (this._matchSetupHintLabel) {
+            const remaining = 3 - filled;
+            this._matchSetupHintLabel.string = filled >= 3
+                ? '✓ Squad full — tap Start Duel'
+                : remaining === 1
+                    ? 'Pick 1 more token to start'
+                    : `Pick ${remaining} tokens to start`;
+        }
         // Pick button
         if (this._squadPickLabel) {
             if (this._squadPickMode) {
@@ -9406,21 +10948,16 @@ export class AppUI extends Component {
             }
             this._squadPickButton.interactable = !this._squadLocked && (filled < 3 || this._squadPickMode);
         }
-        // Drop button
+        // Drop button — hide entirely when squad is empty so the lone CTA below
+        // (Start Match) is the unambiguous primary action. Show when ≥1 picked.
         if (this._squadDropButton) {
+            this._squadDropButton.node.active = filled > 0;
             this._squadDropButton.interactable = filled > 0 && !this._squadLocked;
             const spr = this._squadDropButton.node.getComponent(Sprite);
             if (spr) spr.color = filled > 0 && !this._squadLocked ? new Color(40, 50, 68, 255) : new Color(26, 30, 42, 255);
         }
         if (this._squadDropLabel) this._squadDropLabel.string = filled > 0 ? `Manage Squad (${filled})` : 'Manage Squad';
-        // Run button
-        if (this._squadRunButton) {
-            const canRun = filled >= 1 && !this._squadPickMode && !this._squadLocked;
-            this._squadRunButton.interactable = canRun;
-            const spr = this._squadRunButton.node.getComponent(Sprite);
-            if (spr) spr.color = canRun ? new Color(56, 148, 252, 255) : new Color(30, 50, 80, 255);
-        }
-        if (this._squadRunLabel) this._squadRunLabel.string = this._squadLocked ? 'Locked' : '▶ Run Squad';
+        // Run button removed — wagerStartButton handles the same flow.
     }
 
     private _onSquadPickClick(): void {
@@ -9499,38 +11036,208 @@ export class AppUI extends Component {
         }
     }
 
-    private _onSquadRunClick(): void {
-        if (this._squad.filled < 1) {
-            console.log(`${TAG} _onSquadRunClick | NOOP filled=0`);
-            showToast('Pick at least 1 token');
-            return;
-        }
-        // Session D Part 2: open ModePickerOverlay if present; else legacy stake-cluster fallback.
-        if (this._modePickerOverlay) {
-            console.log(`${TAG} _onSquadRunClick | OPEN_PICKER filled=${this._squad.filled}`);
-            this._modePickerOverlay.active = true;
-            this._refreshModePickerUi();
-            return;
-        }
-        console.log(`${TAG} _onSquadRunClick | NO_PICKER — legacy stake cluster fallback`);
-        this._setStakeClusterVisible(true);
-        this._refreshSquadActionButtons();
-        showToast('Squad locked — set stake + commit');
-    }
+    // _onSquadRunClick removed 2026-04-26 — same flow as _onWagerStartTap.
 
     // ═══════════════════════════════════════════════════════════════
     //  SESSION 14 C — Leaderboard + Portfolio entry points
+    //  Phase N4 (2026-04-26): merged into a single hub. Trophy on Home
+    //  routes through _onOpenHub which defaults to the Portfolio tab; the
+    //  in-hub tab strip toggles between this panel and the Portfolio panel.
     // ═══════════════════════════════════════════════════════════════
 
-    private async _onOpenLeaderboardClick(): Promise<void> {
+    /** Phase N4: trophy on Home opens the merged hub (default = Portfolio). */
+    private _onOpenHub(): void {
+        this._hubActiveTab = 'portfolio';
+        this._openPortfolioInternal();
+        this._refreshHubTabTints();
+    }
+
+    /** Phase N4: in-hub tab strip — swap between Portfolio and Leaderboard
+     *  panels without leaving the hub. Sub-tab state on each panel persists. */
+    private _onHubTabClick(tab: 'portfolio' | 'leaderboard'): void {
+        if (this._hubActiveTab === tab) return;
+        this._hubActiveTab = tab;
+        console.log(`${TAG} _onHubTabClick | tab=${tab}`);
+        if (tab === 'portfolio') {
+            if (this._leaderboardPanel) this._leaderboardPanel.active = false;
+            this._openPortfolioInternal();
+        } else {
+            if (this._portfolioPanel) this._portfolioPanel.active = false;
+            void this._openLeaderboardInternal();
+        }
+        // Slide the pill highlight (and glow shadow) to the active slot on
+        // both panels in parallel so swaps land with the indicator already
+        // in place.
+        const targetX = tab === 'portfolio' ? -90 : +90;
+        for (const n of [this._lbHubHighlight, this._pfHubHighlight,
+                         this._lbHubGlow,      this._pfHubGlow]) {
+            if (!n) continue;
+            Tween.stopAllByTarget(n);
+            tween(n).to(0.18, { position: new Vec3(targetX, 0, 0) },
+                                { easing: 'cubicOut' }).start();
+        }
+        this._refreshHubTabTints();
+    }
+
+    /** Tint the 4 hub-tab labels (mirrors on both panels) based on
+     *  _hubActiveTab. The pill background and animated highlight are drawn by
+     *  Graphics in `_buildHubTabs`; the buttons themselves are invisible
+     *  hit-areas, so only label colors flip here. */
+    private _refreshHubTabTints(): void {
+        const activeLbl   = new Color(12, 18, 26, 255);
+        const inactiveLbl = new Color(255, 255, 255, 255);
+        const tabs: Array<[Button | null, 'portfolio' | 'leaderboard']> = [
+            [this._lbHubPortfolioTab,   'portfolio'],
+            [this._lbHubLeaderboardTab, 'leaderboard'],
+            [this._pfHubPortfolioTab,   'portfolio'],
+            [this._pfHubLeaderboardTab, 'leaderboard'],
+        ];
+        for (const [btn, tabKey] of tabs) {
+            if (!btn) continue;
+            const lbl = btn.node.getChildByName('Label')?.getComponent(Label);
+            if (lbl) lbl.color = this._hubActiveTab === tabKey ? activeLbl : inactiveLbl;
+        }
+    }
+
+    /** Phase N4: build the hub-tab strip (Portfolio | Leaderboard) on a panel.
+     *  Pill container at y=740 (above title at y=680). A Graphics-drawn
+     *  background + animated highlight sit behind invisible button hit-areas.
+     *  The selection highlight slides between slots in `_onHubTabClick`. */
+    private _buildHubTabs(parent: Node): { portfolio: Button; leaderboard: Button } {
+        const STRIP_W = 360, STRIP_H = 56;
+        const TAB_W = 170, TAB_H = 44;
+        const STRIP_Y = 740;
+        const initialX = this._hubActiveTab === 'portfolio' ? -90 : +90;
+
+        // Container — owns Bg / Glow / Highlight / Divider / two button hit-areas.
+        const strip = new Node('HubTabStrip');
+        parent.addChild(strip);
+        strip.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
+        strip.setPosition(new Vec3(0, STRIP_Y, 0));
+
+        // Pill background.
+        const bg = new Node('HubBg');
+        strip.addChild(bg);
+        bg.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
+        const bgG = bg.addComponent(Graphics);
+        bgG.fillColor = new Color(22, 28, 40, 255);
+        bgG.roundRect(-STRIP_W / 2, -STRIP_H / 2, STRIP_W, STRIP_H, 28);
+        bgG.fill();
+
+        // Elevation glow — slightly larger than the highlight, low alpha.
+        const glow = new Node('HubGlow');
+        strip.addChild(glow);
+        glow.addComponent(UITransform).setContentSize(180, 52);
+        glow.setPosition(new Vec3(initialX, 0, 0));
+        const glowG = glow.addComponent(Graphics);
+        glowG.fillColor = new Color(48, 198, 155, 90);
+        glowG.roundRect(-90, -26, 180, 52, 26);
+        glowG.fill();
+
+        // Active-tab highlight — the visible "filled" indicator.
+        const highlight = new Node('HubHighlight');
+        strip.addChild(highlight);
+        highlight.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
+        highlight.setPosition(new Vec3(initialX, 0, 0));
+        const hlG = highlight.addComponent(Graphics);
+        hlG.fillColor = new Color(48, 198, 155, 255);
+        hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, 22);
+        hlG.fill();
+
+        // Subtle vertical divider between the two slots.
+        const divider = new Node('HubDivider');
+        strip.addChild(divider);
+        divider.addComponent(UITransform).setContentSize(1, 28);
+        const divG = divider.addComponent(Graphics);
+        divG.strokeColor = new Color(255, 255, 255, 30);
+        divG.lineWidth = 1;
+        divG.moveTo(0, -14);
+        divG.lineTo(0, 14);
+        divG.stroke();
+
+        // Stash refs so the click handler can slide-tween highlight + glow.
+        if (parent === this._leaderboardPanel) {
+            this._lbHubHighlight = highlight;
+            this._lbHubGlow = glow;
+        } else {
+            this._pfHubHighlight = highlight;
+            this._pfHubGlow = glow;
+        }
+
+        // Invisible-hitbox button factory (visual is the Graphics layers
+        // above). No Sprite on the button: SCALE transition uses UITransform
+        // for hit detection, and an unframed Sprite on a runtime node can be
+        // skipped by the renderer (project memory: "Sprites need _spriteFrame
+        // references or colors won't render"), which would hide the label
+        // child along with the node.
+        const make = (name: string, label: string, x: number): Button => {
+            const n = new Node(name);
+            strip.addChild(n);
+            n.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
+            const btn = n.addComponent(Button);
+            btn.transition = Button.Transition.SCALE;
+            btn.zoomScale = 0.96;
+            n.setPosition(new Vec3(x, 0, 0));
+
+            const lblN = new Node('Label');
+            n.addChild(lblN);
+            lblN.addComponent(UITransform).setContentSize(TAB_W - 10, TAB_H - 4);
+            const lbl = lblN.addComponent(Label);
+            lbl.string = label;
+            lbl.fontSize = 20;
+            lbl.lineHeight = 24;
+            lbl.horizontalAlign = Label.HorizontalAlign.CENTER;
+            lbl.verticalAlign = Label.VerticalAlign.CENTER;
+            lbl.color = new Color(255, 255, 255, 255);
+            return btn;
+        };
+        const portfolio   = make('HubTab_Portfolio',   'Portfolio',   -90);
+        const leaderboard = make('HubTab_Leaderboard', 'Leaderboard', +90);
+        portfolio.node.on(Button.EventType.CLICK,   () => this._onHubTabClick('portfolio'),   this);
+        leaderboard.node.on(Button.EventType.CLICK, () => this._onHubTabClick('leaderboard'), this);
+        // Sync button refs before tint so first paint hits the freshly-built
+        // tabs (call sites also set these on the returned object, but doing
+        // it here keeps `_refreshHubTabTints` idempotent across rebuilds).
+        if (parent === this._leaderboardPanel) {
+            this._lbHubPortfolioTab = portfolio;
+            this._lbHubLeaderboardTab = leaderboard;
+        } else {
+            this._pfHubPortfolioTab = portfolio;
+            this._pfHubLeaderboardTab = leaderboard;
+        }
+        // First paint: active dark on teal, inactive white on dark.
+        this._refreshHubTabTints();
+        return { portfolio, leaderboard };
+    }
+
+    /** Phase N4: Disconnect entry on Home — wallet path emits MWA_DISCONNECTED
+     *  (already wired to _showLanding); guest path needs an explicit route. */
+    private async _onDisconnectFromHome(): Promise<void> {
+        console.log(`${TAG} _onDisconnectFromHome | START guest=${this._isGuest()}`);
+        const wasGuest = this._isGuest();
+        await this._onDisconnect();
+        if (wasGuest) {
+            this._guestId = null;
+            try {
+                const ls = (globalThis as any).sys?.localStorage ?? (globalThis as any).localStorage;
+                ls?.removeItem?.('tokenduel:guest_id');
+            } catch (_) { /* ignore */ }
+            this._showLanding();
+        }
+    }
+
+    private async _openLeaderboardInternal(): Promise<void> {
         if (!this._leaderboardPanel) return;
-        console.log(`${TAG} _onOpenLeaderboardClick | OPEN mode=${this._lbFilterMode}`);
+        console.log(`${TAG} _openLeaderboardInternal | OPEN mode=${this._lbFilterMode}`);
         // betting-duel polish: force-hide every other top-level panel so no
         // stale text (e.g. "Token Duel" title) bleeds behind the leaderboard
         // rows on device. `_setActivePanel` only knows about landing/home/
         // tokenDuel; this covers the full set.
         this._hideAllTopLevelPanelsExcept('leaderboard');
         this._leaderboardPanel.active = true;
+        // Belt-and-suspenders: ensure the runtime hub-tab strip is visible.
+        const lbStrip = this._leaderboardPanel.getChildByName('HubTabStrip');
+        if (lbStrip) lbStrip.active = true;
         this._refreshLeaderboardTabTints();
         if (this._lbFilterMode === 4) {
             await this._refreshSeasonTab();
@@ -9559,9 +11266,10 @@ export class AppUI extends Component {
     }
 
     /**
-     * Session D Part 8: populate the PersonalRankCard below the leaderboard
-     * rows. Shows: user's rank on the current mode (if in top-10) or "not
-     * yet ranked" + their W–L/Level/P/L from on-chain UserStats.
+     * Populate the PersonalRankCard below the leaderboard rows. Shows the user's
+     * rank on the current mode (if in top-10) or "Not yet ranked · win to climb"
+     * + their W–L / Level / P/L from on-chain UserStats. The "Play your first
+     * match" CTA is shown only when the user is NOT in top-10.
      */
     private async _refreshPersonalRankCard(): Promise<void> {
         const card = this._leaderboardPanel?.getChildByName('PersonalRankCard');
@@ -9577,8 +11285,9 @@ export class AppUI extends Component {
 
         const rankL = card.getChildByName('RankLabel')?.getComponent(Label);
         const statsL = card.getChildByName('StatsLabel')?.getComponent(Label);
+        const ctaN = card.getChildByName('PlayCTAButton');
 
-        // Find own rank in the current mode's top-10.
+        let inTop10 = false;
         let rankStr = 'Not yet ranked · win to climb';
         try {
             const entries = await fetchLeaderboard(this._tdRpc, this._lbFilterMode);
@@ -9586,12 +11295,12 @@ export class AppUI extends Component {
             if (mine >= 0) {
                 const mode = modeFromU8(this._lbFilterMode);
                 rankStr = `Rank #${mine + 1} on ${mode.label}`;
+                inTop10 = true;
             }
         } catch (e) {
             console.log(`${TAG} _refreshPersonalRankCard | LEADERBOARD_ERR ${e}`);
         }
 
-        // Populate stats from on-chain UserStats.
         let statsStr = 'W–L —  ·  Level —  ·  P/L —';
         try {
             const stats = await loadRealStats(this._tdRpc, pubkey);
@@ -9606,30 +11315,50 @@ export class AppUI extends Component {
 
         if (rankL) rankL.string = rankStr;
         if (statsL) statsL.string = statsStr;
-        console.log(`${TAG} _refreshPersonalRankCard | mode=${this._lbFilterMode} pubkey=${pubkey.substring(0, 8)}… rank="${rankStr}"`);
+        if (ctaN) ctaN.active = !inTop10;
+        console.log(`${TAG} _refreshPersonalRankCard | mode=${this._lbFilterMode} pubkey=${pubkey.substring(0, 8)}… rank="${rankStr}" cta=${!inTop10}`);
     }
 
-    /** Highlight the active mode tab (teal) and dim the others. */
+    /** Highlight the active mode tab (teal) and dim the others. The standalone
+     *  ThisWeekChip (LBTab_season, modeU8=4) is styled separately so the
+     *  segmented control can dim entirely while the chip lights up. */
     private _refreshLeaderboardTabTints(): void {
-        // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p, 4=season.
         const map: Record<number, string> = { 0: '1v1', 1: 'trio', 2: '4p', 3: '8p', 4: 'season' };
         const activeKey = map[this._lbFilterMode];
+        const seasonActive = this._lbFilterMode === 4;
         for (const [key, btn] of this._lbTabButtons) {
             const spr = btn.node.getComponent(Sprite);
             if (!spr) continue;
-            spr.color = key === activeKey
-                ? new Color(48, 198, 155, 255)
-                : new Color(38, 44, 64, 255);
+            const isThisWeek = key === 'season';
+            const isActive = key === activeKey;
+            if (isThisWeek) {
+                spr.color = isActive
+                    ? new Color(48, 198, 155, 255)
+                    : new Color(28, 34, 52, 255);
+            } else {
+                // When season is active, every mode tab dims to container surface.
+                spr.color = (!seasonActive && isActive)
+                    ? new Color(48, 198, 155, 255)
+                    : new Color(28, 34, 52, 255);
+            }
+            // Re-tint the inner Label too (3rd child of an mkBtnXY button).
+            const labelChild = btn.node.children[2];
+            const labelComp = labelChild?.getComponent(Label);
+            if (labelComp) {
+                const showActive = isThisWeek ? isActive : (!seasonActive && isActive);
+                labelComp.color = showActive
+                    ? new Color(255, 255, 255, 255)
+                    : new Color(168, 174, 201, 255);
+            }
         }
     }
 
-    /** Fetch the active-mode Leaderboard PDA and render rows. */
+    /** Fetch the active-mode Leaderboard PDA and render rows + TopPlayerCard. */
     private async _refreshLeaderboardPanelRows(): Promise<void> {
-        const titleL = this._leaderboardPanel?.getChildByName('LeaderboardTitleLabel')?.getComponent(Label);
-        if (titleL) {
+        const subtitleL = this._leaderboardPanel?.getChildByName('LeaderboardSubtitleLabel')?.getComponent(Label);
+        if (subtitleL) {
             const label = modeFromU8(this._lbFilterMode).label;
-            // UX Phase 2b: emoji stripped; IconBadge trophy attached at bind time.
-            titleL.string = `Leaderboard · ${label}`;
+            subtitleL.string = `${label} · This Week`;
         }
         let entries: ModeLeaderboardEntry[] = [];
         try {
@@ -9638,41 +11367,98 @@ export class AppUI extends Component {
             console.log(`${TAG} _refreshLeaderboardPanelRows | ERROR mode=${this._lbFilterMode} error=${e}`);
         }
         const nowSec = Math.floor(Date.now() / 1000);
+        const populated = entries.filter((e) => e && e.height > 0);
+        this._renderLeaderboardChrome(
+            populated.length > 0,
+            populated[0]
+                ? {
+                    player: populated[0].player,
+                    score: `+${populated[0].height}`,
+                    elapsedSec: Math.max(0, nowSec - Number(populated[0].settledAt)),
+                }
+                : null,
+        );
         for (let i = 0; i < this._lbRowNodes.length; i++) {
             const n = this._lbRowNodes[i];
-            const entry = entries[i];
-            if (!entry || entry.height === 0) { n.active = false; continue; }
-            n.active = true;
-            const rankL = n.getChildByName('RankLabel')?.getComponent(Label);
-            const playerL = n.getChildByName('PlayerLabel')?.getComponent(Label);
-            const heightL = n.getChildByName('HeightLabel')?.getComponent(Label);
-            const elapsedL = n.getChildByName('ElapsedLabel')?.getComponent(Label);
-            if (rankL) rankL.string = `${i + 1}.`;
-            if (playerL) playerL.string = this._fmtMintShort(entry.player);
-            if (heightL) heightL.string = `H${entry.height}`;
-            if (elapsedL) {
-                const diffSec = Math.max(0, nowSec - Number(entry.settledAt));
-                elapsedL.string = diffSec < 60 ? `${diffSec}s ago`
-                                : diffSec < 3600 ? `${Math.floor(diffSec / 60)}m ago`
-                                : diffSec < 86400 ? `${Math.floor(diffSec / 3600)}h ago`
-                                : `${Math.floor(diffSec / 86400)}d ago`;
-            }
-            const spr = n.getComponent(Sprite);
-            if (spr) {
-                spr.color = i === 0 ? new Color(60, 48, 14, 255)
-                          : i === 1 ? new Color(40, 42, 50, 255)
-                          : i === 2 ? new Color(45, 32, 18, 255)
-                          :           new Color(18, 22, 32, 255);
-            }
+            const entry = populated[i + 1];
+            if (!entry) { n.active = false; continue; }
+            this._renderLeaderboardRow(n, i + 1, {
+                player: entry.player,
+                score: `+${entry.height}`,
+                elapsedSec: Math.max(0, nowSec - Number(entry.settledAt)),
+            });
         }
-        console.log(`${TAG} _refreshLeaderboardPanelRows | DONE mode=${this._lbFilterMode} rows=${entries.length}`);
+        console.log(`${TAG} _refreshLeaderboardPanelRows | DONE mode=${this._lbFilterMode} entries=${entries.length} populated=${populated.length}`);
     }
 
     private _onLeaderboardBackClick(): void {
         if (!this._leaderboardPanel) return;
         console.log(`${TAG} _onLeaderboardBackClick | CLOSE`);
         this._leaderboardPanel.active = false;
-        this._tokenDuelPanel.active = true;
+        // Phase N4: a fresh hub re-entry should always land on Portfolio.
+        this._hubActiveTab = 'portfolio';
+        this._setActivePanel('home');
+    }
+
+    /** Empty-state CTA + PersonalRankCard "Play" CTA — close leaderboard,
+     *  open the FindMatch lobby browser. Mirrors the back-out path used on
+     *  PersonalRankCard, then enters FindMatch. */
+    private _onLeaderboardCTAToFindMatch(): void {
+        if (!this._leaderboardPanel) return;
+        console.log(`${TAG} _onLeaderboardCTAToFindMatch | OPEN_FINDMATCH`);
+        this._leaderboardPanel.active = false;
+        this._showFindMatchPanel();
+    }
+
+    /** Toggle TopPlayerCard + EmptyStateGroup based on whether any entries exist
+     *  for the active mode/season. Called by both the mode and season refresh
+     *  paths so the empty-state predicate stays in one place. */
+    private _renderLeaderboardChrome(
+        hasAny: boolean,
+        leader: { player: string; score: string; elapsedSec: number } | null,
+    ): void {
+        const top = this._leaderboardPanel?.getChildByName('TopPlayerCard');
+        const empty = this._leaderboardPanel?.getChildByName('EmptyStateGroup');
+        if (top) top.active = hasAny && !!leader;
+        if (empty) empty.active = !hasAny;
+        if (top && leader) {
+            const playerL = top.getChildByName('PlayerLabel')?.getComponent(Label);
+            const scoreL = top.getChildByName('ScoreLabel')?.getComponent(Label);
+            const elapsedL = top.getChildByName('ElapsedLabel')?.getComponent(Label);
+            if (playerL) playerL.string = this._fmtMintShort(leader.player);
+            if (scoreL) scoreL.string = leader.score;
+            if (elapsedL) elapsedL.string = this._fmtElapsed(leader.elapsedSec);
+        }
+    }
+
+    private _renderLeaderboardRow(
+        n: Node,
+        rankNum: number,
+        entry: { player: string; score: string; elapsedSec: number },
+    ): void {
+        n.active = true;
+        const rankL = n.getChildByName('RankLabel')?.getComponent(Label);
+        const playerL = n.getChildByName('PlayerLabel')?.getComponent(Label);
+        const scoreL = n.getChildByName('ScoreLabel')?.getComponent(Label);
+        const elapsedL = n.getChildByName('ElapsedLabel')?.getComponent(Label);
+        if (rankL) {
+            rankL.string = `#${rankNum + 1}`;
+            // Top-3 ranks (silver / bronze for #2 / #3) get rank-color tint;
+            // others stay text.mid. Rank-1 lives in TopPlayerCard.
+            rankL.color = rankNum === 1 ? new Color(216, 221, 240, 255)
+                        : rankNum === 2 ? new Color(224, 138, 74, 255)
+                        :                 new Color(168, 174, 201, 255);
+        }
+        if (playerL) playerL.string = this._fmtMintShort(entry.player);
+        if (scoreL) scoreL.string = entry.score;
+        if (elapsedL) elapsedL.string = this._fmtElapsed(entry.elapsedSec);
+    }
+
+    private _fmtElapsed(diffSec: number): string {
+        return diffSec < 60 ? `${diffSec}s ago`
+             : diffSec < 3600 ? `${Math.floor(diffSec / 60)}m ago`
+             : diffSec < 86400 ? `${Math.floor(diffSec / 3600)}h ago`
+             : `${Math.floor(diffSec / 86400)}d ago`;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -9680,13 +11466,13 @@ export class AppUI extends Component {
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Fetch the current Season PDA and render entries into the same LBRow_*
-     * pool the mode tabs use, but with a `wins` column instead of `height`.
-     * Updates the title label + height-label (repurposed) accordingly.
+     * Fetch the current Season PDA and render entries into the same TopPlayerCard
+     * + LBRow_* pool the mode tabs use, but with a `wins` column instead of
+     * `height`. Updates the subtitle to "All modes · This Week".
      */
     private async _refreshSeasonTab(): Promise<void> {
-        const titleL = this._leaderboardPanel?.getChildByName('LeaderboardTitleLabel')?.getComponent(Label);
-        if (titleL) titleL.string = 'Leaderboard · This Week';
+        const subtitleL = this._leaderboardPanel?.getChildByName('LeaderboardSubtitleLabel')?.getComponent(Label);
+        if (subtitleL) subtitleL.string = 'All modes · This Week';
         let season: SeasonState | null = null;
         try {
             season = await getCurrentSeason(this._tdRpc);
@@ -9695,34 +11481,28 @@ export class AppUI extends Component {
         }
         const entries: SeasonEntry[] = season?.entries ?? [];
         const nowSec = Math.floor(Date.now() / 1000);
+        const populated = entries.filter((e) => e && e.wins > 0);
+        this._renderLeaderboardChrome(
+            populated.length > 0,
+            populated[0]
+                ? {
+                    player: populated[0].player,
+                    score: `${populated[0].wins}w`,
+                    elapsedSec: Math.max(0, nowSec - Number(populated[0].at)),
+                }
+                : null,
+        );
         for (let i = 0; i < this._lbRowNodes.length; i++) {
             const n = this._lbRowNodes[i];
-            const e = entries[i];
-            if (!e || e.wins === 0) { n.active = false; continue; }
-            n.active = true;
-            const rankL = n.getChildByName('RankLabel')?.getComponent(Label);
-            const playerL = n.getChildByName('PlayerLabel')?.getComponent(Label);
-            const heightL = n.getChildByName('HeightLabel')?.getComponent(Label);
-            const elapsedL = n.getChildByName('ElapsedLabel')?.getComponent(Label);
-            if (rankL) rankL.string = `${i + 1}.`;
-            if (playerL) playerL.string = this._fmtMintShort(e.player);
-            if (heightL) heightL.string = `${e.wins}w`;
-            if (elapsedL) {
-                const diffSec = Math.max(0, nowSec - Number(e.at));
-                elapsedL.string = diffSec < 60 ? `${diffSec}s ago`
-                                : diffSec < 3600 ? `${Math.floor(diffSec / 60)}m ago`
-                                : diffSec < 86400 ? `${Math.floor(diffSec / 3600)}h ago`
-                                : `${Math.floor(diffSec / 86400)}d ago`;
-            }
-            const spr = n.getComponent(Sprite);
-            if (spr) {
-                spr.color = i === 0 ? new Color(60, 48, 14, 255)
-                          : i === 1 ? new Color(40, 42, 50, 255)
-                          : i === 2 ? new Color(45, 32, 18, 255)
-                          :           new Color(18, 22, 32, 255);
-            }
+            const e = populated[i + 1];
+            if (!e) { n.active = false; continue; }
+            this._renderLeaderboardRow(n, i + 1, {
+                player: e.player,
+                score: `${e.wins}w`,
+                elapsedSec: Math.max(0, nowSec - Number(e.at)),
+            });
         }
-        console.log(`${TAG} _refreshSeasonTab | DONE season_id=${season?.seasonId ?? 'null'} entries=${entries.length}`);
+        console.log(`${TAG} _refreshSeasonTab | DONE season_id=${season?.seasonId ?? 'null'} entries=${entries.length} populated=${populated.length}`);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -9734,13 +11514,13 @@ export class AppUI extends Component {
      * missing PDAs (pre-bootstrap) or missing UserStats (v1 not migrated yet).
      */
     private async _hydrateDailyChallengeWidget(): Promise<void> {
-        const strip = this._homePanel.getChildByName('DailyStreakStrip');
-        const label = strip?.getChildByName('Label')?.getComponent(Label);
-        if (!label) return;
+        // 2026-04-26 lobby restructure: DailyStreakStrip now hosts 5 chip
+        // groups (DAY / CHALLENGES / SEASON / POOL / RAKE). Write each chip
+        // value via _setChallengeChips. Rake chip is hydrated by
+        // _refreshRakeChip async; pass the cached value here.
         const pubkey = MWAManager.instance?.connectedPubkey ?? null;
         if (!pubkey) {
-            // UX overhaul Phase 1: emoji is rendered via IconBadge sibling.
-            label.string = 'Connect wallet to start your streak';
+            this._setChallengeChips({ day: '—', challenges: '—', season: '—', pool: '—', rake: this._cachedRakeText });
             return;
         }
         try {
@@ -9773,17 +11553,23 @@ export class AppUI extends Component {
             this._lastDailyChallengeMask = newMask;
             // Phase J3 — surface season prize pool size when available. Pool
             // = 20% of total_rake_accumulated paid weekly to top-3.
-            let poolStr = '';
+            let poolStr = '—';
             if (season && season.totalRakeAccumulated > 0n) {
                 const poolLamports = Number(season.totalRakeAccumulated) * 0.20;
                 const poolSol = poolLamports / 1e9;
-                poolStr = ` · pool ${poolSol.toFixed(3)} SOL`;
+                poolStr = `${poolSol.toFixed(3)} SOL`;
             }
-            label.string = `Day ${streak} · ${bitsDone}/${total} challenges · Season ${rank}${poolStr}`;
+            this._setChallengeChips({
+                day: String(streak),
+                challenges: `${bitsDone}/${total}`,
+                season: rank,
+                pool: poolStr,
+                rake: this._cachedRakeText,
+            });
             this._updateStreakFlame(streak);
         } catch (e) {
             console.log(`${TAG} _hydrateDailyChallengeWidget | ERROR ${e}`);
-            label.string = 'Day 1 · Play a match to start your streak';
+            this._setChallengeChips({ day: '1', challenges: '0/3', season: '—', pool: '—', rake: this._cachedRakeText });
         }
     }
 
@@ -10010,10 +11796,18 @@ export class AppUI extends Component {
         ls?.setItem('tokenduel:qp.track', track);
         console.log(`${TAG} _onQPTrackClick | track=${track}`);
         // Slide indicator with a 0.15s ease-out cubic tween (Phase 18 polish standard).
+        const targetX = track === 'paper' ? -78 : 78;
         if (this._qpTrackIndicator) {
-            const targetX = track === 'paper' ? -78 : 78;
             Tween.stopAllByTarget(this._qpTrackIndicator);
             tween(this._qpTrackIndicator)
+                .to(0.15, { position: new Vec3(targetX, 0, 0) }, { easing: 'cubicOut' })
+                .start();
+        }
+        // Phase 30 — teal glow halo follows the indicator's x.
+        const halo = this._qpTrackIndicator?.parent?.getChildByName('QPTrackGlowHalo');
+        if (halo) {
+            Tween.stopAllByTarget(halo);
+            tween(halo)
                 .to(0.15, { position: new Vec3(targetX, 0, 0) }, { easing: 'cubicOut' })
                 .start();
         }
@@ -10031,9 +11825,11 @@ export class AppUI extends Component {
         // Dropdown value labels (Stage 3: trio replaces br10).
         const modeLabels: Record<string, string> = { oneVone: '1v1', trio: 'Trio', fourPlayer: '4p', eightPlayer: '8p' };
         const wagerLabels = ['0.01 SOL','0.05 SOL','0.1 SOL','0.25 SOL','0.5 SOL'];
-        if (this._qpModeValueLabel)   this._qpModeValueLabel.string   = `${modeLabels[logicalMode] ?? '1v1'}  ▾`;
-        if (this._qpWindowValueLabel) this._qpWindowValueLabel.string = `${windowKey}  ▾`;
-        if (this._qpWagerValueLabel)  this._qpWagerValueLabel.string  = `${wagerLabels[wagerIdx] ?? wagerLabels[2]}  ▾`;
+        // Phase 30 — value labels drop the inline ▾ glyph; an explicit `›`
+        // chevron child sibling now signals "tap to open" on each row.
+        if (this._qpModeValueLabel)   this._qpModeValueLabel.string   = `${modeLabels[logicalMode] ?? '1v1'}`;
+        if (this._qpWindowValueLabel) this._qpWindowValueLabel.string = `${windowKey}`;
+        if (this._qpWagerValueLabel)  this._qpWagerValueLabel.string  = `${wagerLabels[wagerIdx] ?? wagerLabels[2]}`;
 
         // Highlight active option in each popover with ▣ prefix.
         const uiMode = ({ oneVone: '1v1', trio: 'trio', fourPlayer: '4p', eightPlayer: '8p' } as Record<string, string>)[logicalMode] ?? '1v1';
@@ -10077,8 +11873,9 @@ export class AppUI extends Component {
         else this._tokenDuelPanel.active = false;
         this._settingsPanel.active = true;
         this._hydrateSettingsPanel();
-        // Guest mode — hide wallet card + username editbox + delete account.
-        // Sound + haptics + fees-link sections stay (no setup required).
+        // Guest mode — hide wallet card + username editbox + delete account +
+        // the Disconnect row (now inside AccountSettingsCard). Sound + haptics
+        // + fee schedule stay (no setup required).
         const guest = this._isGuest();
         const setActive = (name: string, active: boolean) => {
             const n = this._settingsPanel?.getChildByName(name);
@@ -10087,7 +11884,10 @@ export class AppUI extends Component {
         setActive('WalletCard',                  !guest);
         setActive('ProfileCard',                 !guest);  // username editbox lives here
         setActive('DeleteAccountSettingsButton', !guest);
-        setActive('DisconnectSettingsButton',    !guest);
+        // Phase 29 — DisconnectSettingsButton now nests inside AccountSettingsCard.
+        const accountCard = this._settingsPanel?.getChildByName('AccountSettingsCard');
+        const discRow = accountCard?.getChildByName('DisconnectSettingsButton');
+        if (discRow) discRow.active = !guest;
     }
 
     private _onSettingsBackClick(): void {
@@ -10107,8 +11907,17 @@ export class AppUI extends Component {
         const walletName = this._resolveWalletName();
 
         if (this._settingsWalletNameLabel) {
-            this._settingsWalletNameLabel.string = pubkey ? walletName : 'Not connected';
+            // Phase 29 — wallet card shows "Connected · {wallet}" when authed,
+            // "Not connected" otherwise. Status dot mirrors connection state.
+            this._settingsWalletNameLabel.string = pubkey ? `Connected · ${walletName}` : 'Not connected';
         }
+        const statusDot = this._settingsPanel?.getChildByName('WalletCard')?.getChildByName('WalletStatusDot');
+        const statusDotSpr = statusDot?.getComponent(Sprite);
+        if (statusDotSpr) {
+            statusDotSpr.color = pubkey ? new Color(20, 241, 149, 255) : new Color(93, 100, 133, 255);
+        }
+        const copyBtn = this._settingsPanel?.getChildByName('WalletCard')?.getChildByName('CopyPubkeyButton');
+        if (copyBtn) copyBtn.active = !!pubkey;
         if (this._settingsWalletPubkeyLabel) {
             this._settingsWalletPubkeyLabel.string = pubkey ? this._fmtMintShort(pubkey) : '—';
         }
@@ -10119,7 +11928,7 @@ export class AppUI extends Component {
                 this._rpc.getBalance(pubkey).then((lamports) => {
                     if (!this._settingsWalletBalanceLabel) return;
                     const sol = (lamports ?? 0) / 1e9;
-                    this._settingsWalletBalanceLabel.string = `${sol.toFixed(4)} SOL`;
+                    this._settingsWalletBalanceLabel.string = `${sol.toFixed(2)} SOL`;
                 }).catch(() => {
                     if (this._settingsWalletBalanceLabel) this._settingsWalletBalanceLabel.string = '(balance unavailable)';
                 });
@@ -10151,11 +11960,15 @@ export class AppUI extends Component {
     }
 
     private _resolveWalletName(): string {
-        // MWAManager may expose the wallet identity post-authorization; if not,
-        // fall back to "MWA" (Mobile Wallet Adapter generic).
+        // Phase 29 — never display a URL in the UI (the old MWA `walletUriBase`
+        // returned strings like "https://jup.ag/solana-wallet-adapter" which
+        // read as a debug leak). Prefer a clean package name / wallet name
+        // (e.g. "Seed Vault", "Phantom"); fall back to a generic label.
         const mwa = MWAManager.instance as any;
-        const cached = mwa?.cachedWalletPackage ?? mwa?.walletUriBase ?? mwa?.walletName;
-        if (typeof cached === 'string' && cached.length > 0) return cached;
+        const cached = mwa?.cachedWalletPackage ?? mwa?.walletName;
+        if (typeof cached === 'string' && cached.length > 0 && !/^https?:\/\//i.test(cached)) {
+            return cached;
+        }
         return 'Mobile Wallet Adapter';
     }
 
@@ -10234,6 +12047,40 @@ export class AppUI extends Component {
     }
 
     /**
+     * Phase 29 — copy the connected wallet's pubkey to the system clipboard.
+     * Uses navigator.clipboard.writeText (Chromium WebView available on every
+     * supported Solana phone build). Falls back to a "copy failed" toast on
+     * error. Fires soft haptics + a confirmation toast on success.
+     */
+    private _onCopyPubkey(): void {
+        const pubkey = MWAManager.instance?.connectedPubkey;
+        if (!pubkey) {
+            showToast('No wallet connected');
+            return;
+        }
+        const onOk = () => {
+            try { Haptics.fire(HapticType.SOFT); } catch (_) { /* editor no-op */ }
+            playSound('tap');
+            showToast('Address copied');
+        };
+        try {
+            const nav = (globalThis as any).navigator;
+            if (nav?.clipboard?.writeText) {
+                nav.clipboard.writeText(pubkey).then(onOk).catch((e: any) => {
+                    console.log(`${TAG} _onCopyPubkey | clipboard FAIL ${e}`);
+                    showToast('Copy failed');
+                });
+                return;
+            }
+            console.log(`${TAG} _onCopyPubkey | navigator.clipboard unavailable`);
+            showToast('Clipboard unavailable');
+        } catch (e) {
+            console.log(`${TAG} _onCopyPubkey | ERROR ${e}`);
+            showToast('Copy failed');
+        }
+    }
+
+    /**
      * Phase G7 — friendly mapping for `MWAManager.lastError.code` so toasts
      * can surface what actually happened. Falls back to the raw message.
      */
@@ -10307,11 +12154,16 @@ export class AppUI extends Component {
         }
     }
 
-    private _onOpenPortfolioClick(): void {
+    /** Phase N4: legacy entry name kept private; the only caller is the
+     *  hub-tab handler (no Home button maps directly here anymore). */
+    private _openPortfolioInternal(): void {
         if (!this._portfolioPanel) return;
-        console.log(`${TAG} _onOpenPortfolioClick | OPEN top=${this._pfTopLevelTab} tab=${this._pfActiveTab}`);
-        this._tokenDuelPanel.active = false;
+        console.log(`${TAG} _openPortfolioInternal | OPEN top=${this._pfTopLevelTab} tab=${this._pfActiveTab}`);
+        this._hideAllTopLevelPanelsExcept('portfolio');
         this._portfolioPanel.active = true;
+        // Belt-and-suspenders: ensure the runtime hub-tab strip is visible.
+        const pfStrip = this._portfolioPanel.getChildByName('HubTabStrip');
+        if (pfStrip) pfStrip.active = true;
         if (this._pfPubkeyLabel) {
             const pk = MWAManager.instance?.connectedPubkey;
             this._pfPubkeyLabel.string = pk ? this._fmtMintShort(pk) : 'not connected';
@@ -10325,7 +12177,9 @@ export class AppUI extends Component {
         if (!this._portfolioPanel) return;
         console.log(`${TAG} _onPortfolioBackClick | CLOSE`);
         this._portfolioPanel.active = false;
-        this._tokenDuelPanel.active = true;
+        // Phase N4: a fresh hub re-entry should always land on Portfolio.
+        this._hubActiveTab = 'portfolio';
+        this._setActivePanel('home');
     }
 
     private _onPortfolioTabClick(tab: 'paper' | 'real'): void {
@@ -10346,50 +12200,97 @@ export class AppUI extends Component {
         if (paperLbl) paperLbl.color = this._pfActiveTab === 'paper' ? new Color(12, 18, 26, 255) : new Color(200, 210, 230, 255);
         if (realLbl) realLbl.color = this._pfActiveTab === 'real' ? new Color(12, 18, 26, 255) : new Color(200, 210, 230, 255);
         if (this._pfActiveTab === 'real') {
-            // Session D Part 4: hydrate Real tab from on-chain UserStats PDA.
-            const mwa = MWAManager.instance;
-            const pubkey = mwa?.connectedPubkey ?? '';
+            const pubkey = MWAManager.instance?.connectedPubkey ?? '';
             if (!pubkey) {
-                this._setPortfolioCards(new Map([
-                    ['games', '—'], ['wins', '—'], ['losses', '—'],
-                    ['winrate', '—'], ['pnl', '—'], ['xp', '—'],
-                ]));
+                this._applyPortfolioRecord({
+                    games: 0, wins: 0, losses: 0, profitLamports: 0,
+                    xp: 0, level: 0, loaded: false,
+                });
                 return;
             }
             loadRealStats(this._tdRpc, pubkey).then((rec) => {
-                const winrate = rec.games > 0 ? `${Math.round((rec.wins / rec.games) * 100)}%` : '—';
-                const pnlSol = rec.profitLamports / 1e9;
-                const pnlStr = rec.profitLamports === 0 ? '—' : (pnlSol >= 0 ? `+${pnlSol.toFixed(3)}` : `${pnlSol.toFixed(3)}`);
-                const xpStr = rec.loaded ? `${rec.xp} · L${rec.level}` : '—';
-                this._setPortfolioCards(new Map([
-                    ['games',   rec.games > 0 ? String(rec.games) : (rec.loaded ? '0' : '—')],
-                    ['wins',    rec.wins > 0 ? String(rec.wins) : (rec.loaded ? '0' : '—')],
-                    ['losses',  rec.losses > 0 ? String(rec.losses) : (rec.loaded ? '0' : '—')],
-                    ['winrate', winrate],
-                    ['pnl',     pnlStr],
-                    ['xp',      xpStr],
-                ]));
+                this._applyPortfolioRecord(rec);
                 console.log(`${TAG} _refreshPortfolioTab | REAL_LOADED games=${rec.games} wins=${rec.wins} losses=${rec.losses} xp=${rec.xp} level=${rec.level} loaded=${rec.loaded}`);
             }).catch((e) => {
                 console.log(`${TAG} _refreshPortfolioTab | REAL_ERROR error=${e}`);
             });
             return;
         }
-
-        // Paper tab uses localStorage.
+        // Paper tab uses localStorage; derive level client-side.
         const rec = Stats.load(this._pfActiveTab);
+        this._applyPortfolioRecord({
+            games: rec.games, wins: rec.wins, losses: rec.losses,
+            profitLamports: rec.profitLamports, xp: rec.xp,
+            level: levelFromXp(rec.xp), loaded: true,
+        });
+    }
+
+    private _onPortfolioEmptyStateStart(): void {
+        console.log(`${TAG} _onPortfolioEmptyStateStart | nav to TokenDuel host flow`);
+        if (this._portfolioPanel) this._portfolioPanel.active = false;
+        this._tokenDuelPanel.active = true;
+        this._onStartMatch();
+    }
+
+    /**
+     * Drives the hero P/L card, secondary cards, XP progress bar, and
+     * empty-state visibility from a single normalized record. Called from
+     * both Paper and Real branches of `_refreshPortfolioTab`.
+     */
+    private _applyPortfolioRecord(rec: {
+        games: number; wins: number; losses: number;
+        profitLamports: number; xp: number; level: number; loaded: boolean;
+    }): void {
+        const isEmpty = (this._pfActiveTab === 'real' && !rec.loaded) || rec.games === 0;
+        if (this._pfEmptyState) this._pfEmptyState.active = isEmpty;
+        for (const n of this._pfStatsViewNodes) n.active = !isEmpty;
+        if (isEmpty) return;
+
+        // Secondary cards (wins/losses/winrate/games) via existing map path.
         const winrate = rec.games > 0 ? `${Math.round((rec.wins / rec.games) * 100)}%` : '—';
-        const pnlSol = rec.profitLamports / 1e9;
-        const pnlStr = rec.profitLamports === 0 ? '—' : (pnlSol >= 0 ? `+${pnlSol.toFixed(3)}` : `${pnlSol.toFixed(3)}`);
-        const xpLevel = rec.xp > 0 ? `${rec.xp} · L${levelFromXp(rec.xp)}` : '—';
         this._setPortfolioCards(new Map<string, string>([
-            ['games', rec.games > 0 ? String(rec.games) : '—'],
-            ['wins',  rec.wins > 0 ? String(rec.wins) : '—'],
-            ['losses', rec.losses > 0 ? String(rec.losses) : '—'],
+            ['games',   String(rec.games)],
+            ['wins',    String(rec.wins)],
+            ['losses',  String(rec.losses)],
             ['winrate', winrate],
-            ['pnl', pnlStr],
-            ['xp', xpLevel],
         ]));
+
+        // Hero P/L value + edge tint.
+        const pnlSol = rec.profitLamports / 1e9;
+        const isPos = rec.profitLamports > 0;
+        const isNeg = rec.profitLamports < 0;
+        const green = new Color(48, 198, 155, 255);
+        const red   = new Color(220, 90, 90, 255);
+        const dim   = new Color(140, 150, 170, 255);
+        const text  = new Color(244, 245, 249, 255);
+        if (this._pfHeroPnLValue) {
+            this._pfHeroPnLValue.string = isPos ? `+${pnlSol.toFixed(3)} SOL`
+                                        : isNeg ? `${pnlSol.toFixed(3)} SOL`
+                                                : '0 SOL';
+            this._pfHeroPnLValue.color = isPos ? green : isNeg ? red : text;
+        }
+        if (this._pfHeroPnLEdge) this._pfHeroPnLEdge.color = isPos ? green : isNeg ? red : dim;
+        if (this._pfHeroPnLSubtitle) {
+            this._pfHeroPnLSubtitle.string =
+                `Across ${rec.games} match${rec.games === 1 ? '' : 'es'}`;
+        }
+
+        // XP/Level card.
+        const prog = levelProgress(rec.xp);
+        if (this._pfXpValueLabel) this._pfXpValueLabel.string = `L${prog.level}`;
+        if (this._pfXpProgressFill) {
+            Tween.stopAllByTarget(this._pfXpProgressFill);
+            tween(this._pfXpProgressFill)
+                .to(0.4, { scale: new Vec3(prog.progress, 1, 1) }, { easing: 'cubicOut' })
+                .start();
+        }
+        if (this._pfXpFooter) {
+            const atLevel = xpForLevel(prog.level);
+            const toLevel = xpForLevel(prog.level + 1);
+            this._pfXpFooter.string = rec.xp === 0
+                ? 'Earn XP by winning matches'
+                : `${rec.xp - atLevel} / ${toLevel - atLevel} XP`;
+        }
     }
 
     private _setPortfolioCards(values: Map<string, string>): void {
@@ -10409,6 +12310,7 @@ export class AppUI extends Component {
         console.log(`${TAG} _onPortfolioTopLevelTab | tab=${tab}`);
         if (tab === 'trophies') this._refreshTrophies();
         this._refreshPortfolioTopLevel();
+        if (tab === 'stats') this._refreshPortfolioTab();
         if (tab === 'history') this._refreshMatchHistory(true);
     }
 
@@ -10434,10 +12336,8 @@ export class AppUI extends Component {
         }
 
         const statsActive = tab === 'stats';
-        for (const [, lbl] of this._pfStatValues) {
-            const cardNode = lbl.node.parent;
-            if (cardNode) cardNode.active = statsActive;
-        }
+        for (const n of this._pfStatsViewNodes) n.active = statsActive;
+        if (!statsActive && this._pfEmptyState) this._pfEmptyState.active = false;
         if (this._pfPaperTab) this._pfPaperTab.node.active = statsActive;
         if (this._pfRealTab)  this._pfRealTab.node.active  = statsActive;
         if (this._pfHistoryView) this._pfHistoryView.active = tab === 'history';
@@ -10658,12 +12558,12 @@ export class AppUI extends Component {
         this._tickerRotateIdx += 1;
         // Stash the entry so HomeMatchTicker tap can route into spectator view.
         this._tickerDisplayedEntry = entry;
-        // We lazily import formatTickerLine to avoid dragging the module into
-        // the Home-show hot path when there's nothing to render.
-        import('../../token-duel/scripts/MatchTickerRpc').then(({ formatTickerLine }) => {
-            const labelNode = tickerNode.getChildByName('Label');
-            const label = labelNode?.getComponent(Label);
-            if (label) label.string = formatTickerLine(entry, Math.floor(Date.now() / 1000));
+        // 2026-04-26 lobby restructure: feed the 5 chip Val labels instead of
+        // a single one-line string. Lazy-import keeps the module out of the
+        // Home-show hot path.
+        import('../../token-duel/scripts/MatchTickerRpc').then(({ extractTickerParts }) => {
+            const parts = extractTickerParts(entry, Math.floor(Date.now() / 1000));
+            this._setMatchStatusChips(parts);
         }).catch(() => { /* module already loaded in most cases */ });
     }
 
@@ -10830,7 +12730,7 @@ export class AppUI extends Component {
             if (medalNode) {
                 const medalIcon = medalBySlot.get(i);
                 if (medalIcon) {
-                    IconLibrary.attach(medalNode, medalIcon, { size: 28 });
+                    IconLibrary.attach(medalNode, medalIcon, { size: 32 });
                     medalNode.active = true;
                 } else {
                     // Clear to empty — remove Graphics so no leftover medal shows.
@@ -11257,12 +13157,14 @@ export class AppUI extends Component {
      * panel re-entry.
      */
     private async _refreshRakeChip(): Promise<void> {
-        const chip = this._homeRakeChip;
-        if (!chip) return;
+        // 2026-04-26 lobby restructure: HomeRakeChip removed; rake value now
+        // lives in the ChallengeSeasonCard's RAKE chip. Cache the formatted
+        // text so _hydrateDailyChallengeWidget can merge it.
         const mwa = MWAManager.instance;
         const pubkey = mwa?.connectedPubkey;
         if (!pubkey) {
-            chip.node.active = false;
+            this._cachedRakeText = '—';
+            this._setChallengeChips({ rake: this._cachedRakeText });
             return;
         }
         try {
@@ -11270,11 +13172,12 @@ export class AppUI extends Component {
             const level = stats.loaded ? Math.max(1, stats.level) : 1;
             this._cachedLevel = level;
             const bps = rakeBpsForLevel(level);
-            chip.string = `Your rake: ${(bps / 100).toFixed(1)}% (lvl ${level})`;
-            chip.node.active = true;
+            this._cachedRakeText = `${(bps / 100).toFixed(1)}% (Lv ${level})`;
+            this._setChallengeChips({ rake: this._cachedRakeText });
         } catch (e) {
             console.log(`${TAG} _refreshRakeChip | ERROR ${e}`);
-            chip.node.active = false;
+            this._cachedRakeText = '—';
+            this._setChallengeChips({ rake: this._cachedRakeText });
         }
     }
 
@@ -11329,21 +13232,54 @@ export class AppUI extends Component {
     private _refreshAudioCard(): void {
         const card = this._settingsPanel?.getChildByName('AudioSettingsCard');
         if (!card) return;
-        const soundBtn = card.getChildByName('SoundToggleButton');
-        const hapBtn = card.getChildByName('HapticsToggleButton');
         const soundOn = isSoundEnabled();
         const hapOn = Haptics.isEnabled();
-        const soundLabel = soundBtn?.getChildByName('Label')?.getComponent(Label);
-        const hapLabel = hapBtn?.getChildByName('Label')?.getComponent(Label);
-        // UX Phase 2b: emoji-free labels + state-driven IconBadge swap.
-        if (soundLabel) soundLabel.string = soundOn ? 'Sound: ON' : 'Sound: OFF';
-        if (hapLabel) hapLabel.string = hapOn ? 'Haptics: ON' : 'Haptics: OFF';
-        if (soundBtn) this._ensureIconBadge(soundBtn, soundOn ? 'speaker' : 'speakerMuted', { size: 18, offsetX: -105 });
-        if (hapBtn)   this._ensureIconBadge(hapBtn,   hapOn   ? 'vibration' : 'hand',        { size: 18, offsetX: -105 });
-        const soundSpr = soundBtn?.getComponent(Sprite);
-        const hapSpr = hapBtn?.getComponent(Sprite);
-        if (soundSpr) soundSpr.color = soundOn ? new Color(48, 198, 155, 255) : new Color(60, 70, 90, 255);
-        if (hapSpr) hapSpr.color = hapOn ? new Color(48, 198, 155, 255) : new Color(60, 70, 90, 255);
+        // Phase 29 — toggle row layout. Each row keeps a static "Sound" /
+        // "Haptics" label and signals state via a recolored ON/OFF pill on the
+        // right. The row's own background sprite stays neutral; the pill is
+        // the only thing that flips colour. Icons are also state-driven.
+        this._setPrefRowState('SoundToggleButton',   soundOn, soundOn ? 'speaker'   : 'speakerMuted');
+        this._setPrefRowState('HapticsToggleButton', hapOn,   hapOn   ? 'vibration' : 'hand');
+    }
+
+    /**
+     * Phase 30 — apply ON/OFF state to a Preferences toggle row using a real
+     * toggle switch: track recolors (teal ↔ slate), knob slides ±12px (180ms
+     * backOut), icon pulses 1.0 → 1.18 → 1.0 (220ms total).
+     */
+    private _setPrefRowState(rowName: string, on: boolean, iconName: IconName): void {
+        const card = this._settingsPanel?.getChildByName('AudioSettingsCard');
+        const row = card?.getChildByName(rowName);
+        if (!row) return;
+
+        const trackNode = row.getChildByName(`${rowName}SwitchTrack`);
+        const trackSpr = trackNode?.getComponent(Sprite);
+        if (trackSpr) {
+            trackSpr.color = on ? new Color(20, 241, 149, 255) : new Color(37, 43, 66, 255);
+        }
+
+        const knobNode = row.getChildByName(`${rowName}SwitchKnob`);
+        if (knobNode) {
+            const trackX = trackNode?.position.x ?? 254;
+            const targetX = on ? trackX + 12 : trackX - 12;
+            Tween.stopAllByTarget(knobNode);
+            tween(knobNode)
+                .to(0.18, { position: new Vec3(targetX, knobNode.position.y, 0) }, { easing: 'backOut' })
+                .start();
+        }
+
+        const iconChildName = rowName === 'SoundToggleButton' ? 'PrefSoundIcon' : 'PrefHapticsIcon';
+        const iconChild = row.getChildByName(iconChildName);
+        if (iconChild) {
+            try { IconLibrary.attach(iconChild, iconName, { size: 22 }); }
+            catch (e) { console.log(`${TAG} _setPrefRowState | icon attach FAIL ${e}`); }
+            Tween.stopAllByTarget(iconChild);
+            iconChild.setScale(1, 1, 1);
+            tween(iconChild)
+                .to(0.11, { scale: new Vec3(1.18, 1.18, 1) }, { easing: 'backOut' })
+                .to(0.11, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                .start();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

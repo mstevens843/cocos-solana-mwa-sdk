@@ -35,6 +35,7 @@ import { runMigrations } from './migrate';
 import { getUser, setUsername, touchUser, validateUsername } from './users';
 import { getPaperXp, recordPaperMatch, type PaperTrack } from './paper_xp';
 import { recordMatch, listForPlayer, type MatchHistoryRecord } from './match_history';
+import { recordLobby, type MatchLobbyRecord } from './match_lobbies';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { PROGRAM_ID } from '../../assets/token-duel/scripts/constants';
 import * as path from 'path';
@@ -169,6 +170,49 @@ app.get('/matches/history', async (req: Request, res: Response) => {
         return res.json({ player, count: rows.length, matches: rows });
     } catch (e: any) {
         console.log(`${TAG} GET /matches/history error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 6 — open-lobby insert (idempotent on match_pda).
+// Client-uploaded immediately after `join_match_create` confirms. Powers
+// funnel analytics; on-chain stays authoritative for live discovery.
+app.post('/matches/lobby', async (req: Request, res: Response) => {
+    try {
+        const body = req.body as Partial<MatchLobbyRecord>;
+        if (!body || typeof body.matchPda !== 'string' || body.matchPda.length < 32) {
+            return res.status(400).json({ error: 'matchPda required' });
+        }
+        if (typeof body.creatorPubkey !== 'string' || body.creatorPubkey.length < 32) {
+            return res.status(400).json({ error: 'creatorPubkey required' });
+        }
+        if (typeof body.modeU8 !== 'number' || body.modeU8 < 0 || body.modeU8 > 3) {
+            return res.status(400).json({ error: 'modeU8 must be 0..3' });
+        }
+        if (typeof body.wagerLamports !== 'number' || body.wagerLamports < 0) {
+            return res.status(400).json({ error: 'wagerLamports must be non-negative number' });
+        }
+        if (typeof body.requiredPlayers !== 'number' || body.requiredPlayers < 2 || body.requiredPlayers > 10) {
+            return res.status(400).json({ error: 'requiredPlayers must be 2..10' });
+        }
+        try { new PublicKey(body.matchPda); new PublicKey(body.creatorPubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+
+        const result = await recordLobby({
+            matchPda: body.matchPda,
+            creatorPubkey: body.creatorPubkey,
+            modeU8: body.modeU8,
+            wagerTier: body.wagerTier ?? 0,
+            wagerLamports: body.wagerLamports,
+            timeWindow: body.timeWindow ?? 0,
+            requiredPlayers: body.requiredPlayers,
+            createdAt: body.createdAt ?? new Date().toISOString(),
+        });
+        void touchUser(body.creatorPubkey).catch(() => {});
+        return res.json({ ok: true, ...result });
+    } catch (e: any) {
+        console.log(`${TAG} POST /matches/lobby error | ${e?.message ?? e}`);
         return res.status(500).json({ error: e?.message ?? 'internal error' });
     }
 });

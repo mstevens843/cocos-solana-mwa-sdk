@@ -198,7 +198,7 @@ export class NotificationToastQueue {
         // Icon.
         if (s.iconContainer) {
             try {
-                IconLibrary.attach(s.iconContainer, cfg.icon, { size: 40 });
+                IconLibrary.attach(s.iconContainer, cfg.icon, { size: 44 });
             } catch (e) {
                 console.log(`${TAG} _showInSlot | icon attach failed kind=${n.kind} ${e}`);
             }

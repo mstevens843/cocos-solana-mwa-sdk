@@ -181,7 +181,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             backLink:        { x: -280, y: 720,  w: 110, h: 28, type: 'label' },
             backBtn:         { x: -280, y: 720,  w: 140, h: 36, type: 'btnGhost' },
             title:           { x: 0,    y: 700,  w: 280, h: 44, type: 'label' },
-            balanceChip:     { x: 230,  y: 700,  w: 180, h: 32, type: 'label' },
+            balanceChip:     { x: 130,  y: 700,  w: 360, h: 64, type: 'label' },
             search:          { x: 0,    y: 640,  w: 620, h: 46, type: 'editbox' },
             searchClear:     { x: 285,  y: 640,  w: 40,  h: 40, type: 'btnGhost' },
             feedTabDropdown: { x: -200, y: 590,  w: 240, h: 40, type: 'btnGhost' },

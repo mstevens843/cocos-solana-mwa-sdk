@@ -348,11 +348,17 @@ export class MascotController extends Component {
     private _playCelebrate(): void {
         const body = this.node;
         const baseY = body.position.y;
-        // Jump + spin
+        // Jump + spin. Auto-return to idle only when running the procedural
+        // body — the Seedance celebrate sequence is ~4 s long and clamps to
+        // its last frame, so flipping back to idle here would cut the
+        // animation short.
         tween(body)
             .to(0.20, { position: new Vec3(body.position.x, baseY + 60, body.position.z), angle: 180 }, { easing: 'cubicOut' })
             .to(0.30, { position: new Vec3(body.position.x, baseY, body.position.z), angle: 360 }, { easing: 'cubicIn' })
-            .call(() => { body.angle = 0; this.setState('idle'); })
+            .call(() => {
+                body.angle = 0;
+                if (!this._useSpriteSheet) this.setState('idle');
+            })
             .start();
         // Sparkle burst — 8 nodes outward
         const cx = 0, cy = 0;
@@ -390,11 +396,13 @@ export class MascotController extends Component {
     private _playLose(): void {
         const body = this.node;
         const baseY = body.position.y;
-        // Slump down, slight tilt
+        // Slump down, slight tilt. Auto-return to idle only when running the
+        // procedural body — the Seedance lose sequence is ~4 s long and
+        // clamps to its last frame.
         tween(body)
             .to(0.30, { position: new Vec3(body.position.x, baseY - 12, body.position.z), angle: -8 }, { easing: 'cubicOut' })
             .delay(1.2)
-            .call(() => { this.setState('idle'); })
+            .call(() => { if (!this._useSpriteSheet) this.setState('idle'); })
             .start();
     }
 

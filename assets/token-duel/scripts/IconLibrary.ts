@@ -38,7 +38,9 @@ export type IconName =
     | 'cog' | 'user' | 'book' | 'bulb' | 'robot' | 'trash' | 'save'
     | 'speaker' | 'speakerMuted' | 'vibration' | 'hand' | 'flag' | 'clipboard'
     // Phase N3 — Notification system
-    | 'bell';
+    | 'bell'
+    // Phase N4 — Disconnect (Home wallet sign-out; Phase 3 PNG = disconnect.png)
+    | 'disconnect';
 
 export interface IconAttachOptions {
     /** Logical size in points; defaults to 32. */
@@ -808,6 +810,29 @@ function drawClipboard(g: Graphics, size: number, color: Color): void {
     }
 }
 
+function drawDisconnect(g: Graphics, size: number, color: Color): void {
+    g.strokeColor = color;
+    g.lineWidth = Math.max(2, size * 0.10);
+    // Open ring (IEC 60417-5009): start the arc just below 12 o'clock and
+    // wrap ~330° so the vertical bar slots cleanly into the gap at the top.
+    const r = size * 0.34;
+    const startDeg = -75;
+    const endDeg = 255;
+    const steps = 32;
+    const startRad = (startDeg * Math.PI) / 180;
+    g.moveTo(Math.cos(startRad) * r, Math.sin(startRad) * r);
+    for (let i = 1; i <= steps; i++) {
+        const t = startDeg + ((endDeg - startDeg) * i) / steps;
+        const rad = (t * Math.PI) / 180;
+        g.lineTo(Math.cos(rad) * r, Math.sin(rad) * r);
+    }
+    g.stroke();
+    // Vertical bar from center upward through the ring's gap.
+    g.moveTo(0, size * 0.05);
+    g.lineTo(0, size * 0.46);
+    g.stroke();
+}
+
 /* ── Registry ─────────────────────────────────────────────────────────── */
 
 REG.medalGold   = { draw: (g, s, c) => drawMedal(g, s, c, colorFromHex(Palette.accent.violet)),  tintHex: Palette.rank.gold,   emoji: '🥇' };
@@ -857,3 +882,5 @@ REG.flag        = { draw: drawFlag,         tintHex: Palette.text.hi,      emoji
 REG.clipboard   = { draw: drawClipboard,    tintHex: Palette.text.mid,     emoji: '📋' };
 // Phase N3 additions:
 REG.bell        = { draw: drawBell,         tintHex: Palette.text.hi,      emoji: '🔔' };
+// Phase N4 additions:
+REG.disconnect  = { draw: drawDisconnect,   tintHex: Palette.status.loss,  emoji: '⏻' };

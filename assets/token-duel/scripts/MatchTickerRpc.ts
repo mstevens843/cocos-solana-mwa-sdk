@@ -107,17 +107,39 @@ export function tickerStatusIcon(entry: MatchTickerEntry): TickerIconName {
  *  Tournament variant (Part 14): "TOURNAMENT · 4/10 joined · 0.001 SOL · 24h · 42s ago"
  */
 export function formatTickerLine(entry: MatchTickerEntry, nowSec: number): string {
+    const p = extractTickerParts(entry, nowSec);
+    return `${p.mode} · ${p.players} joined · ${p.stake} · ${p.duration} · ${p.created}`;
+}
+
+/** Split formatTickerLine into discrete chip values for the 5-chip Home card.
+ *  Same data, structured. Used by AppUI._setMatchStatusChips to drive the
+ *  MODE / PLAYERS / STAKE / DURATION / CREATED labels every 6s.
+ */
+export interface TickerParts {
+    mode: string;     // "1v1", "4p", "TOURNAMENT", …
+    players: string;  // "2/2"
+    stake: string;    // "0.050 SOL"
+    duration: string; // "1h" / "24h" / "3d" / "7d"
+    created: string;  // "42s ago" / "12m ago" / "3h ago"
+}
+export function extractTickerParts(entry: MatchTickerEntry, nowSec: number): TickerParts {
     // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
     const modeKey = (['oneVone', 'trio', 'fourPlayer', 'eightPlayer'][entry.mode] ?? 'oneVone') as keyof typeof MODES;
-    const modeLabel = entry.isTournament ? 'TOURNAMENT' : (MODES[modeKey]?.shortLabel ?? '1v1');
-    const windowLabel = ['1h', '24h', '3d', '7d'][entry.timeWindow] ?? '24h';
+    const mode = entry.isTournament ? 'TOURNAMENT' : (MODES[modeKey]?.shortLabel ?? '1v1');
+    const duration = ['1h', '24h', '3d', '7d'][entry.timeWindow] ?? '24h';
     const elapsedSec = Math.max(0, nowSec - Number(entry.createdAt));
-    const ago = elapsedSec < 60
+    const created = elapsedSec < 60
         ? `${elapsedSec}s ago`
         : elapsedSec < 3600
             ? `${Math.floor(elapsedSec / 60)}m ago`
             : `${Math.floor(elapsedSec / 3600)}h ago`;
-    return `${modeLabel} · ${entry.playerCount}/${entry.requiredPlayers} joined · ${entry.wagerSol.toFixed(3)} SOL · ${windowLabel} · ${ago}`;
+    return {
+        mode,
+        players: `${entry.playerCount}/${entry.requiredPlayers}`,
+        stake: `${entry.wagerSol.toFixed(3)} SOL`,
+        duration,
+        created,
+    };
 }
 
 /**

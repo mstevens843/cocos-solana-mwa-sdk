@@ -41,27 +41,63 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'ConnectButton',   components: ['cc.Button'] },
     { name: 'ReconnectButton', components: ['cc.Button'] },
     { name: 'PlayAsGuestButton',  components: ['cc.Button'] },
-    { name: 'PlayAsGuestSubtitle', components: ['cc.Label'] },
+    // PlayAsGuestSubtitle removed — Landing CTA stack now stacks Connect/Reconnect/Guest
+    // with subtitles INSIDE each button rect (no separate subtitle node).
     { name: 'StatusLabel',     components: ['cc.Label'], note: 'matches on both Landing and TokenDuel — that is OK' },
 
-    // ── Home ── Phase A overhaul: Sign* + Capabilities + PlayTokenDuel
-    // retired in favor of Start/Find/Bot Match trio (see below).
+    // ── Home ── 2026-04-26 lobby restructure: HUD header (WalletPill +
+    // SecureDot + WalletNameLabel), full-width LevelXp card with progress
+    // bar + XP label, MatchStatus card with header + 5 chips, Challenge
+    // card with 5 chips, "CHOOSE MATCH TYPE" section title, action trio
+    // (subtitles + chevrons INSIDE buttons), Training card with mascot +
+    // 3 labels + reparented HomeStatusLabel. Disconnect / Delete /
+    // SignOutGuest REMOVED — those flows live in SettingsPanel only
+    // (DisconnectSettingsButton, DeleteAccountSettingsButton).
     { name: 'StartMatchButton',    components: ['cc.Button'] },
     { name: 'FindMatchButton',     components: ['cc.Button'] },
     { name: 'BotMatchButton',      components: ['cc.Button'] },
     { name: 'StartMatchSubtitle',  components: ['cc.Label'] },
     { name: 'FindMatchSubtitle',   components: ['cc.Label'] },
     { name: 'BotMatchSubtitle',    components: ['cc.Label'] },
+    { name: 'StartMatchChevron',   components: ['cc.UITransform', 'cc.Label'] },
+    { name: 'FindMatchChevron',    components: ['cc.UITransform', 'cc.Label'] },
+    { name: 'BotMatchChevron',     components: ['cc.UITransform', 'cc.Label'] },
     { name: 'FindMatchButtonCountBadge', components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'FindMatchButtonCountLabel', components: ['cc.Label'] },
-    { name: 'DisconnectButton',    components: ['cc.Button'] },
-    { name: 'SignOutGuestButton',  components: ['cc.Button'] },
-    { name: 'DeleteButton',        components: ['cc.Button'] },
+    { name: 'WalletPill',          components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WalletPillSecureDot', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WalletNameLabel',     components: ['cc.Label'] },
     { name: 'PubkeyLabel',         components: ['cc.Label'] },
     { name: 'StreakFlameContainer', components: ['cc.UITransform'] },
     { name: 'StreakFlameIcon',      components: ['cc.Label'] },
     { name: 'StreakCountLabel',     components: ['cc.Label'] },
     { name: 'HomeStatusLabel',     components: ['cc.Label'] },
+    { name: 'HomeXpProgressLabel', components: ['cc.Label'] },
+    { name: 'HomeXpBarTrack',      components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeXpBarFill',       components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeChooseMatchLabel', components: ['cc.Label'] },
+    { name: 'HomeMatchTickerHeader', components: ['cc.Label'] },
+    { name: 'HomeMatchChipVal_mode',     components: ['cc.Label'] },
+    { name: 'HomeMatchChipVal_players',  components: ['cc.Label'] },
+    { name: 'HomeMatchChipVal_stake',    components: ['cc.Label'] },
+    { name: 'HomeMatchChipVal_duration', components: ['cc.Label'] },
+    { name: 'HomeMatchChipVal_created',  components: ['cc.Label'] },
+    { name: 'HomeChalChipVal_day',        components: ['cc.Label'] },
+    { name: 'HomeChalChipVal_challenges', components: ['cc.Label'] },
+    // V2: HomeChalChipVal_season removed — SEASON chip dropped from
+    // SecondaryStats card to slim cognitive load.
+    { name: 'HomeChalChipVal_pool',       components: ['cc.Label'] },
+    { name: 'HomeChalChipVal_rake',       components: ['cc.Label'] },
+    { name: 'HomeTrainingCard',           components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeTrainingTitleLabel',     components: ['cc.Label'] },
+    { name: 'HomeTrainingBodyLabel',      components: ['cc.Label'] },
+    { name: 'HomeTrainingHintLabel',      components: ['cc.Label'] },
+    // V2 — new home nodes: scrim, wallet glow, training mascot glow, CTA hint, divider
+    { name: 'HomeContentScrim',           components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'WalletPillGlow',             components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'TrainingMascotGlow',         components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'TrainingCtaHint',            components: ['cc.Label'] },
+    { name: 'HomeMatchChipDivider',       components: ['cc.UITransform', 'cc.Sprite'] },
 
     // ── TokenDuelPanel — core game ──
     { name: 'BackButton',           components: ['cc.Button'] },
@@ -194,7 +230,8 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'SpectatorJoinButton',    components: ['cc.Button'] },
 
     // ── Part 13 — Economics depth: rake surfacing + fee schedule link ──
-    { name: 'HomeRakeChip',           components: ['cc.Label'] },
+    // 2026-04-26 lobby restructure: HomeRakeChip retired; rake now lives
+    // inside the Home ChallengeSeasonCard as HomeChalChipVal_rake.
     { name: 'WaitingRakeLabel',       components: ['cc.Label'] },
     { name: 'PostMatchRakeLabel',     components: ['cc.Label'] },
     { name: 'FeesLinkButton',         components: ['cc.Button'] },
@@ -211,10 +248,19 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'TournamentJoinButton',     components: ['cc.Button'] },
 
     // ── betting-duel Phase 3: live portfolio race screen ──
+    // 2026-04-26 battle-UI polish: PlayerIdentityCard + RaceHeroSubtitleLabel
+    // dropped in favor of compact top row (Lv chip + Timer + hero %).
     { name: 'RacePanel',              components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'RaceCountdownLabel',     components: ['cc.Label'] },
     { name: 'RaceHeroDeltaLabel',     components: ['cc.Label'] },
-    { name: 'RaceHeroSubtitleLabel',  components: ['cc.Label'] },
+    { name: 'RacePlayerLevelChip',    components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'RacePlayerLevelChipLabel', components: ['cc.Label'] },
+    { name: 'PlayerTokenContributionBar_0', components: ['cc.Graphics'] },
+    { name: 'PlayerTokenContributionBar_1', components: ['cc.Graphics'] },
+    { name: 'PlayerTokenContributionBar_2', components: ['cc.Graphics'] },
+    { name: 'OpponentTokenContributionBar_0', components: ['cc.Graphics'] },
+    { name: 'OpponentTokenContributionBar_1', components: ['cc.Graphics'] },
+    { name: 'OpponentTokenContributionBar_2', components: ['cc.Graphics'] },
     { name: 'RaceCancelButton',       components: ['cc.Button'] },
 
     // ── UX overhaul Phase 2: procedural mascot on HomePanel ──
@@ -303,7 +349,9 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     // ── Stage 2 — Top-right Level chip on Home + TokenDuel ──
     { name: 'HomeLevelChip',                components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'HomeLevelChipLabel',           components: ['cc.Label'] },
-    { name: 'TokenDuelLevelChip',           components: ['cc.UITransform', 'cc.Sprite'] },
+    // TokenDuelLevelChip is an alias-only inner node holding the Lv label —
+    // no Sprite of its own (the surrounding pill carries the bg sprite).
+    { name: 'TokenDuelLevelChip',           components: ['cc.UITransform'] },
     { name: 'TokenDuelLevelChipLabel',      components: ['cc.Label'] },
 
     // ── Phase N2 — NotificationToastOverlay (3 stacked slots) ──

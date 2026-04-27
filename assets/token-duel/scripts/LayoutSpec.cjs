@@ -100,6 +100,12 @@ const LayoutSpec = {
             title:             { x: 0,   y: 460,  w: 680, h: 80,  type: 'label',     notes: 'Token Duel — display font, gold' },
             subtitle:          { x: 0,   y: 370,  w: 680, h: 50,  type: 'label',     notes: 'Portfolio Race on Solana — body font, muted' },
             mascot:            { x: 0,   y: 215,  w: 140, h: 180, type: 'mascot',    notes: 'idle Seedance frames; 40px gap below subtitle, 55px gap above connect' },
+            tagline:           { x: 0,   y: 110,  w: 680, h: 40,  type: 'label' },
+            supportLine:       { x: 0,   y: 66,   w: 660, h: 22,  type: 'label' },
+            ctaCardBg:         { x: 0,   y: -185, w: 700, h: 440, type: 'group' },
+            connectChevron:    { x: 290, y: -25,  w: 24,  h: 28,  type: 'label' },
+            trustLine:         { x: 0,   y: -100, w: 640, h: 20,  type: 'label' },
+            connectionStatusPill: { x: 0,y: -555, w: 200, h: 40,  type: 'chip' },
             connectBtn:        { x: 0,   y: 20,   w: 680, h: 100, type: 'btnPrimary',notes: 'Connect Wallet primary CTA' },
             reconnBtn:         { x: 0,   y: -90,  w: 680, h: 100, type: 'btnSuccess',notes: 'Reconnect (Cached) — only shown when AuthCache.hasCachedAuth' },
             statusLbl:         { x: 0,   y: -210, w: 680, h: 36,  type: 'label',     notes: 'Tap Connect to link your wallet — body, muted; shrunk h 60→36 to clear Play as Guest button bbox' },
@@ -684,8 +690,8 @@ const LayoutSpec = {
             backBtn:            { x: -280, y: 720,  w: 140, h: 36, type: 'btnGhost' },
             title:              { x: 0,    y: 700,  w: 280, h: 44, type: 'label' },
             // Stage 2 — Lv/XP chip top-right of TokenDuelPanel header (mirrors Home).
-            tokenDuelLevelChip: { x: 240,  y: 750,  w: 200, h: 32, type: 'chip',    notes: '"Lv N · X/Y" gold bold; hidden until UserStats loads' },
-            balanceChip:        { x: 230,  y: 700,  w: 180, h: 32, type: 'label' },
+            tokenDuelLevelChip: { x: 140,  y: 750,  w: 400, h: 64, type: 'chip',    notes: '2× scale (200×32→400×64), x=240→140 to keep right edge in bounds' },
+            balanceChip:        { x: 130,  y: 700,  w: 360, h: 64, type: 'label',   notes: '2× scale (180×32→360×64), x=230→130 to keep right edge in bounds' },
             search:             { x: 0,    y: 640,  w: 620, h: 46, type: 'editbox' },
             searchClear:        { x: 285,  y: 640,  w: 40,  h: 40, type: 'btnGhost' },
             feedTabDropdown:    { x: -200, y: 590,  w: 240, h: 40, type: 'btnGhost' },
@@ -760,11 +766,11 @@ const LayoutSpec = {
             // 6 top-row icon buttons at y=750. Moved from y=735 to clear
             // TitleLabel's bbox (y=700 h=44 → top=722, button bottom=730 → 8-px gap).
             topRowActionBtn: {
-                count: 6, w: 48, h: 40, y: 750,
+                count: 6, w: 96, h: 80, y: 750,
                 names:  ['OpenLeaderboardButton', 'OpenPortfolioButton', 'OpenSettingsButton',
                          'OpenSquadPresetsButton', 'SuggestSquadButton', 'HelpButton'],
                 labels: ['', '', '', '', '', '?'],
-                xs:     [-180, -128, -76, -24, 28, 80],
+                xs:     [-260, -156, -52, 52, 156, 260],
             },
             // 3 sort filter chips at y=550 (Newest / Liq↓ / Liq↑).
             feedFilterChip: {
