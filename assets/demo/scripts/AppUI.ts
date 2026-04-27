@@ -249,6 +249,8 @@ export class AppUI extends Component {
     private _opponentSubtitleGapLabel: Label | null = null;
     /** Decorative mascot opacity controller (dimmed during duel). */
     private _raceMascotOpacity: UIOpacity | null = null;
+    /** Gameplay hint label below Forfeit ("Tap to drop - stack as high as you can"). */
+    private _raceHintLabel: Label | null = null;
     // Duel bar — center tug-of-war.
     private _duelBarContainer: Node | null = null;
     private _duelBarFillGraphics: Graphics | null = null;
@@ -2162,6 +2164,8 @@ export class AppUI extends Component {
             this._raceMascotOpacity = raceMascotN.getComponent(UIOpacity) ?? raceMascotN.addComponent(UIOpacity);
             console.log(`${TAG} start | raceMascot bound`);
         }
+        const raceHintN = this._racePanel?.getChildByName('RaceHintLabel');
+        this._raceHintLabel = raceHintN?.getComponent(Label) ?? null;
         if (this._postMatchPanel) {
             // (post-match mascot bind already happened above; this trailing
             // brace closes the original `if (this._postMatchPanel)` block).
@@ -3864,7 +3868,8 @@ export class AppUI extends Component {
 
         // Show game area.
         if (this._gameArea) this._gameArea.active = true;
-        if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Tap to drop — stack as high as you can';
+        if (this._tokenDuelStatus) this._tokenDuelStatus.string = '';
+        if (this._raceHintLabel) this._raceHintLabel.string = 'Tap to drop - stack as high as you can';
 
         // Lazy-init PriceFeed once per session. Creating it is cheap (constructs
         // a BirdeyeClient with an embedded API key), so this could move to ctor,

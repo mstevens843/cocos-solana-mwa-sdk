@@ -2602,6 +2602,12 @@ function generate() {
     // Dim the label so the button reads as low-priority.
     style(sb, raceCancelN, { color: cl(140, 145, 160, 255), fontSize: 18 });
 
+    // Gameplay hint (sits below Forfeit, child of RacePanel so it draws
+    // above the panel scrim). String is overwritten by AppUI on race entry.
+    const raceHintN = mkLabel(sb, 'RaceHintLabel', racePanelN,
+        'Tap to drop - stack as high as you can', 18,
+        RPE.hintLabel.y, RPE.hintLabel.w, RPE.hintLabel.h, 168, 174, 201);
+
     const raceVignetteN = sb.e.length;
     sb.node('ScreenVignette', racePanelN, [], [raceVignetteN + 1, raceVignetteN + 2], v3(RPE.vignette.x, RPE.vignette.y, 0));
     const raceVignetteUT = sb.ut(raceVignetteN, RPE.vignette.w, RPE.vignette.h);
@@ -2858,6 +2864,7 @@ function generate() {
         rf(raceOppCard),
         rf(raceOppStripN),
         rf(raceCancelN),
+        rf(raceHintN),
         rf(raceMascotN),
     ];
 

@@ -162,14 +162,17 @@ const race = {
     // Opponent's hero delta (big 80pt portfolio %).
     OPP_HERO_DELTA_Y:    140,
 
-    // Opponent identity card ("BOT · Lv N").
-    OPP_IDENTITY_Y:      40,
+    // Opponent identity card ("BOT · Lv N"). 2026-04-27: 40 → 0 to clear opponentDelta visual extent.
+    OPP_IDENTITY_Y:      0,
 
     // Opponent-side token row (3 cards side-by-side, duel layout).
     OPP_TOKEN_ROW_Y:     -90,
 
     // Forfeit button (small, low-emphasis).
     FORFEIT_BTN_Y:       -260,
+
+    // Gameplay hint ("Tap to drop - stack as high as you can"). Sits below Forfeit.
+    HINT_LABEL_Y:        -310,
 
     // 4p/8p multi-player surfaces — mutually exclusive with duel layout.
     OPP_CARD_Y:          -400,   // 1v1 legacy big opponent card (hidden in duel)
@@ -203,6 +206,34 @@ const landing = {
 
     // Bottom status footer.
     STATUS_PILL_Y:    -555,
+};
+
+// 2026-04-27 — SettingsPanel deterministic Y anchors.
+// Top buttons aligned with HomePanel (y=620). Cards/footer shifted UP +30
+// from legacy to compress the title-to-WalletCard gap and pull the
+// status footer closer to the canvas bottom. Panel root is offset by
+// (0, -SAFE_AREA_TOP, 0) so panel-local y maps to world y - 110.
+const settings = {
+    // Header band — back / title (HomePanel parity).
+    HEADER_Y:             620,   // backLink + backBtn (was 618; +2)
+    TITLE_Y:              614,   // "Settings" title  (was 612; +2)
+
+    // Card stack — uniformly shifted UP +30 from legacy.
+    WALLET_CARD_Y:        530,   // h=124 (was 500)
+    PROFILE_CARD_Y:       376,   // h=148 (was 346)
+    QP_CARD_Y:            138,   // h=260 — DEFAULT MATCH SETTINGS (was 108)
+    AUDIO_CARD_Y:         -104,  // h=148 — PREFERENCES (was -134)
+    ACCOUNT_CARD_Y:       -332,  // h=232 — ACCOUNT (was -362)
+
+    // Standalone footer.
+    DELETE_BTN_Y:         -518,  // (was -548)
+    STATUS_Y:             -562,  // (was -592)
+
+    // Popovers — direct children of panel for z-order; ride along with
+    // their card parents so anchors stay consistent.
+    QP_MODE_POPOVER_Y:    98,    // (was 68)
+    QP_WINDOW_POPOVER_Y:  52,    // (was 22)
+    QP_WAGER_POPOVER_Y:   -14,   // (was -44)
 };
 
 const LayoutSpec = {
@@ -660,6 +691,10 @@ const LayoutSpec = {
             // Forfeit (smaller, dimmer, below opponent section) + mascot + vignette
             cancelBtn:        { x: 0,    y: race.FORFEIT_BTN_Y, w: 140, h: 36,  type: 'btn',
                 notes: 'duel layout: small/recessed gray surface, low emphasis' },
+
+            // Gameplay hint — child of RacePanel so it draws above the panel scrim.
+            hintLabel:        { x: 0,    y: race.HINT_LABEL_Y, w: 620, h: 24, type: 'label',
+                notes: '"Tap to drop - stack as high as you can"; below Forfeit' },
             mascot:           { x: 260,  y: race.MASCOT_Y, w: 120, h: 160, type: 'mascot',
                 notes: 'duel layout: dimmed to ~55% via UIOpacity (decorative)' },
             vignette:         { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics', notes: 'full-screen alpha overlay' },
@@ -785,6 +820,7 @@ const LayoutSpec = {
             ['ScreenVignette', 'RaceOpponentCard'],
             ['ScreenVignette', 'RaceOpponentStrip'],
             ['ScreenVignette', 'RaceCancelButton'],
+            ['ScreenVignette', 'RaceHintLabel'],
             ['ScreenVignette', 'RaceMascotContainer'],
             ['ScreenVignette', 'RacePlayerLevelChip'],
             ['ScreenVignette', 'OpponentIdentityCard'],
@@ -831,17 +867,17 @@ const LayoutSpec = {
             // delete-account moved further down, dark sheet behind cards.
             sheetBg:         { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite',
                 notes: 'subtle dark overlay (z-order behind all cards) — first child of SettingsPanel' },
-            backLink:        { x: -280, y: 618,  w: 110, h: 28,  type: 'label' },
-            backBtn:         { x: -280, y: 618,  w: 140, h: 36,  type: 'btnGhost' },
-            title:           { x: 0,    y: 612,  w: 400, h: 40,  type: 'label' },
+            backLink:        { x: -280, y: settings.HEADER_Y, w: 110, h: 28,  type: 'label' },
+            backBtn:         { x: -280, y: settings.HEADER_Y, w: 140, h: 36,  type: 'btnGhost' },
+            title:           { x: 0,    y: settings.TITLE_Y,  w: 400, h: 40,  type: 'label' },
             // Wallet → compact identity card (160→124, ~22% reduction).
             // Layout: header row (status dot + secondary "Connected · MWA"),
             // pubkey row (mono, prominent, with copy icon), divider, balance row.
             // Violet glow border (4 perimeter strokes) replaces top hairline.
-            walletCard:      { x: 0,    y: 500,  w: 688, h: 124, type: 'group',
+            walletCard:      { x: 0,    y: settings.WALLET_CARD_Y, w: 688, h: 124, type: 'group',
                 children: {
-                    header:        { x: -304, y: 42,  w: 200, h: 16, type: 'label',
-                        notes: 'micro-header "WALLET"' },
+                    header:        { x: -220, y: 42,  w: 200, h: 16, type: 'label',
+                        notes: 'micro-header "WALLET" — 2026-04-27 x -304→-220 to clear card-left edge' },
                     statusDot:     { x: -270, y: 18,  w: 12,  h: 12, type: 'sprite' },
                     walletName:    { x: 4,    y: 18,  w: 540, h: 18, type: 'label',
                         notes: 'secondary "Connected · {wallet}" (12px mid-text)' },
@@ -850,8 +886,8 @@ const LayoutSpec = {
                     copyPubkeyBtn: { x: 252,  y: -6,  w: 36,  h: 36, type: 'btnGhost' },
                     divider:       { x: 0,    y: -26, w: 632, h: 1,  type: 'sprite',
                         notes: 'hairline between pubkey and balance, white α 24' },
-                    walletBalance: { x: -304, y: -42, w: 460, h: 20, type: 'label',
-                        notes: 'mono 16px teal, left-aligned' },
+                    walletBalance: { x: -290, y: -38, w: 460, h: 20, type: 'label',
+                        notes: 'mono 16px teal, left-aligned — 2026-04-27 x -304→-290 / y -42→-38 to clear card border (kept above divider y=-26)' },
                     glowTop:       { x: 0,    y: 61,  w: 686, h: 2,  type: 'sprite',
                         notes: 'violet α 80 perimeter stroke (top)' },
                     glowBot:       { x: 0,    y: -61, w: 686, h: 2,  type: 'sprite' },
@@ -861,10 +897,10 @@ const LayoutSpec = {
             },
             // Profile — adds explicit "Username" label above the input + a
             // focus ring that fades in on edit.
-            profileCard:     { x: 0,    y: 346,  w: 688, h: 148, type: 'group',
+            profileCard:     { x: 0,    y: settings.PROFILE_CARD_Y, w: 688, h: 148, type: 'group',
                 children: {
-                    header:       { x: -304, y: 56,  w: 200, h: 16, type: 'label' },
-                    usernameLabel:{ x: -304, y: 36,  w: 200, h: 16, type: 'label',
+                    header:       { x: -220, y: 56,  w: 200, h: 16, type: 'label' },
+                    usernameLabel:{ x: -220, y: 36,  w: 200, h: 16, type: 'label',
                         notes: '"Username" 11px mid-text above the input' },
                     focusRing:    { x: 0,    y: 8,   w: 624, h: 48, type: 'sprite',
                         notes: 'violet stroke around EditBox, alpha 0 → 80 on focus' },
@@ -877,9 +913,9 @@ const LayoutSpec = {
             // Phase 29 — "DEFAULT MATCH SETTINGS". Phase 30 — drops ▾ glyph
             // from value labels and adds a › chevron child to each row for
             // stronger affordance. Trading-mode toggle gains a teal glow halo.
-            quickPlayCard:   { x: 0,    y: 108,  w: 688, h: 260, type: 'group',
+            quickPlayCard:   { x: 0,    y: settings.QP_CARD_Y, w: 688, h: 260, type: 'group',
                 children: {
-                    header: { x: -304, y: 116, w: 400, h: 18, type: 'label' },
+                    header: { x: -120, y: 116, w: 400, h: 18, type: 'label' },
                     qpModeRow:   { x: 0, y: 76,  w: 620, h: 40, type: 'btnGhost',
                         children: {
                             keyLabel:   { x: -284, y: 0, w: 200, h: 20, type: 'label' },
@@ -921,9 +957,9 @@ const LayoutSpec = {
             // PREFERENCES — Phase 30: real toggle switches (track + sliding knob)
             // replace the ON/OFF pills. Pill nodes preserved (deactivated) so
             // verifier allowedOverlaps and binding stability stay intact.
-            audioCard:       { x: 0,    y: -134, w: 688, h: 148, type: 'group',
+            audioCard:       { x: 0,    y: settings.AUDIO_CARD_Y, w: 688, h: 148, type: 'group',
                 children: {
-                    header:        { x: -304, y: 60,  w: 400, h: 16, type: 'label' },
+                    header:        { x: -120, y: 60,  w: 400, h: 16, type: 'label' },
                     soundRow:      { x: 0,    y: 22,  w: 620, h: 48, type: 'btnGhost',
                         children: {
                             icon:        { x: -274, y: 0,   w: 28, h: 28, type: 'sprite' },
@@ -955,10 +991,10 @@ const LayoutSpec = {
             // ACCOUNT — Phase 30: explicit GENERAL / SESSION group labels with a
             // hairline divider between, plus a row divider between Reconnect and
             // Disconnect. Card grows 200 → 232 to accommodate the headers.
-            accountCard:     { x: 0,    y: -362, w: 688, h: 232, type: 'group',
+            accountCard:     { x: 0,    y: settings.ACCOUNT_CARD_Y, w: 688, h: 232, type: 'group',
                 children: {
-                    header:           { x: -304, y: 100, w: 400, h: 16, type: 'label' },
-                    generalGroupLabel:{ x: -304, y: 78,  w: 200, h: 14, type: 'label',
+                    header:           { x: -120, y: 100, w: 400, h: 16, type: 'label' },
+                    generalGroupLabel:{ x: -220, y: 78,  w: 200, h: 14, type: 'label',
                         notes: '"GENERAL" group header (lo-text, 10px)' },
                     feesRow:          { x: 0,    y: 46,  w: 620, h: 48, type: 'btnGhost',
                         children: {
@@ -971,7 +1007,7 @@ const LayoutSpec = {
                     },
                     groupDivider:     { x: 0,    y: 16,  w: 600, h: 1, type: 'sprite',
                         notes: 'GENERAL / SESSION separator hairline' },
-                    sessionGroupLabel:{ x: -304, y: -2,  w: 200, h: 14, type: 'label' },
+                    sessionGroupLabel:{ x: -220, y: -2,  w: 200, h: 14, type: 'label' },
                     reconnectRow:     { x: 0,    y: -34, w: 620, h: 48, type: 'btnGhost',
                         children: {
                             icon:    { x: -274, y: 0,   w: 26, h: 26, type: 'sprite' },
@@ -997,18 +1033,17 @@ const LayoutSpec = {
             },
             // Phase 30 — Delete Account moved further down with a 54px buffer
             // above (intentional friction for a destructive action).
-            deleteBtn:       { x: 0,    y: -548, w: 220, h: 32, type: 'btnGhost',
+            deleteBtn:       { x: 0,    y: settings.DELETE_BTN_Y, w: 220, h: 32, type: 'btnGhost',
                 notes: 'small red text — rose label, NOT bold. Sits ~54px below account card.' },
-            status:          { x: 0,    y: -592, w: 640, h: 20, type: 'label' },
-            // Phase 27 — QP popovers. Direct children of SettingsPanel for z-order.
-            // y-positions follow the new QP card y=108 (was 90) — shifted +18 so
-            // each popover still opens just below its row.
-            qpModePopover:   { x: 200, y: 68,   w: 220, h: 174, type: 'group',
-                notes: 'opens BELOW QPModeRow (panel y=184); 4 options × 40 + 14 padding' },
-            qpWindowPopover: { x: 200, y: 22,   w: 220, h: 174, type: 'group',
-                notes: 'opens BELOW QPWindowRow (panel y=138)' },
-            qpWagerPopover:  { x: 200, y: -44,  w: 220, h: 214, type: 'group',
-                notes: 'opens BELOW QPWagerRow (panel y=92); 5 options × 40 + 14' },
+            status:          { x: 0,    y: settings.STATUS_Y, w: 640, h: 20, type: 'label' },
+            // QP popovers — direct children of SettingsPanel for z-order. Y values
+            // ride along with the cards (cards shifted +30 in 2026-04-27 refactor).
+            qpModePopover:   { x: 200, y: settings.QP_MODE_POPOVER_Y,   w: 220, h: 174, type: 'group',
+                notes: 'opens BELOW QPModeRow; 4 options × 40 + 14 padding' },
+            qpWindowPopover: { x: 200, y: settings.QP_WINDOW_POPOVER_Y, w: 220, h: 174, type: 'group',
+                notes: 'opens BELOW QPWindowRow' },
+            qpWagerPopover:  { x: 200, y: settings.QP_WAGER_POPOVER_Y,  w: 220, h: 214, type: 'group',
+                notes: 'opens BELOW QPWagerRow; 5 options × 40 + 14' },
         },
         templates: {
             // Phase 27 — popover option templates. Each popover stacks N options
