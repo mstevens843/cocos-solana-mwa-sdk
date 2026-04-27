@@ -19,6 +19,50 @@
  *      WITHOUT rebuilding the APK.
  */
 
+// 2026-04-27 — Token Duel page deterministic Y anchors.
+// Source-of-truth for every Y on TokenDuelPanel. NEVER hand-tune element
+// Y values on this page; always derive from these.  Canvas y-up,
+// origin at panel center (range −640..+640).
+const td = {
+    // Header band (unchanged)
+    HEADER_Y:           575,   // pills row + back link
+    TITLE_Y:            525,   // "Token Duel" centered
+    TITLE_BOTTOM:       507,   // = TITLE_Y - title.h(36)/2
+
+    // Top region — relocated SquadPanel (was bottom y=-345)
+    SQUAD_PANEL_TOP:    503,   // 4px gap below title
+    SQUAD_PANEL_H:      178,   // compressed from 220 to fit between title and feed-frame
+    SQUAD_PANEL_Y:      414,   // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
+    SQUAD_PANEL_BOTTOM: 325,
+    SQUAD_HEADER_Y:     486,   // "YOUR SQUAD" — top of panel
+    SQUAD_SLOTS_Y:      438,   // 3 slots row, h=64
+    WAGER_Y:            358,   // wager-value btn (left) + Start Duel CTA (right), h=56
+    WAGER_DROPDOWN_Y:   144,   // OPENS DOWNWARD now (overlays feed top); was y=-363 opening upward
+
+    // Feed container — top stays put, expands downward
+    FEED_FRAME_TOP:     320,   // 5px gap below SQUAD_PANEL_BOTTOM
+    FEED_FRAME_H:       940,   // wraps in-card UI + 2x scrollview down to just above status
+    FEED_FRAME_Y:      -150,   // = FEED_FRAME_TOP - FEED_FRAME_H/2
+
+    // In-card top band — re-homed mode tag (left) + squad counter (right)
+    GAMEMODE_CHIP_Y:    302,   // h=24 pill, top-LEFT of feed frame
+    SQUAD_COUNTER_Y:    302,   // h=24 label, top-RIGHT of feed frame
+
+    // In-card mid band (search/filter/cols) — shifted ~24px down
+    SEARCH_Y:           276,   // h=44 (was 300)
+    CHIPS_Y:            228,   // h=32 (was 248)
+    COL_HEADERS_Y:      196,   // h=24 (was 210)
+
+    // Feed scrollview — literal 2x height, growing downward
+    FEED_SCROLL_TOP:    180,   // 4px below col-headers bottom (184). Was 194 — moved DOWN 14
+    FEED_SCROLL_H:      776,   // 2x of original 388
+    FEED_SCROLL_Y:     -208,   // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
+    FEED_SCROLL_BOTTOM:-596,
+
+    // Footer
+    STATUS_Y:          -616,   // 4px gap below feed bottom; in-canvas
+};
+
 const LayoutSpec = {
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
@@ -1256,11 +1300,18 @@ const LayoutSpec = {
     TokenDuelPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // 2026-04-26 UX polish — two-row header eliminates the title↔pill overlap.
+            // 2026-04-27 layout pivot — squad panel hoisted to top, feed grown 2x downward.
+            // All Y values on this page are derived from `td` constants above. NEVER
+            // hand-tune y here; edit `td` and the elements follow.
+            //
             // Stack (top→bottom): icons row (615) · headerRow (575: Back+Pill) ·
-            // title (525) · MatchSetupCard (440) · Search (360) · SourceTabs (300) ·
-            // FilterChips (248) · ColumnHeaders (210) · FeedScrollview (0 ctr, h=388) ·
-            // SquadPanel wrapper (-345) · Status (-510). Side padding 16 → cards w=688/696.
+            // title (525) · SquadPanel (414, h=178: header→3 slots→wager+Start) ·
+            // FeedFrameCard (-150, h=940) wrapping {GameModeChip top-left + SquadCounter
+            // top-right at 302, Search 276, Chips 228, ColHeaders 196, FeedScrollview
+            // (-208, h=776, ~8 visible rows of h=85)} · Status (-616).
+            // matchSetupCard removed — its mode tag + squad counter re-homed as
+            // top-level gameModeChip (top-LEFT of feed frame) and squadCounterLabel
+            // (top-RIGHT). Side padding 16 → cards w=688/696.
             backLink:           { x: -288, y: 575,  w: 100, h: 28, type: 'label' },
             backBtn:            { x: -288, y: 575,  w: 120, h: 40, type: 'btnGhost' },
             // Title moves to its own row below Back/Pill so it's centered cleanly.
@@ -1273,49 +1324,55 @@ const LayoutSpec = {
             // levelPill sits left of solPill with 8px gap.
             levelPill:          { x: 113,  y: 575,  w: 185, h: 36, type: 'chip',    notes: '"Lv N · curr/max XP" — auto-fits up to Lv 99 · 12345/67890.' },
             solPill:            { x: 279,  y: 575,  w: 130, h: 36, type: 'chip',    notes: '"◼ 19.99 SOL" — 2 decimals, mint label, gold edge.' },
-            // Match Setup Summary Card — multi-line state card directly under
-            // the header. Tells the player: mode, squad count, stake, and
-            // what to do next. Card sprite + teal accent edge.
-            matchSetupCard:     { x: 0,    y: 440,  w: 688, h: 124, type: 'group',  notes: '+14h vertical padding for breathing; teal cardEdge accent on left' },
-            // 2026-04-26 unified card refactor — Row 1 of the unified Token
-            // Feed Card holds: [Trending ▾] [Search] [★ icon] [● LIVE] all
-            // on the same y=300 band. Search dropped from 78h band to 44h to
-            // share the row.
-            // Master frame that visually wraps Row 1, Row 2, column headers,
-            // and the FeedScrollView. Rendered BEFORE its sibling content so
-            // it sits behind. Spans y=330 (above Row 1) to y=-202 (below feed).
-            feedFrameCard:      { x: 0,    y: 64,   w: 712, h: 532, type: 'sprite', notes: 'unified card behind Row 1 + Row 2 + col headers + feed' },
-            search:             { x: 46,   y: 300,  w: 312, h: 44, type: 'editbox', notes: 'shrunken to share Row 1 with Trending dropdown + star + LIVE' },
-            searchClear:        { x: 188,  y: 300,  w: 32,  h: 32, type: 'btnGhost' },
-            feedTabDropdown:    { x: -224, y: 300,  w: 200, h: 44, type: 'btnGhost' },
-            watchlistStar:      { x: 240,  y: 300,  w: 44,  h: 44, type: 'btnGhost', notes: 'icon-only ★ button (no text)' },
-            cancelWatchlist:    { x: 240,  y: 300,  w: 36,  h: 36, type: 'btnGhost' },
-            liveIndicator:      { x: 314,  y: 300,  w: 80,  h: 24, type: 'label' },
-            // Filter row (y=248) — pill chips: [Newest] [Liquidity ▾] [All ▾] ........ [⋮ Cols]
+            // 2026-04-27 — MatchSetupCard SUPERSEDED. Its mode tag + squad counter
+            // re-homed to top-level gameModeChip / squadCounterLabel. Entry kept
+            // at off-canvas y for legacy-binding safety; node force-hidden in
+            // generate-scenes.js (_active=false).
+            matchSetupCard:     { x: 0,    y: -9999, w: 688, h: 124, type: 'group',  notes: 'LEGACY — superseded 2026-04-27; _active=false at scene-gen' },
+            // Re-homed from matchSetupCard — top-LEFT of feedFrameCard top band.
+            gameModeChip:       { x: -250, y: td.GAMEMODE_CHIP_Y, w: 168, h: 24, type: 'chip',
+                notes: 'TOKEN DUEL · 1V1 mode tag — top-LEFT of FeedFrameCard. AppUI._matchSetupModeTag binding retargets here.' },
+            // Re-homed from matchSetupCard — top-RIGHT of feedFrameCard top band.
+            squadCounterLabel:  { x:  270, y: td.SQUAD_COUNTER_Y, w: 124, h: 24, type: 'label',
+                notes: 'Squad: X/3 — top-RIGHT of FeedFrameCard. AppUI._matchSetupSquadLabel binding retargets here.' },
+            // 2026-04-27 — feedFrameCard expanded down by 388 (literal 2x scrollview).
+            // Top stays at y=320 (bottom of new SquadPanel + 5gap). Bottom drops to y=-620.
+            feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
+                notes: 'unified card behind Row 1 + Row 2 + col headers + feed; 2026-04-27 grew downward to wrap 2x scrollview' },
+            search:             { x: 46,   y: td.SEARCH_Y, w: 312, h: 44, type: 'editbox', notes: 'shrunken to share Row 1 with Trending dropdown + star + LIVE' },
+            searchClear:        { x: 188,  y: td.SEARCH_Y, w: 32,  h: 32, type: 'btnGhost' },
+            feedTabDropdown:    { x: -224, y: td.SEARCH_Y, w: 200, h: 44, type: 'btnGhost' },
+            watchlistStar:      { x: 240,  y: td.SEARCH_Y, w: 44,  h: 44, type: 'btnGhost', notes: 'icon-only ★ button (no text)' },
+            cancelWatchlist:    { x: 240,  y: td.SEARCH_Y, w: 36,  h: 36, type: 'btnGhost' },
+            liveIndicator:      { x: 314,  y: td.SEARCH_Y, w: 80,  h: 24, type: 'label' },
+            // Filter row — pill chips: [Newest] [Liquidity ▾] [All ▾] ........ [⋮ Cols]
             // Newest + Liquidity ▾ come from feedFilterChip template (xs=[-272,-160]).
             // [All ▾] = minLiqDropdown (relabeled at runtime from active value).
             // [⋮ Cols] = columnsBtn shrunk for icon-feel at far right.
-            minLiqDropdown:     { x: -16,  y: 248,  w: 110, h: 32, type: 'chip',    notes: 'label morphs to active value: "All ▾" / "$1K+ ▾" / "$5K+ ▾" / "$10K+ ▾"' },
-            columnsBtn:         { x: 270,  y: 248,  w: 96,  h: 32, type: 'chip',    notes: 'reads "Cols ±" — wider than original 80 to fit new label' },
-            feedColumnHeaders:  { x: 0,    y: 210,  w: 696, h: 24, type: 'group',    notes: 'docked just above scrollview; bg sprite child gives it visible chrome.' },
-            // FeedScrollview shrunk to absorb the 32 px the two-row header consumed.
-            // Bottom (y=-194) clears the sticky squad panel top (y=-235).
-            feedScrollView:     { x: 0,    y: 0,    w: 696, h: 388, type: 'scrollview', notes: 'h 420→388 to make room for two-row header; ~4 visible rows still.' },
-            // 2026-04-26 UX redesign — Sticky Squad Panel groups the squad header,
-            // 3 slots, wager row, and Manage Squad ghost link inside a card sprite
-            // at y=-345 / h=220. The card itself is rendered in scene-gen as a
-            // sprite sibling positioned BEFORE the existing squad/wager nodes in
-            // the children list so it sits behind them.
-            squadPanel:         { x: 0,    y: -345, w: 700, h: 220, type: 'group',  notes: 'wrapper card around squadHeaderLabel + 3 squadSlots + wager row + ManageSquad ghost' },
-            squadHeaderLabel:   { x: 0,    y: -280, w: 420, h: 24, type: 'label',   notes: 'YOUR SQUAD — sits below the +Pick / Manage Squad action row inside squadPanel.' },
-            // Wager row — left wager-value button (200 wide), right start CTA
-            // (460 wide). Together they span 700 minus padding, full-width feel.
-            wagerValueButton:   { x: -240, y: -395, w: 200, h: 56, type: 'btnGhost',   notes: 'tier selector; opens WagerDropdown upward. Resized 300x64→200x56 to share row with wider start CTA.' },
-            wagerStartButton:   { x: 110,  y: -395, w: 460, h: 56, type: 'btnPrimary', notes: '▶ Start Duel CTA — relabels to "Pick X more" when squad incomplete. w 320→460 (full-width feel).' },
-            wagerLockChip:      { x: -240, y: -395, w: 200, h: 56, type: 'chip',       notes: 'JOIN-MODE replaces wagerValueButton.' },
-            wagerBotChip:       { x: -240, y: -395, w: 200, h: 56, type: 'chip',       notes: 'BOT-MODE replaces wagerValueButton.' },
-            wagerHintLabel:     { x: 0,    y: -700, w: 600, h: 24, type: 'label',      notes: 'HIDDEN in redesign — the contextual hint moved into matchSetupCard.matchSetupHintLabel. Kept here for AppUI binding compatibility, _active=false at scene-gen.' },
-            wagerDropdown:      { x: -240, y: -363, w: 360, h: 360, type: 'group',     notes: 'opens upward from new wager-value button position (y=-395 + h/2 + small gap = -363)' },
+            minLiqDropdown:     { x: -16,  y: td.CHIPS_Y, w: 110, h: 32, type: 'chip',    notes: 'label morphs to active value: "All ▾" / "$1K+ ▾" / "$5K+ ▾" / "$10K+ ▾"' },
+            columnsBtn:         { x: 270,  y: td.CHIPS_Y, w: 96,  h: 32, type: 'chip',    notes: 'reads "Cols ±" — wider than original 80 to fit new label' },
+            feedColumnHeaders:  { x: 0,    y: td.COL_HEADERS_Y, w: 696, h: 24, type: 'group',    notes: 'docked just above scrollview; bg sprite child gives it visible chrome.' },
+            // FeedScrollview — 2026-04-27 doubled to h=776 (literal 2x), top stays at y=180.
+            feedScrollView:     { x: 0,    y: td.FEED_SCROLL_Y, w: 696, h: td.FEED_SCROLL_H, type: 'scrollview',
+                notes: '2026-04-27 — h 388→776 (2x), top y=180. ~8 full rows visible at row h=85.' },
+            // 2026-04-27 — Squad panel relocated to top region (was y=-345 bottom).
+            // Compressed from h=220 to h=178 to fit between title bottom (y=507) and
+            // FeedFrameCard top (y=320). Internal layout: header (y=486, h=18) →
+            // 3 slots (y=438, h=64) → wager row (y=358, h=56).
+            squadPanel:         { x: 0,    y: td.SQUAD_PANEL_Y, w: 700, h: td.SQUAD_PANEL_H, type: 'group',
+                notes: '2026-04-27 hoisted to top. Wraps squadHeaderLabel + 3 squadSlots + wager row.' },
+            squadHeaderLabel:   { x: 0,    y: td.SQUAD_HEADER_Y, w: 420, h: 18, type: 'label',
+                notes: 'YOUR SQUAD — top of squadPanel.' },
+            // Wager row — left wager-value button (200 wide), right start CTA (460 wide).
+            wagerValueButton:   { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'btnGhost',
+                notes: '2026-04-27 — moved to top with squad panel. Tier selector; opens WagerDropdown DOWNWARD now.' },
+            wagerStartButton:   { x: 110,  y: td.WAGER_Y, w: 460, h: 56, type: 'btnPrimary',
+                notes: '▶ Start Duel CTA — relabels to "Pick X more" when squad incomplete.' },
+            wagerLockChip:      { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'chip',       notes: 'JOIN-MODE replaces wagerValueButton.' },
+            wagerBotChip:       { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'chip',       notes: 'BOT-MODE replaces wagerValueButton.' },
+            wagerHintLabel:     { x: 0,    y: -700, w: 600, h: 24, type: 'label',      notes: 'LEGACY — _active=false at scene-gen. Kept for AppUI binding compatibility.' },
+            wagerDropdown:      { x: -240, y: td.WAGER_DROPDOWN_Y, w: 360, h: 360, type: 'group',
+                notes: '2026-04-27 — opens DOWNWARD now. Anchored below wager-value button (y=358 - 56/2 - 6gap - 360/2 = 144), overlays feed top region.' },
             // 8c — Legacy stake cluster (kept for node-name bindings; force-hidden
             // at scene-gen so verifier sees real state. AppUI._hideLegacyBettingDuelNodes
             // is belt-and-suspenders.)

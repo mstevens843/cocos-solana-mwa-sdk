@@ -8330,48 +8330,37 @@ export class AppUI extends Component {
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
-        // Drifting-gadget: outcome-aware bg tint + mascot halo were vetoed
-        // (pink read as garish, green wash also unwanted). Disabled — the
-        // original blocks are preserved below in comments so they can be
-        // re-enabled later.
+        // Drifting-gadget: outcome-aware bg tint (subtle green on win, violet
+        // on loss). Full-canvas Graphics rect underneath everything; fade in
+        // 0 → 60 over 600ms so it reads as a glow rather than a wash.
         if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
-            this._postMatchOutcomeBgGfx.clear();
-            Tween.stopAllByTarget(this._postMatchOutcomeBgOpacity);
-            this._postMatchOutcomeBgOpacity.opacity = 0;
+            const bg = this._postMatchOutcomeBgGfx;
+            bg.clear();
+            bg.fillColor = outcome.won
+                ? new Color(48, 198, 155, 255)
+                : new Color(180, 80, 200, 255);
+            bg.rect(-360, -640, 720, 1280);
+            bg.fill();
+            const op = this._postMatchOutcomeBgOpacity;
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).to(0.6, { opacity: 60 }).start();
         }
+        // Drifting-gadget: mascot glow halo — radial fill behind the centered
+        // mascot. Fade in 0 → 140 over 400ms for a soft hero presence.
         if (this._postMatchMascotGlowGfx && this._postMatchMascotGlowOpacity) {
-            this._postMatchMascotGlowGfx.clear();
-            Tween.stopAllByTarget(this._postMatchMascotGlowOpacity);
-            this._postMatchMascotGlowOpacity.opacity = 0;
+            const g = this._postMatchMascotGlowGfx;
+            g.clear();
+            g.fillColor = outcome.won
+                ? new Color(48, 198, 155, 255)
+                : new Color(236, 88, 122, 255);
+            g.circle(0, 0, 210);
+            g.fill();
+            const op = this._postMatchMascotGlowOpacity;
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).to(0.4, { opacity: 140 }).start();
         }
-        // --- Original outcome bg tint (green on win / violet on loss) ---
-        // if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
-        //     const bg = this._postMatchOutcomeBgGfx;
-        //     bg.clear();
-        //     bg.fillColor = outcome.won
-        //         ? new Color(48, 198, 155, 255)
-        //         : new Color(180, 80, 200, 255);
-        //     bg.rect(-360, -640, 720, 1280);
-        //     bg.fill();
-        //     const op = this._postMatchOutcomeBgOpacity;
-        //     Tween.stopAllByTarget(op);
-        //     op.opacity = 0;
-        //     tween(op).to(0.6, { opacity: 60 }).start();
-        // }
-        // --- Original mascot glow halo (green on win / rose on loss) ---
-        // if (this._postMatchMascotGlowGfx && this._postMatchMascotGlowOpacity) {
-        //     const g = this._postMatchMascotGlowGfx;
-        //     g.clear();
-        //     g.fillColor = outcome.won
-        //         ? new Color(48, 198, 155, 255)
-        //         : new Color(236, 88, 122, 255);
-        //     g.circle(0, 0, 210);
-        //     g.fill();
-        //     const op = this._postMatchMascotGlowOpacity;
-        //     Tween.stopAllByTarget(op);
-        //     op.opacity = 0;
-        //     tween(op).to(0.4, { opacity: 140 }).start();
-        // }
 
         // Phase H4 — fire cinematic BEFORE rendering the rest of the panel.
         // The overlay sits above PostMatchPanel; auto-dismisses after 2.8s
