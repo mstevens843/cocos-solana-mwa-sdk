@@ -36,6 +36,12 @@ import { getUser, setUsername, touchUser, validateUsername } from './users';
 import { getPaperXp, recordPaperMatch, type PaperTrack } from './paper_xp';
 import { recordMatch, listForPlayer, type MatchHistoryRecord } from './match_history';
 import { recordLobby, type MatchLobbyRecord } from './match_lobbies';
+import {
+    registerActive as registerPaperMatch,
+    updateHeights as updatePaperMatchHeights,
+    deleteActive as deletePaperMatch,
+    listActiveForUser as listPaperMatchesForUser,
+} from './paper_match_active';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { PROGRAM_ID } from '../../assets/token-duel/scripts/constants';
 import * as path from 'path';
@@ -259,6 +265,103 @@ app.post('/matches/history', async (req: Request, res: Response) => {
         return res.json({ ok: true, ...result });
     } catch (e: any) {
         console.log(`${TAG} POST /matches/history error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 7 — paper / bot in-flight match tracking. Signed-in users post
+// here when a paper match starts so MIP shows them cross-device. Guests
+// don't hit this — their matches stay in client memory.
+app.post('/paper-match/active', async (req: Request, res: Response) => {
+    try {
+        const body = req.body as {
+            id?: string; pubkey?: string; modeU8?: number; timeWindow?: number;
+            requiredPlayers?: number; track?: string; durationMs?: number;
+        };
+        if (!body || typeof body.id !== 'string' || body.id.length < 4) {
+            return res.status(400).json({ error: 'id required' });
+        }
+        if (typeof body.pubkey !== 'string' || body.pubkey.length < 32) {
+            return res.status(400).json({ error: 'pubkey required' });
+        }
+        try { new PublicKey(body.pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        if (typeof body.modeU8 !== 'number' || body.modeU8 < 0 || body.modeU8 > 3) {
+            return res.status(400).json({ error: 'modeU8 must be 0..3' });
+        }
+        if (typeof body.timeWindow !== 'number' || body.timeWindow < 0 || body.timeWindow > 5) {
+            return res.status(400).json({ error: 'timeWindow must be 0..5' });
+        }
+        if (typeof body.requiredPlayers !== 'number' || body.requiredPlayers < 2 || body.requiredPlayers > 8) {
+            return res.status(400).json({ error: 'requiredPlayers must be 2..8' });
+        }
+        if (body.track !== 'bot' && body.track !== 'paper-real') {
+            return res.status(400).json({ error: "track must be 'bot' or 'paper-real'" });
+        }
+        if (typeof body.durationMs !== 'number' || body.durationMs <= 0) {
+            return res.status(400).json({ error: 'durationMs must be > 0' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+
+        const row = await registerPaperMatch({
+            id: body.id,
+            pubkey: body.pubkey,
+            modeU8: body.modeU8,
+            timeWindow: body.timeWindow,
+            requiredPlayers: body.requiredPlayers,
+            track: body.track,
+            durationMs: body.durationMs,
+        });
+        return res.json({ ok: true, row });
+    } catch (e: any) {
+        console.log(`${TAG} POST /paper-match/active error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.patch('/paper-match/active/:id/heights', async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id ?? '';
+        if (id.length < 4) return res.status(400).json({ error: 'id required' });
+        const body = req.body as { lastHeight?: number; lastBotHeights?: number[] };
+        if (typeof body?.lastHeight !== 'number') {
+            return res.status(400).json({ error: 'lastHeight (number) required' });
+        }
+        if (!Array.isArray(body?.lastBotHeights) || body.lastBotHeights.some((n) => typeof n !== 'number')) {
+            return res.status(400).json({ error: 'lastBotHeights (number[]) required' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        await updatePaperMatchHeights(id, body.lastHeight, body.lastBotHeights);
+        return res.json({ ok: true });
+    } catch (e: any) {
+        console.log(`${TAG} PATCH /paper-match/active/:id/heights error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.delete('/paper-match/active/:id', async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id ?? '';
+        if (id.length < 4) return res.status(400).json({ error: 'id required' });
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        await deletePaperMatch(id);
+        return res.json({ ok: true });
+    } catch (e: any) {
+        console.log(`${TAG} DELETE /paper-match/active/:id error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.get('/paper-match/active/:pubkey', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey ?? '';
+        try { new PublicKey(pubkey); }
+        catch { return res.status(400).json({ error: 'malformed pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const rows = await listPaperMatchesForUser(pubkey);
+        return res.json({ rows });
+    } catch (e: any) {
+        console.log(`${TAG} GET /paper-match/active/:pubkey error | ${e?.message ?? e}`);
         return res.status(500).json({ error: e?.message ?? 'internal error' });
     }
 });

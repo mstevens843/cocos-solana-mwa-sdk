@@ -1659,6 +1659,11 @@ function generate() {
             TRA.xs[i], TRA.y, TRA.w, TRA.h, 56, 64, 90);
         tdActionBtns.push(bN);
     }
+    // 2026-04-27: HelpButton ('?' text glyph, no IconBadge) — bump label
+    // font 1.5× to match the 1.5×-scaled IconBadge size on the other 3 btns.
+    if (tdActionBtns.length === 4) {
+        style(sb, tdActionBtns[3], { fontSize: 27 });
+    }
     const [tdSettingsBtn, tdPresetsBtn, tdSuggestBtn, tdHelpBtn] = tdActionBtns;
 
     // BalanceChipLabel now lives inside PlayerStatusPill (see above).
@@ -1684,7 +1689,7 @@ function generate() {
     });
     const mscModeTag = mkLabel(sb, 'MatchSetupModeTag', matchSetupCardN, 'TOKEN DUEL · 1V1', 14, 32,
         220, 18, 168, 174, 201);
-    sb.e[mscModeTag]._lpos = v3(-220, 32, 0);
+    sb.e[mscModeTag]._lpos = v3(-180, 32, 0);
     sb.e[sb.e[mscModeTag]._components[1].__id__]._horizontalAlign = 0;
     sb.e[sb.e[mscModeTag]._components[1].__id__]._spacingX = 1;
     const mscSquadLbl = mkLabel(sb, 'MatchSetupSquadLabel', matchSetupCardN, 'Squad: 0/3', 22, 0,
@@ -2191,7 +2196,7 @@ function generate() {
         const symN = sb.e.length;
         sb.node('SymbolLabel', bn, [], [], v3(SS.symbol.x, SS.symbol.y, 0));
         const symUT = sb.ut(symN, SS.symbol.w, SS.symbol.h);
-        const symL = sb.lbl(symN, 'Pick +', 18, 168, 230, 200);
+        const symL = sb.lbl(symN, 'Pick +', 20, 168, 230, 200);
         sb.e[symL]._isBold = true;
         sb.e[symL]._horizontalAlign = 1; // center the Pick + placeholder
         sb.e[symN]._components = [rf(symUT), rf(symL)];

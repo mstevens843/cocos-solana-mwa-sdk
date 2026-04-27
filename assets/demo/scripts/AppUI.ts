@@ -22,7 +22,7 @@ import { MWA_AUTHORIZED, MWA_AUTH_FAILED, MWA_DISCONNECTED, MWA_STATUS } from '.
 import { getAppIdentity } from '../../solana-mwa/scripts/AppIdentity';
 import { TokenDuelRpc, Holding } from '../../token-duel/scripts/TokenDuelRpc';
 import { TokenDuelGame, RaceSnapshot } from '../../token-duel/scripts/TokenDuelGame';
-import { decodeScore } from '../../token-duel/scripts/ScoreEncoding';
+import { decodeScore, encodeDeltaPct } from '../../token-duel/scripts/ScoreEncoding';
 import { PriceFeed } from '../../token-duel/scripts/PriceFeed';
 import { TokenSquad } from '../../token-duel/scripts/TokenSquad';
 import { BirdeyeClient } from '../../token-duel/scripts/birdeye/BirdeyeClient';
@@ -40,6 +40,13 @@ import { NotificationStore, Notification, NotificationKind } from '../../token-d
 import { NotificationToastQueue } from '../../token-duel/scripts/NotificationToast';
 import { fetchMatchHistoryPage, MatchHistoryEntry } from '../../token-duel/scripts/MatchHistoryRpc';
 import { MatchState } from '../../token-duel/scripts/MatchRpc';
+import {
+    registerPaperMatchActive,
+    updatePaperMatchHeights as patchPaperMatchHeights,
+    deletePaperMatchActive,
+    listPaperMatchesActive,
+    type PaperMatchActiveRow,
+} from '../../token-duel/scripts/PaperMatchActiveRpc';
 // ReceiptSession / physics-backend flow removed on betting-duel.
 // (Previous `import { ReceiptSession } from '../../token-duel/scripts/ReceiptSigner';`)
 import { initSound, playSound, setVolume as setSoundVolume, getVolume as getSoundVolume, setEnabled as setSoundEnabled, isEnabled as isSoundEnabled } from '../../token-duel/scripts/Sound';
@@ -229,6 +236,12 @@ export class AppUI extends Component {
     private _raceTimerRing: Graphics | null = null;
     private _raceTimerPulseNode: Node | null = null;
     private _raceTimerPulseGraphics: Graphics | null = null;
+    // 2026-04-27 — Dedicated 1s UI tick for the radial timer + countdown,
+    // decoupled from PortfolioRace's price-poll cadence (which throttles to
+    // 10min on 24h/7d matches and would freeze the visible ring).
+    private _raceUiTimerStartedAtMs: number = 0;
+    private _raceUiTimerDurationMs: number = 0;
+    private _raceUiTimerActive: boolean = false;
     private _screenVignetteNode: Node | null = null;
     private _screenVignetteGraphics: Graphics | null = null;
     private _vignetteBaseAlpha: number = 0;
@@ -760,6 +773,16 @@ export class AppUI extends Component {
     private _mipEmptyState: Node | null = null;
     private _mipSubtitleLabel: Label | null = null;
     private _mipMatches: MatchState[] = [];
+    // 2026-04-27 — Local (paper / bot) matches don't have on-chain accounts.
+    // Tracked in-memory so they show up in MIP + the home count badge.
+    private _localActiveMatches: MatchState[] = [];
+    private _currentLocalMatchPda: string | null = null;
+    /** Cache of last on-chain fetch — used to rebuild merged display on local change without re-querying RPC. */
+    private _mipOnChainCache: MatchState[] = [];
+    /** Cache of last backend fetch (paper_match_active rows belonging to this user). */
+    private _mipBackendCache: MatchState[] = [];
+    /** Throttle for backend height-PATCH writes during a race tick. */
+    private _lastPaperMatchHeightsPostMs: number = 0;
     private _mipTickHandle: number | null = null;
     private _matchesInProgressCountBadge: Node | null = null;
     private _matchesInProgressCountLabel: Label | null = null;
@@ -3080,6 +3103,13 @@ export class AppUI extends Component {
         if (which !== 'home') this._stopTournamentCountdown();
         // 2026-04-27 — stop MIP 1-s tick when leaving the MIP panel.
         if (which !== 'mip') this._stopMipTick();
+        // 2026-04-27 — When home becomes active, paint the MIP count badge
+        // immediately from in-memory local matches + cached on-chain, then
+        // kick off an async on-chain refresh in the background.
+        if (which === 'home') {
+            this._rebuildMipDisplay();
+            void this._refreshMipMatches();
+        }
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
     }
 
@@ -3107,20 +3137,85 @@ export class AppUI extends Component {
     private async _refreshMipMatches(): Promise<void> {
         const me = MWAManager.instance?.connectedPubkey;
         if (!me || !this._tdRpc) {
-            this._mipMatches = [];
-            this._renderMipRows();
+            this._mipOnChainCache = [];
+            this._mipBackendCache = [];
+            this._rebuildMipDisplay();
             return;
         }
         try {
             const all = await (await import('../../token-duel/scripts/MatchRpc'))
                 .findActiveMatchesUnfiltered(this._tdRpc);
-            this._mipMatches = all
-                .filter((m) => m.players.includes(me))
-                .sort((a, b) => Number(this._mipRemainingMs(a) - this._mipRemainingMs(b)));
+            this._mipOnChainCache = all.filter((m) => m.players.includes(me));
         } catch (e) {
-            console.log(`${TAG} _refreshMipMatches | ERR ${e}`);
-            this._mipMatches = [];
+            console.log(`${TAG} _refreshMipMatches | ERR_ONCHAIN ${e}`);
+            this._mipOnChainCache = [];
         }
+        // 2026-04-27 — Fetch the user's persisted paper / bot matches from
+        // the backend so MIP shows them cross-device. Guests skip this.
+        if (this._shouldHitBackend()) {
+            try {
+                const rows = await listPaperMatchesActive(me);
+                this._mipBackendCache = rows.map((r) => this._paperMatchToMatchState(r, me));
+            } catch (e) {
+                console.log(`${TAG} _refreshMipMatches | ERR_BACKEND ${e}`);
+                this._mipBackendCache = [];
+            }
+        } else {
+            this._mipBackendCache = [];
+        }
+        this._rebuildMipDisplay();
+    }
+
+    /**
+     * 2026-04-27 — Adapt a backend `paper_match_active` row into the
+     * MatchState shape the MIP renderer expects. Bots get pubkeys ending in
+     * `BOT` so the existing `vs BOT` chip detection (AppUI.ts:3189) fires.
+     */
+    private _paperMatchToMatchState(r: PaperMatchActiveRow, me: string): MatchState {
+        const players: string[] = [me];
+        for (let i = 1; i < r.requiredPlayers; i++) players.push(`BOT_${i}_BOT`);
+        const heights = players.map(() => 0);
+        heights[0] = r.lastHeight;
+        for (let i = 0; i < r.lastBotHeights.length && i + 1 < heights.length; i++) {
+            heights[i + 1] = r.lastBotHeights[i];
+        }
+        const startedAtSec = BigInt(Math.floor(new Date(r.startedAt).getTime() / 1000));
+        return {
+            pda: r.id,
+            mode: r.modeU8,
+            wagerTier: 0,
+            wagerLamports: 0n,
+            xpBucket: 0,
+            requiredPlayers: r.requiredPlayers,
+            playerCount: r.requiredPlayers,
+            players,
+            heights,
+            settledCount: 0,
+            createdAt: startedAtSec,
+            startedAt: startedAtSec,
+            closedAt: 0n,
+            status: 1,
+            seq: 0n,
+            bump: 0,
+            escrowBump: 0,
+            timeWindow: r.timeWindow,
+        };
+    }
+
+    /**
+     * 2026-04-27 — Merge in-memory local matches with the cached on-chain
+     * fetch and re-render. Called on RPC return + on local push/pop so the
+     * MIP rows + home count badge always reflect the current truth without
+     * needing an RPC roundtrip.
+     */
+    private _rebuildMipDisplay(): void {
+        // Local in-memory wins over backend cache when ids collide (the local
+        // copy has fresher heights from the live tick). Backend rows show up
+        // for matches started on other devices or before app restart.
+        const localIds = new Set(this._localActiveMatches.map((m) => m.pda));
+        const backendOnly = this._mipBackendCache.filter((m) => !localIds.has(m.pda));
+        this._mipMatches = [...this._localActiveMatches, ...backendOnly, ...this._mipOnChainCache]
+            .sort((a, b) => Number(this._mipRemainingMs(a) - this._mipRemainingMs(b)));
         this._renderMipRows();
         this._renderMipHomeBadge();
     }
@@ -3203,6 +3298,75 @@ export class AppUI extends Component {
             this._updateMipRing(i, totalMs > 0 ? remainingMs / totalMs : 0);
             const timeLbl = this._mipTimeLabels[i];
             if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
+        }
+    }
+
+    /**
+     * 2026-04-27 — Build a synthetic MatchState representing the current local
+     * race (paper / bot). Pushed to `_localActiveMatches` so MIP can render it
+     * + count it in the home badge alongside on-chain matches.
+     */
+    private _registerLocalMatch(): void {
+        const me = MWAManager.instance?.connectedPubkey ?? '';
+        if (!me) return;
+        const modeDef = MODES[this._pickerSelectedMode as keyof typeof MODES] ?? MODES.oneVone;
+        const windowDef = TIME_WINDOWS[this._pickerSelectedWindow] ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW];
+        const syntheticPda = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const players: string[] = [me];
+        for (let i = 1; i < modeDef.requiredPlayers; i++) players.push(`BOT_${i}_BOT`);
+        const local: MatchState = {
+            pda: syntheticPda,
+            mode: modeDef.modeU8,
+            wagerTier: 0,
+            wagerLamports: 0n,
+            xpBucket: 0,
+            requiredPlayers: modeDef.requiredPlayers,
+            playerCount: modeDef.requiredPlayers,
+            players,
+            heights: players.map(() => 0),
+            settledCount: 0,
+            createdAt: BigInt(Math.floor(Date.now() / 1000)),
+            startedAt: BigInt(Math.floor(Date.now() / 1000)),
+            closedAt: 0n,
+            status: 1,
+            seq: 0n,
+            bump: 0,
+            escrowBump: 0,
+            timeWindow: windowDef.windowU8,
+        };
+        this._localActiveMatches.push(local);
+        this._currentLocalMatchPda = syntheticPda;
+        console.log(`${TAG} _registerLocalMatch | pda=${syntheticPda} mode=${modeDef.id} window=${windowDef.id} players=${players.length}`);
+        this._rebuildMipDisplay();
+        // 2026-04-27 — Persist to backend for signed-in users so MIP shows
+        // the match cross-device. Guests stay in-memory only.
+        if (this._shouldHitBackend()) {
+            const track: 'bot' | 'paper-real' = this._pickerBotMode ? 'bot' : 'paper-real';
+            this._lastPaperMatchHeightsPostMs = 0; // reset throttle so first tick posts
+            void registerPaperMatchActive({
+                id: syntheticPda,
+                pubkey: me,
+                modeU8: modeDef.modeU8,
+                timeWindow: windowDef.windowU8,
+                requiredPlayers: modeDef.requiredPlayers,
+                track,
+                durationMs: windowDef.durationMs,
+            });
+        }
+    }
+
+    /** Remove the in-flight local match (called on settle / forfeit / natural finish). */
+    private _clearCurrentLocalMatch(): void {
+        if (!this._currentLocalMatchPda) return;
+        const pda = this._currentLocalMatchPda;
+        this._localActiveMatches = this._localActiveMatches.filter((m) => m.pda !== pda);
+        this._mipBackendCache = this._mipBackendCache.filter((m) => m.pda !== pda);
+        this._currentLocalMatchPda = null;
+        console.log(`${TAG} _clearCurrentLocalMatch | removed pda=${pda} remaining_local=${this._localActiveMatches.length}`);
+        this._rebuildMipDisplay();
+        // Best-effort backend delete for signed-in users.
+        if (this._shouldHitBackend() && pda.startsWith('local-')) {
+            void deletePaperMatchActive(pda);
         }
     }
 
@@ -3470,9 +3634,9 @@ export class AppUI extends Component {
             // TokenDuel top-bar (3 solo-icon buttons + Help glyph, 40×36 cells) —
             // icons 28 so they stop reading as dots inside the button. Leaderboard
             // and Portfolio moved to Home global-nav; Settings stays duplicated.
-            { panel: this._tokenDuelPanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 28, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'OpenSquadPresetsButton', icon: 'book',   size: 28, offsetX: 0 },
-            { panel: this._tokenDuelPanel, name: 'SuggestSquadButton',     icon: 'bulb',   size: 28, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 42, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'OpenSquadPresetsButton', icon: 'book',   size: 42, offsetX: 0 },
+            { panel: this._tokenDuelPanel, name: 'SuggestSquadButton',     icon: 'bulb',   size: 42, offsetX: 0 },
             // HelpButton stays '?' text glyph — no IconBadge.
 
             // Feed chrome
@@ -4329,6 +4493,9 @@ export class AppUI extends Component {
     private _onGameOver(height: number, deltas: Record<string, number>): void {
         console.log(`${TAG} onGameOver | height=${height} deltas=${JSON.stringify(deltas)}`);
         this._sessionDeltas = deltas;
+        // 2026-04-27 — Local race ended (settle / forfeit / natural finish).
+        // Drop it from MIP. No-op for real matches (no local entry was registered).
+        this._clearCurrentLocalMatch();
         // betting-duel: the stack-jump legacy overlay (`GameOverLabel` with
         // "Game Over — Height: …" + `ClaimPayoutButton` + "Tap Claim Payout"
         // status) must NOT show on this branch. The match path is paper-bot
@@ -4648,6 +4815,24 @@ export class AppUI extends Component {
             ?? (MODES[this._pickerSelectedMode as keyof typeof MODES]?.requiredPlayers ?? 2);
         this._setRaceLayoutForRequiredPlayers(reqPlayers);
 
+        // 2026-04-27 — Start dedicated UI timer (decoupled from price poll
+        // cadence) so the radial ring + countdown drain smoothly on long
+        // (1h / 24h / 7d) matches.
+        const windowDef = TIME_WINDOWS[this._pickerSelectedWindow] ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW];
+        this._raceUiTimerStartedAtMs = Date.now();
+        this._raceUiTimerDurationMs = windowDef.durationMs;
+        this._raceUiTimerActive = true;
+        this.unschedule(this._onRaceUiTimerTick);
+        this.schedule(this._onRaceUiTimerTick, 1.0);
+        this._onRaceUiTimerTick();
+
+        // 2026-04-27 — Track paper / bot races in-memory so they show up in
+        // Matches-In-Progress + the home count badge. Real (SOL) matches are
+        // tracked on-chain via _activeRealMatchPda and don't need this.
+        if (this._pickerSelectedTrack !== 'real') {
+            this._registerLocalMatch();
+        }
+
         // Clear prior bot state on every race start.
         this._liveSquadBot = null;
         this._liveSquadBots = [];
@@ -4950,6 +5135,12 @@ export class AppUI extends Component {
     }
 
     private _hideRacePanel(): void {
+        // 2026-04-27 — Stop the dedicated UI timer regardless of panel state
+        // (race may have already finished naturally with panel hidden by Home).
+        if (this._raceUiTimerActive) {
+            this._raceUiTimerActive = false;
+            this.unschedule(this._onRaceUiTimerTick);
+        }
         if (!this._racePanel) {
             console.log(`${TAG} _hideRacePanel | NO_PANEL_REF — nothing to hide`);
             return;
@@ -5078,16 +5269,38 @@ export class AppUI extends Component {
             this._raceEntryNoticeShown = true;
             console.log(`${TAG} _onRaceTick | ENTRY_DROP_NOTICE dropped=${dropped} resolved=${snap.resolvedCount}/${this._raceActiveHoldings.length}`);
         }
-        // Countdown + Stage 1A radial ring progress.
-        const windowMs = Math.max(1, snap.elapsedMs + snap.remainingMs);
-        const progress = Math.max(0, Math.min(1, snap.elapsedMs / windowMs));
-        if (this._raceCountdownLabel) {
-            const s = Math.max(0, Math.ceil(snap.remainingMs / 1000));
-            const mm = Math.floor(s / 60).toString();
-            const ss = (s % 60).toString().padStart(2, '0');
-            this._raceCountdownLabel.string = `${mm}:${ss}`;
+        // 2026-04-27 — Radial ring + countdown label are now driven by the
+        // dedicated 1s `_onRaceUiTimerTick` so they tick smoothly on long
+        // (1h / 24h / 7d) matches whose price poll fires every 1–10 minutes.
+        // Snapshot still advances elapsed/remaining for downstream logic.
+
+        // Mirror live deltas (me + bots) into the local-match heights array
+        // so MIP rows render the correct `YOU +X.XX%` / `OPP +X.XX%` line
+        // from the same data the duel bar uses. encodeDeltaPct matches
+        // what the on-chain settle uses.
+        if (this._currentLocalMatchPda) {
+            const local = this._localActiveMatches.find((m) => m.pda === this._currentLocalMatchPda);
+            if (local) {
+                const me = MWAManager.instance?.connectedPubkey ?? '';
+                const myIdx = local.players.indexOf(me);
+                const myHeight = encodeDeltaPct(snap.portfolioDeltaPct);
+                if (myIdx >= 0) local.heights[myIdx] = myHeight;
+                const botHeights: number[] = [];
+                for (let i = 0; i < this._liveSquadBots.length; i++) {
+                    const slot = i + 1; // bots occupy indices after me
+                    const h = encodeDeltaPct(this._liveSquadBots[i].deltaAt(snap.elapsedMs).portfolioDeltaPct);
+                    botHeights.push(h);
+                    if (slot < local.heights.length) local.heights[slot] = h;
+                }
+                // Throttled backend PATCH (every ~10s) so the row stays fresh
+                // for cross-device MIP queries without spamming the backend.
+                const now = Date.now();
+                if (this._shouldHitBackend() && now - this._lastPaperMatchHeightsPostMs > 10_000) {
+                    this._lastPaperMatchHeightsPostMs = now;
+                    void patchPaperMatchHeights(this._currentLocalMatchPda, myHeight, botHeights);
+                }
+            }
         }
-        this._drawTimerRing(progress);
 
         // Hero delta — Block B rolls the number when the change is > 0.3pp.
         const deltaPct = snap.portfolioDeltaPct;
@@ -5482,6 +5695,29 @@ export class AppUI extends Component {
     }
 
     /** Block A — draw the radial timer ring draining as `progress` goes 0→1. */
+    /**
+     * 2026-04-27 — Dedicated 1s UI tick for the radial timer + countdown.
+     * Decoupled from PortfolioRace's price-poll cadence (which throttles to
+     * 10min on 24h/7d matches and would freeze the visible ring). Driven by
+     * wall-clock elapsed since `_raceUiTimerStartedAtMs`.
+     */
+    private _onRaceUiTimerTick(): void {
+        if (!this._raceUiTimerActive) return;
+        const total = this._raceUiTimerDurationMs;
+        if (total <= 0) return;
+        const elapsed = Date.now() - this._raceUiTimerStartedAtMs;
+        const remaining = Math.max(0, total - elapsed);
+        const progress = Math.max(0, Math.min(1, elapsed / total));
+        this._drawTimerRing(progress);
+        if (this._raceCountdownLabel) {
+            this._raceCountdownLabel.string = this._formatRemainingTime(remaining);
+        }
+        if (remaining <= 0) {
+            this._raceUiTimerActive = false;
+            this.unschedule(this._onRaceUiTimerTick);
+        }
+    }
+
     private _drawTimerRing(progress: number): void {
         const g = this._raceTimerRing;
         if (!g) return;

@@ -67,12 +67,12 @@ const td = {
     SQUAD_PANEL_Y:      -359,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
     SQUAD_PANEL_BOTTOM: -469,
     SQUAD_HEADER_Y:     -294,
-    SQUAD_SLOTS_Y:      -344,
-    WAGER_Y:            -409,
-    WAGER_DROPDOWN_Y:   -377,
+    SQUAD_SLOTS_Y:      -359,    // 2026-04-27: -344→-359 (drop 15 px so 90-tall squares clear header bottom)
+    WAGER_Y:            -440,    // 2026-04-27: -409→-440 (gap below 90-tall squad squares)
+    WAGER_DROPDOWN_Y:   -408,    // mirror
 
     // Footer.
-    STATUS_Y:           -537,
+    STATUS_Y:           -568,    // 2026-04-27: -537→-568 (follow wager down)
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
@@ -1855,10 +1855,10 @@ const LayoutSpec = {
                 checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
                 checkmark:    { x: 0,    y: 1,   w: 22,  h: 22 },
                 logo:         { x: -253, y: 0,   w: 90,  h: 90 },
-                symbol:       { x: -71,  y: 36,  w: 154, h: 26, notes: 'bold 22pt' },
-                score:        { x: 40,   y: 36,  w: 44,  h: 20 },
-                change:       { x: 280,  y: 36,  w: 90,  h: 30, notes: 'HERO 24H% — 26pt bold' },
-                delta:        { x: 280,  y: 36,  w: 90,  h: 30, notes: 'alternate of change — _active=false' },
+                symbol:       { x: -71,  y: 30,  w: 154, h: 26, notes: 'bold 22pt' },
+                score:        { x: 40,   y: 30,  w: 44,  h: 20 },
+                change:       { x: 280,  y: 30,  w: 90,  h: 30, notes: 'HERO 24H% — 26pt bold' },
+                delta:        { x: 280,  y: 30,  w: 90,  h: 30, notes: 'alternate of change — _active=false' },
                 name:         { x: -71,  y: -30, w: 154, h: 18 },
                 liq:          { x: 80,   y: -30, w: 70,  h: 18 },
                 vol:          { x: 160,  y: -30, w: 70,  h: 18 },
@@ -1883,13 +1883,14 @@ const LayoutSpec = {
                 colors: [],
                 bold:   [],
             },
-            // 3 squad slots — sit inside SquadPanel at td.SQUAD_SLOTS_Y.
+            // 3 squad slots — 2026-04-27: 200×64 rectangles → 90×90 squares
+            // with logo/symbol/delta stacked vertically in the centered square.
             squadSlot: {
-                count: 3, w: 200, h: 64, y: td.SQUAD_SLOTS_Y,
-                xs: [-220, 0, 220],
-                logo:   { x: -76, y: 0,   w: 40,  h: 40 },
-                symbol: { x: 14,  y: 10,  w: 130, h: 22 },
-                delta:  { x: 14,  y: -14, w: 130, h: 18 },
+                count: 3, w: 90, h: 90, y: td.SQUAD_SLOTS_Y,
+                xs: [-110, 0, 110],
+                logo:   { x: 0, y:  18, w: 50, h: 50 },
+                symbol: { x: 0, y: -16, w: 84, h: 20 },
+                delta:  { x: 0, y: -34, w: 84, h: 16 },
             },
             // 8c — 3 legacy stake preset chips at y=-515. LEGACY — _active=false.
             stakeChip: {
