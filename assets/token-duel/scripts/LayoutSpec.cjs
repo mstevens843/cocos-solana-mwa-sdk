@@ -38,38 +38,39 @@ const td = {
     TITLE_Y:            570,   // was 525 → +45
     TITLE_BOTTOM:       552,   // = TITLE_Y - title.h(36)/2
 
-    // MatchSetupCard summary — directly under title (legacy slot, +45).
-    MATCHSETUP_CARD_Y:  485,   // was 440; h=124 → top 547, bottom 423
+    // MatchSetupCard summary — directly under title.
+    // 2026-04-27: 485 → 455 (drop 30 to clear title underline gap).
+    MATCHSETUP_CARD_Y:  455,   // h=124 → top 517, bottom 393
 
     // FeedFrameCard wrapping search/chips/col-headers + scrollview.
-    FEED_FRAME_TOP:     375,   // was 330 → +45
-    FEED_FRAME_H:       416,   // was 532; shrunk to wrap shorter scrollview (532 - (388-272) = 416)
-    FEED_FRAME_Y:       167,   // = FEED_FRAME_TOP - FEED_FRAME_H/2
+    // 2026-04-27: scroll grew 2.5× (272 → 680, +408). Frame grows to wrap.
+    FEED_FRAME_TOP:     375,
+    FEED_FRAME_H:       824,   // 416 + 408 (scroll growth)
+    FEED_FRAME_Y:       -37,   // = FEED_FRAME_TOP - FEED_FRAME_H/2
 
-    // In-frame mid band — search/filter/cols (all +45 from legacy).
-    SEARCH_Y:           345,   // was 300
-    CHIPS_Y:            293,   // was 248
-    COL_HEADERS_Y:      255,   // was 210
+    // In-frame mid band — search/filter/cols.
+    SEARCH_Y:           345,
+    CHIPS_Y:            293,
+    COL_HEADERS_Y:      255,
 
-    // Feed scrollview — top +45 from legacy, h cut 30% (388 → 272).
-    FEED_SCROLL_TOP:    239,   // was 194 → +45
-    FEED_SCROLL_H:      272,   // was 388; 0.7× → 272 (30% reduction)
-    FEED_SCROLL_Y:      103,   // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
-    FEED_SCROLL_BOTTOM: -33,
+    // Feed scrollview — 2026-04-27: h grew 2.5× (272 → 680). Top stays at 239.
+    FEED_SCROLL_TOP:    239,
+    FEED_SCROLL_H:      680,
+    FEED_SCROLL_Y:      -101,  // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
+    FEED_SCROLL_BOTTOM: -441,
 
-    // SquadPanel restored to bottom; slid up so the gap to FEED_SCROLL_BOTTOM
-    // matches the legacy 41-px (was -194 → -235). New gap: -33 → -74.
-    SQUAD_PANEL_TOP:    -74,
-    SQUAD_PANEL_H:      220,   // restored from compressed 178
-    SQUAD_PANEL_Y:      -184,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
-    SQUAD_PANEL_BOTTOM: -294,
-    SQUAD_HEADER_Y:     -119,  // legacy −280 + (newPanelY 184 → +161 shift)
-    SQUAD_SLOTS_Y:      -169,  // legacy −330 + 161
-    WAGER_Y:            -234,  // legacy −395 + 161
-    WAGER_DROPDOWN_Y:   -202,  // legacy −363 + 161 (anchor 0.5,0 bottom-center → opens UPWARD over wager btn)
+    // SquadPanel — drops 408 to follow scroll growth.
+    SQUAD_PANEL_TOP:    -482,
+    SQUAD_PANEL_H:      220,
+    SQUAD_PANEL_Y:      -592,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
+    SQUAD_PANEL_BOTTOM: -702,
+    SQUAD_HEADER_Y:     -527,
+    SQUAD_SLOTS_Y:      -577,
+    WAGER_Y:            -642,
+    WAGER_DROPDOWN_Y:   -610,
 
-    // Footer — preserves legacy 55-px gap from squad bottom to status top.
-    STATUS_Y:           -362,
+    // Footer.
+    STATUS_Y:           -770,
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
@@ -1452,11 +1453,14 @@ const LayoutSpec = {
             backLink:           { x: -288, y: td.HEADER_Y,  w: 100, h: 28, type: 'label' },
             backBtn:            { x: -288, y: td.HEADER_Y,  w: 120, h: 40, type: 'btnGhost' },
             title:              { x: 0,    y: td.TITLE_Y,   w: 320, h: 36, type: 'label' },
-            levelPill:          { x: 113,  y: td.HEADER_Y,  w: 185, h: 36, type: 'chip',    notes: '"Lv N · curr/max XP"' },
-            solPill:            { x: 279,  y: td.HEADER_Y,  w: 130, h: 36, type: 'chip',    notes: '"◼ 19.99 SOL"' },
+            // 2026-04-27: pills 2× (185×36 → 370×72; 130×36 → 260×72) and repositioned
+            // so both fit inside the canvas right-half without clipping.
+            levelPill:          { x: -100, y: td.HEADER_Y,  w: 370, h: 72, type: 'chip',    notes: '"Lv N · curr/max XP"' },
+            solPill:            { x: 220,  y: td.HEADER_Y,  w: 260, h: 72, type: 'chip',    notes: '"◼ 19.99 SOL"' },
             // MatchSetupCard restored — multi-line summary directly under title.
             // Mode tag (top-left) + Squad/Stake (mid) + Hint (bottom) live INSIDE.
-            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 688, h: 124, type: 'group',
+            // 2026-04-27: w 688 → 712 to match feedFrameCard width below.
+            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 712, h: 124, type: 'group',
                 notes: 'Match summary card; 4 child labels (mode/squad/stake/hint) populated by AppUI._refreshSquadActionButtons.' },
             // FeedFrameCard — wraps in-card UI. Bottom shrinks with cut feed h.
             feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
@@ -1542,16 +1546,14 @@ const LayoutSpec = {
             backdropButton:          { x: 0, y: 0, w: 720, h: 1280, type: 'btnGhost' },
         },
         templates: {
-            // 4 top-row icon buttons — relocated to a right-side cluster above
-            // the Lv/SOL pills. Smaller (36×32 → 32×28) so they don't compete
-            // with the pill row at y=575. Right margin 16px (rightmost icon
-            // center = 360-16-16 = 328); 38px stride (32w + 6 gap).
+            // 4 top-row icon buttons — 2026-04-27: 2× size (32×28 → 64×56),
+            // stride 76 (64w + 12 gap), right-anchored at xs[3]=328.
             topRowActionBtn: {
-                count: 4, w: 32, h: 28, y: 660,
+                count: 4, w: 64, h: 56, y: 660,
                 names:  ['OpenSettingsButton', 'OpenSquadPresetsButton',
                          'SuggestSquadButton', 'HelpButton'],
                 labels: ['', '', '', '?'],
-                xs:     [214, 252, 290, 328],
+                xs:     [100, 176, 252, 328],
             },
             // Sort chips — 2-chip row: [Newest] [Liquidity ▾]. The Liq↓ + Liq↑
             // chips collapsed into a single 'liq' chip that opens

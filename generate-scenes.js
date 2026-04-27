@@ -1576,8 +1576,8 @@ function generate() {
     const tdLevelInnerN = sb.e.length;
     sb.node('TokenDuelLevelChip', tdLevelChipN, [], [], v3(0, 0, 0));
     const tdLevelInnerUT = sb.ut(tdLevelInnerN, TDE.levelPill.w - 16, TDE.levelPill.h - 8);
-    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 16, 0,
-        TDE.levelPill.w - 24, 26, 255, 210, 74);
+    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 32, 0,
+        TDE.levelPill.w - 24, 52, 255, 210, 74);
     sb.e[sb.e[tdLevelChipLbl]._components[1].__id__]._isBold = true;
     sb.e[tdLevelInnerN]._components = [rf(tdLevelInnerUT)];
     sb.e[tdLevelInnerN]._children = [rf(tdLevelChipLbl)];
@@ -1604,8 +1604,8 @@ function generate() {
     const tdBalanceInnerN = sb.e.length;
     sb.node('BalanceChip', tdSolPillN, [], [], v3(0, 0, 0));
     const tdBalanceInnerUT = sb.ut(tdBalanceInnerN, TDE.solPill.w - 16, TDE.solPill.h - 8);
-    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 16, 0,
-        TDE.solPill.w - 24, 26, 168, 230, 200);
+    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 32, 0,
+        TDE.solPill.w - 24, 52, 168, 230, 200);
     sb.e[sb.e[tdBalanceLbl]._components[1].__id__]._isBold = true;
     style(sb, tdBalanceLbl, { mono: true });
     sb.e[tdBalanceInnerN]._components = [rf(tdBalanceInnerUT)];
@@ -1888,15 +1888,7 @@ function generate() {
     const tdFeedAccentTopSpr = sb.spr(tdFeedAccentTop, 48, 198, 155);
     sb.e[tdFeedAccentTop]._components = [rf(tdFeedAccentTopUT), rf(tdFeedAccentTopSpr)];
 
-    const tdFeedAccentBot = sb.e.length;
-    sb.node('FeedScrollAccentBot', tdN, [], [], v3(
-        TDE.feedScrollView.x,
-        TDE.feedScrollView.y - TDE.feedScrollView.h / 2 + 1,
-        0,
-    ));
-    const tdFeedAccentBotUT = sb.ut(tdFeedAccentBot, TDE.feedScrollView.w, 3);
-    const tdFeedAccentBotSpr = sb.spr(tdFeedAccentBot, 48, 198, 155);
-    sb.e[tdFeedAccentBot]._components = [rf(tdFeedAccentBotUT), rf(tdFeedAccentBotSpr)];
+    // 2026-04-27: bottom teal stripe removed per user feedback (only top stripe kept).
 
     // Row internal layout matches FeedColumnHeaders x positions exactly so
     // numeric columns line up under each label. SelectedEdge + Checkbox are
@@ -2116,9 +2108,9 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    const sqpEdge = mkCardEdge(sb, squadPanelN, SQP.w, SQP.h, 20, 241, 149);
+    // 2026-04-27: top cyan accent edge removed per user feedback.
     sb.e[squadPanelN]._components = [rf(sqpUT), rf(sqpSpr)];
-    sb.e[squadPanelN]._children = [rf(sqpEdge)];
+    sb.e[squadPanelN]._children = [];
 
     // Lone secondary action — Manage Squad ▸. The +Pick button was removed:
     // tapping a row already adds it via _onFeedRowClick, so a separate Pick
@@ -3265,7 +3257,7 @@ function generate() {
         ...chipIndices.map(rf), rf(tdMinLiqBtn), rf(tdColumnsBtn),
         rf(headerGroupN),
         rf(tdFeedSV),
-        rf(tdFeedAccentTop), rf(tdFeedAccentBot),             // 2026-04-26 — teal stripes top + bottom of token list
+        rf(tdFeedAccentTop),                                  // 2026-04-26 — teal stripe top of token list (bottom removed 2026-04-27)
         rf(squadPanelN),                                      // 2026-04-26 redesign — Sticky Squad Panel wrapper (renders BEHIND squad/wager nodes)
         // Global Pick / Manage Squad removed 2026-04-26 — slot-level Pick + + per-slot × replaces them.
         rf(tdSquadHeader), rf(tdSquad0), rf(tdSquad1), rf(tdSquad2),

@@ -877,7 +877,7 @@ REG.speaker     = { draw: (g, s, c) => drawSpeaker(g, s, c, false), tintHex: Pal
 REG.speakerMuted= { draw: (g, s, c) => drawSpeaker(g, s, c, true),  tintHex: Palette.text.lo,     emoji: '🔈' };
 REG.vibration   = { draw: drawVibration,    tintHex: Palette.accent.violet,emoji: '📳' };
 REG.hand        = { draw: drawHand,         tintHex: Palette.text.lo,      emoji: '✋' };
-REG.starOutline = { draw: drawStarOutline,  tintHex: Palette.text.mid,     emoji: '☆' };
+REG.starOutline = { draw: drawStarOutline,  tintHex: Palette.rank.gold,    emoji: '☆' };
 REG.flag        = { draw: drawFlag,         tintHex: Palette.text.hi,      emoji: '🏁' };
 REG.clipboard   = { draw: drawClipboard,    tintHex: Palette.text.mid,     emoji: '📋' };
 // Phase N3 additions:
