@@ -3653,7 +3653,7 @@ export class AppUI extends Component {
             { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
             { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 28, offsetX: -110 },
             { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
-            { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 78, offsetX: -150 },
+            { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 40, offsetX: -90 },
             { panel: root, name: 'SpectatorTitleLabel',         icon: 'eye',    size: 26, offsetX: -130 },
             { panel: root, name: 'TournamentTitleLabel',        icon: 'sword',  size: 26, offsetX: -130 },
             { panel: root, name: 'TournamentJoinButton',        icon: 'sword',  size: 22, offsetX: -150 },

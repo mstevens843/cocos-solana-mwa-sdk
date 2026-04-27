@@ -234,7 +234,7 @@ const landing = {
 const settings = {
     // Header band — back / title (HomePanel parity).
     HEADER_Y:             620,   // backLink + backBtn (was 618; +2)
-    TITLE_Y:              614,   // "Settings" title  (was 612; +2)
+    TITLE_Y:              620,   // "Settings" title — aligned with HEADER_Y so title + back form one horizontal row (was 614).
 
     // Card stack — uniformly shifted UP +30 from legacy.
     WALLET_CARD_Y:        530,   // h=124 (was 500)
