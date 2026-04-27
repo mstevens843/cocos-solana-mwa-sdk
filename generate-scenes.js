@@ -1302,6 +1302,37 @@ function generate() {
     sb.e[findMatchBadgeN]._children = [rf(findMatchBadgeLbl)];
     sb.e[findMatchBadgeN]._active = false;
 
+    // 2026-04-27 — Matches In Progress — teal primary (resume your live games).
+    const { glow: mipGlow, btn: mipBtn } = mkBtnHero(sb,
+        'MatchesInProgressButton', hpN, 'Matches In Progress',
+        HE.matchesInProgressBtn.x, HE.matchesInProgressBtn.y, HE.matchesInProgressBtn.w, HE.matchesInProgressBtn.h,
+        VAR('success').r, VAR('success').g, VAR('success').b,
+        { glowAlpha: 70, glowPad: 12 });
+    style(sb, mipBtn, { bold: true });
+    attachCTAExtras(mipBtn, 'MatchesInProgressSubtitle', '0 games running',
+        'MatchesInProgressChevron', HE.matchesInProgressSubtitle, HE.matchesInProgressChevron);
+
+    // MIP live count badge — sibling, sits on right edge of button (mirror FindMatch pattern).
+    const mipBadgeN = sb.e.length;
+    sb.node('MatchesInProgressCountBadge', hpN, [], [], v3(HE.matchesInProgressCountBadge.x, HE.matchesInProgressCountBadge.y, 0));
+    const mipBadgeUT = sb.ut(mipBadgeN, HE.matchesInProgressCountBadge.w, HE.matchesInProgressCountBadge.h);
+    const mipBadgeSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(mipBadgeN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 241, 149, 240),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    const mipBadgeLbl = mkLabel(sb, 'MatchesInProgressCountLabel', mipBadgeN, '0', 14, 0, 60, 28, 11, 14, 26);
+    sb.e[sb.e[mipBadgeLbl]._components[1].__id__]._isBold = true;
+    sb.e[mipBadgeN]._components = [rf(mipBadgeUT), rf(mipBadgeSpr)];
+    sb.e[mipBadgeN]._children = [rf(mipBadgeLbl)];
+    sb.e[mipBadgeN]._active = false;
+
     // Bot Match — warn amber (paper / training); subordinate glow.
     const { glow: botMatchGlow, btn: botMatch } = mkBtnHero(sb,
         'BotMatchButton', hpN, 'Bot Match',
@@ -1457,6 +1488,7 @@ function generate() {
         // children of the button (not siblings) so they scale on press.
         rf(startMatchGlow), rf(startMatch),
         rf(findMatchGlow), rf(findMatch), rf(findMatchBadgeN),
+        rf(mipGlow), rf(mipBtn), rf(mipBadgeN),
         rf(botMatchGlow), rf(botMatch),
         rf(trainingCardN),
         rf(homeDisconnectBtn), rf(homeLeaderboardBtn), rf(homeSettingsBtn),
@@ -1576,8 +1608,8 @@ function generate() {
     const tdLevelInnerN = sb.e.length;
     sb.node('TokenDuelLevelChip', tdLevelChipN, [], [], v3(0, 0, 0));
     const tdLevelInnerUT = sb.ut(tdLevelInnerN, TDE.levelPill.w - 16, TDE.levelPill.h - 8);
-    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 32, 0,
-        TDE.levelPill.w - 24, 52, 255, 210, 74);
+    const tdLevelChipLbl = mkLabel(sb, 'TokenDuelLevelChipLabel', tdLevelInnerN, 'Lv 1 · 0/1000', 24, 0,
+        TDE.levelPill.w - 24, 40, 255, 210, 74);
     sb.e[sb.e[tdLevelChipLbl]._components[1].__id__]._isBold = true;
     sb.e[tdLevelInnerN]._components = [rf(tdLevelInnerUT)];
     sb.e[tdLevelInnerN]._children = [rf(tdLevelChipLbl)];
@@ -1604,8 +1636,8 @@ function generate() {
     const tdBalanceInnerN = sb.e.length;
     sb.node('BalanceChip', tdSolPillN, [], [], v3(0, 0, 0));
     const tdBalanceInnerUT = sb.ut(tdBalanceInnerN, TDE.solPill.w - 16, TDE.solPill.h - 8);
-    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 32, 0,
-        TDE.solPill.w - 24, 52, 168, 230, 200);
+    const tdBalanceLbl = mkLabel(sb, 'BalanceChipLabel', tdBalanceInnerN, '◼ 0.00 SOL', 24, 0,
+        TDE.solPill.w - 24, 40, 168, 230, 200);
     sb.e[sb.e[tdBalanceLbl]._components[1].__id__]._isBold = true;
     style(sb, tdBalanceLbl, { mono: true });
     sb.e[tdBalanceInnerN]._components = [rf(tdBalanceInnerUT)];
@@ -1648,23 +1680,23 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    const mscModeTag = mkLabel(sb, 'MatchSetupModeTag', matchSetupCardN, 'TOKEN DUEL · 1V1', 14, 38,
-        220, 18, 168, 174, 201);
-    sb.e[mscModeTag]._lpos = v3(-220, 38, 0);
+    const mscModeTag = mkLabel(sb, 'MatchSetupModeTag', matchSetupCardN, 'TOKEN DUEL · 1V1', 11, 29,
+        220, 14, 168, 174, 201);
+    sb.e[mscModeTag]._lpos = v3(-220, 29, 0);
     sb.e[sb.e[mscModeTag]._components[1].__id__]._horizontalAlign = 0;
     sb.e[sb.e[mscModeTag]._components[1].__id__]._spacingX = 1;
-    const mscSquadLbl = mkLabel(sb, 'MatchSetupSquadLabel', matchSetupCardN, 'Squad: 0/3', 22, 4,
-        260, 28, 244, 245, 249);
+    const mscSquadLbl = mkLabel(sb, 'MatchSetupSquadLabel', matchSetupCardN, 'Squad: 0/3', 17, 4,
+        260, 21, 244, 245, 249);
     sb.e[mscSquadLbl]._lpos = v3(-180, 4, 0);
     sb.e[sb.e[mscSquadLbl]._components[1].__id__]._horizontalAlign = 0;
     sb.e[sb.e[mscSquadLbl]._components[1].__id__]._isBold = true;
-    const mscStakeLbl = mkLabel(sb, 'MatchSetupStakeLabel', matchSetupCardN, 'Stake: 0.05 SOL', 22, 4,
-        260, 28, 255, 210, 74);
+    const mscStakeLbl = mkLabel(sb, 'MatchSetupStakeLabel', matchSetupCardN, 'Stake: 0.05 SOL', 17, 4,
+        260, 21, 255, 210, 74);
     sb.e[mscStakeLbl]._lpos = v3(180, 4, 0);
     sb.e[sb.e[mscStakeLbl]._components[1].__id__]._horizontalAlign = 2;
     style(sb, mscStakeLbl, { mono: true, bold: true });
-    const mscHintLbl = mkLabel(sb, 'MatchSetupHintLabel', matchSetupCardN, 'Pick 3 tokens to start', 18, -28,
-        620, 22, 20, 241, 149);
+    const mscHintLbl = mkLabel(sb, 'MatchSetupHintLabel', matchSetupCardN, 'Pick 3 tokens to start', 14, -21,
+        620, 17, 20, 241, 149);
     sb.e[sb.e[mscHintLbl]._components[1].__id__]._isBold = true;
     const mscEdge = mkCardEdge(sb, matchSetupCardN, MSC.w, MSC.h, 20, 241, 149);
     sb.e[matchSetupCardN]._components = [rf(mscUT), rf(mscSpr)];
@@ -4067,6 +4099,158 @@ function generate() {
     sb.e[pfN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
+    // 2026-04-27 — MATCHES IN PROGRESS PANEL
+    // Full-screen list of active matches the connected pubkey is in.
+    // Scrollview + 30-row pool. Each row = card with edge / winLine /
+    // windowLine / stakeChip / opponentChip / Graphics ring / timeLabel.
+    // ═══════════════════════════════════════════════════════════════
+    const MIPE = LAYOUT.MatchesInProgressPanel.elements;
+    const MIPR = LAYOUT.MatchesInProgressPanel.templates.mipRow;
+    // Local invis-btn helper (mkInvisBtnXY isn't declared until later in this
+    // generate() function — TDZ. Inline a tiny equivalent.)
+    const mipInvisBtn = (name, parent, x, y, w, h) => {
+        const hN = sb.e.length;
+        sb.node(name, parent, [], [], v3(x, y, 0));
+        const hUT = sb.ut(hN, w, h);
+        const hBtn = sb.add({
+            __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(hN), _enabled: true, __prefab: null,
+            _interactable: true, _transition: 0,
+            _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+            _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+            _duration: 0.1, _zoomScale: 1.04, _target: rf(hN), _id: gid(),
+        });
+        sb.e[hN]._components = [rf(hUT), rf(hBtn)];
+        return hN;
+    };
+
+    const mipN = sb.e.length;
+    sb.node('MatchesInProgressPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.ut(mipN, 720, 1280);
+
+    const mipBackLink = mkLabel(sb, 'BackLinkLabel', mipN, '← Back', 18,
+        MIPE.backLink.y, MIPE.backLink.w, MIPE.backLink.h, 200, 210, 230);
+    sb.e[mipBackLink]._lpos = v3(MIPE.backLink.x, MIPE.backLink.y, 0);
+    const mipBackBtnN = mipInvisBtn('BackButton', mipN,
+        MIPE.backBtn.x, MIPE.backBtn.y, MIPE.backBtn.w, MIPE.backBtn.h);
+
+    const mipTitle = mkLabel(sb, 'MatchesInProgressTitleLabel', mipN, 'Matches In Progress', 28,
+        MIPE.title.y, MIPE.title.w, MIPE.title.h, 255, 210, 74);
+    style(sb, mipTitle, { bold: true });
+    const mipSubtitle = mkLabel(sb, 'MatchesInProgressSubtitleLabel', mipN, 'All clear', 14,
+        MIPE.subtitle.y, MIPE.subtitle.w, MIPE.subtitle.h, 168, 174, 201);
+
+    // Empty-state cluster — toggled by AppUI when 0 active matches.
+    const mipEmptyN = sb.e.length;
+    sb.node('MIPEmptyState', mipN, [], [], v3(MIPE.emptyState.x, MIPE.emptyState.y, 0));
+    sb.ut(mipEmptyN, MIPE.emptyState.w, MIPE.emptyState.h);
+    const mipEmptyTitle = mkLabel(sb, 'MIPEmptyTitle', mipEmptyN, 'No active matches', 22,
+        MIPE.emptyStateTitle.y - MIPE.emptyState.y, MIPE.emptyStateTitle.w, MIPE.emptyStateTitle.h, 244, 245, 249);
+    const mipEmptySub = mkLabel(sb, 'MIPEmptySubtitle', mipEmptyN, 'Find a match or start one to see your live games here.', 14,
+        MIPE.emptyStateSubtitle.y - MIPE.emptyState.y, MIPE.emptyStateSubtitle.w, MIPE.emptyStateSubtitle.h, 168, 174, 201);
+    const mipEmptyCta = mkBtn(sb, 'MIPEmptyCtaButton', mipEmptyN, 'Find a Match',
+        MIPE.emptyStateCta.y - MIPE.emptyState.y, MIPE.emptyStateCta.w, MIPE.emptyStateCta.h, 48, 198, 155);
+    sb.e[mipEmptyN]._children = [rf(mipEmptyTitle), rf(mipEmptySub), rf(mipEmptyCta)];
+    sb.e[mipEmptyN]._active = false;
+
+    // Scrollview + 30-row pool.
+    const mipScroll = mkScrollView(sb, 'MIPScrollView', mipN,
+        MIPE.scroll.x, MIPE.scroll.y, MIPE.scroll.w, MIPE.scroll.h);
+
+    const mipRows = [];
+    for (let i = 0; i < MIPR.count; i++) {
+        const ry = MIPR.baseY + i * MIPR.gapY;
+        const rowN = sb.e.length;
+        sb.node(`MIPRow_${i}`, mipScroll.content, [], [], v3(0, ry, 0));
+        const rowUT = sb.ut(rowN, MIPR.w, MIPR.h);
+        const rowSpr = sb.spr(rowN, 22, 28, 44);
+
+        // Invisible full-row tap target — added FIRST so it sits behind content.
+        const tapN = mipInvisBtn(`MIPTapTarget_${i}`, rowN,
+            MIPR.tapTarget.x, MIPR.tapTarget.y, MIPR.tapTarget.w, MIPR.tapTarget.h);
+
+        // Left teal stripe.
+        const edgeN = sb.e.length;
+        sb.node(`MIPCardEdge_${i}`, rowN, [], [], v3(MIPR.edge.x, MIPR.edge.y, 0));
+        const edgeUT = sb.ut(edgeN, MIPR.edge.w, MIPR.edge.h);
+        const edgeSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(edgeN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(48, 198, 155, 255),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[edgeN]._components = [rf(edgeUT), rf(edgeSpr)];
+
+        // Winning line (top-left, big bold colored at runtime).
+        const winLineN = mkLabel(sb, `MIPWinLine_${i}`, rowN, '—', 22,
+            MIPR.winLine.y, MIPR.winLine.w, MIPR.winLine.h, 244, 245, 249);
+        sb.e[winLineN]._lpos = v3(MIPR.winLine.x, MIPR.winLine.y, 0);
+        sb.e[sb.e[winLineN]._components[1].__id__]._horizontalAlign = 0;
+        sb.e[sb.e[winLineN]._components[1].__id__]._isBold = true;
+
+        // Window/age line (bottom-left, muted).
+        const windowLineN = mkLabel(sb, `MIPWindowLine_${i}`, rowN, '', 12,
+            MIPR.windowLine.y, MIPR.windowLine.w, MIPR.windowLine.h, 168, 174, 201);
+        sb.e[windowLineN]._lpos = v3(MIPR.windowLine.x, MIPR.windowLine.y, 0);
+        sb.e[sb.e[windowLineN]._components[1].__id__]._horizontalAlign = 0;
+
+        // Stake chip (mid-top, gold or muted teal at runtime).
+        const stakeChipN = mkLabel(sb, `MIPStakeChip_${i}`, rowN, '', 16,
+            MIPR.stakeChip.y, MIPR.stakeChip.w, MIPR.stakeChip.h, 255, 210, 74);
+        sb.e[stakeChipN]._lpos = v3(MIPR.stakeChip.x, MIPR.stakeChip.y, 0);
+        sb.e[sb.e[stakeChipN]._components[1].__id__]._isBold = true;
+        style(sb, stakeChipN, { mono: true });
+
+        // Opponent chip (mid-bottom, color set at runtime).
+        const oppChipN = mkLabel(sb, `MIPOpponentChip_${i}`, rowN, '', 13,
+            MIPR.opponentChip.y, MIPR.opponentChip.w, MIPR.opponentChip.h, 244, 245, 249);
+        sb.e[oppChipN]._lpos = v3(MIPR.opponentChip.x, MIPR.opponentChip.y, 0);
+
+        // Ring — Graphics arc (AppUI calls _updateMipRing(i, fraction)).
+        const ringN = sb.e.length;
+        sb.node(`MIPRing_${i}`, rowN, [], [], v3(MIPR.ring.x, MIPR.ring.y, 0));
+        const ringUT = sb.ut(ringN, MIPR.ring.w, MIPR.ring.h);
+        const ringG = sb.add({
+            __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(ringN), _enabled: true, __prefab: null,
+            _lineWidth: 5, _miterLimit: 10,
+            _strokeColor: cl(48, 198, 155, 255),
+            _fillColor: cl(255, 255, 255, 0),
+            _id: gid(),
+        });
+        sb.e[ringN]._components = [rf(ringUT), rf(ringG)];
+
+        // Time label (below ring, mono).
+        const timeLblN = mkLabel(sb, `MIPTimeLabel_${i}`, rowN, '—', 12,
+            MIPR.timeLabel.y, MIPR.timeLabel.w, MIPR.timeLabel.h, 244, 245, 249);
+        sb.e[timeLblN]._lpos = v3(MIPR.timeLabel.x, MIPR.timeLabel.y, 0);
+        style(sb, timeLblN, { mono: true });
+
+        sb.e[rowN]._components = [rf(rowUT), rf(rowSpr)];
+        sb.e[rowN]._children = [rf(tapN), rf(edgeN), rf(winLineN), rf(windowLineN), rf(stakeChipN), rf(oppChipN), rf(ringN), rf(timeLblN)];
+        sb.e[rowN]._active = false;
+        mipRows.push(rowN);
+    }
+    sb.e[mipScroll.content]._children = mipRows.map(rf);
+
+    const mipStatus = mkLabel(sb, 'MatchesInProgressStatusLabel', mipN, '', 12,
+        MIPE.status.y, MIPE.status.w, MIPE.status.h, 130, 140, 165);
+
+    sb.e[mipN]._children = [
+        rf(mipBackLink), rf(mipBackBtnN),
+        rf(mipTitle), rf(mipSubtitle),
+        rf(mipEmptyN),
+        rf(mipScroll.root),
+        rf(mipStatus),
+    ];
+    sb.e[mipN]._active = false;
+
+    // ═══════════════════════════════════════════════════════════════
     // Session D Part 3 — WAITING PANEL
     // Shown during real-mode matchmaking + as a brief transition for paper.
     // ═══════════════════════════════════════════════════════════════
@@ -6017,7 +6201,7 @@ function generate() {
     sb.e[toastOvN]._children = toastSlotIndices.map(rf);
     // _active stays true — overlay container is always on, individual slots toggle.
 
-    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(fxN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(jcN), rf(countdownN), rf(signingN), rf(loadingN), rf(luN), rf(npN), rf(toastOvN)];
+    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(fxN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(mipN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(jcN), rf(countdownN), rf(signingN), rf(loadingN), rf(luN), rf(npN), rf(toastOvN)];
     sb.e[canvas]._components = [rf(cUT), rf(cCV), rf(cWG), rf(appUI)];
 
     // Scene Globals

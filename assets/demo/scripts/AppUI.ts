@@ -3089,6 +3089,7 @@ export class AppUI extends Component {
             { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 36, offsetX: -310 },
             // CTA trio — IconBadge sits left of each label so the icon reads first.
             { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 72, offsetX: -200 },
+            { panel: this._landingPanel, name: 'ConnectButton',       icon: 'sword',  size: 72, offsetX: -200 },
             { panel: this._homePanel, name: 'FindMatchButton',        icon: 'flag',   size: 72, offsetX: -200 },
             { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 72, offsetX: -200 },
             // Right cluster (Disconnect · Hub · Settings · Bell). Phase N4:
@@ -10719,8 +10720,9 @@ export class AppUI extends Component {
             if (this._wagerLockChip) this._wagerLockChip.active = false;
             if (this._wagerBotChip) {
                 this._wagerBotChip.active = true;
-                if (this._wagerBotChipLabel) this._wagerBotChipLabel.string = '🤖 FREE · Bot Match';
+                if (this._wagerBotChipLabel) this._wagerBotChipLabel.string = 'Free: Bot Match';
             }
+            if (this._matchSetupStakeLabel) this._matchSetupStakeLabel.string = 'Free: Bot Match';
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {

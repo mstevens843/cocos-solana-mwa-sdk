@@ -34,8 +34,10 @@
 // below the (now-shorter) scrollview bottom.
 const td = {
     // Header band — pills + back; aligned with HomePanel.notificationBell etc.
-    HEADER_Y:           620,   // was 575 → +45
-    TITLE_Y:            570,   // was 525 → +45
+    // 2026-04-27: HEADER_Y 620→660 to raise the (now-shrunk-25%) Lv/SOL pills
+    // higher into the safe-area gap.
+    HEADER_Y:           660,
+    TITLE_Y:            570,
     TITLE_BOTTOM:       552,   // = TITLE_Y - title.h(36)/2
 
     // MatchSetupCard summary — directly under title.
@@ -43,34 +45,34 @@ const td = {
     MATCHSETUP_CARD_Y:  455,   // h=124 → top 517, bottom 393
 
     // FeedFrameCard wrapping search/chips/col-headers + scrollview.
-    // 2026-04-27: scroll grew 2.5× (272 → 680, +408). Frame grows to wrap.
+    // 2026-04-27 v2: scroll shrank 25% (680 → 510). Frame shrinks to wrap.
     FEED_FRAME_TOP:     375,
-    FEED_FRAME_H:       824,   // 416 + 408 (scroll growth)
-    FEED_FRAME_Y:       -37,   // = FEED_FRAME_TOP - FEED_FRAME_H/2
+    FEED_FRAME_H:       656,
+    FEED_FRAME_Y:       47,    // = FEED_FRAME_TOP - FEED_FRAME_H/2
 
     // In-frame mid band — search/filter/cols.
     SEARCH_Y:           345,
     CHIPS_Y:            293,
     COL_HEADERS_Y:      255,
 
-    // Feed scrollview — 2026-04-27: h grew 2.5× (272 → 680). Top stays at 239.
+    // Feed scrollview — 2026-04-27 v2: h 680 → 510 (25% shrink). Top stays at 239.
     FEED_SCROLL_TOP:    239,
-    FEED_SCROLL_H:      680,
-    FEED_SCROLL_Y:      -101,  // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
-    FEED_SCROLL_BOTTOM: -441,
+    FEED_SCROLL_H:      510,
+    FEED_SCROLL_Y:      -16,   // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
+    FEED_SCROLL_BOTTOM: -271,
 
-    // SquadPanel — drops 408 to follow scroll growth.
-    SQUAD_PANEL_TOP:    -482,
+    // SquadPanel — lifted 191 to follow scroll shrink.
+    SQUAD_PANEL_TOP:    -291,
     SQUAD_PANEL_H:      220,
-    SQUAD_PANEL_Y:      -592,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
-    SQUAD_PANEL_BOTTOM: -702,
-    SQUAD_HEADER_Y:     -527,
-    SQUAD_SLOTS_Y:      -577,
-    WAGER_Y:            -642,
-    WAGER_DROPDOWN_Y:   -610,
+    SQUAD_PANEL_Y:      -401,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
+    SQUAD_PANEL_BOTTOM: -511,
+    SQUAD_HEADER_Y:     -336,
+    SQUAD_SLOTS_Y:      -386,
+    WAGER_Y:            -451,
+    WAGER_DROPDOWN_Y:   -419,
 
     // Footer.
-    STATUS_Y:           -770,
+    STATUS_Y:           -579,
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
@@ -130,8 +132,10 @@ const home = {
     START_CTA_Y:      196,   // Start Match (violet hero, h=104)
     FIND_CTA_Y:       80,    // Find Match (teal,   h=92)
     FIND_BADGE_Y:     102,   // live count pill — sibling of FindMatchBtn
-    BOT_CTA_Y:        -28,   // Bot Match (warn amber, h=84)
-    TRAINING_Y:       -200,  // homeTrainingCard (mascot + glow + copy)
+    MIP_CTA_Y:        -32,   // 2026-04-27 NEW — Matches In Progress (teal, h=84)
+    MIP_BADGE_Y:      -10,   // live count pill — sibling of MatchesInProgressBtn
+    BOT_CTA_Y:        -140,  // Bot Match (warn amber, h=84) — 2026-04-27 was -28; pushed down for MIP
+    TRAINING_Y:       -300,  // homeTrainingCard (mascot + glow + copy) — 2026-04-27 was -200
 
     // Legacy off-flow nodes — pinned below safe area, kept ONLY for AppUI
     // binding compat after Phase N4 collapsed them into SettingsPanel.
@@ -307,6 +311,34 @@ const leaderboard = {
     PERSONAL_RANK_Y:  -440,
 
     // Status footer.
+    STATUS_Y:         -740,
+};
+
+// 2026-04-27 — MatchesInProgressPanel deterministic Y anchors.
+// Full-screen list of active matches the connected pubkey is in. Scrollview
+// + 30-row pool; each row has a Graphics ring (radius 22) reflecting
+// remaining time and a "winning by X%" focal text on the left.
+const mip = {
+    // Header band — back / title / subtitle.
+    BACK_Y:           720,
+    TITLE_Y:          680,
+    SUBTITLE_Y:       638,
+
+    // Scrollview + row pool.
+    SCROLL_Y:         30,
+    SCROLL_H:         860,
+    ROW_W:            660,
+    ROW_H:            80,
+    ROW_BASE_Y:       -40,
+    ROW_GAP_Y:        -90,
+
+    // Empty state (shown when filteredCount === 0).
+    EMPTY_STATE_Y:    120,
+    EMPTY_TITLE_Y:    60,
+    EMPTY_SUB_Y:      0,
+    EMPTY_CTA_Y:      -60,
+
+    // Footer.
     STATUS_Y:         -740,
 };
 
@@ -561,6 +593,11 @@ const LayoutSpec = {
             findMatchSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
             findMatchChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
             findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
+            // 2026-04-27 — Matches In Progress: opens MatchesInProgressPanel.
+            matchesInProgressBtn:        { x: 0,    y: home.MIP_CTA_Y,   w: 680, h: 84,  type: 'btnPrimary', notes: 'NEW — opens MatchesInProgressPanel; teal primary' },
+            matchesInProgressSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
+            matchesInProgressChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
+            matchesInProgressCountBadge: { x: 244,  y: home.MIP_BADGE_Y,   w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of MIP button' },
             botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 680, h: 84,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free practice (smallest, muted)' },
             botMatchSubtitle:    { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton' },
             botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton' },
@@ -599,6 +636,7 @@ const LayoutSpec = {
             ['NotificationBellButton',  'NotificationBellBadge'],   // badge ON bell
             ['HomeMatchTicker',         'HomeTournamentBadge'],     // alternates
             ['FindMatchButton',         'FindMatchButtonCountBadge'],// badge sits ON the FindMatch button intentionally
+            ['MatchesInProgressButton', 'MatchesInProgressCountBadge'], // badge sits ON the MIP button intentionally
             // V2 — wallet pill glow halo sits BEHIND the pill; intentional overlap.
             ['WalletPill',              'WalletPillGlow'],
             // Subtitle + chevron now live INSIDE each action button.
@@ -1289,6 +1327,61 @@ const LayoutSpec = {
         ],
     },
 
+    /* ───── MATCHES IN PROGRESS ─────────────────────────────────────── */
+    // 2026-04-27 — Full-screen list of active matches the connected pubkey
+    // is in. Card scrollview (30-row pool); each row shows a winning line +
+    // window meta + stake chip (SOL or PAPER) + opponent chip (BOT or @user)
+    // + Graphics ring (radius 22) + remaining time. Tap a row → RacePanel.
+    MatchesInProgressPanel: {
+        canvas: { w: 720, h: 1280 },
+        elements: {
+            backLink:  { x: -280, y: mip.BACK_Y,     w: 110, h: 28,  type: 'label' },
+            backBtn:   { x: -280, y: mip.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
+            title:     { x: 0,    y: mip.TITLE_Y,    w: 600, h: 44,  type: 'label',
+                notes: '"Matches In Progress" — gold bold 28pt' },
+            subtitle:  { x: 0,    y: mip.SUBTITLE_Y, w: 520, h: 22,  type: 'label',
+                notes: 'AppUI fills "{N} games running" / "All clear"' },
+            // Empty-state cluster (shown when zero active matches).
+            emptyState:        { x: 0, y: mip.EMPTY_STATE_Y, w: 600, h: 240, type: 'group' },
+            emptyStateTitle:   { x: 0, y: mip.EMPTY_TITLE_Y + mip.EMPTY_STATE_Y, w: 600, h: 36, type: 'label' },
+            emptyStateSubtitle:{ x: 0, y: mip.EMPTY_SUB_Y   + mip.EMPTY_STATE_Y, w: 600, h: 22, type: 'label' },
+            emptyStateCta:     { x: 0, y: mip.EMPTY_CTA_Y   + mip.EMPTY_STATE_Y, w: 320, h: 56, type: 'btnPrimary',
+                notes: '"Find a Match" — routes to FindMatchPanel' },
+            // Scrollview holding the row pool.
+            scroll:    { x: 0, y: mip.SCROLL_Y, w: 660, h: mip.SCROLL_H, type: 'scrollview' },
+            // Status footer.
+            status:    { x: 0, y: mip.STATUS_Y, w: 600, h: 22, type: 'label' },
+        },
+        templates: {
+            // 30-row pool. Each row = a card with edge stripe + 2 left labels
+            // (winLine + windowLine) + 2 mid chips (stake + opponent) + ring
+            // + time label on the right. Invisible full-row tap target.
+            mipRow: {
+                count: 30, w: mip.ROW_W, h: mip.ROW_H,
+                baseY: mip.ROW_BASE_Y, gapY: mip.ROW_GAP_Y,
+                edge:        { x: -326, y: 0,   w: 4,   h: 64 },
+                winLine:     { x: -195, y: 14,  w: 250, h: 24 },
+                windowLine:  { x: -195, y: -14, w: 250, h: 16 },
+                stakeChip:   { x:   55, y: 14,  w: 100, h: 22 },
+                opponentChip:{ x:   55, y: -14, w: 100, h: 18 },
+                ring:        { x:  240, y: 8,   w: 50,  h: 50 },
+                timeLabel:   { x:  240, y: -22, w: 130, h: 16 },
+                tapTarget:   { x: 0,    y: 0,   w: mip.ROW_W, h: mip.ROW_H },
+            },
+        },
+        allowedOverlaps: [
+            ['BackLinkLabel', 'BackButton'],
+            // Tap target sits BEHIND all visible row content.
+            ['MIPTapTarget', 'MIPCardEdge'],
+            ['MIPTapTarget', 'MIPWinLine'],
+            ['MIPTapTarget', 'MIPWindowLine'],
+            ['MIPTapTarget', 'MIPStakeChip'],
+            ['MIPTapTarget', 'MIPOpponentChip'],
+            ['MIPTapTarget', 'MIPRing'],
+            ['MIPTapTarget', 'MIPTimeLabel'],
+        ],
+    },
+
     /* ───── LEADERBOARD ─────────────────────────────────────────────── */
     // Hero card for rank #1 (TopPlayerCard) + 9 standard rows + 4-tab segmented
     // mode control + standalone "This Week" chip + EmptyStateGroup + sticky-bottom
@@ -1562,14 +1655,16 @@ const LayoutSpec = {
             backLink:           { x: -288, y: td.HEADER_Y,  w: 100, h: 28, type: 'label' },
             backBtn:            { x: -288, y: td.HEADER_Y,  w: 120, h: 40, type: 'btnGhost' },
             title:              { x: 0,    y: td.TITLE_Y,   w: 320, h: 36, type: 'label' },
-            // 2026-04-27: pills 2× (185×36 → 370×72; 130×36 → 260×72) and repositioned
-            // so both fit inside the canvas right-half without clipping.
-            levelPill:          { x: -100, y: td.HEADER_Y,  w: 370, h: 72, type: 'chip',    notes: '"Lv N · curr/max XP"' },
-            solPill:            { x: 220,  y: td.HEADER_Y,  w: 260, h: 72, type: 'chip',    notes: '"◼ 19.99 SOL"' },
+            // 2026-04-27 v2: pills shrunk 25% from the 2× pass (370×72 → 278×54;
+            // 260×72 → 195×54) and repositioned tighter so the row reads cleanly
+            // under the (raised) icon-button row.
+            levelPill:          { x: -130, y: td.HEADER_Y,  w: 278, h: 54, type: 'chip',    notes: '"Lv N · curr/max XP"' },
+            solPill:            { x: 170,  y: td.HEADER_Y,  w: 195, h: 54, type: 'chip',    notes: '"◼ 19.99 SOL"' },
             // MatchSetupCard restored — multi-line summary directly under title.
             // Mode tag (top-left) + Squad/Stake (mid) + Hint (bottom) live INSIDE.
-            // 2026-04-27: w 688 → 712 to match feedFrameCard width below.
-            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 712, h: 124, type: 'group',
+            // 2026-04-27 v2: h 124 → 93 (25% shorter so the rest of the layout
+            // can pull upward).
+            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 712, h: 93, type: 'group',
                 notes: 'Match summary card; 4 child labels (mode/squad/stake/hint) populated by AppUI._refreshSquadActionButtons.' },
             // FeedFrameCard — wraps in-card UI. Bottom shrinks with cut feed h.
             feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
@@ -1656,9 +1751,11 @@ const LayoutSpec = {
         },
         templates: {
             // 4 top-row icon buttons — 2026-04-27: 2× size (32×28 → 64×56),
-            // stride 76 (64w + 12 gap), right-anchored at xs[3]=328.
+            // stride 76, right-anchored at xs[3]=328.
+            // 2026-04-27 v2: y 660→720 to clear the (now-raised) Lv/SOL pills
+            // sitting at HEADER_Y=660.
             topRowActionBtn: {
-                count: 4, w: 64, h: 56, y: 660,
+                count: 4, w: 64, h: 56, y: 720,
                 names:  ['OpenSettingsButton', 'OpenSquadPresetsButton',
                          'SuggestSquadButton', 'HelpButton'],
                 labels: ['', '', '', '?'],
@@ -1702,12 +1799,12 @@ const LayoutSpec = {
             //   Top line (y=36):    [Avatar 150x150] [SYMBOL bold]   [Score]   [+24H% color]
             //   Bottom line (y=-30):                  [name·mint muted]  [Liq] [Vol]   [Price]
             feedRow: {
-                count: 20, w: 688, h: 170,
-                baseY: -85, gapY: -174,
-                selectedEdge: { x: -334, y: 0,   w: 5,   h: 154, notes: 'left teal stripe' },
+                count: 20, w: 688, h: 136,
+                baseY: -68, gapY: -140,
+                selectedEdge: { x: -334, y: 0,   w: 5,   h: 124, notes: 'left teal stripe' },
                 checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
                 checkmark:    { x: 0,    y: 1,   w: 22,  h: 22 },
-                logo:         { x: -253, y: 0,   w: 150, h: 150 },
+                logo:         { x: -253, y: 0,   w: 120, h: 120 },
                 symbol:       { x: -71,  y: 36,  w: 154, h: 26, notes: 'bold 22pt' },
                 score:        { x: 40,   y: 36,  w: 44,  h: 20 },
                 change:       { x: 280,  y: 36,  w: 90,  h: 30, notes: 'HERO 24H% — 26pt bold' },
@@ -1955,6 +2052,24 @@ const LayoutSpec = {
         allowedOverlaps: [
             // Progress fill is layered on top of the track sprite by design.
             ['PFXpProgressBar', 'PFXpProgressBarFill'],
+        ],
+    },
+
+    // 2026-04-27 — Synthetic row-name entry. The verifier walks every node
+    // with children as its own "panel"; each MIPRow_N has the invisible
+    // TapTarget sitting behind 7 visible children. Suffix-stripped match.
+    MIPRow: {
+        allowedOverlaps: [
+            ['MIPTapTarget', 'MIPCardEdge'],
+            ['MIPTapTarget', 'MIPWinLine'],
+            ['MIPTapTarget', 'MIPWindowLine'],
+            ['MIPTapTarget', 'MIPStakeChip'],
+            ['MIPTapTarget', 'MIPOpponentChip'],
+            ['MIPTapTarget', 'MIPRing'],
+            ['MIPTapTarget', 'MIPTimeLabel'],
+            // Ring (radius 22, y=8) and time label (y=-22) share the right
+            // column. Time label bbox extends up into ring bbox by design.
+            ['MIPRing', 'MIPTimeLabel'],
         ],
     },
 
