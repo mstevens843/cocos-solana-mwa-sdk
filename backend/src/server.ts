@@ -34,6 +34,8 @@ import { ping as dbPing, dbConfigured, closePool } from './db';
 import { runMigrations } from './migrate';
 import { getUser, setUsername, touchUser, validateUsername } from './users';
 import { getPaperXp, recordPaperMatch, type PaperTrack } from './paper_xp';
+import { getPresets, replacePresets } from './squad_presets';
+import { getWatchlist, addToWatchlist, removeFromWatchlist } from './user_watchlist';
 import { recordMatch, listForPlayer, type MatchHistoryRecord } from './match_history';
 import { recordLobby, type MatchLobbyRecord } from './match_lobbies';
 import {
@@ -140,10 +142,15 @@ app.get('/paper-xp/:pubkey', async (req: Request, res: Response) => {
 app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
-        const body = req.body as { xp?: number; track?: string; won?: boolean };
+        const body = req.body as {
+            xp?: number;
+            track?: string;
+            won?: boolean;
+            profitLamportsDelta?: number;
+        };
         try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
         if (!body || typeof body.xp !== 'number' || typeof body.won !== 'boolean') {
-            return res.status(400).json({ error: 'body must include { xp:number, track:"bot"|"paper-real", won:boolean }' });
+            return res.status(400).json({ error: 'body must include { xp:number, track:"bot"|"paper-real", won:boolean, profitLamportsDelta?:number }' });
         }
         if (body.track !== 'bot' && body.track !== 'paper-real') {
             return res.status(400).json({ error: 'track must be "bot" or "paper-real"' });
@@ -151,11 +158,25 @@ app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
         if (body.xp < 0 || body.xp > 100_000) {
             return res.status(400).json({ error: 'xp delta out of bounds (0..100000)' });
         }
+        // profitLamportsDelta is signed (losses are negative). Bound the
+        // magnitude to keep abuse cheap; 1e15 lamports = 1M SOL, well past
+        // anything a real match would settle.
+        let profitDelta: number | undefined;
+        if (body.profitLamportsDelta !== undefined) {
+            if (typeof body.profitLamportsDelta !== 'number' || !Number.isFinite(body.profitLamportsDelta)) {
+                return res.status(400).json({ error: 'profitLamportsDelta must be a finite number' });
+            }
+            if (Math.abs(body.profitLamportsDelta) > 1e15) {
+                return res.status(400).json({ error: 'profitLamportsDelta out of bounds (|delta| ≤ 1e15)' });
+            }
+            profitDelta = Math.trunc(body.profitLamportsDelta);
+        }
         if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
         const row = await recordPaperMatch(pubkey, {
             xp: Math.floor(body.xp),
             track: body.track as PaperTrack,
             won: body.won,
+            profitLamports: profitDelta,
         });
         return res.json({
             pubkey: row.pubkey,
@@ -163,9 +184,131 @@ app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
             botXp: Number(row.bot_xp),
             paperRealXp: Number(row.paper_real_xp),
             gamesPlayed: row.games_played,
+            wins: row.wins,
+            losses: row.losses,
+            profitLamports: Number(row.profit_lamports),
         });
     } catch (e: any) {
         console.log(`${TAG} POST /paper-xp/:pubkey error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 9 — squad presets (cross-device, full-list replace).
+app.get('/users/:pubkey/squad-presets', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const row = await getPresets(pubkey);
+        if (!row) {
+            return res.json({ pubkey, presets: [], updatedAt: null });
+        }
+        return res.json({
+            pubkey: row.pubkey,
+            presets: row.presets,
+            updatedAt: row.updated_at,
+        });
+    } catch (e: any) {
+        console.log(`${TAG} GET /users/:pubkey/squad-presets error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.put('/users/:pubkey/squad-presets', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as { presets?: unknown };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!Array.isArray(body?.presets)) {
+            return res.status(400).json({ error: 'body must include { presets: array }' });
+        }
+        if (body.presets.length > 50) {
+            // Defensive cap; client enforces 5 but we don't trust it blindly.
+            return res.status(400).json({ error: 'too many presets (max 50 accepted, 5 stored)' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const row = await replacePresets(pubkey, body.presets);
+        return res.json({
+            pubkey: row.pubkey,
+            presets: row.presets,
+            updatedAt: row.updated_at,
+        });
+    } catch (e: any) {
+        console.log(`${TAG} PUT /users/:pubkey/squad-presets error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+// DB Stage 9 — user watchlist (cross-device, additive).
+app.get('/users/:pubkey/watchlist', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const rows = await getWatchlist(pubkey);
+        return res.json({
+            pubkey,
+            items: rows.map((r) => ({
+                mint: r.mint,
+                baseSymbol: r.base_symbol,
+                baseName: r.base_name,
+                logoURI: r.logo_uri,
+                addedAt: Math.floor(new Date(r.added_at).getTime() / 1000),
+            })),
+        });
+    } catch (e: any) {
+        console.log(`${TAG} GET /users/:pubkey/watchlist error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.post('/users/:pubkey/watchlist', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const body = req.body as {
+            mint?: string;
+            baseSymbol?: string;
+            baseName?: string;
+            logoURI?: string;
+            addedAt?: number;
+        };
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!body || typeof body.mint !== 'string' || body.mint.length < 32) {
+            return res.status(400).json({ error: 'body must include { mint:string }' });
+        }
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const row = await addToWatchlist(pubkey, {
+            mint: body.mint,
+            baseSymbol: body.baseSymbol,
+            baseName: body.baseName,
+            logoURI: body.logoURI,
+            addedAt: typeof body.addedAt === 'number' && Number.isFinite(body.addedAt) ? body.addedAt : undefined,
+        });
+        return res.json({
+            mint: row.mint,
+            baseSymbol: row.base_symbol,
+            baseName: row.base_name,
+            logoURI: row.logo_uri,
+            addedAt: Math.floor(new Date(row.added_at).getTime() / 1000),
+        });
+    } catch (e: any) {
+        console.log(`${TAG} POST /users/:pubkey/watchlist error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
+app.delete('/users/:pubkey/watchlist/:mint', async (req: Request, res: Response) => {
+    try {
+        const pubkey = req.params.pubkey;
+        const mint = req.params.mint;
+        try { new PublicKey(pubkey); } catch { return res.status(400).json({ error: 'invalid pubkey' }); }
+        if (!mint || typeof mint !== 'string') return res.status(400).json({ error: 'invalid mint' });
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const removed = await removeFromWatchlist(pubkey, mint);
+        return res.json({ ok: true, removed });
+    } catch (e: any) {
+        console.log(`${TAG} DELETE /users/:pubkey/watchlist/:mint error | ${e?.message ?? e}`);
         return res.status(500).json({ error: e?.message ?? 'internal error' });
     }
 });

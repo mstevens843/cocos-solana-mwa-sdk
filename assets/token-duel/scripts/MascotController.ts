@@ -75,7 +75,12 @@ export class MascotController extends Component {
             console.log(`${TAG} onLoad | DEFERRED_BUILD start`);
             this._buildMascot();
             console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
-            this.setState('idle');
+            // Do NOT call setState('idle') here. _state is already 'idle' from
+            // field init, and panels that start inactive (PostMatchPanel,
+            // RacePanel) hold this scheduleOnce paused until they activate —
+            // by then AppUI may have already set the outcome state on the same
+            // frame, and a deferred reset to 'idle' on the next tick would
+            // clobber it (the bug that pinned the Game Results mascot to idle).
             console.log(`${TAG} onLoad | DEFERRED_BUILD done`);
         }, 0);
     }
@@ -130,9 +135,13 @@ export class MascotController extends Component {
         }
     }
 
-    /** Switch state. Auto-returns to idle for celebrate/lose after their loop. */
-    setState(s: MascotState): void {
-        if (this._state === s) return;
+    /** Switch state. Auto-returns to idle for celebrate/lose after their loop.
+     *  `force=true` re-triggers the animation even when already in state `s`
+     *  (used by PostMatch on consecutive identical outcomes — second 'lose'
+     *  must replay the slump from frame 0 instead of staying clamped at the
+     *  end of the previous one-shot). */
+    setState(s: MascotState, force = false): void {
+        if (!force && this._state === s) return;
         this._state = s;
         this._currentFrame = 0;
         this._frameAccumulator = 0;

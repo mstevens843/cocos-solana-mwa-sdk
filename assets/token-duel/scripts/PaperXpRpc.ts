@@ -23,6 +23,8 @@ export interface PaperXpResponse {
     gamesPlayed: number;
     wins: number;
     losses: number;
+    /** Signed lifetime PnL in lamports (DB Stage 9). Server omits on stale clients. */
+    profitLamports?: number;
     lastUpdated?: string;
 }
 
@@ -58,20 +60,29 @@ export async function fetchPaperXp(pubkey: string): Promise<PaperXpResponse | nu
  * Post a paper-match XP delta. Fire-and-forget; failures are logged but
  * don't throw. The local Stats system remains the device-side source of
  * truth — next successful sync picks up the missed delta.
+ *
+ * profitLamportsDelta is **signed** — losses send a negative value. Pass
+ * `undefined` to skip profit accounting (back-compat with callers that
+ * don't yet thread it through).
  */
 export async function postPaperXpDelta(
     pubkey: string,
     deltaXp: number,
     track: PaperXpTrack,
     won: boolean,
+    profitLamportsDelta?: number,
 ): Promise<void> {
     if (!RECEIPT_BACKEND_URL) return;
     if (!pubkey || deltaXp < 0) return;
     try {
+        const body: Record<string, unknown> = { xp: Math.floor(deltaXp), track, won };
+        if (typeof profitLamportsDelta === 'number' && Number.isFinite(profitLamportsDelta)) {
+            body.profitLamportsDelta = Math.trunc(profitLamportsDelta);
+        }
         const res = await fetch(`${RECEIPT_BACKEND_URL}/paper-xp/${pubkey}`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ xp: Math.floor(deltaXp), track, won }),
+            body: JSON.stringify(body),
         });
         if (!res.ok) {
             const txt = await res.text().catch(() => '');

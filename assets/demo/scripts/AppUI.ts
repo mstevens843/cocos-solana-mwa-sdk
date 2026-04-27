@@ -4164,6 +4164,11 @@ export class AppUI extends Component {
                 showToast(`Connected: ${shortPk}`);
                 showToast('Auth cached');
             }
+            // DB Stage 9 — bind cross-device sync + hydrate user collections
+            // (squad presets + watchlist) before rendering Home. Hydrate is
+            // best-effort: backend offline ⇒ keep using local copies.
+            this._bindUserCollectionsSync(result.pubkey);
+            void this._hydrateUserCollections(result.pubkey);
             // Phase 19 — cover the post-auth → home-render gap with the
             // LoadingOverlay. Wraps _showHome so the overlay shows while
             // the home panel finishes binding/rendering, then dismisses.
@@ -4189,6 +4194,8 @@ export class AppUI extends Component {
         if (result) {
             console.log(`${TAG} onReconnect | SUCCESS pubkey=${result.pubkey}`);
             showToast('Reconnected');
+            this._bindUserCollectionsSync(result.pubkey);
+            void this._hydrateUserCollections(result.pubkey);
             this._showHome();
         } else {
             console.log(`${TAG} onReconnect | FAIL result=null`);
@@ -4197,6 +4204,34 @@ export class AppUI extends Component {
             this._setLandingEnabled(true);
         }
         this._hideLoadingOverlay();
+    }
+
+    /** DB Stage 9 — wire SquadPresets + Watchlist to push mutations
+     *  through to the backend mirror for the connected wallet. Pass null
+     *  to detach on disconnect. */
+    private _bindUserCollectionsSync(pubkey: string | null): void {
+        try { SquadPresets.setSyncPubkey(pubkey); } catch (_) { /* defensive */ }
+        try { Watchlist.setSyncPubkey(pubkey); } catch (_) { /* defensive */ }
+    }
+
+    /** DB Stage 9 — pull presets + watchlist from backend, merge per the
+     *  per-feature conflict strategy (LWW for presets, union for
+     *  watchlist). Best-effort; logs and returns on failure. */
+    private async _hydrateUserCollections(pubkey: string): Promise<void> {
+        if (!pubkey) return;
+        try {
+            await Promise.all([
+                SquadPresets.hydrateFromBackend(pubkey).catch((e) => {
+                    console.log(`${TAG} hydrate_presets | ${e}`);
+                    return false;
+                }),
+                Watchlist.hydrateFromBackend(pubkey).catch((e) => {
+                    console.log(`${TAG} hydrate_watchlist | ${e}`);
+                }),
+            ]);
+        } catch (e) {
+            console.log(`${TAG} _hydrateUserCollections | ${e}`);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -4565,6 +4600,9 @@ export class AppUI extends Component {
                 this._activeRealMatchPda = null;
                 this._showPostMatchPanel({
                     won: result.won,
+                    // Tie iff scores are equal AND nobody is the declared winner
+                    // (on-chain settlement may already encode that as `!won && payout=0`).
+                    tie: !result.won && result.playerHeight === result.opponentHeight,
                     playerHeight: result.playerHeight,
                     opponentHeight: result.opponentHeight,
                     xpGained: result.xpGained,
@@ -4675,6 +4713,10 @@ export class AppUI extends Component {
             const modeDef = MODES[modeId as keyof typeof MODES] ?? MODES.oneVone;
             this._showPostMatchPanel({
                 won: outcome.playerWon,
+                // Paper-bot tie: deterministic encoded scores from
+                // runPaperBotMatch (see Matchmaker.ts) — equal scores with no
+                // payout means the match drew. Map → think mascot.
+                tie: !outcome.playerWon && height === outcome.opponentHeight,
                 playerHeight: height,
                 opponentHeight: outcome.opponentHeight,
                 xpGained: outcome.xpGained,
@@ -4693,12 +4735,16 @@ export class AppUI extends Component {
             // DB Stage 3 — sync paper XP delta to backend (cross-device). Fire-
             // and-forget; localStorage Stats is still authoritative per-device.
             // Guest mode skips backend (synthetic IDs would break FK constraints).
+            // DB Stage 9 — also includes signed profit delta so lifetime PnL
+            // survives device wipes. pnl mirrors what Stats.record stored
+            // locally inside runPaperBotMatch (Matchmaker.ts:100).
             const myPubkey = MWAManager.instance?.connectedPubkey;
+            const pnlLamports = outcome.payoutLamports - stakeLamports;
             if (myPubkey && !this._isGuest() && outcome.xpGained > 0) {
                 (async () => {
                     try {
                         const { postPaperXpDelta } = await import('../../token-duel/scripts/PaperXpRpc');
-                        await postPaperXpDelta(myPubkey, outcome.xpGained, 'bot', outcome.playerWon);
+                        await postPaperXpDelta(myPubkey, outcome.xpGained, 'bot', outcome.playerWon, pnlLamports);
                     } catch (e) {
                         console.log(`${TAG} paper_xp_post_err | ${e}`);
                     }
@@ -8580,6 +8626,9 @@ export class AppUI extends Component {
 
     private async _onDisconnect(): Promise<void> {
         console.log(`${TAG} onDisconnect | START`);
+        // DB Stage 9 — detach cross-device sync so any further local edits
+        // don't leak to a wallet we just walked away from.
+        this._bindUserCollectionsSync(null);
         await MWAManager.instance!.deauthorize();
         console.log(`${TAG} onDisconnect | DONE`);
         showToast('Disconnected');
@@ -9191,6 +9240,7 @@ export class AppUI extends Component {
 
     private _showPostMatchPanel(outcome: {
         won: boolean;
+        tie?: boolean;          // betting-duel: equal portfolio deltas → think mascot
         playerHeight: number;
         opponentHeight: number;
         xpGained: number;
@@ -9206,9 +9256,17 @@ export class AppUI extends Component {
         if (!this._postMatchPanel) return;
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
-        // UX Phase 2b: route celebrate/lose to the PostMatchMascot (visible on
-        // this panel). Home mascot stays idle for when user returns home.
-        this._postMatchMascot?.setState(outcome.won ? 'celebrate' : 'lose');
+        // UX Phase 2b: route celebrate/lose/think to the PostMatchMascot. The
+        // results screen must NEVER show 'idle' — pick exactly one of the
+        // outcome states. `force=true` replays the animation when the previous
+        // match settled to the same outcome (without it, setState early-returns
+        // and a second loss freezes on the last lose frame).
+        const mascotState: MascotState =
+            outcome.tie ? 'think'
+          : outcome.won ? 'celebrate'
+          :               'lose';
+        console.assert(mascotState !== 'idle', 'PostMatch mascot must never be idle');
+        this._postMatchMascot?.setState(mascotState, true);
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
