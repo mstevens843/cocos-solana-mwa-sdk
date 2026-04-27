@@ -538,17 +538,17 @@ const LayoutSpec = {
             // ── BACKGROUND SCRIM (full panel, behind everything) ──
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite', notes: 'dim overlay behind content column — reduces starfield contrast' },
             // ── HUD HEADER (y=620) — bell · WalletPill · 3 chrome icons ──
-            notificationBell:    { x: -330, y: home.HEADER_Y,       w: 56,  h: 56,  type: 'btnGhost', notes: 'Phase N4: far-left of 5-icon bar; bell icon attached at runtime' },
-            notificationBadge:   { x: -308, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
+            notificationBell:    { x: -296, y: home.HEADER_Y,       w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x -330→-296 (pulled inward toward wallet)' },
+            notificationBadge:   { x: -274, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
             walletPill:          { x: 0,    y: home.HEADER_Y,       w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
             walletPillGlow:      { x: 0,    y: home.HEADER_Y,       w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge',    notes: 'green status dot at left edge of pill (relative to pill)' },
-            pubkeyLabel:         { x: -30,  y: 6,    w: 280, h: 24,  type: 'label',    notes: 'short address inside WalletPill (relative to pill)' },
-            walletNameLabel:     { x: 0,    y: -16,  w: 280, h: 14,  type: 'label',    notes: 'wallet brand line under address (relative to pill)' },
+            pubkeyLabel:         { x: -50,  y: 0,    w: 220, h: 26,  type: 'label',    notes: '2026-04-27 — vertically centered (was y=6); shrunk w 280→220 + nudged x -30→-50 to leave room for SeedVault on right' },
+            walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label',    notes: '2026-04-27 — moved from below pubkey (centered) to RIGHT side of pill (vertically centered) so "Seed Vault" is actually visible' },
             // Phase N4: openPortfolioBtn removed (Portfolio collapsed into Leaderboard hub).
             // 5-icon bar reordered to [bell | trophy | wallet | cog | disconnect] with wallet centered.
-            openLeaderboardBtn:  { x: -250, y: home.HEADER_Y, w: 56,  h: 56,  type: 'btnGhost', notes: 'left of WalletPill — opens Portfolio+Leaderboard hub' },
-            openSettingsBtn:     { x:  250, y: home.HEADER_Y, w: 56,  h: 56,  type: 'btnGhost', notes: 'right of WalletPill — settings' },
+            openLeaderboardBtn:  { x: -224, y: home.HEADER_Y, w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x -250→-224' },
+            openSettingsBtn:     { x:  224, y: home.HEADER_Y, w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x  250→ 224' },
             // ── XP MODULE — real progression bar, animated ──
             homeLevelChip:       { x: 0,    y: home.XP_CHIP_Y, w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
             homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
@@ -564,14 +564,14 @@ const LayoutSpec = {
                                    ys: [18, 18, 18, -38, -38],
                                    ws: [160, 160, 160, 200, 200],
                                    h: 52,
-                                   keyFs: 10, valFs: 14,
+                                   keyFs: 12, valFs: 18,
                                    notes: '5 chips: row 1 (mode/players/stake), row 2 (duration/created)' },
             // Tournament alternate — same slot as ticker, mutually exclusive.
             homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 140, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active' },
             // Off-flow placeholders — superseded by SettingsPanel + homeChalChip
             // 'rake' key. Nodes pinned below safe-area so they never collide.
             homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
-            disconnectBtn:       { x:  330, y: home.HEADER_Y,         w: 56,  h: 56,  type: 'btnGhost',  notes: 'Phase N4: Home top-bar far-right; one-tap wallet/guest disconnect (drawDisconnect icon)' },
+            disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 64,  h: 64,  type: 'btnGhost',  notes: '2026-04-27 — w/h 56→64, x  330→ 296' },
             deleteBtn:           { x: 180,  y: home.LEGACY_DELETE_Y,  w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             signOutGuestBtn:     { x: 0,    y: home.LEGACY_SIGNOUT_Y, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             // ── SECONDARY STATS CARD — 4 chips, no SEASON ──
@@ -581,7 +581,7 @@ const LayoutSpec = {
             homeChalChip:        { keys: ['day', 'challenges', 'pool', 'rake'],
                                    labels: ['DAY', 'CHALLENGES', 'POOL', 'RAKE'],
                                    xs: [-240, -80, 80, 240], y: 0, w: 130, h: 52,
-                                   keyFs: 10, valFs: 14,
+                                   keyFs: 12, valFs: 18,
                                    notes: 'inline 4 chip groups inside SecondaryStats card (SEASON dropped)' },
             // ── SECTION TITLE ──
             homeChooseMatchLabel: { x: 0,   y: home.SECTION_LBL_Y, w: 680, h: 24,  type: 'label',    notes: '"CHOOSE MATCH TYPE" tracked uppercase muted lo-tier' },

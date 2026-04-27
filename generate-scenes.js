@@ -1005,9 +1005,11 @@ function generate() {
     sb.e[pubkey]._lpos = v3(HE.pubkeyLabel.x, HE.pubkeyLabel.y, 0);
     style(sb, pubkey, { bold: true });
 
-    // WalletNameLabel — child of pill. Lo-tier muted, fontSize 11.
-    const walletNameN = mkLabel(sb, 'WalletNameLabel', walletPillN, '', 11,
-        HE.walletNameLabel.y, HE.walletNameLabel.w, HE.walletNameLabel.h, 93, 100, 133);
+    // WalletNameLabel — child of pill. 2026-04-27 — moved to right side
+    // of pill, font 11→13 for visibility.
+    const walletNameN = mkLabel(sb, 'WalletNameLabel', walletPillN, '', 13,
+        HE.walletNameLabel.y, HE.walletNameLabel.w, HE.walletNameLabel.h, 168, 174, 201);
+    sb.e[walletNameN]._lpos = v3(HE.walletNameLabel.x, HE.walletNameLabel.y, 0);
 
     // Status dot — green "live" indicator inside pill, left edge.
     const secureDotN = sb.e.length;
