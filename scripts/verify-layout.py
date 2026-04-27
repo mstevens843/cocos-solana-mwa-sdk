@@ -203,6 +203,9 @@ def verify_panel(nodes: list, panel_idx: int, panel_name: str, allowed: list[tup
                 'MatchSetupCard', 'SquadPanel', 'PlayerStatusPill',
                 'TokenDuelLevelChip', 'BalanceChip', 'PillDivider',
                 'ScoreBadgeBg', 'CardEdgeAccent',
+                # 2026-04-27 — full-canvas outcome tint behind PostMatchPanel
+                # content (graphics rect, alpha-tweened by AppUI).
+                'OutcomeBgTint',
             }
             if na in CARD_BG_NAMES or nb in CARD_BG_NAMES:
                 continue

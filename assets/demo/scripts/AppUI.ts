@@ -829,6 +829,7 @@ export class AppUI extends Component {
     private _postMatchBackButton: Button | null = null;
     private _postMatchAgainButton: Button | null = null;
     private _postMatchCardValues: Map<string, Label> = new Map();
+    private _postMatchCardSubs: Map<string, Label> = new Map();
     // Drifting-gadget redesign — outcome-bg tint, mascot glow halo, XP bar refs.
     private _postMatchOutcomeBgGfx: Graphics | null = null;
     private _postMatchOutcomeBgOpacity: UIOpacity | null = null;
@@ -2122,6 +2123,9 @@ export class AppUI extends Component {
                 const cN = this._postMatchPanel.getChildByName(`PMCard_${key}`);
                 const vL = cN?.getChildByName('Value')?.getComponent(Label) ?? null;
                 if (vL) this._postMatchCardValues.set(key, vL);
+                // 2026-04-27 — value sub-line (multiplier / breakdown).
+                const sL = cN?.getChildByName('ValueSub')?.getComponent(Label) ?? null;
+                if (sL) this._postMatchCardSubs.set(key, sL);
                 // Drifting-gadget: card-edge accents are now runtime-tinted by outcome.
                 const edge = cN?.getChildByName(`PMCardEdge_${key}`)?.getComponent(Sprite) ?? null;
                 if (edge) this._postMatchCardEdges.set(key, edge);
@@ -4194,11 +4198,12 @@ export class AppUI extends Component {
         // The HomePanel mascot is inactive during the race, so the 'think'
         // animation needs to land on the RacePanel mascot to be visible.
         this._raceMascot?.setState('think');
-        // Battle-UI polish: dim mascot to ~55% — decorative, not a focal point.
+        // 2026-04-27: mascot stays full color during duel (was dimmed to 140 ≈ 55%
+        // pre-revert; user feedback was that the desaturated tone looked broken).
         if (this._raceMascotOpacity) {
             const op = this._raceMascotOpacity;
             Tween.stopAllByTarget(op);
-            tween(op).to(0.25, { opacity: 140 }, { easing: 'cubicOut' }).start();
+            tween(op).to(0.25, { opacity: 255 }, { easing: 'cubicOut' }).start();
         }
         this._raceActiveHoldings = holdings.slice();
         this._raceLastDeltaSign = 0;
@@ -8330,15 +8335,22 @@ export class AppUI extends Component {
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
-        // Drifting-gadget: outcome-aware bg tint (subtle green on win, violet
-        // on loss). Full-canvas Graphics rect underneath everything; fade in
-        // 0 → 60 over 600ms so it reads as a glow rather than a wash.
+        // 2026-04-27 — three distinct shades per outcome so bg / glow / text
+        // each read as separate layers instead of blending. Pattern:
+        //   bg     = lightest wash (soft tint behind everything)
+        //   glow   = darker mid-tone halo around mascot
+        //   accent = darkest, used for title + payout (max contrast vs bg)
+        const winBg     = new Color(48,  198, 155, 255);  // mint teal — light wash
+        const winGlow   = new Color(15,  100,  72, 255);  // deep forest — dark halo
+        const winAccent = new Color(6,   72,  50, 255);  // emerald — darkest text
+        const loseBg    = new Color(180, 80,  200, 255);  // violet wash
+        const loseGlow  = new Color(180, 50,  85, 255);  // dark rose halo
+        const loseAccent = new Color(236, 88,  122, 255); // rose accent (kept)
+        const accent = outcome.won ? winAccent : loseAccent;
         if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
             const bg = this._postMatchOutcomeBgGfx;
             bg.clear();
-            bg.fillColor = outcome.won
-                ? new Color(48, 198, 155, 255)
-                : new Color(180, 80, 200, 255);
+            bg.fillColor = outcome.won ? winBg : loseBg;
             bg.rect(-360, -640, 720, 1280);
             bg.fill();
             const op = this._postMatchOutcomeBgOpacity;
@@ -8346,20 +8358,16 @@ export class AppUI extends Component {
             op.opacity = 0;
             tween(op).to(0.6, { opacity: 60 }).start();
         }
-        // Drifting-gadget: mascot glow halo — radial fill behind the centered
-        // mascot. Fade in 0 → 140 over 400ms for a soft hero presence.
         if (this._postMatchMascotGlowGfx && this._postMatchMascotGlowOpacity) {
             const g = this._postMatchMascotGlowGfx;
             g.clear();
-            g.fillColor = outcome.won
-                ? new Color(48, 198, 155, 255)
-                : new Color(236, 88, 122, 255);
-            g.circle(0, 0, 210);
+            g.fillColor = outcome.won ? winGlow : loseGlow;
+            g.circle(0, 0, 140);  // radius matches new MASCOT_GLOW_WH=320 (h/2 - small inset)
             g.fill();
             const op = this._postMatchMascotGlowOpacity;
             Tween.stopAllByTarget(op);
             op.opacity = 0;
-            tween(op).to(0.4, { opacity: 140 }).start();
+            tween(op).to(0.4, { opacity: 200 }).start();  // bumped 140→200 for higher contrast
         }
 
         // Phase H4 — fire cinematic BEFORE rendering the rest of the panel.
@@ -8391,7 +8399,9 @@ export class AppUI extends Component {
                 title = 'SO CLOSE…';
             }
             this._postMatchTitleLabel.string = title;
-            this._postMatchTitleLabel.color = outcome.won ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
+            // 2026-04-27 — title uses the dark accent so it reads against the
+            // light wash bg. Win=deep emerald, loss=rose (kept).
+            this._postMatchTitleLabel.color = accent;
         }
         if (this._postMatchTrackLabel) {
             const modeLbl = outcome.modeLabel ?? '1v1 Duel';
@@ -8405,9 +8415,9 @@ export class AppUI extends Component {
             // Drifting-gadget: signed payout — `+0.05 SOL` on win, `−0.02 SOL`
             // on loss (loss amount = stake forfeited). U+2212 minus sign for a
             // proper typographic dash; mono digits for stable width.
-            this._postMatchPayoutLabel.color = outcome.won
-                ? new Color(48, 198, 155, 255)
-                : new Color(236, 88, 122, 255);
+            // 2026-04-27 — payout matches title accent (dark emerald on win,
+            // rose on loss) so it stands out against the light wash bg.
+            this._postMatchPayoutLabel.color = accent;
             this._postMatchPayoutLabel.string = outcome.won
                 ? '+0.000 SOL'
                 : `−${wagerSol >= 0.01 ? wagerSol.toFixed(2) : wagerSol.toFixed(4)} SOL`;
@@ -8502,24 +8512,43 @@ export class AppUI extends Component {
         const bonusXp = streakMul > 1.0
             ? Math.max(0, Math.round(outcome.xpGained * streakMul) - outcome.xpGained)
             : 0;
-        let xpCardString = bonusXp > 0
-            ? `+${outcome.xpGained}\n× ${streakMul.toFixed(2)} streak`
-            : `+${outcome.xpGained}`;
+        // 2026-04-27 — split "+N" main / breakdown sub for the XP card so the
+        // multiplier line renders at smaller font (Value 32pt, ValueSub 13pt).
+        let xpMain: string;
+        let xpSub: string;
         if (outcome.totalXp && outcome.totalXp > 0) {
             const prog = levelProgress(outcome.totalXp);
-            xpCardString = bonusXp > 0
-                ? `+${outcome.xpGained} (×${streakMul.toFixed(2)})\n${outcome.totalXp} · ${Math.round(prog.progress * 100)}%→L${prog.level + 1}`
-                : `+${outcome.xpGained}\n${outcome.totalXp} · ${Math.round(prog.progress * 100)}%→L${prog.level + 1}`;
+            xpMain = bonusXp > 0
+                ? `+${outcome.xpGained} (×${streakMul.toFixed(2)})`
+                : `+${outcome.xpGained}`;
+            xpSub  = `${outcome.totalXp} · ${Math.round(prog.progress * 100)}%→L${prog.level + 1}`;
+        } else if (bonusXp > 0) {
+            xpMain = `+${outcome.xpGained}`;
+            xpSub  = `× ${streakMul.toFixed(2)} streak`;
+        } else {
+            xpMain = `+${outcome.xpGained}`;
+            xpSub  = '';
         }
         const fmtPct = (p: number): string => `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
         const values = new Map([
             ['you', fmtPct(playerDeltaPct)],
             ['opp', fmtPct(opponentDeltaPct)],
-            ['xp',  xpCardString],
+            ['xp',  xpMain],
             ['lvl', String(outcome.newLevel)],
         ]);
         for (const [k, v] of values) {
             const lbl = this._postMatchCardValues.get(k);
+            if (lbl) lbl.string = v;
+        }
+        // Sub-line text: only XP card uses it for now; others stay blank.
+        const subs = new Map([
+            ['you', ''],
+            ['opp', ''],
+            ['xp',  xpSub],
+            ['lvl', ''],
+        ]);
+        for (const [k, v] of subs) {
+            const lbl = this._postMatchCardSubs.get(k);
             if (lbl) lbl.string = v;
         }
 

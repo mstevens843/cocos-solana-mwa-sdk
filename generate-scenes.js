@@ -35,6 +35,14 @@ const LAYOUT = require('./assets/token-duel/scripts/LayoutSpec.cjs');
 // bar comfortably on a 19.5:9 viewport.
 const SAFE_AREA_TOP = 110;
 
+// 2026-04-27: RacePanel canvas is 720×1800 (oversized) and its top row sits
+// at y=720, so even with TokenDuelPanel's inherited −110 the timer ring still
+// landed in the camera punch-hole on tall (19.5:9+) viewports. Pushing the
+// whole RacePanel down by an extra 90 keeps internal proportions intact
+// (top row, player cards, duel bar, opponent strip, mascot all shift as one
+// unit) and gives the ring real clearance below the device toolbar.
+const RACE_SAFE_AREA_EXTRA = 90;
+
 const UUIDS = {
     MWAManager: '409dciqDmlP9rvNGXKC80Rx',
     DemoAppConfig: '97371AjclpDVa7mBnZTheRu',
@@ -1623,9 +1631,8 @@ function generate() {
     // The standalone label was removed in 2026-04-26 redesign.
 
     // ── 2026-04-26 redesign — Match Setup Summary Card ─────────────────
-    // Multi-line state card: tells the player what mode they're in, how many
-    // tokens they've picked, the stake, and what to do next. Card sprite + teal
-    // accent edge; 4 child labels populated by AppUI._refreshSquadPanel.
+    // Multi-line state card under the title: mode tag + squad/stake/hint.
+    // 4 child labels populated by AppUI._refreshSquadActionButtons.
     const MSC = TDE.matchSetupCard;
     const matchSetupCardN = sb.e.length;
     sb.node('MatchSetupCard', tdN, [], [], v3(MSC.x, MSC.y, 0));
@@ -2424,7 +2431,7 @@ function generate() {
     const RPT = LAYOUT.RacePanel.templates;
 
     const racePanelN = sb.e.length;
-    sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], v3(0, 0, 0));
+    sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], v3(0, -RACE_SAFE_AREA_EXTRA, 0));
     sb.ut(racePanelN, LAYOUT.RacePanel.canvas.w, LAYOUT.RacePanel.canvas.h);
     sb.spr(racePanelN, 8, 12, 20);                // near-black scrim — covers feed/HUD below
     sb.e[racePanelN]._active = false;
@@ -4206,16 +4213,25 @@ function generate() {
         const valN = sb.e.length;
         sb.node('Value', cardN, [], [], v3(PMC.value.x, PMC.value.y, 0));
         const valUT = sb.ut(valN, PMC.value.w, PMC.value.h);
-        const valL = sb.lbl(valN, '—', 34, 255, 255, 255);
+        const valL = sb.lbl(valN, '—', PMC.value.fontSize ?? 32, 255, 255, 255);
         sb.e[valL]._isBold = true;
         style(sb, valN, { mono: true });
         sb.e[valN]._components = [rf(valUT), rf(valL)];
+        // 2026-04-27 — small sub-line below the big +N value (multiplier /
+        // breakdown). AppUI splits the legacy "\n"-joined string and writes
+        // line 2 here so the multiplier doesn't render at 32pt.
+        const valSubN = sb.e.length;
+        sb.node('ValueSub', cardN, [], [], v3(PMC.valueSub.x, PMC.valueSub.y, 0));
+        const valSubUT = sb.ut(valSubN, PMC.valueSub.w, PMC.valueSub.h);
+        const valSubL = sb.lbl(valSubN, '', PMC.valueSub.fontSize ?? 13, 168, 174, 201);
+        style(sb, valSubN, { mono: true });
+        sb.e[valSubN]._components = [rf(valSubUT), rf(valSubL)];
         // Edge accent — emitted neutral; AppUI tints per outcome (green/rose)
         // at show time. Tagged PMCardEdge_<key> so the binder can find it.
         const cardEdge = mkCardEdge(sb, cardN, PMC.w, PMC.h, 130, 140, 165);
         sb.e[cardEdge]._name = `PMCardEdge_${d.key}`;
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
-        sb.e[cardN]._children = [rf(lblN), rf(valN), rf(cardEdge)];
+        sb.e[cardN]._children = [rf(lblN), rf(valN), rf(valSubN), rf(cardEdge)];
         pmCardIndices.push(cardN);
     }
 
