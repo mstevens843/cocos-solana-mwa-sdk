@@ -9764,7 +9764,7 @@ export class AppUI extends Component {
             }
         };
 
-        const accent = won ? new Color(48, 198, 155, 255) : new Color(236, 88, 122, 255);
+        const accent = won ? new Color(255, 210, 74, 255) : new Color(236, 88, 122, 255);
         const gold   = new Color(255, 210, 74, 255);
 
         // Labels — left always shows the "next-level" target post-animation,

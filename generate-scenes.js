@@ -4551,12 +4551,12 @@ function generate() {
         node: rf(pmXPFillN), _enabled: true, __prefab: null,
         _lineWidth: 0, _miterLimit: 10,
         _strokeColor: cl(0, 0, 0, 0),
-        _fillColor:   cl(48, 198, 155, 255),
+        _fillColor:   cl(255, 210, 74, 255),
         _id: gid(),
     });
     sb.e[pmXPFillN]._components = [rf(pmXPFillUT), rf(pmXPFillGfx)];
     const pmXPLabelRight = mkLabel(sb, 'PostMatchXPBarLabelRight', pmN, '+0 XP', 18,
-        PME.xpBarLabelRight.y, PME.xpBarLabelRight.w, PME.xpBarLabelRight.h, 48, 198, 155);
+        PME.xpBarLabelRight.y, PME.xpBarLabelRight.w, PME.xpBarLabelRight.h, 255, 210, 74);
     sb.e[pmXPLabelRight]._lpos = v3(PME.xpBarLabelRight.x, PME.xpBarLabelRight.y, 0);
     style(sb, pmXPLabelRight, { bold: true, mono: true });
 
