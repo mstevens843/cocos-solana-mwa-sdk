@@ -178,6 +178,32 @@ const race = {
     MASCOT_Y:            -460,
 };
 
+// 2026-04-27 — LandingPanel deterministic Y anchors.
+// The connect / sign-in screen. Layout is locked except for the action-stack
+// re-order: Connect (top) → Play as Guest → Reconnect (bottom). Every Y on
+// the page derives from this block; do NOT hand-tune element y values.
+const landing = {
+    // Hero band — branded title / subtitle / mascot / tagline / support line.
+    TITLE_Y:          510,
+    SUBTITLE_Y:       445,
+    MASCOT_Y:         280,
+    TAGLINE_Y:        110,
+    SUPPORT_Y:        66,
+
+    // CTA card backdrop (semi-translucent dark surface w/ violet edge).
+    CTA_CARD_Y:       -185,
+
+    // Action stack inside the CTA card. 2026-04-27 — guest takes slot 2,
+    // reconnect takes slot 3 (was reverse). Slot Y values themselves don't move.
+    CONNECT_Y:        -25,    // PRIMARY — Connect Wallet (h=110)
+    TRUST_Y:          -100,   // small "Secure · Non-custodial" line under Connect
+    GUEST_Y:          -170,   // SECONDARY — Play as Guest (h=100) — was Reconnect's slot
+    RECONNECT_Y:      -285,   // TERTIARY  — Reconnect (h=80)        — was Guest's slot
+
+    // Bottom status footer.
+    STATUS_PILL_Y:    -555,
+};
+
 const LayoutSpec = {
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
@@ -318,20 +344,20 @@ const LayoutSpec = {
         bg: { color: '#000000' },
         elements: {
             // Hero band (compressed — was y=500/432/220/45/-10 in v1)
-            title:               { x: 0,   y: 510,  w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold' },
-            subtitle:            { x: 0,   y: 445,  w: 680, h: 30,  type: 'label',      notes: 'Portfolio Race on Solana — 24pt body, mid' },
-            mascot:              { x: 0,   y: 280,  w: 260, h: 260, type: 'mascot',     notes: 'idle Seedance frames; slightly larger (was 240)' },
-            tagline:             { x: 0,   y: 110,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform." (was 2-line in v1)' },
-            supportLine:         { x: 0,   y: 66,   w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 16pt lo' },
-            // CTA card backdrop (NEW v2) — semi-translucent dark surface w/ violet edge
-            ctaCardBg:           { x: 0,   y: -185, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
-            // Action stack (re-anchored within card)
-            connectBtn:          { x: 0,   y: -25,  w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Use real funds · compete for SOL"' },
-            connectChevron:      { x: 290, y: -25,  w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue (NEW)' },
-            trustLine:           { x: 0,   y: -100, w: 640, h: 20,  type: 'label',      notes: 'NEW — "Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card' },
-            reconnBtn:           { x: 0,   y: -170, w: 660, h: 80,  type: 'btnGhost',   notes: 'SECONDARY — ghost-teal Reconnect; only active when AuthCache.hasCachedAuth' },
-            playAsGuestBtn:      { x: 0,   y: -285, w: 660, h: 100, type: 'btnSuccess', notes: 'TERTIARY — Guest w/ DIM halo (alpha 40) so it doesnt rival Connect' },
-            connectionStatusPill:{ x: 0,   y: -555, w: 200, h: 40,  type: 'chip',       notes: 'subtle bottom pill — disconnected/connecting/failed states' },
+            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold' },
+            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: 'Portfolio Race on Solana — 24pt body, mid' },
+            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 260, h: 260, type: 'mascot',     notes: 'idle Seedance frames; slightly larger (was 240)' },
+            tagline:             { x: 0,   y: landing.TAGLINE_Y,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform."' },
+            supportLine:         { x: 0,   y: landing.SUPPORT_Y,  w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 16pt lo' },
+            // CTA card backdrop — semi-translucent dark surface w/ violet edge.
+            ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
+            // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
+            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Use real funds · compete for SOL"' },
+            connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
+            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card' },
+            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 660, h: 100, type: 'btnSuccess', notes: 'SECONDARY — Guest w/ DIM halo so it doesnt rival Connect; 2026-04-27 promoted above Reconnect' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 660, h: 80,  type: 'btnGhost',   notes: 'TERTIARY — ghost-teal Reconnect; only active when AuthCache.hasCachedAuth; 2026-04-27 demoted below Guest' },
+            connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
         },
         allowedOverlaps: [
             // Card backdrop intentionally sits behind every action element

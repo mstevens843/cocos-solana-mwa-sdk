@@ -57,8 +57,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             connectBtn:           { x: 0,   y: -25,  w: 660, h: 110, type: 'btnPrimary' },
             connectChevron:       { x: 290, y: -25,  w: 24,  h: 28,  type: 'label' },
             trustLine:            { x: 0,   y: -100, w: 640, h: 20,  type: 'label' },
-            reconnBtn:            { x: 0,   y: -170, w: 660, h: 80,  type: 'btnGhost' },
-            playAsGuestBtn:       { x: 0,   y: -285, w: 660, h: 100, type: 'btnSuccess' },
+            playAsGuestBtn:       { x: 0,   y: -170, w: 660, h: 100, type: 'btnSuccess' },
+            reconnBtn:            { x: 0,   y: -285, w: 660, h: 80,  type: 'btnGhost' },
             connectionStatusPill: { x: 0,   y: -555, w: 200, h: 40,  type: 'chip' },
         },
         allowedOverlaps: [
