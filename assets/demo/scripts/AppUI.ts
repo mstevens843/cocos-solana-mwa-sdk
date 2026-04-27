@@ -342,6 +342,9 @@ export class AppUI extends Component {
     // ── Phase III + Session 3: full Birdeye picker with native Cocos widgets ──
     private _squad: TokenSquad = new TokenSquad();
     private _birdeye: BirdeyeClient | null = null;
+    // Suggest Squad (💡): debounce + last-picks anti-repeat memory.
+    private _lastSuggestAt: number = 0;
+    private _lastSuggestMints: string[] = [];
     // Balance chip (top-right of panel)
     private _balanceChipLabel: Label | null = null;
     // Search
@@ -1806,7 +1809,10 @@ export class AppUI extends Component {
         }
 
         // Part 10 pt2: SquadPresetsOverlay bindings (inside TokenDuelPanel).
-        this._squadPresetsOverlay = this._tokenDuelPanel.getChildByName('SquadPresetsOverlay') ?? null;
+        // Walk descendants — overlay may be reparented under the scrollview/picker
+        // group; getChildByName only checks direct children and would miss it.
+        this._squadPresetsOverlay = this._findDescendantByName(this._tokenDuelPanel, 'SquadPresetsOverlay') ?? null;
+        console.log(`${TAG} start | SquadPresetsOverlay wired=${!!this._squadPresetsOverlay} panel=${this._tokenDuelPanel?.name}`);
         if (this._squadPresetsOverlay) {
             const scrim = this._squadPresetsOverlay.getChildByName('PresetsScrim')?.getComponent(Button);
             scrim?.node.on(Button.EventType.CLICK, () => this._onPresetsClose(), this);
@@ -4404,23 +4410,74 @@ export class AppUI extends Component {
     }
 
     /**
-     * Suggest Squad (💡): fill all 3 slots from the current window's top gainers.
-     * Differs from Quick-Play: doesn't auto-start the match, just pre-populates.
+     * Suggest Squad (💡): fill all 3 slots from a scored, window-aware pool of
+     * trending tokens. Differs from Quick-Play: doesn't auto-start the match.
+     *
+     * Pipeline: debounce → wide gainers fetch → window-scaled liquidity floor
+     * → vetted-first partition → TokenScore ranking → top-K shuffle with
+     * anti-repeat memory → vetted fallback when the pool can't fill 3.
+     *
+     * Birdeye's gainers endpoint only sorts by 24h price-change today; the
+     * window selector still drives the safety floor and (downstream) the race
+     * timer — see `endpoints.ts gainersUrl()` for the API limitation.
      */
     private async _onSuggestSquad(): Promise<void> {
-        console.log(`${TAG} _onSuggestSquad | window=${this._pickerSelectedWindow}`);
+        const now = Date.now();
+        if (now - this._lastSuggestAt < 1500) {
+            console.log(`${TAG} _onSuggestSquad | DEBOUNCED dt=${now - this._lastSuggestAt}ms`);
+            return;
+        }
+        this._lastSuggestAt = now;
+        const win = this._pickerSelectedWindow;
+        const liqFloor = (win === '24h' || win === '7d') ? 100_000
+                       : (win === '1h')                   ? 50_000
+                       :                                    25_000;
+        console.log(`${TAG} _onSuggestSquad | START window=${win} liq_floor=${liqFloor}`);
         try {
             this._ensureBirdeye();
-            const rows = await this._birdeye!.getTrending('gainers', 10);
-            const filtered = this._pickerSelectedWindow === '24h' || this._pickerSelectedWindow === '7d'
-                ? rows.filter((r) => r.liquidity > 50_000)
-                : rows;
-            const picks = filtered.slice(0, 3);
+            const rows = await this._birdeye!.getTrending('gainers', 25);
+            const safe = rows.filter((r) => r.liquidity > liqFloor);
+            const vettedSet = new Set(VETTED_MINTS.map((m) => m.mint));
+            const vetted = safe.filter((r) => vettedSet.has(r.address));
+            const rest   = safe.filter((r) => !vettedSet.has(r.address));
+            const eligible = vetted.length >= 3 ? vetted : [...vetted, ...rest];
+            const ranked = eligible.slice().sort((a, b) => computeScore(b) - computeScore(a));
+            const topK = ranked.slice(0, 6);
+
+            let picks: TokenRow[];
+            if (topK.length >= 3) {
+                // Shuffle top-K, then drop any mint that was in the previous suggestion
+                // (so back-to-back taps vary). If filtering leaves <3, fall back to
+                // the un-filtered shuffle to guarantee a fill.
+                const shuffled = topK.slice().sort(() => Math.random() - 0.5);
+                const fresh = shuffled.filter((r) => !this._lastSuggestMints.includes(r.address));
+                picks = (fresh.length >= 3 ? fresh : shuffled).slice(0, 3);
+            } else {
+                // Top-up from the vetted whitelist when Birdeye can't supply 3
+                // safe rows for this window. Better than the dead-end toast.
+                console.log(`${TAG} _onSuggestSquad | FALLBACK_VETTED pool=${eligible.length}`);
+                const trio = randomVettedTrio();
+                const seen = new Set(eligible.map((r) => r.address));
+                const fillers: TokenRow[] = trio
+                    .filter((m) => !seen.has(m.mint))
+                    .map((m) => ({
+                        address: m.mint, symbol: m.symbol, name: m.symbol,
+                        priceUsd: 0, change24hPct: 0, volume24hUsd: 0,
+                        decimals: m.decimals, logoUri: m.logoUri ?? '',
+                        liquidity: 0, marketCap: 0, fdv: 0, holders: 0,
+                        blockUnixTime: 0, source: 'vetted', smartTraders: 0, netFlow: 0,
+                    }));
+                picks = [...eligible, ...fillers].slice(0, 3);
+            }
+
             if (picks.length < 3) {
-                showToast('Not enough gainers — try a shorter window');
+                showToast('Suggestion failed — pick tokens manually');
                 return;
             }
             this._applySquadFromRows(picks);
+            this._lastSuggestMints = picks.map((r) => r.address);
+            const scoreSummary = picks.map((r) => `${r.symbol}:${computeScore(r)}`).join(' ');
+            console.log(`${TAG} _onSuggestSquad | DONE pool=${rows.length} safe=${safe.length} vetted=${vetted.length} scored=[${scoreSummary}]`);
             showToast(`Suggested: ${picks.map((r) => r.symbol).join(' · ')}`);
         } catch (e) {
             console.log(`${TAG} _onSuggestSquad | ERROR ${e}`);
