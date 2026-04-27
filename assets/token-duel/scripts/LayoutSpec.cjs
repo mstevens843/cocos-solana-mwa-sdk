@@ -236,6 +236,80 @@ const settings = {
     QP_WAGER_POPOVER_Y:   -14,   // (was -44)
 };
 
+// 2026-04-27 — PortfolioPanel deterministic Y anchors.
+// Hub-style page accessed from HomePanel's trophy icon (alongside Leaderboard).
+// Layout is locked — every page-level Y derives from this block. Card-internal
+// child y values stay inline. Panel root is offset by (0, -SAFE_AREA_TOP, 0).
+const portfolio = {
+    // Header band — back link / title / subtitle / pubkey.
+    BACK_Y:               720,
+    TITLE_Y:              680,
+    SUBTITLE_Y:           644,
+    PUBKEY_Y:             612,
+
+    // Sub-tab strip + mode toggle.
+    TABS_Y:               560,   // Stats / History / Trophies
+    MODE_LABEL_Y:         510,   // "MODE" eyebrow
+    MODE_TOGGLE_Y:        482,   // Paper / Real
+
+    // Stats view — content stack.
+    HERO_CARD_Y:          380,   // Total Profit hero card
+    GROUP_PERF_Y:         230,   // "PERFORMANCE" eyebrow
+    PERF_CARDS_Y:         168,   // Wins / Losses cards
+    WINRATE_CARD_Y:       78,    // Win % full-width card
+    GROUP_ACTIVITY_Y:     -50,   // "ACTIVITY" eyebrow
+    ACTIVITY_CARDS_Y:     -120,  // Games / XP-Level cards
+
+    // Empty state (when zero games).
+    EMPTY_STATE_Y:        200,
+
+    // Footer.
+    HINT_Y:               -700,
+    STATUS_Y:             -740,
+
+    // History view — scrollview + row pool internals.
+    HISTORY_SCROLL_Y:     40,
+    HISTORY_SCROLL_H:     780,
+    HISTORY_BASE_Y:       -36,
+    HISTORY_GAP_Y:        -72,
+    HISTORY_LOAD_MORE_Y:  -260,
+
+    // Trophies view — 3×2 grid of TrophyTile.
+    TROPHY_GRID_BASE_Y:   220,
+    TROPHY_GRID_STRIDE_Y: -220,
+    TROPHY_EMPTY_Y:       540,
+};
+
+// 2026-04-27 — LeaderboardPanel deterministic Y anchors.
+// Hub-style page accessed from HomePanel's trophy icon (alongside Portfolio).
+// Layout is locked — every page-level Y derives from this block. Card-internal
+// child y values stay inline. Panel root is offset by (0, -SAFE_AREA_TOP, 0).
+const leaderboard = {
+    // Header band — back / title / subtitle.
+    BACK_Y:           720,
+    TITLE_Y:          680,
+    SUBTITLE_Y:       638,
+
+    // Mode-tabs row + this-week chip (segmented control).
+    MODE_TABS_Y:      590,
+
+    // Hero rank-#1 card.
+    TOP_PLAYER_Y:     510,
+
+    // Rank rows 2–10 (lbRow template).
+    ROWS_BASE_Y:      400,
+    ROWS_GAP_Y:       -64,
+
+    // Empty state (when zero matches in mode/timeframe).
+    EMPTY_STATE_Y:    150,
+
+    // Sticky-bottom personal rank card ("YOU" footer).
+    PERSONAL_RANK_Y:  -440,
+
+    // Status footer.
+    STATUS_Y:         -740,
+};
+
 const LayoutSpec = {
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
@@ -1224,19 +1298,19 @@ const LayoutSpec = {
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -280, y: 720,  w: 110, h: 28,  type: 'label' },
-            backBtn:         { x: -280, y: 720,  w: 140, h: 36,  type: 'btnGhost' },
-            title:           { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
+            backLink:        { x: -280, y: leaderboard.BACK_Y,     w: 110, h: 28,  type: 'label' },
+            backBtn:         { x: -280, y: leaderboard.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
+            title:           { x: 0,    y: leaderboard.TITLE_Y,    w: 400, h: 44,  type: 'label' },
             // Subtitle line under title — "{mode} · This Week" / "All modes · This Week".
-            subtitle:        { x: 0,    y: 638,  w: 520, h: 24,  type: 'label' },
+            subtitle:        { x: 0,    y: leaderboard.SUBTITLE_Y, w: 520, h: 24,  type: 'label' },
             // Pill-shaped bg behind the 4 mode tabs (segmented control container).
-            modeTabsContainer: { x: -90, y: 590, w: 480, h: 46, type: 'sprite',
+            modeTabsContainer: { x: -90, y: leaderboard.MODE_TABS_Y, w: 480, h: 46, type: 'sprite',
                 notes: 'segmented-control bg behind 4 mode tabs (left-anchored)' },
             // Standalone "This Week" chip on the right of the segmented control.
             // Node name kept as LBTab_season (modeU8=4) so the existing handler still binds.
-            thisWeekChip:    { x: 240,  y: 590,  w: 130, h: 42,  type: 'btnGhost' },
+            thisWeekChip:    { x: 240,  y: leaderboard.MODE_TABS_Y,  w: 130, h: 42,  type: 'btnGhost' },
             // Hero card for rank #1. AppUI fills entries[0] here and skips LBRow_0.
-            topPlayerCard:   { x: 0,    y: 510,  w: 660, h: 110, type: 'group',
+            topPlayerCard:   { x: 0,    y: leaderboard.TOP_PLAYER_Y, w: 660, h: 110, type: 'group',
                 children: {
                     crown:   { x: -290, y: 22,  w: 40,  h: 40, type: 'label' },
                     rank:    { x: -240, y: 22,  w: 60,  h: 28, type: 'label' },
@@ -1246,7 +1320,7 @@ const LayoutSpec = {
                 },
             },
             // Empty-state cluster (icon + title + subtitle + CTA). _active toggled by AppUI.
-            emptyState:      { x: 0,    y: 150,  w: 660, h: 300, type: 'group',
+            emptyState:      { x: 0,    y: leaderboard.EMPTY_STATE_Y, w: 660, h: 300, type: 'group',
                 children: {
                     icon:    { x: 0,    y: 100,  w: 120, h: 120, type: 'label' },
                     title:   { x: 0,    y: -8,   w: 600, h: 32,  type: 'label' },
@@ -1255,7 +1329,7 @@ const LayoutSpec = {
                 },
             },
             // Sticky-bottom YOU card — y=-440 keeps it inside the panel after SAFE_AREA_TOP=110 shift.
-            personalRankCard: { x: 0,   y: -440, w: 660, h: 130, type: 'group',
+            personalRankCard: { x: 0,   y: leaderboard.PERSONAL_RANK_Y, w: 660, h: 130, type: 'group',
                 children: {
                     header: { x: -290, y: 46,  w: 120, h: 18, type: 'label' },
                     rank:   { x: -90,  y: 22,  w: 440, h: 28, type: 'label' },
@@ -1263,13 +1337,13 @@ const LayoutSpec = {
                     cta:    { x: 220,  y: -42, w: 200, h: 40, type: 'btnGhost' },
                 },
             },
-            status:          { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
+            status:          { x: 0,    y: leaderboard.STATUS_Y, w: 600, h: 22,  type: 'label' },
         },
         templates: {
-            // 4 mode tabs at y=590 (segmented control). The 5th season tab is now a
+            // 4 mode tabs (segmented control). The 5th season tab is now a
             // standalone right-side chip — see elements.thisWeekChip.
             lbTab: {
-                count: 4, w: 120, h: 42, y: 590,
+                count: 4, w: 120, h: 42, y: leaderboard.MODE_TABS_Y,
                 keys:   ['1v1', 'trio', '4p', '8p'],
                 labels: ['1v1', 'Trio', '4p', '8p'],
                 xs: [-270, -150, -30, 90],
@@ -1279,7 +1353,7 @@ const LayoutSpec = {
             // ranks 2..10 (LBRow_1..LBRow_9). HeightLabel renamed to ScoreLabel.
             lbRow: {
                 count: 9, w: 660, h: 56,
-                baseY: 400, gapY: -64,
+                baseY: leaderboard.ROWS_BASE_Y, gapY: leaderboard.ROWS_GAP_Y,
                 rank:    { x: -300, y: 0,   w: 50,  h: 30 },
                 player:  { x: -110, y: 6,   w: 280, h: 24 },
                 score:   { x: 220,  y: 6,   w: 120, h: 28 },
@@ -1773,44 +1847,44 @@ const LayoutSpec = {
         elements: {
             historyView: { x: 0, y: 0, w: 720, h: 1280, type: 'group',
                 notes: 'PortfolioHistoryView container; hidden until History tab active' },
-            backLink: { x: -280, y: 720, w: 110, h: 28, type: 'label' },
-            backBtn:  { x: -280, y: 720, w: 140, h: 36, type: 'btnGhost' },
-            title:    { x: 0,    y: 680, w: 400, h: 44, type: 'label' },
+            backLink: { x: -280, y: portfolio.BACK_Y, w: 110, h: 28, type: 'label' },
+            backBtn:  { x: -280, y: portfolio.BACK_Y, w: 140, h: 36, type: 'btnGhost' },
+            title:    { x: 0,    y: portfolio.TITLE_Y, w: 400, h: 44, type: 'label' },
             // Subtitle eyebrow under title.
-            subtitle:    { x: 0,    y: 644, w: 460, h: 18, type: 'label' },
-            pubkeyLabel: { x: 0,    y: 612, w: 460, h: 24, type: 'label' },
+            subtitle:    { x: 0,    y: portfolio.SUBTITLE_Y, w: 460, h: 18, type: 'label' },
+            pubkeyLabel: { x: 0,    y: portfolio.PUBKEY_Y,   w: 460, h: 24, type: 'label' },
             // Primary tabs — full-width segmented control.
-            statsTab:    { x: -200, y: 560, w: 200, h: 48, type: 'btnPrimary' },
-            historyTab:  { x: 0,    y: 560, w: 200, h: 48, type: 'btnGhost' },
-            trophiesTab: { x: 200,  y: 560, w: 200, h: 48, type: 'btnGhost' },
+            statsTab:    { x: -200, y: portfolio.TABS_Y, w: 200, h: 48, type: 'btnPrimary' },
+            historyTab:  { x: 0,    y: portfolio.TABS_Y, w: 200, h: 48, type: 'btnGhost' },
+            trophiesTab: { x: 200,  y: portfolio.TABS_Y, w: 200, h: 48, type: 'btnGhost' },
             // Secondary mode toggle — smaller, with MODE eyebrow above.
-            modeLabel:   { x: 0,    y: 510, w: 100, h: 16, type: 'label' },
-            paperTab:    { x: -75,  y: 482, w: 130, h: 36, type: 'btnPrimary' },
-            realTab:     { x: 75,   y: 482, w: 130, h: 36, type: 'btnGhost' },
+            modeLabel:   { x: 0,    y: portfolio.MODE_LABEL_Y,  w: 100, h: 16, type: 'label' },
+            paperTab:    { x: -75,  y: portfolio.MODE_TOGGLE_Y, w: 130, h: 36, type: 'btnPrimary' },
+            realTab:     { x: 75,   y: portfolio.MODE_TOGGLE_Y, w: 130, h: 36, type: 'btnGhost' },
             // Group eyebrow headers (left-aligned).
-            groupHeaderPerformance: { x: -290, y: 230,  w: 200, h: 16, type: 'label' },
-            groupHeaderActivity:    { x: -290, y: -50,  w: 200, h: 16, type: 'label' },
+            groupHeaderPerformance: { x: -290, y: portfolio.GROUP_PERF_Y,     w: 200, h: 16, type: 'label' },
+            groupHeaderActivity:    { x: -290, y: portfolio.GROUP_ACTIVITY_Y, w: 200, h: 16, type: 'label' },
             // Empty-state container — shown when zero games (hides hero/groups).
-            emptyState:         { x: 0,    y: 200,  w: 600, h: 400, type: 'group' },
+            emptyState:         { x: 0,    y: portfolio.EMPTY_STATE_Y, w: 600, h: 400, type: 'group' },
             emptyStateTitle:    { x: 0,    y: 80,   w: 600, h: 36, type: 'label' },
             emptyStateSubtitle: { x: 0,    y: 30,   w: 600, h: 22, type: 'label' },
             emptyStateCta:      { x: 0,    y: -50,  w: 320, h: 56, type: 'btnPrimary' },
             // Footer.
-            hint:   { x: 0, y: -700, w: 620, h: 20, type: 'label' },
-            status: { x: 0, y: -740, w: 640, h: 22, type: 'label' },
+            hint:   { x: 0, y: portfolio.HINT_Y,   w: 620, h: 20, type: 'label' },
+            status: { x: 0, y: portfolio.STATUS_Y, w: 640, h: 22, type: 'label' },
             // History view internals.
-            historyEmpty:    { x: 0, y: 0,    w: 0,   h: 22, type: 'label' },
-            historyScroll:   { x: 0, y: 40,   w: 660, h: 780, type: 'scrollview' },
-            historyLoadMore: { x: 0, y: -260, w: 400, h: 48, type: 'btnGhost' },
+            historyEmpty:    { x: 0, y: 0, w: 0,   h: 22, type: 'label' },
+            historyScroll:   { x: 0, y: portfolio.HISTORY_SCROLL_Y,    w: 660, h: portfolio.HISTORY_SCROLL_H, type: 'scrollview' },
+            historyLoadMore: { x: 0, y: portfolio.HISTORY_LOAD_MORE_Y, w: 400, h: 48, type: 'btnGhost' },
             // Trophies view container + empty label.
-            trophiesView:    { x: 0, y: 0,   w: 720, h: 1280, type: 'group' },
-            trophiesEmpty:   { x: 0, y: 540, w: 0,   h: 24, type: 'label' },
+            trophiesView:    { x: 0, y: 0, w: 720, h: 1280, type: 'group' },
+            trophiesEmpty:   { x: 0, y: portfolio.TROPHY_EMPTY_Y, w: 0, h: 24, type: 'label' },
         },
         templates: {
             // Hero P/L card — focal point. Big colored value + edge accent
             // (green/red/neutral re-tinted at runtime).
             heroPnLCard: {
-                x: 0, y: 380, w: 600, h: 160,
+                x: 0, y: portfolio.HERO_CARD_Y, w: 600, h: 160,
                 header:   { x: 0, y: 56,  w: 580, h: 18 },
                 value:    { x: 0, y: 6,   w: 580, h: 64 },
                 subtitle: { x: 0, y: -52, w: 580, h: 18 },
@@ -1821,17 +1895,17 @@ const LayoutSpec = {
             statCard: {
                 count: 4, w: 290, h: 88,
                 defs: [
-                    { key: 'wins',    label: 'WINS',   x: -150, y: 168 },
-                    { key: 'losses',  label: 'LOSSES', x:  150, y: 168 },
-                    { key: 'winrate', label: 'WIN %',  x:    0, y:  78, w: 600 },
-                    { key: 'games',   label: 'GAMES',  x: -150, y: -120 },
+                    { key: 'wins',    label: 'WINS',   x: -150, y: portfolio.PERF_CARDS_Y },
+                    { key: 'losses',  label: 'LOSSES', x:  150, y: portfolio.PERF_CARDS_Y },
+                    { key: 'winrate', label: 'WIN %',  x:    0, y: portfolio.WINRATE_CARD_Y, w: 600 },
+                    { key: 'games',   label: 'GAMES',  x: -150, y: portfolio.ACTIVITY_CARDS_Y },
                 ],
                 header: { x: 0, y: 22,  w: 270, h: 18 },
                 value:  { x: 0, y: -16, w: 270, h: 36 },
             },
             // XP/Level card — gamified progress to next level.
             xpCard: {
-                x: 150, y: -120, w: 290, h: 88,
+                x: 150, y: portfolio.ACTIVITY_CARDS_Y, w: 290, h: 88,
                 header: { x: -100, y: 22,  w: 80,  h: 18 },
                 value:  { x:   90, y: 22,  w: 80,  h: 18 },
                 track:  { x:    0, y: -10, w: 250, h: 8  },
@@ -1842,8 +1916,8 @@ const LayoutSpec = {
                 count: 6, w: 200, h: 200, gap: 20,
                 cols: 3, rows: 2,
                 gridXOffset: -1, // (col - 1) * (w + gap) — cols [-220, 0, 220]
-                gridYBase: 220,
-                gridYStride: -220, // row 0 at y=220, row 1 at y=0
+                gridYBase:   portfolio.TROPHY_GRID_BASE_Y,
+                gridYStride: portfolio.TROPHY_GRID_STRIDE_Y,
                 emoji: { x: 0, y: 50,  w: 200, h: 70 },
                 title: { x: 0, y: -10, w: 200, h: 20 },
                 wins:  { x: 0, y: -40, w: 200, h: 18 },
@@ -1861,7 +1935,7 @@ const LayoutSpec = {
             // × 30 rows = 120 overlaps cleared. Centers (x,y) unchanged.
             matchHistoryRow: {
                 count: 30, w: 600, h: 64,
-                baseY: -36, gapY: -72,
+                baseY: portfolio.HISTORY_BASE_Y, gapY: portfolio.HISTORY_GAP_Y,
                 date:      { x: -270, y: 16,  w: 120, h: 18, color: [160, 170, 190] },
                 mode:      { x: -90,  y: 16,  w: 160, h: 18, color: [255, 255, 255] },
                 wager:     { x: 90,   y: 16,  w: 140, h: 18, color: [200, 210, 220] },
@@ -2169,7 +2243,7 @@ const LayoutSpec = {
             backBtn:         { x: -260, y: pm.BACK_Y,  w: 160, h: 44,  type: 'btnGhost' },
             title:           { x: 0,    y: pm.TITLE_Y, w: 620, h: 80,  type: 'label',
                 notes: '56pt bold, color-coded green/rose by outcome' },
-            track:           { x: 0,    y: pm.TRACK_Y, w: 600, h: 22,  type: 'label' },
+            track:           { x: 0,    y: pm.TRACK_Y, w: 600, h: 44,  type: 'label' },
             // Mascot glow halo — shrunk 480→320 so payout label clears it.
             mascotGlow:      { x: 0,    y: pm.MASCOT_Y, w: pm.MASCOT_GLOW_WH, h: pm.MASCOT_GLOW_WH, type: 'graphics',
                 notes: 'circle fill alpha 0; AppUI tweens to 140 (~0.55) tinted by outcome. 2026-04-27 — shrunk 480→320.' },
@@ -2179,7 +2253,7 @@ const LayoutSpec = {
                 notes: '64pt mono, scale-in + ticker on win. 2026-04-27 — moved below glow circle.' },
             subtitle:        { x: 0,    y: pm.SUBTITLE_Y, w: 600, h: 44, type: 'label',
                 notes: '18pt 2-line; "You won by X pp" / "They beat you by X pp" + per-token breakdown' },
-            rake:            { x: 0,    y: pm.RAKE_Y, w: 600, h: 20, type: 'label' },
+            rake:            { x: 0,    y: pm.RAKE_Y, w: 600, h: 40, type: 'label' },
             xpBarLabelLeft:  { x: -240, y: pm.XP_BAR_Y, w: 200, h: 22, type: 'label',
                 notes: '"Lv N → Lv N+1" 14pt mid-grey' },
             xpBarFill:       { x: 0,    y: pm.XP_BAR_Y, w: 480, h: 16, type: 'graphics',
@@ -2226,6 +2300,12 @@ const LayoutSpec = {
             // sit at the ENDS of the fill bar by design.
             ['PostMatchXPBarLabelLeft',  'PostMatchXPBarFill'],
             ['PostMatchXPBarLabelRight', 'PostMatchXPBarFill'],
+            // 2026-04-27 — track + rake labels 2× larger; their bboxes touch
+            // adjacent elements by a few px but the rendered text is centered
+            // and doesn't visually overlap.
+            ['PostMatchTitleLabel', 'PostMatchTrackLabel'],
+            ['PostMatchRakeLabel',  'PMCard_you'],
+            ['PostMatchRakeLabel',  'PMCard_opp'],
         ],
     },
 

@@ -866,12 +866,12 @@ function generate() {
     sb.e[cardBgN]._children = [rf(cardEdgeN)];
 
     // ── Action stack ────────────────────────────────────────────────
-    // PRIMARY — Connect Wallet (violet + glossy gradient + bigger halo).
+    // PRIMARY — Play Token Duel (gold, matches the title color above).
     const { glow: connectGlow, btn: connectBtn } = mkBtnHeroLayered(sb,
         'ConnectButton', lpN,
-        '🔗  Connect Wallet', 'Use real funds · compete for SOL',
+        'Play Token Duel', 'Use real funds · compete for SOL',
         LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
-        VAR('primary').r, VAR('primary').g, VAR('primary').b,
+        255, 210, 74,
         { gradient: true, haloAlpha: 100 });
 
     // Right-aligned chevron — directional cue. Child of ConnectButton.
@@ -4156,7 +4156,7 @@ function generate() {
     const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'YOU WON!', 56,
         PME.title.y, PME.title.w, PME.title.h, 255, 255, 255);
     style(sb, pmTitle, { bold: true });
-    const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 14,
+    const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 28,
         PME.track.y, PME.track.w, PME.track.h, 140, 150, 170);
 
     // Mascot glow halo — Graphics circle behind the mascot, drawn before so
@@ -4190,7 +4190,7 @@ function generate() {
         PME.payoutLabel.y, PME.payoutLabel.w, PME.payoutLabel.h, 48, 198, 155);
     const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 18,
         PME.subtitle.y, PME.subtitle.w, PME.subtitle.h, 220, 226, 240);
-    const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 12,
+    const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 24,
         PME.rake.y, PME.rake.w, PME.rake.h, 150, 160, 180);
     // Mono payout + rake for aligned digits through the ticker roll.
     style(sb, pmPayout, { mono: true, bold: true });
