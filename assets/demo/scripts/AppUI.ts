@@ -95,6 +95,15 @@ const _origUnhandled = (globalThis as any).onunhandledrejection;
 };
 // ──────────────────────────────────────────────────────────────────────────
 
+// History rows can come from on-chain UserStats (`track === 'real'` or undefined)
+// or from the off-chain paper_match_history table (`track === 'paper-real' | 'bot'`).
+// The renderer reuses the same row pool for both — paper rows surface XP in the
+// payout column and the track name in the wager column.
+type HistoryRowEntry = MatchHistoryEntry & {
+    track?: 'real' | 'paper-real' | 'bot';
+    xpGained?: number;
+};
+
 @ccclass('AppUI')
 export class AppUI extends Component {
 
@@ -440,6 +449,7 @@ export class AppUI extends Component {
     private _detailBackButton: Button | null = null;
     private _detailChartGraphics: Graphics | null = null;
     private _detailChartStatusLabel: Label | null = null;
+    private _detailChartHeaderLabel: Label | null = null;
     private _detailTimeframeButtons: Map<OhlcvType, Button> = new Map();
     private _detailDenomButtons: Map<string, Button> = new Map();
     private _detailSafetyChipLabels: Map<string, Label> = new Map();
@@ -531,7 +541,7 @@ export class AppUI extends Component {
     private _pfTrophiesTab: Button | null = null;
     private _pfTrophyTiles: Node[] = [];
     private _pfTrophyEntries: import('../../token-duel/scripts/TrophyRpc').Trophy[] = [];
-    private _matchHistoryEntries: MatchHistoryEntry[] = [];
+    private _matchHistoryEntries: HistoryRowEntry[] = [];
     private _matchHistoryCursor: string | null = null;
     private _matchHistoryCache: Map<string, MatchState | null> = new Map();
     private _matchHistoryLoading: boolean = false;
@@ -949,6 +959,13 @@ export class AppUI extends Component {
     private _postMatchXPBarLabelRight: Label | null = null;
     private _postMatchXPBarFillGfx: Graphics | null = null;
     private _postMatchCardEdges: Map<string, Sprite> = new Map();
+    // Staging-pass cascade — setTimeout handles for the beat-by-beat reveal so
+    // we can clear them on re-entry or tap-to-skip.
+    private _postMatchRevealTimers: number[] = [];
+    /** Set true when cascade has been collapsed by a user tap; gates auto-fade scheduling. */
+    private _postMatchCascadeSkipped: boolean = false;
+    /** Pending finalizer that flushes all reveal beats to their final state. */
+    private _postMatchCascadeFinalizer: (() => void) | null = null;
     // Squad slot buttons (3) — label child shows symbol or "+"
     private _squadSlotButtons: Button[] = [];
     private _squadSlotLabels: Label[] = [];
@@ -1063,6 +1080,7 @@ export class AppUI extends Component {
         this._homePanel = this.node.getChildByName('HomePanel')!;
         this._tokenDuelPanel = this.node.getChildByName('TokenDuelPanel')!;
         this._mipPanel = this.node.getChildByName('MatchesInProgressPanel')!;
+        console.log(`${TAG} start | mipPanel_found=${!!this._mipPanel}`);
 
         if (!this._landingPanel || !this._homePanel || !this._tokenDuelPanel) {
             console.log(`${TAG} start | FAIL panels not found landing=${!!this._landingPanel} home=${!!this._homePanel} tokenDuel=${!!this._tokenDuelPanel}`);
@@ -1714,13 +1732,17 @@ export class AppUI extends Component {
             this._detailPickUnpickButton = pickN?.getComponent(Button) ?? null;
             this._detailPickUnpickLabel = pickN?.getChildByName('Label')?.getComponent(Label) ?? null;
             this._detailPickUnpickButton?.node.on(Button.EventType.CLICK, () => this._onDetailPickUnpickClick(), this);
+            // 2026-04-28 scouting redesign — premium CTA gets press-pop + ripple + idle pulse.
+            if (this._detailPickUnpickButton) enhancePrimaryCTA(this._detailPickUnpickButton.node);
             const detBackNode = this._tokenDetailPanel.getChildByName('BackButton');
             this._detailBackButton = detBackNode?.getComponent(Button) ?? null;
             this._detailBackButton?.node.on(Button.EventType.CLICK, () => this._onDetailBackClick(), this);
-            // Chart
-            const chartNode = this._tokenDetailPanel.getChildByName('ChartArea');
+            // Chart — ChartArea now sits inside ChartCard (2026-04-28 scouting redesign).
+            const chartCardNode = this._tokenDetailPanel.getChildByName('ChartCard');
+            const chartNode = chartCardNode?.getChildByName('ChartArea');
             this._detailChartGraphics = chartNode?.getComponent(Graphics) ?? null;
             this._detailChartStatusLabel = chartNode?.getChildByName('ChartStatusLabel')?.getComponent(Label) ?? null;
+            this._detailChartHeaderLabel = chartCardNode?.getChildByName('ChartHeaderLabel')?.getComponent(Label) ?? null;
             // Timeframe buttons.
             for (const tf of ['1m', '5m', '15m', '1H', '4H', '1D'] as OhlcvType[]) {
                 const tfN = this._tokenDetailPanel.getChildByName(`TF_${tf}`);
@@ -1728,6 +1750,7 @@ export class AppUI extends Component {
                 if (tfB) {
                     this._detailTimeframeButtons.set(tf, tfB);
                     tfB.node.on(Button.EventType.CLICK, () => this._onDetailTimeframeClick(tf), this);
+                    addPressPop(tfB);
                 }
             }
             // Denom buttons.
@@ -1737,6 +1760,7 @@ export class AppUI extends Component {
                 if (dB) {
                     this._detailDenomButtons.set(key, dB);
                     dB.node.on(Button.EventType.CLICK, () => this._onDetailDenomClick(key as any), this);
+                    addPressPop(dB);
                 }
             }
             // Safety chips.
@@ -1744,6 +1768,8 @@ export class AppUI extends Component {
                 const sN = this._tokenDetailPanel.getChildByName(`SafetyChip_${key}`);
                 const sL = sN?.getChildByName('Label')?.getComponent(Label) ?? null;
                 if (sL) this._detailSafetyChipLabels.set(key, sL);
+                const sB = sN?.getComponent(Button);
+                if (sB) addPressPop(sB);
             }
             // Stat cards.
             for (const key of ['price', 'liq', 'mcap', 'vol24h', 'change', 'holders']) {
@@ -2583,29 +2609,23 @@ export class AppUI extends Component {
                     try { addPressPop(joinBtn); } catch (_) { /* ignore */ }
                 }
                 // Card touch-glow — fade glow alpha in on touch-start, out on touch-end/cancel.
+                // Uses a proxy object to drive the spr alpha (consistent with codebase pattern).
                 const glow = this._matchCardGlows[i];
                 if (glow) {
                     const glowSpr = glow.getComponent(Sprite);
-                    row.on(Node.EventType.TOUCH_START, () => {
+                    const alphaProxy: { a: number } = { a: 0 };
+                    const setGlowAlpha = () => {
                         if (!glowSpr) return;
-                        Tween.stopAllByTarget(glow);
-                        tween(glow).to(0.12, {}, {
-                            onUpdate: (_t, r) => {
-                                const c = glowSpr.color;
-                                glowSpr.color = new Color(c.r, c.g, c.b, Math.round(160 * (r as number)));
-                            },
-                        }).start();
+                        const c = glowSpr.color;
+                        glowSpr.color = new Color(c.r, c.g, c.b, Math.round(alphaProxy.a));
+                    };
+                    row.on(Node.EventType.TOUCH_START, () => {
+                        Tween.stopAllByTarget(alphaProxy);
+                        tween(alphaProxy).to(0.12, { a: 160 }, { onUpdate: setGlowAlpha }).start();
                     });
                     const fadeOut = () => {
-                        if (!glowSpr) return;
-                        Tween.stopAllByTarget(glow);
-                        const startAlpha = glowSpr.color.a;
-                        tween(glow).to(0.18, {}, {
-                            onUpdate: (_t, r) => {
-                                const c = glowSpr.color;
-                                glowSpr.color = new Color(c.r, c.g, c.b, Math.round(startAlpha * (1 - (r as number))));
-                            },
-                        }).start();
+                        Tween.stopAllByTarget(alphaProxy);
+                        tween(alphaProxy).to(0.18, { a: 0 }, { onUpdate: setGlowAlpha }).start();
                     };
                     row.on(Node.EventType.TOUCH_END, fadeOut);
                     row.on(Node.EventType.TOUCH_CANCEL, fadeOut);
@@ -2760,7 +2780,7 @@ export class AppUI extends Component {
                     this._mipRowFraction.push(1);
                 }
             }
-            console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/30`);
+            console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/30 emptyState=${!!this._mipEmptyState} subtitle=${!!this._mipSubtitleLabel}`);
         } else {
             console.log(`${TAG} start | WARN MatchesInProgressPanel missing — regenerate scene`);
         }
@@ -3587,6 +3607,22 @@ export class AppUI extends Component {
         // Hero-card treatment when exactly one match is live: grow row 0 to
         // ~660×260 and center vertically inside the scrollview area.
         this._applyMipHeroLayout();
+
+        // 2026-04-28 diag — single dense log; pinpoints empty-MIP-panel bug.
+        // Read AFTER hero-layout so row0 reflects the final positioned/sized state.
+        const r0 = this._mipRowNodes[0];
+        const r0Pos = r0?.position;
+        const r0CardBg = this._mipCardBgUTs[0];
+        const panelOp = this._mipPanel?.getComponent(UIOpacity);
+        const scrollNode = this._mipPanel?.getChildByName('MIPScrollView');
+        const scrollSV = scrollNode?.getComponent(ScrollView);
+        const scrollContent = scrollSV?.content;
+        console.log(`${TAG} _renderMipRows | n=${n} rowPool=${this._mipRowNodes.length}/30`
+            + ` empty=${!!this._mipEmptyState} emptyActive=${this._mipEmptyState?.active}`
+            + ` panel=${!!this._mipPanel} panelActive=${this._mipPanel?.active} panelOpacity=${panelOp?.opacity ?? 'no-op'}`
+            + ` scroll=${!!scrollSV} content=${!!scrollContent} contentChildren=${scrollContent?.children.length ?? 0}`
+            + ` row0Active=${r0?.active} row0Pos=(${r0Pos?.x ?? '?'},${r0Pos?.y ?? '?'})`
+            + ` row0CardSize=(${r0CardBg?.width ?? '?'}x${r0CardBg?.height ?? '?'})`);
     }
 
     /** Resize + reposition row 0 when the active count is 1. Restores the
@@ -4106,7 +4142,7 @@ export class AppUI extends Component {
             // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
             { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 28, offsetX: -150 },
             { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
-            { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 28, offsetX: -110 },
+            { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 40, offsetX: -130 },
             { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
             { panel: root, name: 'SettingsTitleLabel',          icon: 'cog',    size: 40, offsetX: -90 },
             { panel: root, name: 'SpectatorTitleLabel',         icon: 'eye',    size: 26, offsetX: -130 },
@@ -5073,7 +5109,7 @@ export class AppUI extends Component {
         // Show game area.
         if (this._gameArea) this._gameArea.active = true;
         if (this._tokenDuelStatus) this._tokenDuelStatus.string = '';
-        if (this._raceHintLabel) this._raceHintLabel.string = 'Tap to drop - stack as high as you can';
+        if (this._raceHintLabel) this._raceHintLabel.string = '';
 
         // Lazy-init PriceFeed once per session. Creating it is cheap (constructs
         // a BirdeyeClient with an embedded API key), so this could move to ctor,
@@ -9682,10 +9718,10 @@ export class AppUI extends Component {
     private _refreshDetailPickUnpickButton(): void {
         if (!this._detailPickUnpickButton || !this._detailPickUnpickLabel || !this._detailCurrentRow) return;
         const isPicked = this._squad.slots.findIndex((s) => !!s && s.address === this._detailCurrentRow!.address) >= 0;
-        this._detailPickUnpickLabel.string = isPicked ? '− Unpick' : '+ Pick';
+        this._detailPickUnpickLabel.string = isPicked ? '− Unpick' : '+ Pick Token';
         const spr = this._detailPickUnpickButton.node.getComponent(Sprite);
-        if (spr) spr.color = isPicked ? new Color(70, 52, 14, 255) : new Color(48, 198, 155, 255);
-        this._detailPickUnpickLabel.color = isPicked ? new Color(218, 165, 32, 255) : new Color(12, 18, 26, 255);
+        if (spr) spr.color = isPicked ? colorFromHex(Palette.accent.amberDim) : themeColor.teal();
+        this._detailPickUnpickLabel.color = isPicked ? themeColor.amber() : colorFromHex(Palette.text.inverse);
     }
 
     private _onDetailTimeframeClick(tf: OhlcvType): void {
@@ -9707,11 +9743,13 @@ export class AppUI extends Component {
 
     private _highlightActiveTimeframe(active: OhlcvType): void {
         for (const [tf, btn] of this._detailTimeframeButtons) {
+            const on = tf === active;
             const spr = btn.node.getComponent(Sprite);
-            if (spr) spr.color = tf === active ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
+            if (spr) spr.color = on ? themeColor.teal() : colorFromHex(Palette.bg.card);
             const lbl = btn.node.getChildByName('Label')?.getComponent(Label);
-            if (lbl) lbl.color = tf === active ? new Color(12, 18, 26, 255) : new Color(200, 210, 230, 255);
+            if (lbl) lbl.color = on ? colorFromHex(Palette.text.inverse) : themeColor.textHi();
         }
+        this._refreshChartHeaderLabel();
     }
 
     private _onDetailDenomClick(key: 'price' | 'mcap' | 'usd' | 'sol'): void {
@@ -9728,10 +9766,17 @@ export class AppUI extends Component {
         for (const [key, btn] of this._detailDenomButtons) {
             const on = active.has(key);
             const spr = btn.node.getComponent(Sprite);
-            if (spr) spr.color = on ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
+            if (spr) spr.color = on ? themeColor.teal() : colorFromHex(Palette.bg.card);
             const lbl = btn.node.getChildByName('Label')?.getComponent(Label);
-            if (lbl) lbl.color = on ? new Color(12, 18, 26, 255) : new Color(200, 210, 230, 255);
+            if (lbl) lbl.color = on ? colorFromHex(Palette.text.inverse) : themeColor.textHi();
         }
+        this._refreshChartHeaderLabel();
+    }
+
+    private _refreshChartHeaderLabel(): void {
+        if (!this._detailChartHeaderLabel) return;
+        const mode = this._detailPriceMode === 'mcap' ? 'MARKET CAP' : 'PRICE';
+        this._detailChartHeaderLabel.string = `${mode} · ${this._detailActiveTimeframe} · ${this._detailDenom}`;
     }
 
     private _detailLastCandles: Candle[] = [];
@@ -9800,21 +9845,32 @@ export class AppUI extends Component {
             lbl.string = d.value;
             if (d.key === 'change') {
                 const c = row.change24hPct;
-                lbl.color = c > 0 ? new Color(48, 198, 155, 255) : c < 0 ? new Color(236, 88, 122, 255) : new Color(200, 210, 230, 255);
+                lbl.color = c > 0 ? themeColor.win() : c < 0 ? themeColor.loss() : themeColor.neutral();
             } else if (d.key === 'price') {
-                lbl.color = new Color(218, 165, 32, 255);
+                lbl.color = themeColor.amber();
             } else {
-                lbl.color = new Color(255, 255, 255, 255);
+                lbl.color = themeColor.textHi();
             }
+        }
+        // Dynamic edge accent on the 24H card — teal/rose/neutral by sign.
+        const changeEdge = this._tokenDetailPanel
+            ?.getChildByName('StatCard_change')
+            ?.getChildByName('CardEdgeAccent')
+            ?.getComponent(Sprite);
+        if (changeEdge) {
+            const c = row.change24hPct;
+            changeEdge.color = c > 0 ? themeColor.teal() : c < 0 ? themeColor.rose() : themeColor.neutral();
         }
         console.log(`${TAG} _refreshDetailStats | DONE symbol="${row.symbol}" liq=${row.liquidity} mcap=${row.marketCap} vol=${row.volume24hUsd} change=${row.change24hPct} holders=${row.holders}`);
     }
 
     private _refreshSafetyChips(): void {
         // v1 placeholder — no safety backend yet. Session 13 plan: deferred.
+        // Uses Palette.text.lo so the chips read as muted/unknown until the
+        // backend (token-security API) lands.
         for (const [key, lbl] of this._detailSafetyChipLabels) {
             lbl.string = `◎ ${key.charAt(0).toUpperCase() + key.slice(1)}`;
-            lbl.color = new Color(140, 150, 170, 255);
+            lbl.color = colorFromHex(Palette.text.lo);
         }
     }
 
@@ -10032,17 +10088,24 @@ export class AppUI extends Component {
         if (!this._postMatchPanel) return;
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
+        // Cascade safety: cancel any in-flight beats from a prior result show
+        // before we re-prep. Re-entry (back-to-back matches) would otherwise
+        // double-fire setTimeouts.
+        this._clearPostMatchRevealTimers();
+        this._postMatchCascadeSkipped = false;
         // UX Phase 2b: route celebrate/lose/think to the PostMatchMascot. The
         // results screen must NEVER show 'idle' — pick exactly one of the
         // outcome states. `force=true` replays the animation when the previous
         // match settled to the same outcome (without it, setState early-returns
         // and a second loss freezes on the last lose frame).
+        // Staging pass: setState is deferred to Beat 3 so the celebrate/lose
+        // animation lands AFTER the PnL count-up — see cascade scheduling
+        // at the end of this method.
         const mascotState: MascotState =
             outcome.tie ? 'think'
           : outcome.won ? 'celebrate'
           :               'lose';
         console.assert(mascotState !== 'idle', 'PostMatch mascot must never be idle');
-        this._postMatchMascot?.setState(mascotState, true);
         const previousLevel = outcome.previousLevel ?? outcome.newLevel; // if not supplied, assume no level change
         const leveledUp = outcome.newLevel > previousLevel;
 
@@ -10070,18 +10133,19 @@ export class AppUI extends Component {
             const cy = mascotN ? mascotN.position.y : 200;
             for (let i = 11; i >= 0; i--) {
                 const r = 120 + i * 36;
-                const a = Math.max(0, 6 + (11 - i) * 8);  // outer 6 → inner 94
+                const a = Math.max(0, 4 + (11 - i) * 5);  // dimmed: outer 4 → inner 59 (was 6→94)
                 bg.fillColor = new Color(glow.r, glow.g, glow.b, a);
                 bg.circle(cx, cy, r);
                 bg.fill();
             }
             const op = this._postMatchOutcomeBgOpacity;
             Tween.stopAllByTarget(op);
-            op.opacity = 255;
-            // Slow ambient pulse — keeps the focus zone breathing.
+            op.opacity = 200;
+            // Slow ambient pulse — keeps the focus zone breathing. Dimmed
+            // 255↔215 → 200↔170 so the rings sit further back behind the mascot.
             tween(op)
-                .to(1.6, { opacity: 215 }, { easing: 'sineInOut' })
-                .to(1.6, { opacity: 255 }, { easing: 'sineInOut' })
+                .to(1.6, { opacity: 170 }, { easing: 'sineInOut' })
+                .to(1.6, { opacity: 200 }, { easing: 'sineInOut' })
                 .union()
                 .repeatForever()
                 .start();
@@ -10100,7 +10164,9 @@ export class AppUI extends Component {
             const op = this._postMatchMascotGlowOpacity;
             Tween.stopAllByTarget(op);
             op.opacity = 0;
-            tween(op).to(0.4, { opacity: 235 }).start();
+            // Glow fade-in is deferred to Beat 3 (alongside mascot setState)
+            // so a colored halo doesn't sit empty for ~1.1s before the
+            // mascot itself appears.
             // Slow scale pulse on the glow node so the aura "breathes".
             const glowNode = this._postMatchMascotGlowGfx.node;
             Tween.stopAllByTarget(glowNode);
@@ -10112,18 +10178,52 @@ export class AppUI extends Component {
                 .repeatForever()
                 .start();
         }
-        // Bump mascot focus by ~12% per UX spec.
+        // Staging pass: mascot is the centerpiece — 1.30× over the dimmed
+        // rings so the celebrate/lose animation is unmissable.
         const mascotContainer = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
         if (mascotContainer) {
-            mascotContainer.setScale(1.12, 1.12, 1);
+            mascotContainer.setScale(1.30, 1.30, 1);
+            // Hide until Beat 3 — prevents the procedural idle bob from
+            // showing before celebrate/lose plays.
+            const mop = this._ensureOpacity(mascotContainer);
+            Tween.stopAllByTarget(mop);
+            mop.opacity = 0;
         }
+        // Cascade pre-hide — title, track, subtitle, rake, CTAs all fade in
+        // at their scheduled beats. Cards self-hide inside _revealPostMatchStaggered.
+        const setOpZero = (n: Node | null | undefined) => {
+            if (!n) return;
+            const op = this._ensureOpacity(n);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+        };
+        setOpZero(this._postMatchTitleLabel?.node);
+        setOpZero(this._postMatchTrackLabel?.node);
+        setOpZero(this._postMatchSubtitleLabel?.node);
+        setOpZero(this._postMatchRakeLabel?.node);
+        const ctaPrimary   = this._postMatchPanel?.getChildByName('PostMatchSameSquadButton');
+        const ctaSecondary = this._postMatchPanel?.getChildByName('PostMatchAgainButton');
+        setOpZero(ctaPrimary);
+        setOpZero(ctaSecondary);
+        // Hide stat cards synchronously — Beat 5 (_revealPostMatchStaggered)
+        // re-hides + tweens them back, but without pre-hide they'd flash
+        // visible from panel-open until the beat fires.
+        for (const k of ['opp', 'you', 'xp', 'lvl']) {
+            const card = this._postMatchPanel?.getChildByName(`PMCard_${k}`);
+            setOpZero(card);
+        }
+        // Trophy stays hidden until Beat 6; _animatePostMatchTrophy will
+        // re-activate it for top-3 placements.
+        const trophyPreHide = this._postMatchPanel?.getChildByName('TrophyLabel');
+        if (trophyPreHide) trophyPreHide.active = false;
 
         // 2026-04-27 v2 — primary/secondary CTA hierarchy. The visible bottom
         // buttons are: PostMatchSameSquadButton ("▶ Play Again", green left,
         // primary) and PostMatchAgainButton ("Pick New Squad", right,
         // secondary). The top "← Back" (PostMatchBackButton) is a nav header
-        // and stays visually neutral.
-        this._stylePostMatchCTAs(outcome.won);
+        // and stays visually neutral. Pulse is applied at Beat 7 — passing
+        // false here so it doesn't start running while the CTAs are hidden.
+        this._stylePostMatchCTAs(outcome.won, false);
 
         // Phase H4 — fire cinematic BEFORE rendering the rest of the panel.
         // The overlay sits above PostMatchPanel; auto-dismisses after 2.8s
@@ -10174,36 +10274,30 @@ export class AppUI extends Component {
             const wagerSol = outcome.track === 'real'
                 ? this._realMatchWagerLamports / 1e9
                 : Number(this._selectedStakeLamports ?? 0n) / 1e9;
-            // 2026-04-27 v2 — PnL is the hero element. Bumped fontSize to 96
-            // (from scene default ~52), accent-colored, with a count-up tween
-            // on both win and loss so the number lands with weight.
-            this._postMatchPayoutLabel.color = accent;
+            // Staging pass: PnL number is white for max contrast against the
+            // dimmed rings; the accent color now lives in a 4px outline so the
+            // hue identity reads as a "glow" rather than tinting the digits.
+            // Same trick the title uses (line above).
+            this._postMatchPayoutLabel.color = new Color(255, 255, 255, 255);
             this._postMatchPayoutLabel.fontSize = 96;
             this._postMatchPayoutLabel.lineHeight = 100;
+            (this._postMatchPayoutLabel as any).enableOutline = true;
+            (this._postMatchPayoutLabel as any).outlineColor = new Color(accent.r, accent.g, accent.b, 200);
+            (this._postMatchPayoutLabel as any).outlineWidth = 4;
             const dpForLoss = wagerSol >= 0.01 ? 2 : 4;
             // Initial frame shows zero so the count-up has a visible delta.
             this._postMatchPayoutLabel.string = outcome.won
                 ? '+0.000 SOL'
                 : `−0.${'0'.repeat(dpForLoss)} SOL`;
             // Soft scale-in prelude: 0.85 → 1.0 over 250ms (was 0.6 → harsh pop).
+            // Synchronous setup hides the label; Beat 2 (320ms after panel open)
+            // fires the actual scale-in + count-up ticker.
             const payoutNode = this._postMatchPayoutLabel.node;
             const op = this._ensureOpacity(payoutNode);
             Tween.stopAllByTarget(payoutNode);
             Tween.stopAllByTarget(op);
             payoutNode.setScale(0.85, 0.85, 1);
             op.opacity = 0;
-            tween(op).to(0.25, { opacity: 255 }).start();
-            tween(payoutNode)
-                .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
-                .call(() => {
-                    if (!this._postMatchPayoutLabel) return;
-                    if (outcome.won && sol > 0) {
-                        this._animatePayoutTicker(this._postMatchPayoutLabel, sol, 0.7);
-                    } else if (!outcome.won && wagerSol > 0) {
-                        this._animateLossTicker(this._postMatchPayoutLabel, wagerSol, 0.7);
-                    }
-                })
-                .start();
         }
 
         // betting-duel: decode encoded u32 scores back into portfolio delta % for display.
@@ -10233,6 +10327,10 @@ export class AppUI extends Component {
         // Subtitle: default = portfolio-delta diff; level-up message overrides;
         // unverified-real-match badge takes priority over both.
         if (this._postMatchSubtitleLabel) {
+            // Staging pass: 22pt headline, 26 line height — secondary to the
+            // 96pt PnL but readable enough to clarify the result story.
+            this._postMatchSubtitleLabel.fontSize = 22;
+            this._postMatchSubtitleLabel.lineHeight = 26;
             if (outcome.track === 'real' && this._lastMatchUnverifiedReason) {
                 this._postMatchSubtitleLabel.string = `⚠ Unverified — ${this._lastMatchUnverifiedReason}`;
                 this._postMatchSubtitleLabel.color = new Color(220, 180, 70, 255);
@@ -10353,9 +10451,9 @@ export class AppUI extends Component {
         // layered on top if the XP gain pushed into a new level.
         // Stage 4L audit: silence on loss is intentional — no fanfare plays when
         // !won. The natural thud of victory absence is the punishment.
-        if (outcome.won && outcome.placement === 0) {
-            playSound('victory');
-        }
+        // Staging pass: victory fanfare deferred into Beat 2 (PnL count-up
+        // start) so audio + visual reward sync up.
+        const cascadeWillPlayVictory = outcome.won && outcome.placement === 0;
         if (leveledUp) {
             // Stage 3J: delay level-up chime so it lands AFTER the payout ticker
             // finishes (1.2s), making it a second reward beat rather than a
@@ -10395,62 +10493,223 @@ export class AppUI extends Component {
             if (shareBtnNode) shareBtnNode.active = false;
         }
 
-        // Tween: XP card scale pulse when any XP was gained.
-        if (outcome.xpGained > 0) {
-            const xpCard = this._postMatchPanel.getChildByName('PMCard_xp');
-            if (xpCard) {
-                Tween.stopAllByTarget(xpCard);
-                xpCard.setScale(1, 1, 1);
-                tween(xpCard)
-                    .to(0.25, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'cubicOut' })
-                    .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
-                    .start();
-                console.log(`${TAG} _showPostMatchPanel | TWEEN_XP scale 1.0→1.2→1.0 500ms`);
+        // ===== Staged reveal cascade =====
+        // Each "beat" runs at its delay below. Synchronous setup above has
+        // pre-hidden every fading element to opacity=0; beats fade them in
+        // and trigger the per-beat side animations. Tap-to-skip jumps to
+        // the finalizer which snaps every element to its terminal state.
+        const titleNode    = this._postMatchTitleLabel?.node ?? null;
+        const trackNode    = this._postMatchTrackLabel?.node ?? null;
+        const subtitleNode = this._postMatchSubtitleLabel?.node ?? null;
+        const rakeNode     = this._postMatchRakeLabel?.node ?? null;
+        const payoutNodeFinal = this._postMatchPayoutLabel?.node ?? null;
+        const payoutOp        = payoutNodeFinal ? this._ensureOpacity(payoutNodeFinal) : null;
+        const payoutSol       = outcome.payoutLamports / 1e9;
+        const payoutWagerSol  = outcome.track === 'real'
+            ? this._realMatchWagerLamports / 1e9
+            : Number(this._selectedStakeLamports ?? 0n) / 1e9;
+
+        const fadeIn = (n: Node | null, durationS: number = 0.22) => {
+            if (!n) return;
+            const op = this._ensureOpacity(n);
+            Tween.stopAllByTarget(op);
+            tween(op).to(durationS, { opacity: 255 }, { easing: 'sineOut' }).start();
+        };
+
+        // Beat 0 — title (T=0).
+        const beatTitle = () => fadeIn(titleNode, 0.22);
+        // Beat 1 — track label (T=180).
+        const beatTrack = () => fadeIn(trackNode, 0.16);
+        // Beat 2 — payout scale-in + count-up ticker (T=320).
+        const beatPayout = () => {
+            if (!this._postMatchPayoutLabel || !payoutNodeFinal || !payoutOp) return;
+            Tween.stopAllByTarget(payoutNodeFinal);
+            Tween.stopAllByTarget(payoutOp);
+            payoutNodeFinal.setScale(0.85, 0.85, 1);
+            payoutOp.opacity = 0;
+            tween(payoutOp).to(0.25, { opacity: 255 }).start();
+            tween(payoutNodeFinal)
+                .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .call(() => {
+                    if (!this._postMatchPayoutLabel) return;
+                    if (outcome.won && payoutSol > 0) {
+                        this._animatePayoutTicker(this._postMatchPayoutLabel, payoutSol, 0.7);
+                    } else if (!outcome.won && payoutWagerSol > 0) {
+                        this._animateLossTicker(this._postMatchPayoutLabel, payoutWagerSol, 0.7);
+                    }
+                })
+                .start();
+            if (cascadeWillPlayVictory) playSound('victory');
+        };
+        // Beat 3 — mascot fade-in + setState fires the celebrate/lose anim
+        // AFTER the PnL has landed (T=1100). Glow halo also fades in here so
+        // it doesn't sit empty waiting for the mascot.
+        const beatMascot = () => {
+            if (mascotContainer) {
+                const mop = this._ensureOpacity(mascotContainer);
+                Tween.stopAllByTarget(mop);
+                tween(mop).to(0.25, { opacity: 255 }, { easing: 'sineOut' }).start();
             }
-        }
-
-        // Tween: LEVEL card flash + subtitle emphasis on level-up.
-        if (leveledUp) {
-            const lvlCard = this._postMatchPanel.getChildByName('PMCard_lvl');
-            if (lvlCard) {
-                Tween.stopAllByTarget(lvlCard);
-                lvlCard.setScale(1, 1, 1);
-                tween(lvlCard)
-                    .to(0.3, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
-                    .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backIn' })
-                    .to(0.3, { scale: new Vec3(1.1, 1.1, 1) }, { easing: 'cubicOut' })
-                    .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
-                    .start();
-                console.log(`${TAG} _showPostMatchPanel | TWEEN_LEVEL_UP subtitle_flash 1200ms`);
+            if (this._postMatchMascotGlowOpacity) {
+                const gop = this._postMatchMascotGlowOpacity;
+                Tween.stopAllByTarget(gop);
+                tween(gop).to(0.4, { opacity: 235 }, { easing: 'sineOut' }).start();
             }
-        }
+            this._postMatchMascot?.setState(mascotState, true);
+        };
+        // Beat 4 — subtitle headline + rake details (T=1450; rake +80ms).
+        const beatSubtitleRake = () => {
+            fadeIn(subtitleNode, 0.18);
+            const t = setTimeout(() => fadeIn(rakeNode, 0.18), 80);
+            this._postMatchRevealTimers.push(t as unknown as number);
+        };
+        // Beat 5 — stat cards staggered cascade (T=1700).
+        const beatCards = () => {
+            this._revealPostMatchStaggered(outcome.won);
+        };
+        // Beat 6 — XP bar roll + trophy + xp/level pulses (T=2400).
+        const beatXpTrophy = () => {
+            if (outcome.xpGained > 0 && this._postMatchPanel) {
+                const xpCard = this._postMatchPanel.getChildByName('PMCard_xp');
+                if (xpCard) {
+                    Tween.stopAllByTarget(xpCard);
+                    xpCard.setScale(1, 1, 1);
+                    tween(xpCard)
+                        .to(0.25, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'cubicOut' })
+                        .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                        .start();
+                }
+            }
+            if (leveledUp && this._postMatchPanel) {
+                const lvlCard = this._postMatchPanel.getChildByName('PMCard_lvl');
+                if (lvlCard) {
+                    Tween.stopAllByTarget(lvlCard);
+                    lvlCard.setScale(1, 1, 1);
+                    tween(lvlCard)
+                        .to(0.3, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
+                        .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backIn' })
+                        .to(0.3, { scale: new Vec3(1.1, 1.1, 1) }, { easing: 'cubicOut' })
+                        .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+                        .start();
+                }
+            }
+            this._animatePostMatchTrophy(outcome.placement ?? (outcome.won ? 0 : 99));
+            if (outcome.totalXp != null && outcome.xpGained > 0) {
+                const prevTotal = Math.max(0, outcome.totalXp - outcome.xpGained);
+                this._animateXPBar(prevTotal, outcome.totalXp, leveledUp, outcome.xpGained, outcome.won);
+            } else if (this._postMatchXPBarLabelLeft && this._postMatchXPBarLabelRight && this._postMatchXPBarFillGfx) {
+                this._postMatchXPBarLabelLeft.string = '';
+                this._postMatchXPBarLabelRight.string = '';
+                this._postMatchXPBarFillGfx.clear();
+            }
+        };
+        // Beat 7 — CTAs fade in with upward motion + idle pulse (T=2700).
+        const beatCTAs = () => {
+            const slideIn = (n: Node | null | undefined) => {
+                if (!n) return;
+                const op = this._ensureOpacity(n);
+                Tween.stopAllByTarget(op);
+                Tween.stopAllByTarget(n);
+                op.opacity = 0;
+                const targetX = n.position.x;
+                const targetY = n.position.y;
+                const targetZ = n.position.z;
+                n.setPosition(targetX, targetY + 12, targetZ);
+                tween(op).to(0.22, { opacity: 255 }, { easing: 'sineOut' }).start();
+                tween(n).to(0.22, { position: new Vec3(targetX, targetY, targetZ) }, { easing: 'sineOut' }).start();
+            };
+            slideIn(ctaPrimary);
+            slideIn(ctaSecondary);
+            if (ctaPrimary) addIdlePulse(ctaPrimary, 1.04, 1.4);
+        };
 
-        // Session D Part 7: trophy/medal emoji for top-3 placements.
-        //   placement=0 → 🏆 (bounce + 360° rotate)
-        //   placement=1 → 🥈 (static fade-in)
-        //   placement=2 → 🥉 (static fade-in)
-        //   placement≥3 → hidden
-        this._animatePostMatchTrophy(outcome.placement ?? (outcome.won ? 0 : 99));
+        this._scheduleRevealBeat(0,    beatTitle);
+        this._scheduleRevealBeat(180,  beatTrack);
+        this._scheduleRevealBeat(320,  beatPayout);
+        this._scheduleRevealBeat(1100, beatMascot);
+        this._scheduleRevealBeat(1450, beatSubtitleRake);
+        this._scheduleRevealBeat(1700, beatCards);
+        this._scheduleRevealBeat(2400, beatXpTrophy);
+        this._scheduleRevealBeat(2700, beatCTAs);
 
-        // Stage 3I — staggered reveal cascade. Values are already set (above);
-        // hide the 4 stat cards immediately, then fade+pop them back in over
-        // ~800ms in a deliberate order: opp → you → xp → lvl. Pure overlay on
-        // top of existing logic — no value reshuffling.
-        this._revealPostMatchStaggered(outcome.won);
+        // Tap-to-skip finalizer — snaps every beat to its terminal state.
+        this._postMatchCascadeFinalizer = () => {
+            const snap = (n: Node | null | undefined) => {
+                if (!n) return;
+                const op = this._ensureOpacity(n);
+                Tween.stopAllByTarget(op);
+                op.opacity = 255;
+            };
+            snap(titleNode);
+            snap(trackNode);
+            snap(subtitleNode);
+            snap(rakeNode);
+            // Payout — snap to final string + scale, skip count-up.
+            if (this._postMatchPayoutLabel && payoutNodeFinal && payoutOp) {
+                Tween.stopAllByTarget(payoutNodeFinal);
+                Tween.stopAllByTarget(payoutOp);
+                payoutOp.opacity = 255;
+                payoutNodeFinal.setScale(1, 1, 1);
+                if (outcome.won) {
+                    const dp = payoutSol >= 0.01 ? 2 : 4;
+                    this._postMatchPayoutLabel.string = `+${payoutSol.toFixed(dp)} SOL`;
+                } else {
+                    const dp = payoutWagerSol >= 0.01 ? 2 : 4;
+                    this._postMatchPayoutLabel.string = `−${payoutWagerSol.toFixed(dp)} SOL`;
+                }
+            }
+            // Mascot — snap visible and force the celebrate/lose state.
+            if (mascotContainer) {
+                const mop = this._ensureOpacity(mascotContainer);
+                Tween.stopAllByTarget(mop);
+                mop.opacity = 255;
+            }
+            if (this._postMatchMascotGlowOpacity) {
+                const gop = this._postMatchMascotGlowOpacity;
+                Tween.stopAllByTarget(gop);
+                gop.opacity = 235;
+            }
+            this._postMatchMascot?.setState(mascotState, true);
+            // Cards — snap to opacity 255 + scale 1.
+            for (const k of ['opp', 'you', 'xp', 'lvl']) {
+                const card = this._postMatchPanel?.getChildByName(`PMCard_${k}`);
+                if (!card) continue;
+                Tween.stopAllByTarget(card);
+                const cardOp = this._ensureOpacity(card);
+                Tween.stopAllByTarget(cardOp);
+                cardOp.opacity = 255;
+                card.setScale(1, 1, 1);
+            }
+            // Trophy + XP bar — fast versions of the existing animations.
+            this._animatePostMatchTrophy(outcome.placement ?? (outcome.won ? 0 : 99));
+            if (outcome.totalXp != null && outcome.xpGained > 0) {
+                const prevTotal = Math.max(0, outcome.totalXp - outcome.xpGained);
+                this._animateXPBar(prevTotal, outcome.totalXp, leveledUp, outcome.xpGained, outcome.won);
+            } else if (this._postMatchXPBarLabelLeft && this._postMatchXPBarLabelRight && this._postMatchXPBarFillGfx) {
+                this._postMatchXPBarLabelLeft.string = '';
+                this._postMatchXPBarLabelRight.string = '';
+                this._postMatchXPBarFillGfx.clear();
+            }
+            // CTAs — snap visible + start pulse.
+            const snapCTA = (n: Node | null | undefined) => {
+                if (!n) return;
+                Tween.stopAllByTarget(n);
+                const op = this._ensureOpacity(n);
+                Tween.stopAllByTarget(op);
+                op.opacity = 255;
+            };
+            snapCTA(ctaPrimary);
+            snapCTA(ctaSecondary);
+            if (ctaPrimary) addIdlePulse(ctaPrimary, 1.04, 1.4);
+        };
 
-        // Drifting-gadget: XP progress bar. Rolls from previous-level progress
-        // to new-level progress over 700ms; on level-up, rolls to 100% first,
-        // flashes gold, then resets and rolls to the new bucket.
-        if (outcome.totalXp != null && outcome.xpGained > 0) {
-            // Onchain XP gain is base-only (streakBonusFor is display-only per
-            // the Phase J1 audit above). prevTotal = totalXp − xpGained.
-            const prevTotal = Math.max(0, outcome.totalXp - outcome.xpGained);
-            this._animateXPBar(prevTotal, outcome.totalXp, leveledUp, outcome.xpGained, outcome.won);
-        } else if (this._postMatchXPBarLabelLeft && this._postMatchXPBarLabelRight && this._postMatchXPBarFillGfx) {
-            // No XP this match — clear the bar entirely.
-            this._postMatchXPBarLabelLeft.string = '';
-            this._postMatchXPBarLabelRight.string = '';
-            this._postMatchXPBarFillGfx.clear();
+        // Tap-to-skip wiring — bind once on the panel; idempotent. Tapping
+        // anywhere during the cascade snaps everything to final state.
+        if (this._postMatchPanel && !(this._postMatchPanel as any)._tapSkipBound) {
+            this._postMatchPanel.on(Node.EventType.TOUCH_END, () => {
+                this._skipPostMatchReveal();
+            });
+            (this._postMatchPanel as any)._tapSkipBound = true;
         }
     }
 
@@ -10798,7 +11057,7 @@ export class AppUI extends Component {
      *   PostMatchSameSquadButton — "▶ Play Again", primary green, glow + pulse
      *   PostMatchAgainButton     — "Pick New Squad", secondary muted blue
      */
-    private _stylePostMatchCTAs(won: boolean): void {
+    private _stylePostMatchCTAs(won: boolean, applyPulse: boolean = true): void {
         if (!this._postMatchPanel) return;
         const primaryNode   = this._postMatchPanel.getChildByName('PostMatchSameSquadButton');
         const secondaryNode = this._postMatchPanel.getChildByName('PostMatchAgainButton');
@@ -10814,7 +11073,8 @@ export class AppUI extends Component {
                 lbl.fontSize = 30;
             }
             primaryNode.setScale(1.04, 1.04, 1);
-            addIdlePulse(primaryNode, 1.04, 1.4);
+            // Pulse is gated to Beat 7 in the staged reveal — see _showPostMatchPanel.
+            if (applyPulse) addIdlePulse(primaryNode, 1.04, 1.4);
         }
         // Secondary — muted blue-gray, no glow, no pulse.
         if (secondaryNode) {
@@ -10829,10 +11089,40 @@ export class AppUI extends Component {
         }
     }
 
+    /** Cancel any in-flight reveal-cascade timers (re-entry / skip safety). */
+    private _clearPostMatchRevealTimers(): void {
+        for (const t of this._postMatchRevealTimers) {
+            clearTimeout(t as unknown as ReturnType<typeof setTimeout>);
+        }
+        this._postMatchRevealTimers = [];
+    }
+
+    /** Schedule a single beat in the post-match reveal cascade. */
+    private _scheduleRevealBeat(delayMs: number, fn: () => void): void {
+        const t = setTimeout(() => fn(), delayMs);
+        this._postMatchRevealTimers.push(t as unknown as number);
+    }
+
+    /**
+     * Tap-to-skip cascade. Clears all pending beats and runs the finalizer
+     * which snaps every element to its final visible state instantly.
+     */
+    private _skipPostMatchReveal(): void {
+        if (this._postMatchCascadeSkipped) return;
+        this._postMatchCascadeSkipped = true;
+        this._clearPostMatchRevealTimers();
+        const fin = this._postMatchCascadeFinalizer;
+        this._postMatchCascadeFinalizer = null;
+        if (fin) {
+            try { fin(); } catch (e) { console.log(`${TAG} _skipPostMatchReveal | FINALIZER_ERR ${e}`); }
+        }
+        console.log(`${TAG} _skipPostMatchReveal | SNAPPED_TO_FINAL`);
+    }
+
     private _onPostMatchBack(): void {
         if (this._postMatchPanel) this._postMatchPanel.active = false;
-        this._tokenDuelPanel.active = true;
-        console.log(`${TAG} _onPostMatchBack | BACK_TO_TOKEN_DUEL`);
+        this._showHome();
+        console.log(`${TAG} _onPostMatchBack | BACK_TO_HOME`);
     }
 
     private _onPostMatchAgain(): void {
@@ -14262,6 +14552,9 @@ export class AppUI extends Component {
         if (this._pfPubkeyLabel) {
             const pk = MWAManager.instance?.connectedPubkey;
             this._pfPubkeyLabel.string = pk ? this._fmtMintShort(pk) : 'not connected';
+            // Sit just under the title (y=680) so the History/Trophies content
+            // card (top edge ≈ 480) doesn't clip it.
+            this._pfPubkeyLabel.node.setPosition(0, 610, 0);
         }
         this._refreshPortfolioTopLevel();
         this._refreshPortfolioTab();
@@ -14282,6 +14575,8 @@ export class AppUI extends Component {
         this._pfActiveTab = tab;
         console.log(`${TAG} _onPortfolioTabClick | tab=${tab}`);
         this._refreshPortfolioTab();
+        // History follows the same Paper/Real toggle as Stats.
+        if (this._pfTopLevelTab === 'history') this._refreshMatchHistory(true);
     }
 
     private _refreshPortfolioTab(): void {
@@ -14418,8 +14713,10 @@ export class AppUI extends Component {
         const statsActive = tab === 'stats';
         for (const n of this._pfStatsViewNodes) n.active = statsActive;
         if (!statsActive && this._pfEmptyState) this._pfEmptyState.active = false;
-        // Mode chip (Paper/Real) only shows when on Stats sub-tab.
-        if (this._pfModePillStrip) this._pfModePillStrip.active = statsActive;
+        // Mode chip (Paper/Real) shows on Stats AND History — History reuses
+        // the same toggle to switch between paper and real match feeds.
+        // Trophies are not paper/real-scoped, so the pill stays hidden there.
+        if (this._pfModePillStrip) this._pfModePillStrip.active = (tab === 'stats' || tab === 'history');
         if (this._pfHistoryView) this._pfHistoryView.active = tab === 'history';
         // Part 11 B: trophies view.
         const trophiesView = this._portfolioPanel?.getChildByName('PortfolioTrophiesView');
@@ -14441,14 +14738,19 @@ export class AppUI extends Component {
             for (const tile of this._pfTrophyTiles) tile.active = false;
             return;
         }
-        const { getPlayerTrophies, rankIcon } = await import('../../token-duel/scripts/TrophyRpc');
-        const trophies = await getPlayerTrophies(pubkey);
-        this._pfTrophyEntries = trophies;
-        console.log(`${TAG} _refreshTrophies | DONE count=${trophies.length}`);
-        if (empty) empty.active = trophies.length === 0;
+        const { getPlayerTrophies, mockTrophies, rankIcon } = await import('../../token-duel/scripts/TrophyRpc');
+        const live = await getPlayerTrophies(pubkey);
+        // Dev-only fallback: when no real trophies exist AND TD_MOCK_TROPHIES is
+        // toggled on at runtime, show 6 mock tiles so design work can proceed
+        // before any weekly season has run. Real trophies always win.
+        const useMocks = live.length === 0 && (globalThis as any).TD_MOCK_TROPHIES === true;
+        const display = useMocks ? mockTrophies() : live;
+        this._pfTrophyEntries = display;
+        console.log(`${TAG} _refreshTrophies | DONE live=${live.length} mocks=${useMocks ? display.length : 0}`);
+        if (empty) empty.active = display.length === 0;
         for (let i = 0; i < this._pfTrophyTiles.length; i++) {
             const tile = this._pfTrophyTiles[i];
-            const t = trophies[i];
+            const t = display[i];
             if (!t) { tile.active = false; continue; }
             tile.active = true;
             // UX Phase 2b: procedural medal/trophy on the 'Emoji' node instead of glyph.
@@ -14465,6 +14767,10 @@ export class AppUI extends Component {
      * Fetch + render one page of match history. `reset=true` clears the list
      * and starts over (used on tab switch); `reset=false` appends using the
      * saved cursor (Load-more button).
+     *
+     * Real branch reads from the on-chain UserStats PDA via signature scan.
+     * Paper branch reads from the backend's paper_match_history table (both
+     * paper-real and bot tracks) so paper-mode players see their feed too.
      */
     private async _refreshMatchHistory(reset: boolean): Promise<void> {
         if (this._matchHistoryLoading) return;
@@ -14487,25 +14793,43 @@ export class AppUI extends Component {
             }
             this._renderMatchHistoryRows([]);
         }
+        const mode = this._pfActiveTab;
         this._matchHistoryLoading = true;
         try {
-            const page = await fetchMatchHistoryPage({
-                rpc: this._tdRpc,
-                userPubkey: pubkey,
-                beforeSig: this._matchHistoryCursor ?? undefined,
-                matchCache: this._matchHistoryCache,
-            });
-            if (reset) this._matchHistoryEntries = page.entries;
-            else this._matchHistoryEntries = this._matchHistoryEntries.concat(page.entries);
-            this._matchHistoryCursor = page.nextCursor;
+            let pageEntries: HistoryRowEntry[];
+            let nextCursor: string | null;
+            if (mode === 'paper') {
+                const PAPER_PAGE = 50;
+                const offset = reset ? 0 : this._matchHistoryEntries.length;
+                const { listPaperMatchHistory } = await import('../../token-duel/scripts/PaperMatchHistoryRpc');
+                const rows = await listPaperMatchHistory(pubkey, PAPER_PAGE, offset);
+                pageEntries = rows.map((r) => this._paperRowToHistoryEntry(r));
+                nextCursor = rows.length >= PAPER_PAGE ? `paper:${offset + rows.length}` : null;
+            } else {
+                const page = await fetchMatchHistoryPage({
+                    rpc: this._tdRpc,
+                    userPubkey: pubkey,
+                    beforeSig: this._matchHistoryCursor ?? undefined,
+                    matchCache: this._matchHistoryCache,
+                });
+                pageEntries = page.entries.map((e) => ({ ...e, track: 'real' as const }));
+                nextCursor = page.nextCursor;
+            }
+            if (reset) this._matchHistoryEntries = pageEntries;
+            else this._matchHistoryEntries = this._matchHistoryEntries.concat(pageEntries);
+            this._matchHistoryCursor = nextCursor;
             this._renderMatchHistoryRows(this._matchHistoryEntries);
             if (this._pfHistoryEmptyLabel) {
                 const empty = this._matchHistoryEntries.length === 0;
                 this._pfHistoryEmptyLabel.node.active = empty;
-                if (empty) this._pfHistoryEmptyLabel.string = 'No matches yet — play a Real match to see history.';
+                if (empty) {
+                    this._pfHistoryEmptyLabel.string = mode === 'paper'
+                        ? 'No paper matches yet — play one to see your history.'
+                        : 'No matches yet — play a Real match to see history.';
+                }
             }
             if (this._pfHistoryLoadMoreButton) this._pfHistoryLoadMoreButton.node.active = !!this._matchHistoryCursor;
-            console.log(`${TAG} _refreshMatchHistory | DONE reset=${reset} total=${this._matchHistoryEntries.length} next=${this._matchHistoryCursor ?? '-'}`);
+            console.log(`${TAG} _refreshMatchHistory | DONE mode=${mode} reset=${reset} total=${this._matchHistoryEntries.length} next=${this._matchHistoryCursor ?? '-'}`);
         } catch (e) {
             console.log(`${TAG} _refreshMatchHistory | ERROR ${e}`);
             if (this._pfHistoryEmptyLabel) {
@@ -14517,6 +14841,29 @@ export class AppUI extends Component {
         }
     }
 
+    /** Adapt a backend paper_match_history row into the renderer's entry shape. */
+    private _paperRowToHistoryEntry(
+        row: import('../../token-duel/scripts/PaperMatchHistoryRpc').PaperMatchHistoryRow,
+    ): HistoryRowEntry {
+        const at = Math.floor(Date.parse(row.settledAt) / 1000) || 0;
+        return {
+            sig: row.id,
+            at,
+            mode: row.modeU8,
+            timeWindow: row.timeWindow,
+            wagerLamports: 0n,
+            pot: 0n,
+            placement: row.placement,
+            requiredPlayers: row.totalPlayers,
+            payoutLamports: 0n,
+            winnerPubkey: row.winnerPubkey ?? '',
+            matchPda: '',
+            wasForceSettled: false,
+            track: row.track,
+            xpGained: row.xpGained,
+        };
+    }
+
     private _onHistoryLoadMore(): void {
         console.log(`${TAG} _onHistoryLoadMore | cursor=${this._matchHistoryCursor ?? '-'}`);
         if (!this._matchHistoryCursor) return;
@@ -14524,7 +14871,10 @@ export class AppUI extends Component {
     }
 
     /** Populate the row pool from the cumulative entry list, newest first. */
-    private _renderMatchHistoryRows(entries: MatchHistoryEntry[]): void {
+    private _renderMatchHistoryRows(entries: HistoryRowEntry[]): void {
+        const green = new Color(48, 198, 155, 255);
+        const red = new Color(220, 90, 90, 255);
+        const dim = new Color(140, 150, 170, 255);
         for (let i = 0; i < this._pfHistoryRows.length; i++) {
             const row = this._pfHistoryRows[i];
             const entry = entries[i];
@@ -14542,7 +14892,14 @@ export class AppUI extends Component {
                 const windowLabel = TIME_WINDOWS[(['30s', '1m', '5m', '1h', '24h', '7d'][entry.timeWindow] ?? '30s') as TimeWindowId]?.label ?? '';
                 modeL.string = `${modeName} · ${windowLabel}${entry.wasForceSettled ? ' · AFK' : ''}`;
             }
-            if (wagerL) wagerL.string = `${(Number(entry.wagerLamports) / 1e9).toFixed(3)} SOL`;
+            const isPaper = entry.track === 'paper-real' || entry.track === 'bot';
+            if (wagerL) {
+                if (isPaper) {
+                    wagerL.string = entry.track === 'bot' ? 'Bot' : 'Paper';
+                } else {
+                    wagerL.string = `${(Number(entry.wagerLamports) / 1e9).toFixed(3)} SOL`;
+                }
+            }
             if (placeL) {
                 const label = entry.placement < 0
                     ? 'n/a'
@@ -14550,18 +14907,23 @@ export class AppUI extends Component {
                 placeL.string = label;
             }
             if (payoutL) {
-                if (entry.placement < 0) {
+                if (isPaper) {
+                    const won = entry.placement === 0;
+                    const xp = entry.xpGained ?? 0;
+                    payoutL.string = xp > 0 ? `+${xp} XP` : '—';
+                    payoutL.color = won ? green : (xp > 0 ? dim : dim);
+                } else if (entry.placement < 0) {
                     payoutL.string = '—';
-                    payoutL.color = new Color(140, 150, 170, 255);
+                    payoutL.color = dim;
                 } else if (entry.payoutLamports > 0n) {
                     const net = entry.payoutLamports - entry.wagerLamports;
                     const sol = Number(net) / 1e9;
                     payoutL.string = `${sol >= 0 ? '+' : ''}${sol.toFixed(3)} SOL`;
-                    payoutL.color = sol >= 0 ? new Color(48, 198, 155, 255) : new Color(220, 90, 90, 255);
+                    payoutL.color = sol >= 0 ? green : red;
                 } else {
                     const sol = -Number(entry.wagerLamports) / 1e9;
                     payoutL.string = `${sol.toFixed(3)} SOL`;
-                    payoutL.color = new Color(220, 90, 90, 255);
+                    payoutL.color = red;
                 }
             }
         }

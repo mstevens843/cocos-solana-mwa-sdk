@@ -90,31 +90,31 @@ const pm = {
     TITLE_Y:          540,   // below back row
     TRACK_Y:          485,
 
-    // Mascot zone — shrunk so payout sits BELOW the glow circle.
-    // Glow at y=200, h=320 → top 360, bottom 40.
-    MASCOT_Y:         200,
-    MASCOT_GLOW_WH:   320,   // glow circle (was 480)
-    MASCOT_BOX_WH:    280,   // mascot container box (was 360)
+    // Mascot zone — staging pass: bigger mascot, raised center, glow grows
+    // with it. Glow at y=240, h=380 → top 430, bottom 50.
+    MASCOT_Y:         240,
+    MASCOT_GLOW_WH:   380,   // glow circle (was 320)
+    MASCOT_BOX_WH:    340,   // mascot container box (was 280)
 
     // Payout / subtitle / rake — below the glow now.
-    PAYOUT_Y:         -20,   // h=96 → top 28, bottom -68 (12 below glow bottom 40)
-    SUBTITLE_Y:       -100,
-    RAKE_Y:           -150,
+    PAYOUT_Y:         -50,   // h=96 → top -2, bottom -98 (52 below glow bottom 50)
+    SUBTITLE_Y:       -124,  // h=44 → top -102, bottom -146 (clears payout bottom -98)
+    RAKE_Y:           -176,  // h=40 → top -156, bottom -196 (10 below subtitle bottom)
 
     // Stat cards 2×2 grid.
     CARD_H:           128,   // was 116; grew 12 to host valueSub line
-    CARDS_ROW1_Y:     -232,  // YOUR DELTA / BEST OPP (8 px below rake bottom -160)
-    CARDS_ROW2_Y:     -360,  // XP EARNED / LEVEL (128 stride; 4 px gap between cards)
+    CARDS_ROW1_Y:     -266,  // YOUR DELTA / BEST OPP (cards top -202, clears rake -196)
+    CARDS_ROW2_Y:     -404,  // XP EARNED / LEVEL (138 stride; cards bottom -468)
 
-    // XP bar — 5 px below cards row 2 bottom (-424).
-    XP_BAR_Y:         -440,
+    // XP bar — sits below row-2 cards (cards bottom -468; bar at -488 → bar top -480).
+    XP_BAR_Y:         -488,
 
     // CTAs — Play Again + Pick New Squad. World bottom y=-627 (within canvas).
-    CTA_Y:            -485,
+    CTA_Y:            -534,  // bottom -566; share strip below
 
     // Tertiary affordances (mostly hidden by default; clip slightly at bottom).
-    SHARE_Y:          -545,
-    STATUS_Y:         -580,
+    SHARE_Y:          -595,  // top -573 → 7 below CTA bottom -566
+    STATUS_Y:         -635,  // tiny debug text, mostly hidden; sits below share bottom -617
 };
 
 // 2026-04-27 — HomePanel deterministic Y anchors.
@@ -1691,9 +1691,10 @@ const LayoutSpec = {
             filterDivider2:     { x: 0, y: 480, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Window and Wager rows' },
             filterDivider3:     { x: 0, y: 438, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Wager row and Hide-full footer' },
             // 2026-04-28 final pass — small dim row labels left of each chip row.
-            fmModeLabel:        { x: -300, y: 540, w: 80,  h: 22, type: 'label',  notes: '"Mode:" — dim text left of mode chips' },
-            fmWindowLabel:      { x: -300, y: 500, w: 80,  h: 22, type: 'label',  notes: '"Duration:" — dim text left of window chips' },
-            fmWagerLabel:       { x: -300, y: 460, w: 80,  h: 22, type: 'label',  notes: '"Stake:" — dim text left of wager chips' },
+            // x=-312, w=70 keeps right edge (-277) clear of leftmost chip's left edge (-265).
+            fmModeLabel:        { x: -312, y: 540, w: 70,  h: 22, type: 'label',  notes: '"Mode" — dim text left of mode chips' },
+            fmWindowLabel:      { x: -312, y: 500, w: 70,  h: 22, type: 'label',  notes: '"Duration" — dim text left of window chips' },
+            fmWagerLabel:       { x: -312, y: 460, w: 70,  h: 22, type: 'label',  notes: '"Stake" — dim text left of wager chips' },
             // Tab active underline — slides between -122 and +122 via AppUI tween.
             // y=575 puts it just below the tab buttons (now inside FilterCard top).
             tabActiveUnderline: { x: -122, y: 575, w: 200, h: 4, type: 'sprite', notes: 'violet — slides under active tab (now inside FilterCard)' },
@@ -2513,29 +2514,46 @@ const LayoutSpec = {
     },
 
     /* ───── TOKEN DETAIL ────────────────────────────────────────────── */
-    // Phase 9c — chrome migrated. Symbol/Name labels shifted right + shrunk
-    // to clear back chrome. Body of panel (price chart, stats grid, etc.)
-    // deferred to Phase 8e.
+    // 2026-04-28 scouting-page redesign — restructured into identity header,
+    // section-labeled control bands (Safety / Range / View / Unit), framed
+    // chart card with dynamic header, and Token Stats grid with edge accents.
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:    { x: -280, y: 618, w: 110, h: 28, type: 'label' },
-            backBtn:     { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
-            // 9c: title fits between back chrome right (x=-210) and mint chip left (x=100).
-            symbolLabel: { x: -55,  y: 600, w: 290, h: 36, type: 'label' },
-            nameLabel:   { x: -55,  y: 566, w: 290, h: 22, type: 'label' },
-            // 11 — body chrome.
-            mintChip:        { x: 200, y: 572, w: 200, h: 28, type: 'btnGhost' },
-            pickBtn:         { x: 0,   y: 525, w: 620, h: 48, type: 'btnPrimary' },
-            chartArea:       { x: 0,   y: 40,  w: 680, h: 640, type: 'group' },
-            chartLoadLabel:  { x: 0,   y: 0,   w: 300, h: 22, type: 'label',
+            // Identity band — Back at left, Symbol/Name centered, MintChip at right.
+            backLink:        { x: -300, y: 612, w: 100, h: 26, type: 'label' },
+            backBtn:         { x: -300, y: 612, w: 130, h: 34, type: 'btnGhost' },
+            symbolLabel:     { x:    0, y: 614, w: 320, h: 34, type: 'label' },
+            nameLabel:       { x:    0, y: 588, w: 320, h: 18, type: 'label' },
+            mintChip:        { x:  255, y: 612, w: 130, h: 26, type: 'btnGhost' },
+
+            // Slim premium CTA — narrower & shorter; teal halo via mkBtnHero.
+            pickBtn:         { x:    0, y: 552, w: 560, h: 42, type: 'btnPrimary' },
+
+            // Section labels — uppercase, mini, muted (lo-tier).
+            safetyHeader:    { x: -290, y: 506, w: 200, h: 14, type: 'label' },
+            rangeHeader:     { x: -290, y: 446, w: 200, h: 14, type: 'label' },
+            viewHeader:      { x: -200, y: 386, w: 120, h: 14, type: 'label' },
+            unitHeader:      { x:  140, y: 386, w: 120, h: 14, type: 'label' },
+
+            // Chart module — wrapped in an opaque dark card to block BackgroundFX bleed.
+            chartCard:       { x:    0, y:  60, w: 680, h: 600, type: 'group' },
+            chartHeader:     { x:    0, y: 268, w: 660, h: 18, type: 'label',
+                notes: 'rel to ChartCard center; e.g. "PRICE · 15m · USD"' },
+            chartArea:       { x:    0, y: -20, w: 660, h: 540, type: 'group',
+                notes: 'rel to ChartCard center; cc.Graphics surface' },
+            chartLoadLabel:  { x:    0, y:   0, w: 300, h: 22, type: 'label',
                 notes: 'rel to ChartArea center; shown while loading' },
-            status:          { x: 0,   y: -625, w: 660, h: 22, type: 'label' },
+
+            // Token Stats label.
+            statsHeader:     { x: -290, y: -310, w: 220, h: 14, type: 'label' },
+
+            status:          { x:    0, y: -625, w: 660, h: 20, type: 'label' },
         },
         templates: {
-            // 4 safety chips at y=465. Computed: -240 + s * 155.
+            // 4 safety chips — smaller chips below SafetyHeader at y=506.
             safetyChip: {
-                count: 4, w: 140, h: 32, y: 465,
+                count: 4, w: 130, h: 28, y: 474,
                 baseX: -240, gapX: 155,
                 defs: [
                     { key: 'mint',  label: '◎ Mint' },
@@ -2544,9 +2562,9 @@ const LayoutSpec = {
                     { key: 'top10', label: '◎ Top10' },
                 ],
             },
-            // 6 timeframe buttons at y=415. Computed: -275 + t * 90.
+            // 6 timeframe buttons below RangeHeader at y=446. Computed: -275 + t * 90.
             timeframeBtn: {
-                count: 6, w: 80, h: 32, y: 415,
+                count: 6, w: 80, h: 30, y: 414,
                 baseX: -275, gapX: 90,
                 defs: [
                     { key: '1m',  label: '1m'  },
@@ -2557,26 +2575,27 @@ const LayoutSpec = {
                     { key: '1D',  label: '1D'  },
                 ],
             },
-            // 4 denomination buttons at y=378. Pairs split across center.
+            // 4 denom toggles paired under VIEW / UNIT headers (y=386).
             denomBtn: {
-                count: 4, w: 90, h: 28, y: 378,
+                count: 4, w: 88, h: 26, y: 354,
                 defs: [
-                    { key: 'price', label: 'Price', x: -210 },
-                    { key: 'mcap',  label: 'MCap',  x: -110 },
-                    { key: 'usd',   label: 'USD',   x:  110 },
-                    { key: 'sol',   label: 'SOL',   x:  210 },
+                    { key: 'price', label: 'Price', x: -200 },
+                    { key: 'mcap',  label: 'MCap',  x: -100 },
+                    { key: 'usd',   label: 'USD',   x:  100 },
+                    { key: 'sol',   label: 'SOL',   x:  200 },
                 ],
             },
-            // 6 stat cards in 3×2 grid (y=-340 / -420). Internal: header + value.
+            // 6 stat cards in 3×2 grid (y=-365 / -445). Each gets a top-edge
+            // accent strip; "dynamic" recolored at runtime per change sign.
             detailStatCard: {
                 count: 6, w: 210, h: 70,
                 defs: [
-                    { key: 'price',   label: 'PRICE',   x: -225, y: -340 },
-                    { key: 'liq',     label: 'LIQ',     x:  0,   y: -340 },
-                    { key: 'mcap',    label: 'MCAP',    x:  225, y: -340 },
-                    { key: 'vol24h',  label: 'VOL 24H', x: -225, y: -420 },
-                    { key: 'change',  label: '24H',     x:  0,   y: -420 },
-                    { key: 'holders', label: 'HOLDERS', x:  225, y: -420 },
+                    { key: 'price',   label: 'PRICE',   x: -225, y: -365, accent: 'amber' },
+                    { key: 'liq',     label: 'LIQ',     x:  0,   y: -365, accent: 'blue'  },
+                    { key: 'mcap',    label: 'MCAP',    x:  225, y: -365, accent: 'blue'  },
+                    { key: 'vol24h',  label: 'VOL 24H', x: -225, y: -445, accent: 'blue'  },
+                    { key: 'change',  label: '24H',     x:  0,   y: -445, accent: 'dynamic' },
+                    { key: 'holders', label: 'HOLDERS', x:  225, y: -445, accent: 'slate' },
                 ],
                 header: { x: 0, y: 16,  w: 200, h: 22 },
                 value:  { x: 0, y: -14, w: 200, h: 28 },
@@ -2584,6 +2603,8 @@ const LayoutSpec = {
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
+            ['ChartHeaderLabel', 'ChartCard'],
+            ['ChartArea', 'ChartCard'],
         ],
     },
 

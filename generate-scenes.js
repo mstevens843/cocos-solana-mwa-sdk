@@ -3725,17 +3725,15 @@ function generate() {
     // ═══════════════════════════════════════════════════════════════
     // Session 13 — TOKEN DETAIL PANEL (chart + stats)
     // Sibling of TokenDuelPanel. Shown when user taps a feed row.
-    // Layout:
-    //   +625  ← Back link (top-left, reusing chrome style)
-    //   +600  $TICKER symbol (gold, bold)
-    //   +572  Name · 4chars…4chars copy chip
-    //   +525  Pick/Unpick big CTA
-    //   +465  Safety chips row (Mint / Auth / LP / Top10)
-    //   +415  Timeframe row (1m / 5m / 15m / 1H / 4H / 1D)
-    //   +378  Denom row (Price / MCap  |  USD / SOL)
-    //    +40  Chart area (660×640 frame with cc.Graphics)
-    //   -340  Stats grid (3×2 cards: PRICE, LIQ, MCAP, VOL 24H, 24H%, HOLDERS)
-    //   -620  Status line
+    // 2026-04-28 scouting redesign:
+    //   +612  Identity band — ← Back · centered $SYMBOL/Name · MintChip
+    //   +552  Slim premium CTA (560×42) with teal halo
+    //   +506  SAFETY label  · +474 4 safety chips
+    //   +446  RANGE label   · +414 6 timeframe buttons
+    //   +386  VIEW / UNIT labels · +354 4 denom toggles
+    //    +60  ChartCard (680×600 opaque) — header inside + ChartArea
+    //   -310  TOKEN STATS label · -365/-445 6-card grid w/ edge accents
+    //   -625  Status line
     // ═══════════════════════════════════════════════════════════════
     const tdetN = sb.e.length;
     sb.node('TokenDetailPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
@@ -3744,6 +3742,8 @@ function generate() {
 
     // Chrome from LAYOUT.TokenDetailPanel.elements.
     const TDETE = LAYOUT.TokenDetailPanel.elements;
+
+    // ─── Identity band ───────────────────────────────────────────────
     const detBackLink = mkLabel(sb, 'BackLinkLabel', tdetN, '← Back', 18,
         TDETE.backLink.y, TDETE.backLink.w, TDETE.backLink.h, 160, 170, 190);
     sb.e[detBackLink]._lpos = v3(TDETE.backLink.x, TDETE.backLink.y, 0);
@@ -3762,38 +3762,67 @@ function generate() {
     });
     sb.e[detBackBtn]._components = [rf(detBackBtnUT), rf(detBackBtnBtn)];
 
-    // Symbol + name. 9c: shifted right + shrunk to clear back chrome.
+    // Symbol (hero) + Name (secondary), centered as a single identity block.
     const detSymbol = mkLabel(sb, 'DetailSymbolLabel', tdetN, '$—', 26,
-        TDETE.symbolLabel.y, TDETE.symbolLabel.w, TDETE.symbolLabel.h, 255, 255, 255);
-    const detSymbolL = sb.e[detSymbol]._components[1].__id__;
-    sb.e[detSymbolL]._horizontalAlign = 0;
-    sb.e[detSymbolL]._isBold = true;
+        TDETE.symbolLabel.y, TDETE.symbolLabel.w, TDETE.symbolLabel.h, 244, 245, 249);
     sb.e[detSymbol]._lpos = v3(TDETE.symbolLabel.x, TDETE.symbolLabel.y, 0);
-
+    style(sb, detSymbol, { bold: true, spacing: 1 });
     const detName = mkLabel(sb, 'DetailNameLabel', tdetN, '', 13,
-        TDETE.nameLabel.y, TDETE.nameLabel.w, TDETE.nameLabel.h, 140, 145, 165);
-    const detNameL = sb.e[detName]._components[1].__id__;
-    sb.e[detNameL]._horizontalAlign = 0;
+        TDETE.nameLabel.y, TDETE.nameLabel.w, TDETE.nameLabel.h, 168, 174, 201);
     sb.e[detName]._lpos = v3(TDETE.nameLabel.x, TDETE.nameLabel.y, 0);
 
+    // MintChip — small pill at the right edge of the identity row.
     const detMintChip = mkBtnXY(sb, 'DetailMintChip', tdetN, 'mint…',
         TDETE.mintChip.x, TDETE.mintChip.y, TDETE.mintChip.w, TDETE.mintChip.h, 28, 34, 48);
+    style(sb, detMintChip, { spacing: 1, fontSize: 12 });
 
-    // Pick/Unpick CTA.
-    const detPickBtn = mkBtn(sb, 'DetailPickUnpickButton', tdetN, '+ Pick',
-        TDETE.pickBtn.y, TDETE.pickBtn.w, TDETE.pickBtn.h, 48, 198, 155);
+    // ─── Slim premium CTA — teal halo + ripple via mkBtnHero ─────────
+    const detPickHero = mkBtnHero(sb, 'DetailPickUnpickButton', tdetN, '+ Pick Token',
+        0, TDETE.pickBtn.y, TDETE.pickBtn.w, TDETE.pickBtn.h, 48, 198, 155, { glowAlpha: 90, glowPad: 14 });
+    const detPickGlow = detPickHero.glow;
+    const detPickBtn  = detPickHero.btn;
 
-    // Safety chips row from LAYOUT.TokenDetailPanel.templates.safetyChip.
+    // ─── Section labels (uppercase mini, lo-tier) ────────────────────
+    const detSafetyHdr = mkLabel(sb, 'SafetyHeaderLabel', tdetN, 'SAFETY', 11,
+        TDETE.safetyHeader.y, TDETE.safetyHeader.w, TDETE.safetyHeader.h, 93, 100, 133);
+    sb.e[detSafetyHdr]._lpos = v3(TDETE.safetyHeader.x, TDETE.safetyHeader.y, 0);
+    const detSafetyHdrL = sb.e[detSafetyHdr]._components[1].__id__;
+    sb.e[detSafetyHdrL]._horizontalAlign = 0;
+    sb.e[detSafetyHdrL]._spacingX = 2;
+
+    const detRangeHdr = mkLabel(sb, 'RangeHeaderLabel', tdetN, 'RANGE', 11,
+        TDETE.rangeHeader.y, TDETE.rangeHeader.w, TDETE.rangeHeader.h, 93, 100, 133);
+    sb.e[detRangeHdr]._lpos = v3(TDETE.rangeHeader.x, TDETE.rangeHeader.y, 0);
+    const detRangeHdrL = sb.e[detRangeHdr]._components[1].__id__;
+    sb.e[detRangeHdrL]._horizontalAlign = 0;
+    sb.e[detRangeHdrL]._spacingX = 2;
+
+    const detViewHdr = mkLabel(sb, 'ViewHeaderLabel', tdetN, 'VIEW', 11,
+        TDETE.viewHeader.y, TDETE.viewHeader.w, TDETE.viewHeader.h, 93, 100, 133);
+    sb.e[detViewHdr]._lpos = v3(TDETE.viewHeader.x, TDETE.viewHeader.y, 0);
+    const detViewHdrL = sb.e[detViewHdr]._components[1].__id__;
+    sb.e[detViewHdrL]._horizontalAlign = 0;
+    sb.e[detViewHdrL]._spacingX = 2;
+
+    const detUnitHdr = mkLabel(sb, 'UnitHeaderLabel', tdetN, 'UNIT', 11,
+        TDETE.unitHeader.y, TDETE.unitHeader.w, TDETE.unitHeader.h, 93, 100, 133);
+    sb.e[detUnitHdr]._lpos = v3(TDETE.unitHeader.x, TDETE.unitHeader.y, 0);
+    const detUnitHdrL = sb.e[detUnitHdr]._components[1].__id__;
+    sb.e[detUnitHdrL]._horizontalAlign = 0;
+    sb.e[detUnitHdrL]._spacingX = 2;
+
+    // ─── Safety chips row ────────────────────────────────────────────
     const SC = LAYOUT.TokenDetailPanel.templates.safetyChip;
     const safetyIndices = [];
     for (let s = 0; s < SC.count; s++) {
         const sx = SC.baseX + s * SC.gapX;
         const sN = mkBtnXY(sb, `SafetyChip_${SC.defs[s].key}`, tdetN, SC.defs[s].label,
             sx, SC.y, SC.w, SC.h, 28, 34, 48);
+        style(sb, sN, { fontSize: 13 });
         safetyIndices.push(sN);
     }
 
-    // Timeframe row from LAYOUT.TokenDetailPanel.templates.timeframeBtn.
+    // ─── Timeframe segmented control ─────────────────────────────────
     const TF = LAYOUT.TokenDetailPanel.templates.timeframeBtn;
     const tfIndices = [];
     for (let t = 0; t < TF.count; t++) {
@@ -3803,21 +3832,38 @@ function generate() {
         tfIndices.push(tN);
     }
 
-    // Denom row from LAYOUT.TokenDetailPanel.templates.denomBtn (Price/MCap | USD/SOL).
+    // ─── Denom toggles (paired Price/MCap | USD/SOL) ─────────────────
     const DB = LAYOUT.TokenDetailPanel.templates.denomBtn;
     const denomBtnIndices = [];
     for (const d of DB.defs) {
         const dN = mkBtnXY(sb, `Denom_${d.key}`, tdetN, d.label,
             d.x, DB.y, DB.w, DB.h, 28, 34, 48);
+        style(sb, dN, { fontSize: 12 });
         denomBtnIndices.push(dN);
     }
     const [denomPriceBtn, denomMcapBtn, denomUsdBtn, denomSolBtn] = denomBtnIndices;
 
-    // Chart area — cc.Graphics renders candles here.
+    // ─── Chart card wrapper (opaque, blocks BG halo bleed) ───────────
+    const chartCardN = sb.e.length;
+    sb.node('ChartCard', tdetN, [], [], v3(TDETE.chartCard.x, TDETE.chartCard.y, 0));
+    const chartCardUT = sb.ut(chartCardN, TDETE.chartCard.w, TDETE.chartCard.h);
+    const chartCardSpr = sb.spr(chartCardN, 18, 22, 36); // dark surface, alpha=255
+    sb.e[chartCardN]._components = [rf(chartCardUT), rf(chartCardSpr)];
+
+    // Subtle blue hairline at top of chart card (low alpha = framing, not loud).
+    const chartCardEdge = mkCardEdge(sb, chartCardN, TDETE.chartCard.w, TDETE.chartCard.h, 56, 148, 252, 80);
+
+    // Chart header label inside the card — "PRICE · 15m · USD" (AppUI rewrites).
+    const chartHeaderLbl = mkLabel(sb, 'ChartHeaderLabel', chartCardN, 'PRICE · 15m · USD', 11,
+        TDETE.chartHeader.y, TDETE.chartHeader.w, TDETE.chartHeader.h, 168, 174, 201);
+    sb.e[chartHeaderLbl]._lpos = v3(TDETE.chartHeader.x, TDETE.chartHeader.y, 0);
+    const chartHeaderLblL = sb.e[chartHeaderLbl]._components[1].__id__;
+    sb.e[chartHeaderLblL]._spacingX = 2;
+
+    // ChartArea — cc.Graphics surface for candles + volume bars.
     const chartN = sb.e.length;
-    sb.node('ChartArea', tdetN, [], [], v3(TDETE.chartArea.x, TDETE.chartArea.y, 0));
+    sb.node('ChartArea', chartCardN, [], [], v3(TDETE.chartArea.x, TDETE.chartArea.y, 0));
     const chartUT = sb.ut(chartN, TDETE.chartArea.w, TDETE.chartArea.h);
-    const chartSpr = sb.spr(chartN, 14, 18, 28);
     const chartGfx = sb.add({
         __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(chartN), _enabled: true, __prefab: null,
@@ -3827,13 +3873,31 @@ function generate() {
         _lineJoin: 2, _lineCap: 0, _miterLimit: 10,
         _id: gid(),
     });
-    sb.e[chartN]._components = [rf(chartUT), rf(chartSpr), rf(chartGfx)];
+    sb.e[chartN]._components = [rf(chartUT), rf(chartGfx)];
 
-    // Chart placeholder label (shown while loading).
+    // Chart placeholder label (shown while loading) — child of ChartArea.
     const chartLoadLbl = mkLabel(sb, 'ChartStatusLabel', chartN, 'Loading chart…', 14,
         TDETE.chartLoadLabel.y, TDETE.chartLoadLabel.w, TDETE.chartLoadLabel.h, 140, 150, 170);
 
-    // Stats grid: 6 cards from LAYOUT.TokenDetailPanel.templates.detailStatCard.
+    sb.e[chartCardN]._children = [rf(chartCardEdge), rf(chartHeaderLbl), rf(chartN)];
+
+    // ─── Token Stats label ───────────────────────────────────────────
+    const detStatsHdr = mkLabel(sb, 'StatsHeaderLabel', tdetN, 'TOKEN STATS', 11,
+        TDETE.statsHeader.y, TDETE.statsHeader.w, TDETE.statsHeader.h, 93, 100, 133);
+    sb.e[detStatsHdr]._lpos = v3(TDETE.statsHeader.x, TDETE.statsHeader.y, 0);
+    const detStatsHdrL = sb.e[detStatsHdr]._components[1].__id__;
+    sb.e[detStatsHdrL]._horizontalAlign = 0;
+    sb.e[detStatsHdrL]._spacingX = 2;
+
+    // ─── Stats grid: 6 cards with per-def edge accent colors ─────────
+    // Accent palette (Palette.cardEdge.*):
+    //   amber=255,210,74  blue=56,148,252  slate=93,100,133  dynamic=168,174,201
+    const STAT_ACCENT = {
+        amber:   [255, 210,  74],
+        blue:    [ 56, 148, 252],
+        slate:   [ 93, 100, 133],
+        dynamic: [168, 174, 201], // neutral default — AppUI recolors at runtime
+    };
     const DSC = LAYOUT.TokenDetailPanel.templates.detailStatCard;
     const statIndices = [];
     for (const d of DSC.defs) {
@@ -3853,8 +3917,8 @@ function generate() {
         const valL  = sb.lbl(valN, '—', 20, 255, 255, 255);
         sb.e[valL]._isBold = true;
         sb.e[valN]._components = [rf(valUT), rf(valL)];
-        // Phase 14 (B4): blue edge accent — data/price column.
-        const detEdge = mkCardEdge(sb, cardN, DSC.w, DSC.h, 56, 148, 252);
+        const accent = STAT_ACCENT[d.accent] ?? STAT_ACCENT.blue;
+        const detEdge = mkCardEdge(sb, cardN, DSC.w, DSC.h, accent[0], accent[1], accent[2]);
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
         sb.e[cardN]._children = [rf(lblN), rf(valN), rf(detEdge)];
         statIndices.push(cardN);
@@ -3866,11 +3930,13 @@ function generate() {
     sb.e[tdetN]._children = [
         rf(detBackLink), rf(detBackBtn),
         rf(detSymbol), rf(detName), rf(detMintChip),
-        rf(detPickBtn),
+        rf(detPickGlow), rf(detPickBtn),
+        rf(detSafetyHdr), rf(detRangeHdr), rf(detViewHdr), rf(detUnitHdr),
         ...safetyIndices.map(rf),
         ...tfIndices.map(rf),
         rf(denomPriceBtn), rf(denomMcapBtn), rf(denomUsdBtn), rf(denomSolBtn),
-        rf(chartN),
+        rf(chartCardN),
+        rf(detStatsHdr),
         ...statIndices.map(rf),
         rf(detStatus),
     ];

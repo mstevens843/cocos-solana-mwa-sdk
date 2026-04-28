@@ -122,3 +122,29 @@ export function rankIcon(rank: number): RankIconName {
     if (rank === 3) return 'medalBronze';
     return 'trophy';
 }
+
+// Dev-only fixture for the Trophies tab so design work can proceed before any
+// weekly season has run (no cNFTs in the trophy tree yet). Toggled at runtime
+// via `globalThis.TD_MOCK_TROPHIES = true` and consumed from AppUI's
+// `_refreshTrophies` only when the live Helius result is empty.
+export function mockTrophies(): Trophy[] {
+    const now = Math.floor(Date.now() / 1000);
+    const week = 86400 * 7;
+    const seed: Array<{ weekId: number; rank: number; wins: number }> = [
+        { weekId: 6, rank: 1, wins: 12 },
+        { weekId: 5, rank: 1, wins: 9 },
+        { weekId: 4, rank: 2, wins: 7 },
+        { weekId: 3, rank: 3, wins: 5 },
+        { weekId: 2, rank: 3, wins: 4 },
+        { weekId: 1, rank: 4, wins: 2 },
+    ];
+    return seed.map((s, i) => ({
+        mint: `mock-w${s.weekId}-r${s.rank}`,
+        weekId: s.weekId,
+        rank: s.rank,
+        wins: s.wins,
+        name: `Token Duel · Week #${s.weekId} · ${s.rank}${s.rank === 1 ? 'st' : s.rank === 2 ? 'nd' : s.rank === 3 ? 'rd' : 'th'}`,
+        imageUri: '',
+        mintedAt: now - i * week,
+    }));
+}
