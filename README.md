@@ -1,5 +1,7 @@
 # Cocos Creator MWA SDK for Solana
 
+> **Colosseum Frontier 2026 submission** (`betting-duel` branch — SDK + Token Duel demo game). The SDK code in `assets/scripts/walletService/` is identical to the `master` branch, which carries a clean example app exercising the full MWA 2.0 surface. See [`PITCH.md`](PITCH.md) for the market thesis.
+
 A complete Solana Mobile Wallet Adapter (MWA) 2.0 SDK for Cocos Creator 3.8+ — bringing full MWA API parity to the dominant mobile game engine in Asia (1.7M+ developers, zero prior Solana integration).
 
 Built and tested on Solana Seeker hardware with Phantom, Solflare, Backpack, Jupiter, and Seed Vault.
