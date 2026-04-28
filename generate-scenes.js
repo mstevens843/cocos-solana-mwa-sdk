@@ -923,12 +923,12 @@ function generate() {
     sb.e[cardBgN]._children = [rf(cardEdgeN)];
 
     // ── Action stack ────────────────────────────────────────────────
-    // PRIMARY — Play Token Duel (gold, matches the title color above).
-    // 2026-04-27 UX upgrade — subtitle rewrite "Use real funds · compete for SOL"
-    // → "Stake SOL · Win SOL" (sharper stakes language).
+    // PRIMARY — Enter the Duel (gold, matches the title color above).
+    // 2026-04-28 hackathon UX — copy upgrade "Play Token Duel" → "Enter the
+    // Duel" (game-first command verb). Subtitle "Stake SOL · Win SOL" stays.
     const { glow: connectGlow, btn: connectBtn } = mkBtnHeroLayered(sb,
         'ConnectButton', lpN,
-        'Play Token Duel', 'Stake SOL · Win SOL',
+        'Enter the Duel', 'Stake SOL · Win SOL',
         LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
         255, 210, 74,
         { gradient: true, haloAlpha: 100 });
@@ -946,9 +946,19 @@ function generate() {
     // Trust line — directly under Connect, inside card. Small + muted.
     // 2026-04-27 UX upgrade — green-tinted (150, 220, 180) for subtle
     // reassurance accent (was neutral text.mid 168/174/201).
+    // 2026-04-28 hackathon UX — font 14 → 12 to reduce visual weight (now
+    // shares space with new LiveSignal label below).
     const trustLine = mkLabel(sb, 'TrustLineLabel', lpN,
         '🔒  Secure · Non-custodial · You control your wallet',
-        14, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
+        12, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
+
+    // 2026-04-28 hackathon UX — "live system" sub-CTA cue between trust line
+    // and Guest button. Teal-tinted (20, 241, 149 ≈ Theme.accent.teal) so it
+    // pairs visually with the green dot. Static — no RPC dependency on first
+    // paint. Goal: instant signal that this is a live, populated game.
+    const liveSignal = mkLabel(sb, 'LiveSignalLabel', lpN,
+        '🟢  Live now · Join in seconds',
+        13, LE.liveSignalLabel.y, LE.liveSignalLabel.w, LE.liveSignalLabel.h, 20, 241, 149);
 
     // SECONDARY — Reconnect (ghost-teal, conditional via AppUI).
     const { btn: reconnBtn } = mkBtnHeroLayered(sb,
@@ -990,6 +1000,7 @@ function generate() {
         rf(cardBgN),                         // ← card backdrop FIRST
         rf(connectGlow), rf(connectBtn),
         rf(trustLine),
+        rf(liveSignal),                      // 2026-04-28 hackathon UX — sub-CTA energy cue
         rf(reconnBtn),
         rf(guestGlow), rf(guestBtn),
         rf(statusPill),
@@ -1229,11 +1240,10 @@ function generate() {
     });
     sb.e[homeRecentCardElevationN]._components = [rf(homeRecentCardElevationUT), rf(homeRecentCardElevationSpr)];
 
-    // ── UNIFIED RECENT MATCH CARD (V3 — RecentMatch + DailyStreak merged) ──
-    // 680×184 surface card with 3×3 stat grid + 2 dividers. Header reads
-    // "RECENT MATCH · DAILY". All 9 stat Labels keep their existing names
-    // (HomeMatchChipVal_* + HomeChalChipVal_*) — AppUI value setters work
-    // unchanged, just look under HomeMatchTicker now (instead of two cards).
+    // ── RECENT MATCH CARD (V4 — single-row, daily row dropped) ──
+    // 680×96 surface card with 5-chip stat strip + 1 divider. Header reads
+    // "RECENT MATCH". Daily-challenge data lives in DailyChallengePanel
+    // (Trophy header button) — not mirrored here anymore.
     // Stays a cc.Button so taps still route to SpectatorPanel.
     const matchTickerN = sb.e.length;
     sb.node('HomeMatchTicker', hpN, [], [], v3(HE.homeMatchTicker.x, HE.homeMatchTicker.y, 0));
@@ -1260,7 +1270,7 @@ function generate() {
     sb.e[matchTickerN]._components = [rf(matchTickerUT), rf(matchTickerSpr), rf(matchTickerBtn)];
     sb.e[matchTickerN]._active = false;
 
-    const tickerHeader = mkLabel(sb, 'HomeMatchTickerHeader', matchTickerN, 'RECENT MATCH · DAILY', 11,
+    const tickerHeader = mkLabel(sb, 'HomeMatchTickerHeader', matchTickerN, 'RECENT MATCH', 11,
         HE.homeMatchTickerHeader.y, HE.homeMatchTickerHeader.w, HE.homeMatchTickerHeader.h, 93, 100, 133);
     style(sb, tickerHeader, { spacing: 2 });
 
@@ -1292,42 +1302,14 @@ function generate() {
     });
     sb.e[matchDividerN]._components = [rf(matchDividerUT), rf(matchDividerSpr)];
 
-    // V3 NEW — second 1-px divider between row 2 and row 3 (daily group).
-    const streakDividerN = sb.e.length;
-    sb.node('HomeStreakChipDivider', matchTickerN, [], [], v3(HE.homeStreakChipDivider.x, HE.homeStreakChipDivider.y, 0));
-    const streakDividerUT = sb.ut(streakDividerN, HE.homeStreakChipDivider.w, HE.homeStreakChipDivider.h);
-    const streakDividerSpr = sb.add({
-        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(streakDividerN), _enabled: true, __prefab: null,
-        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(93, 100, 133, 60),
-        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-        _type: 1, _fillType: 0, _sizeMode: 0,
-        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-        _id: gid(),
-    });
-    sb.e[streakDividerN]._components = [rf(streakDividerUT), rf(streakDividerSpr)];
-
-    // V3 — 4 daily chal chips REPARENTED inside HomeMatchTicker.
-    // DailyStreakStrip dropped from scene; AppUI looks up HomeChalChip_*
-    // under HomeMatchTicker now (see _bindHomeChips V3 update).
-    // Layout: row2 right cell (DAY) shares y=-22 with duration/created;
-    // CHALLENGES/POOL/RAKE form row3 at y=-78.
-    const chalChipDef = HE.homeChalChip;
-    const chalChipRefs = [];
-    for (let i = 0; i < chalChipDef.keys.length; i++) {
-        const cg = mkChipGroup(sb, 'HomeChal', chalChipDef.keys[i], matchTickerN,
-            chalChipDef.xs[i], chalChipDef.ys[i], chalChipDef.ws[i], chalChipDef.h,
-            chalChipDef.labels[i], '—', chalChipDef.keyFs, chalChipDef.valFs);
-        chalChipRefs.push(rf(cg.container));
-    }
-
+    // V4 — second divider + 4 daily chal chips REMOVED. Daily-challenge
+    // data lives in DailyChallengePanel (accessible via Trophy header
+    // button). HomeMatchTicker now shows just the 5-chip recent match
+    // summary in a single row layout.
     sb.e[matchTickerN]._children = [
         rf(tickerHeader),
-        rf(matchDividerN), rf(streakDividerN),
+        rf(matchDividerN),
         ...matchChipRefs,
-        ...chalChipRefs,
     ];
 
     // Tournament alternate — same slot as ticker, mutually exclusive.
@@ -1357,27 +1339,18 @@ function generate() {
         return { sub: subN, chev: chevN };
     }
 
-    // V2 — CTA hierarchy via tiered glow intensity:
-    //   Start (primary): alpha 100, pad 16 — most dominant
-    //   Find  (mid):     alpha 80,  pad 12
-    //   Bot   (subord):  alpha 60,  pad 10 — least dominant
+    // V4 — CTA hierarchy ("Play Now" hub):
+    //   Find  (HERO):      alpha 110, pad 16 — instant play, biggest glow
+    //   Start (secondary): alpha 70,  pad 12 — purple host action
+    //   MIP   (neutral):   ghost charcoal, no glow — contextual status
+    //   Bot   (training):  alpha 60,  pad 10 — gold full-width, two-line subtitle
 
-    // Start Match — primary violet hero (host).
-    const { glow: startMatchGlow, btn: startMatch } = mkBtnHero(sb,
-        'StartMatchButton', hpN, 'Start Match',
-        HE.startMatchBtn.x, HE.startMatchBtn.y, HE.startMatchBtn.w, HE.startMatchBtn.h,
-        VAR('primary').r, VAR('primary').g, VAR('primary').b,
-        { glowAlpha: 100, glowPad: 16 });
-    style(sb, startMatch, { bold: true });
-    attachCTAExtras(startMatch, 'StartMatchSubtitle', 'Create a match · Invite or wait',
-        'StartMatchChevron', HE.startMatchSubtitle, HE.startMatchChevron);
-
-    // Find Match — success teal hero (browse).
+    // Find Match — V4 HERO (instant play).
     const { glow: findMatchGlow, btn: findMatch } = mkBtnHero(sb,
         'FindMatchButton', hpN, 'Find Match',
         HE.findMatchBtn.x, HE.findMatchBtn.y, HE.findMatchBtn.w, HE.findMatchBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { glowAlpha: 80, glowPad: 12 });
+        { glowAlpha: 110, glowPad: 16 });
     style(sb, findMatch, { bold: true });
     attachCTAExtras(findMatch, 'FindMatchSubtitle', 'Join an open match instantly',
         'FindMatchChevron', HE.findMatchSubtitle, HE.findMatchChevron);
@@ -1403,12 +1376,41 @@ function generate() {
     sb.e[findMatchBadgeN]._children = [rf(findMatchBadgeLbl)];
     sb.e[findMatchBadgeN]._active = false;
 
-    // 2026-04-27 — Matches In Progress — teal primary (resume your live games).
+    // V4 NEW — FindMatch activity dot (small teal pulsing dot, upper-left).
+    const findMatchDotN = sb.e.length;
+    sb.node('FindMatchActivityDot', hpN, [], [], v3(HE.findMatchActivityDot.x, HE.findMatchActivityDot.y, 0));
+    const findMatchDotUT = sb.ut(findMatchDotN, HE.findMatchActivityDot.w, HE.findMatchActivityDot.h);
+    const findMatchDotSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(findMatchDotN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 241, 149, 255),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[findMatchDotN]._components = [rf(findMatchDotUT), rf(findMatchDotSpr)];
+    sb.e[findMatchDotN]._active = false;
+
+    // V4 — Start Match demoted to secondary purple (was hero, now h=96 below FindMatch).
+    const { glow: startMatchGlow, btn: startMatch } = mkBtnHero(sb,
+        'StartMatchButton', hpN, 'Start Match',
+        HE.startMatchBtn.x, HE.startMatchBtn.y, HE.startMatchBtn.w, HE.startMatchBtn.h,
+        VAR('primary').r, VAR('primary').g, VAR('primary').b,
+        { glowAlpha: 70, glowPad: 12 });
+    style(sb, startMatch, { bold: true });
+    attachCTAExtras(startMatch, 'StartMatchSubtitle', 'Create a match · Invite or wait',
+        'StartMatchChevron', HE.startMatchSubtitle, HE.startMatchChevron);
+
+    // V4 — Matches In Progress NEUTRAL (charcoal/ghost, no glow halo).
+    const mipColor = P.bg.card; // dark slate #1E2438 — true neutral, distinct from teal/violet/gold.
     const { glow: mipGlow, btn: mipBtn } = mkBtnHero(sb,
         'MatchesInProgressButton', hpN, 'Matches In Progress',
         HE.matchesInProgressBtn.x, HE.matchesInProgressBtn.y, HE.matchesInProgressBtn.w, HE.matchesInProgressBtn.h,
-        VAR('success').r, VAR('success').g, VAR('success').b,
-        { glowAlpha: 70, glowPad: 12 });
+        mipColor.r, mipColor.g, mipColor.b,
+        { ghost: true });
     style(sb, mipBtn, { bold: true });
     attachCTAExtras(mipBtn, 'MatchesInProgressSubtitle', 'Resume your active games',
         'MatchesInProgressChevron', HE.matchesInProgressSubtitle, HE.matchesInProgressChevron);
@@ -1434,111 +1436,66 @@ function generate() {
     sb.e[mipBadgeN]._children = [rf(mipBadgeLbl)];
     sb.e[mipBadgeN]._active = false;
 
-    // V3 — Bot Match demoted: amberDim (was full amber), narrower (600 vs 680)
-    // and shorter (72 vs 84). Glow alpha stays low so it doesn't fight Start.
+    // V4 NEW — MIP activity dot (small teal pulsing dot, left edge).
+    const mipDotN = sb.e.length;
+    sb.node('MatchesInProgressActivityDot', hpN, [], [], v3(HE.matchesInProgressActivityDot.x, HE.matchesInProgressActivityDot.y, 0));
+    const mipDotUT = sb.ut(mipDotN, HE.matchesInProgressActivityDot.w, HE.matchesInProgressActivityDot.h);
+    const mipDotSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(mipDotN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(20, 241, 149, 255),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[mipDotN]._components = [rf(mipDotUT), rf(mipDotSpr)];
+    sb.e[mipDotN]._active = false;
+
+    // V4 — Bot Match grows full-width (w 600→680, h 72→88) and absorbs Training
+    // copy on a second subtitle line ("Train before real matches" + "N free
+    // matches left"). Stays gold/amberDim so the training affordance reads.
     const botColor = rgba(P.accent.amberDim);
     const { glow: botMatchGlow, btn: botMatch } = mkBtnHero(sb,
         'BotMatchButton', hpN, 'Bot Match',
         HE.botMatchBtn.x, HE.botMatchBtn.y, HE.botMatchBtn.w, HE.botMatchBtn.h,
         botColor.r, botColor.g, botColor.b,
-        { glowAlpha: 50, glowPad: 8 });
+        { glowAlpha: 60, glowPad: 10 });
     style(sb, botMatch, { bold: true });
     attachCTAExtras(botMatch, 'BotMatchSubtitle', 'Train before real matches',
         'BotMatchChevron', HE.botMatchSubtitle, HE.botMatchChevron);
+    // V4 NEW — second subtitle line carries the free-match counter (was on
+    // the now-deleted Training card). AppUI._setBotMatchTrainingLine writes here.
+    const botMatchSubLine2N = mkLabel(sb, 'BotMatchSubtitleLine2', botMatch, '— free matches left', 13,
+        HE.botMatchSubtitleLine2.y, HE.botMatchSubtitleLine2.w, HE.botMatchSubtitleLine2.h, 168, 174, 201);
+    sb.e[botMatchSubLine2N]._lpos = v3(HE.botMatchSubtitleLine2.x, HE.botMatchSubtitleLine2.y, 0);
+    {
+        const existing = sb.e[botMatch]._children ?? [];
+        sb.e[botMatch]._children = [...existing, rf(botMatchSubLine2N)];
+    }
 
-    // ── TRAINING / MASCOT CARD ────────────────────────────────────────
-    // Mascot + "TRAINING MODE" copy + reparented HomeStatusLabel (thin
-    // lo-tier footer driven by AppUI._homeStatus).
-    const trainingCardN = sb.e.length;
-    sb.node('HomeTrainingCard', hpN, [], [], v3(HE.homeTrainingCard.x, HE.homeTrainingCard.y, 0));
-    const trainingCardUT = sb.ut(trainingCardN, HE.homeTrainingCard.w, HE.homeTrainingCard.h);
-    const trainingCardSpr = sb.add({
-        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(trainingCardN), _enabled: true, __prefab: null,
-        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(P.bg.surface.r, P.bg.surface.g, P.bg.surface.b, 230),
-        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-        _type: 1, _fillType: 0, _sizeMode: 0,
-        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-        _id: gid(),
-    });
-    sb.e[trainingCardN]._components = [rf(trainingCardUT), rf(trainingCardSpr)];
-
-    // V2 — soft amber glow halo BEHIND mascot. Renders before mascot in the
-    // children list so it sits underneath. Subtle radial-feel via a single
-    // sprite at low alpha, sized larger than the mascot container.
-    const trainingMascotGlowN = sb.e.length;
-    sb.node('TrainingMascotGlow', trainingCardN, [], [], v3(HE.trainingMascotGlow.x, HE.trainingMascotGlow.y, 0));
-    const trainingMascotGlowUT = sb.ut(trainingMascotGlowN, HE.trainingMascotGlow.w, HE.trainingMascotGlow.h);
-    const trainingMascotGlowSpr = sb.add({
-        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(trainingMascotGlowN), _enabled: true, __prefab: null,
-        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(255, 180, 84, 60),
-        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-        _type: 1, _fillType: 0, _sizeMode: 0,
-        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-        _id: gid(),
-    });
-    sb.e[trainingMascotGlowN]._components = [rf(trainingMascotGlowUT), rf(trainingMascotGlowSpr)];
-
-    // MascotContainer — REPARENTED inside training card. MascotController
-    // added by AppUI.start() at runtime; Seedance frames cycle via
-    // setSpriteSheet.
+    // ── V4 — TRAINING / MASCOT CARD REMOVED ───────────────────────────
+    // HomeTrainingCard and its 6 children deleted. Bot Match card now
+    // carries the "Train before real matches" + "N free matches left"
+    // copy on its two-line subtitle. MascotContainer kept off-flow as
+    // a panel-root child so AppUI.MascotController.attach() doesn't 404
+    // when Home is active (mascot only renders inside PostMatchPanel
+    // now). HomeStatusLabel reparented to panel root for AppUI._homeStatus.
     const mascotN = sb.e.length;
-    sb.node('MascotContainer', trainingCardN, [], [], v3(HE.mascot.x, HE.mascot.y, 0));
+    sb.node('MascotContainer', hpN, [], [], v3(HE.mascot.x, HE.mascot.y, 0));
     const mascotUT = sb.ut(mascotN, HE.mascot.w, HE.mascot.h);
     sb.e[mascotN]._components = [rf(mascotUT)];
+    sb.e[mascotN]._active = false;
 
-    const trainingTitle = mkLabel(sb, 'HomeTrainingTitleLabel', trainingCardN, 'TRAINING MODE', 14,
-        HE.homeTrainingTitleLabel.y, HE.homeTrainingTitleLabel.w, HE.homeTrainingTitleLabel.h, 255, 210, 74);
-    sb.e[trainingTitle]._lpos = v3(HE.homeTrainingTitleLabel.x, HE.homeTrainingTitleLabel.y, 0);
-    style(sb, trainingTitle, { bold: true, spacing: 2 });
-    {
-        const lblComp = sb.e[sb.e[trainingTitle]._components[1].__id__];
-        lblComp._horizontalAlign = 0;
-    }
-
-    const trainingBody = mkLabel(sb, 'HomeTrainingBodyLabel', trainingCardN, '4 free matches left', 17,
-        HE.homeTrainingBodyLabel.y, HE.homeTrainingBodyLabel.w, HE.homeTrainingBodyLabel.h, 244, 245, 249);
-    sb.e[trainingBody]._lpos = v3(HE.homeTrainingBodyLabel.x, HE.homeTrainingBodyLabel.y, 0);
-    {
-        const lblComp = sb.e[sb.e[trainingBody]._components[1].__id__];
-        lblComp._horizontalAlign = 0;
-    }
-
-    const trainingHint = mkLabel(sb, 'HomeTrainingHintLabel', trainingCardN, 'Easier bots · paper-track only', 12,
-        HE.homeTrainingHintLabel.y, HE.homeTrainingHintLabel.w, HE.homeTrainingHintLabel.h, 168, 174, 201);
-    sb.e[trainingHint]._lpos = v3(HE.homeTrainingHintLabel.x, HE.homeTrainingHintLabel.y, 0);
-    {
-        const lblComp = sb.e[sb.e[trainingHint]._components[1].__id__];
-        lblComp._horizontalAlign = 0;
-    }
-
-    // V2 — CTA hint at the bottom of the copy column. Amber italic-style
-    // (Cocos Label has no italic flag; use color contrast to call attention).
-    const trainingCtaHint = mkLabel(sb, 'TrainingCtaHint', trainingCardN, 'Tap Bot Match to begin', 11,
-        HE.trainingCtaHint.y, HE.trainingCtaHint.w, HE.trainingCtaHint.h, 255, 180, 84);
-    sb.e[trainingCtaHint]._lpos = v3(HE.trainingCtaHint.x, HE.trainingCtaHint.y, 0);
-    style(sb, trainingCtaHint, { bold: true, spacing: 1 });
-    {
-        const lblComp = sb.e[sb.e[trainingCtaHint]._components[1].__id__];
-        lblComp._horizontalAlign = 0;
-    }
-
-    // HomeStatusLabel REPARENTED inside training card.
-    const homeStatus = mkLabel(sb, 'HomeStatusLabel', trainingCardN, '', 11,
+    const homeStatus = mkLabel(sb, 'HomeStatusLabel', hpN, '', 11,
         HE.homeStatus.y, HE.homeStatus.w, HE.homeStatus.h, 93, 100, 133);
     sb.e[homeStatus]._lpos = v3(HE.homeStatus.x, HE.homeStatus.y, 0);
     {
         const lblComp = sb.e[sb.e[homeStatus]._components[1].__id__];
-        lblComp._horizontalAlign = 0;
+        lblComp._horizontalAlign = 1; // center
     }
-
-    // V2 — children render order: glow (back) → mascot → labels (top).
-    sb.e[trainingCardN]._children = [rf(trainingMascotGlowN), rf(mascotN), rf(trainingTitle), rf(trainingBody), rf(trainingHint), rf(trainingCtaHint), rf(homeStatus)];
 
     // ── HUD CHROME ICONS ──────────────────────────────────────────────
     // Right cluster (Portfolio · Leaderboard · Settings) lives left-of-Settings;
@@ -1578,12 +1535,13 @@ function generate() {
     sb.e[homeNotifBadgeN]._children = [rf(homeNotifBadgeLbl)];
     sb.e[homeNotifBadgeN]._active = false;
 
-    // ── HomePanel children patch (V3 render order: back → front) ──────
-    // V3: scrim FIRST (behind everything), wallet glow BEFORE pill, header
+    // ── HomePanel children patch (V4 render order: back → front) ──────
+    // V4: scrim FIRST (behind everything), wallet glow BEFORE pill, header
     // underline behind content, recent-card elevation BEFORE ticker so it
-    // sits as a soft shadow behind the unified card. DailyStreakStrip and
-    // HomeChooseMatchLabel dropped (folded into ticker / replaced by richer
-    // CTA subtitles). streakFlame retained as a free-floating chip.
+    // sits as a soft shadow behind the card. CTA quartet renders Find first
+    // (HERO), then Start (secondary), MIP (neutral), Bot (training). Each
+    // glow renders BEHIND its button. New activity dots sit alongside the
+    // count badges. Training card REMOVED — mascot pinned off-flow.
     sb.e[hpN]._children = [
         rf(scrimN),
         rf(homeHeaderUnderlineN),
@@ -1591,13 +1549,13 @@ function generate() {
         rf(homeLevelChipN),
         rf(homeRecentCardElevationN),
         rf(matchTickerN), rf(homeTournamentBadge),
-        // CTA trio: glow renders BEHIND its button. Subtitle + chevron are
-        // children of the button (not siblings) so they scale on press.
+        // CTA quartet (V4 hierarchy: Find=hero > Start=secondary > MIP=neutral > Bot=training).
+        rf(findMatchGlow), rf(findMatch), rf(findMatchBadgeN), rf(findMatchDotN),
         rf(startMatchGlow), rf(startMatch),
-        rf(findMatchGlow), rf(findMatch), rf(findMatchBadgeN),
-        rf(mipGlow), rf(mipBtn), rf(mipBadgeN),
+        // MIP is ghost: mipGlow === -1, skip it so we don't push a bogus ref.
+        ...(mipGlow >= 0 ? [rf(mipGlow)] : []), rf(mipBtn), rf(mipBadgeN), rf(mipDotN),
         rf(botMatchGlow), rf(botMatch),
-        rf(trainingCardN),
+        rf(mascotN), rf(homeStatus),
         rf(homeDisconnectBtn), rf(homeLeaderboardBtn), rf(homeSettingsBtn),
         rf(homeNotifBell), rf(homeNotifBadgeN),
         rf(streakFlameN),

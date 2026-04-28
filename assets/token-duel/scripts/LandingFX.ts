@@ -16,12 +16,13 @@
  * Patterns mirror ButtonFX.ts (sineInOut, .union().repeatForever()).
  */
 
-import { Node, UIOpacity, tween, Tween, Vec3 } from 'cc';
+import { Color, Graphics, Node, UIOpacity, UITransform, tween, Tween, Vec3 } from 'cc';
 
 const TAG = '[LandingFX]';
 
 const floatSet = new WeakSet<Node>();
 const pulseSet = new WeakSet<Node>();
+const driftSet = new WeakSet<Node>();
 
 /**
  * Y-axis sine oscillation around the node's current position. Cancelable via
@@ -65,5 +66,107 @@ export function addGlowPulse(node: Node, peakAlpha = 130, periodSec = 2.6): void
         .repeatForever()
         .start();
     console.log(`${TAG} addGlowPulse | ${node.name} peak=${peakAlpha} period=${periodSec}`);
+}
+
+/**
+ * 2026-04-28 hackathon UX — drifting particle layer behind the mascot for
+ * "alive arena" feel. Spawns `count` small Graphics-drawn dots inside
+ * `parent`, each tweening bottom→top with randomized X jitter, opacity,
+ * scale, and start phase. All Graphics components are added in a single
+ * synchronous pass before any tween starts (mirrors the confetti
+ * pre-allocation pattern in AppUI._bindPostMatchConfetti — Cocos 3.8
+ * Android can SIGSEGV when many Graphics components attach mid-tween).
+ *
+ * Idempotent per-parent. Loops with `.repeatForever()`. No-op if `parent`
+ * is null or already has particles.
+ *
+ * Visual: 4-6px violet/teal dots, alpha 80-180, drift bottom (-440) →
+ * top (+560) over 6-10s with phase delays so they don't all start
+ * together. Renders as the FIRST child of `parent` so it sits behind
+ * everything else (including mascot glow).
+ */
+export function addParticleDrift(parent: Node, count = 8): void {
+    if (!parent || driftSet.has(parent)) return;
+    driftSet.add(parent);
+
+    // Bottom-of-canvas / top-of-canvas anchors. Landing canvas is 1280h
+    // centered at 0; particles travel from y=-440 (well below CTA card)
+    // up to y=+560 (above the title). The wide travel makes the drift
+    // feel continuous rather than start/stop.
+    const Y_START = -440;
+    const Y_END   =  560;
+
+    // Violet (#9945FF) and teal (#14F195) — Theme.accent.violet/teal.
+    const tints: [number, number, number][] = [
+        [153,  69, 255],  // violet
+        [ 20, 241, 149],  // teal
+    ];
+
+    // Build all Graphics + UIOpacity components in one synchronous pass
+    // before kicking off any tween (Cocos 3.8 Android renderer crash
+    // safeguard — see _bindPostMatchConfetti header).
+    type Particle = { node: Node; op: UIOpacity; periodSec: number; delaySec: number; xJitter: number };
+    const particles: Particle[] = [];
+
+    for (let i = 0; i < count; i++) {
+        const p = new Node(`LandingParticle_${i}`);
+        parent.addChild(p);
+        const ut = p.addComponent(UITransform);
+        ut.setContentSize(12, 12);
+        const g = p.addComponent(Graphics);
+        const tint = tints[i % tints.length];
+        const radius = 3 + Math.random() * 3;  // 3-6 px
+        g.fillColor = new Color(tint[0], tint[1], tint[2], 255);
+        g.circle(0, 0, radius);
+        g.fill();
+        const op = p.addComponent(UIOpacity);
+        op.opacity = 0;  // start hidden until first tween cycle ramps it in
+
+        const periodSec = 6 + Math.random() * 4;          // 6-10s
+        const delaySec  = (i / count) * periodSec * 0.8;  // staggered start
+        const xJitter   = (Math.random() - 0.5) * 380;    // ±190 px
+
+        // Initial position: somewhere between Y_START and Y_END, biased
+        // toward the bottom so the first wave drifts up naturally.
+        const startY = Y_START + Math.random() * 200;
+        p.setPosition(xJitter, startY, 0);
+
+        particles.push({ node: p, op, periodSec, delaySec, xJitter });
+    }
+
+    // Now start tweens — Graphics already attached.
+    for (const { node, op, periodSec, delaySec, xJitter } of particles) {
+        const peakAlpha = 80 + Math.round(Math.random() * 100);  // 80-180
+
+        // Position drift: y -440 → +560 with side-to-side sway via x jitter
+        // delta. Linear easing — gentle, ambient, no bounce.
+        tween(node)
+            .delay(delaySec)
+            .to(periodSec, { position: new Vec3(xJitter + (Math.random() - 0.5) * 60, Y_END, 0) }, { easing: 'linear' })
+            .call(() => {
+                const newX = (Math.random() - 0.5) * 380;
+                node.setPosition(newX, Y_START, 0);
+            })
+            .union()
+            .repeatForever()
+            .start();
+
+        // Opacity envelope: ramp in over first 20%, hold, fade out over
+        // last 20%. Manual three-step tween rather than sine so the
+        // particle visibly *enters* and *leaves* the screen rather than
+        // popping at the edges.
+        const fade = periodSec * 0.2;
+        const hold = periodSec * 0.6;
+        tween(op)
+            .delay(delaySec)
+            .to(fade, { opacity: peakAlpha }, { easing: 'sineOut' })
+            .to(hold, { opacity: peakAlpha }, { easing: 'linear' })
+            .to(fade, { opacity: 0 },         { easing: 'sineIn' })
+            .union()
+            .repeatForever()
+            .start();
+    }
+
+    console.log(`${TAG} addParticleDrift | parent=${parent.name} count=${count}`);
 }
 

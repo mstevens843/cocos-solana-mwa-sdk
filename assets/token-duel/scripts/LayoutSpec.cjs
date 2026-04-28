@@ -220,22 +220,27 @@ const race = {
 // the page derives from this block; do NOT hand-tune element y values.
 const landing = {
     // Hero band — branded title / subtitle / mascot / tagline / support line.
-    TITLE_Y:          510,
-    SUBTITLE_Y:       445,
-    MASCOT_Y:         280,
-    TAGLINE_Y:        110,
-    SUPPORT_Y:        78,     // 2026-04-27 UX upgrade: pulled up 12 (was 66) to tighten support→tagline gap
+    // 2026-04-28 hackathon UX pass: hero cluster tightened so title + mascot
+    // read as one unit; mascot grows ~14% to dominate.
+    TITLE_Y:          480,    // 2026-04-28: 510 → 480 (drop 30 toward mascot)
+    SUBTITLE_Y:       422,    // 2026-04-28: 445 → 422 (follow title; gap stays ~58)
+    MASCOT_Y:         300,    // 2026-04-28: 280 → 300 (raise 20 toward subtitle)
+    TAGLINE_Y:        130,    // 2026-04-28: 110 → 130 (follow mascot up)
+    SUPPORT_Y:        98,     // 2026-04-28: 78 → 98 (follow tagline up)
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
     CTA_CARD_Y:       -178,   // 2026-04-27 UX upgrade: pulled up 7 (was -185)
 
     // Action stack inside the CTA card. 2026-04-27 UX upgrade: tightened
     // ~20% — every Y in the stack moved closer to the next neighbor so the
-    // stack feels "decided" instead of spread.
-    CONNECT_Y:        -18,    // PRIMARY — Connect Wallet (h=110), was -25
-    TRUST_Y:          -88,    // small "Secure · Non-custodial" line under Connect, was -100
-    GUEST_Y:          -158,   // SECONDARY — Play as Guest (h=88), was -170
-    RECONNECT_Y:      -262,   // TERTIARY  — Reconnect (h=72), was -285
+    // stack feels "decided" instead of spread. 2026-04-28: trust line
+    // pulled tighter to Connect; new LiveSignal sub-cue inserted between
+    // trust and Guest, so Guest + Reconnect drop to make room.
+    CONNECT_Y:        -18,    // PRIMARY — Connect Wallet (h=110)
+    TRUST_Y:          -78,    // 2026-04-28: -88 → -78 (tighter to Connect)
+    LIVE_SIGNAL_Y:    -114,   // 2026-04-28 NEW — "Live now · Join in seconds"
+    GUEST_Y:          -178,   // 2026-04-28: -158 → -178 (room for live signal)
+    RECONNECT_Y:      -278,   // 2026-04-28: -262 → -278 (follow Guest down)
 
     // Bottom status footer.
     STATUS_PILL_Y:    -555,
@@ -526,11 +531,11 @@ const LayoutSpec = {
             // 2026-04-27 UX upgrade — gold halo behind title for shimmer.
             titleGlow:           { x: 0,   y: landing.TITLE_Y,    w: 720, h: 140, type: 'sprite',     notes: 'gold radial halo behind TitleLabel; alpha-pulsed by LandingFX.addGlowPulse' },
             subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: '"Outperform. Or get outperformed." — 22pt body, mid, dimmed' },
-            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 280, h: 280, type: 'mascot',     notes: '2026-04-27 UX upgrade: w/h 260→280 (+7.7%); idle Seedance frames; +float, +glow halo, +shadow siblings' },
+            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 320, h: 320, type: 'mascot',     notes: '2026-04-28 hackathon UX: w/h 280→320 (+14%); mascot is the centerpiece' },
             // 2026-04-27 UX upgrade — soft drop-shadow ellipse below mascot.
-            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 150, w: 200, h: 28, type: 'sprite', notes: 'flat dark ellipse under mascot for grounding; cl(0,0,0,90)' },
+            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 170, w: 240, h: 28, type: 'sprite', notes: '2026-04-28 hackathon UX: shadow w 200→240, drop 20 to follow taller mascot; cl(0,0,0,90)' },
             // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
-            mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 440, h: 440, type: 'sprite',     notes: 'violet radial halo SIBLING of mascot, renders BEHIND it; alpha-pulsed by LandingFX.addGlowPulse' },
+            mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 520, h: 520, type: 'sprite',     notes: '2026-04-28 hackathon UX: w/h 440→520 (+18%); violet radial halo grows with mascot; alpha-pulsed by LandingFX.addGlowPulse' },
             tagline:             { x: 0,   y: landing.TAGLINE_Y,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform."' },
             supportLine:         { x: 0,   y: landing.SUPPORT_Y,  w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 13pt lo (down from 16)' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
@@ -539,6 +544,8 @@ const LayoutSpec = {
             connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
             connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
             trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card; green-tinted for reassurance' },
+            // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
+            liveSignalLabel:     { x: 0,   y: landing.LIVE_SIGNAL_Y, w: 640, h: 20, type: 'label',     notes: '"🟢 Live now · Join in seconds" — energy cue under Connect; teal-tinted dot' },
             playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 640, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
             reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 620, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
@@ -548,6 +555,7 @@ const LayoutSpec = {
             ['CTACardBg', 'ConnectButton'],
             ['CTACardBg', 'ConnectChevron'],
             ['CTACardBg', 'TrustLineLabel'],
+            ['CTACardBg', 'LiveSignalLabel'],
             ['CTACardBg', 'ReconnectButton'],
             ['CTACardBg', 'PlayAsGuestButton'],
             ['CTACardBg', 'BtnGlow_ConnectButton'],
@@ -615,78 +623,62 @@ const LayoutSpec = {
             // V3 NEW — subtle violet underline beneath header band.
             homeHeaderUnderline: { x: 0,    y: home.HEADER_UNDERLINE_Y, w: 640, h: 1, type: 'sprite', notes: 'V3 — 1×640 violetDim underline at low alpha; visual divider below header' },
             // ── XP MODULE — real progression bar, animated ──
-            homeLevelChip:       { x: 0,    y: home.XP_CHIP_Y, w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
-            homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
+            homeLevelChip:       { x: 0,    y: home.XP_CHIP_Y, w: 680, h: 72,  type: 'chip',     notes: 'V4 — h 80→72; Lv N (gold) + X/Y XP (right) + 640x14 rounded gold progress bar' },
+            homeXpProgressLabel: { x: 310,  y: 14,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite',   notes: 'rounded track 640x14 (relative to card)' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite',   notes: 'gold fill, left-anchored, width tweens on load (relative to track)' },
-            // ── UNIFIED RECENT MATCH CARD — V3 elevated 3×3 stat grid ──
-            // V3 — RecentMatch (5 chips) + DailyStreak (4 chips) merged into a
-            // single card with header + 3 rows. All 9 stat Labels keep their
-            // existing names so AppUI value setters need no rename.
-            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 184, type: 'chip',     notes: 'V3 unified RECENT MATCH · DAILY card; 9 stats in 3×3 grid; tap → SpectatorPanel' },
-            homeMatchTickerHeader: { x: 0,  y: 78,   w: 660, h: 18,  type: 'label',    notes: '"RECENT MATCH · DAILY" header (relative to card)' },
-            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 192, type: 'sprite',   notes: 'V3 NEW — soft drop-shadow sprite behind card for elevation feel (relative to card)' },
+            // ── RECENT MATCH CARD — V4 single-row (daily-challenge row dropped) ──
+            // V4 — RecentMatch collapsed back to 5-chip single block; daily-
+            // challenge data lives in DailyChallengePanel (Trophy header
+            // button) instead of being mirrored on Home.
+            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 96, type: 'chip',     notes: 'V4 — single-row RECENT MATCH card (h 184→96); tap → SpectatorPanel' },
+            homeMatchTickerHeader: { x: 0,  y: 32,   w: 660, h: 18,  type: 'label',    notes: '"RECENT MATCH" header (relative to card)' },
+            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 104, type: 'sprite',   notes: 'V4 — drop-shadow sprite shrinks with card (h 192→104)' },
             homeMatchChipDivider: { x: 0,   y: -2,   w: 620, h: 1,   type: 'sprite',   notes: 'V3 — 1-px divider between row 1 and row 2 (relative to card)' },
-            homeStreakChipDivider: { x: 0,  y: -58,  w: 620, h: 1,   type: 'sprite',   notes: 'V3 NEW — 1-px divider between row 2 and row 3 (relative to card)' },
             homeMatchChip:       { keys: ['mode', 'players', 'stake', 'duration', 'created'],
                                    labels: ['MODE', 'PLAYERS', 'STAKE', 'DURATION', 'CREATED'],
-                                   xs: [-220, 0, 220, -220, 0],
-                                   ys: [34, 34, 34, -22, -22],
-                                   ws: [200, 200, 200, 200, 200],
-                                   h: 52,
-                                   keyFs: 12, valFs: 18,
-                                   notes: 'V3 — 5 recent-match chips: row1 mode/players/stake @y=34, row2 duration/created @y=-22 (DAY shares row2 right cell)' },
+                                   xs: [-220, 0, 220, -160, 160],
+                                   ys: [10, 10, 10, -22, -22],
+                                   ws: [200, 200, 200, 280, 280],
+                                   h: 44,
+                                   keyFs: 11, valFs: 16,
+                                   notes: 'V4 — 5 chips, tighter h 52→44; row1 mode/players/stake @y=10, row2 duration/created split full width @y=-22' },
             // Tournament alternate — same slot as ticker, mutually exclusive.
-            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 184, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches unified card)' },
-            // Off-flow placeholders — superseded by SettingsPanel + homeChalChip
-            // 'rake' key. Nodes pinned below safe-area so they never collide.
+            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 96, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches V4 single-row card)' },
+            // Off-flow placeholders — superseded by SettingsPanel + DailyChallengePanel.
             homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
             disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 44,  h: 44,  type: 'btnGhost',  notes: 'V3 — w/h 64→44' },
             deleteBtn:           { x: 180,  y: home.LEGACY_DELETE_Y,  w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             signOutGuestBtn:     { x: 0,    y: home.LEGACY_SIGNOUT_Y, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
-            // ── DAILY STAT GROUP (V3 — REPARENTED inside HomeMatchTicker) ──
-            // V3 — DailyStreakStrip dropped; HomeChalChip_* groups now live as
-            // children of HomeMatchTicker. AppUI value setters look up Labels
-            // by name (HomeChalChipVal_*) so the reparent is invisible to them.
-            // Layout: row2 right cell (DAY) at x=220 y=-22 sharing row with
-            // duration/created; row3 (CHALLENGES/POOL/RAKE) at y=-78.
-            homeChalChip:        { keys: ['day', 'challenges', 'pool', 'rake'],
-                                   labels: ['DAY', 'CHALLENGES', 'POOL', 'RAKE'],
-                                   xs: [220, -220, 0, 220],
-                                   ys: [-22, -78, -78, -78],
-                                   ws: [200, 200, 200, 200],
-                                   h: 52,
-                                   keyFs: 12, valFs: 18,
-                                   notes: 'V3 — 4 daily chips reparented under HomeMatchTicker; DAY shares row2; CHALLENGES/POOL/RAKE row3 (SEASON dropped)' },
-            // ── PRIMARY CTA TRIO (V3 — Start > Find = MIP > Bot tiered) ──
-            // V3 — "CHOOSE MATCH TYPE" eyebrow dropped; richer subtitles carry
-            // the section affordance. Start grows h=104→120; MIP equalizes
-            // with Find at h=92 + teal; Bot demoted to h=72 w=600 amberDim.
-            startMatchBtn:       { x: 0,    y: home.START_CTA_Y, w: 680, h: 120, type: 'btnPrimary', notes: 'V3 hero — h 104→120; only button with idle pulse + ripple' },
-            startMatchSubtitle:  { x: 0,    y: -28,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton (y -22→-28 for taller hero)' },
-            startMatchChevron:   { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
-            findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Tier-1 teal — browse open lobbies' },
-            findMatchSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
-            findMatchChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
-            findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
-            // V3 — Matches In Progress: equalize with Find (h=92, teal/btnSuccess).
-            matchesInProgressBtn:        { x: 0,    y: home.MIP_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'V3 — h 84→92, type btnPrimary→btnSuccess (Tier-1 parity with Find)' },
-            matchesInProgressSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
-            matchesInProgressChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
-            matchesInProgressCountBadge: { x: 244,  y: home.MIP_BADGE_Y,   w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of MIP button' },
-            // V3 — Bot demoted: shorter (72), narrower (600 inset), color amberDim.
-            botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 600, h: 72,  type: 'btnWarn',    notes: 'V3 — h 84→72, w 680→600 (inset), color amberDim — visibly demoted Tier-2' },
-            botMatchSubtitle:    { x: 0,    y: -22,  w: 540, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton (w 620→540 to fit narrower button)' },
-            botMatchChevron:     { x: 270,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton (x 310→270 for narrower button)' },
-            // ── TRAINING HERO CARD — mascot + glow + CTA hint ──
-            homeTrainingCard:    { x: 0,    y: home.TRAINING_Y, w: 680, h: 196, type: 'card',      notes: 'hero card with mascot (left) + copy (right); subtle gradient feel' },
-            trainingMascotGlow:  { x: -220, y: 0,    w: 200, h: 200, type: 'sprite',    notes: 'soft amber glow halo BEHIND mascot (relative to card)' },
-            mascot:              { x: -220, y: 0,    w: 160, h: 180, type: 'mascot',    notes: 'mascot inside training card (relative to card)' },
-            homeTrainingTitleLabel: { x: 40, y: 60,  w: 440, h: 24,  type: 'label',     notes: '"TRAINING MODE" gold bold tracked, anchor-left (relative to card)' },
-            homeTrainingBodyLabel:  { x: 40, y: 20,  w: 440, h: 24,  type: 'label',     notes: '"N free matches left" body, anchor-left (relative to card)' },
-            homeTrainingHintLabel:  { x: 40, y: -12, w: 460, h: 18,  type: 'label',     notes: '"Easier bots · paper-track only" muted (relative to card)' },
-            trainingCtaHint:     { x: 40,   y: -44,  w: 460, h: 18,  type: 'label',     notes: '"Tap Bot Match to begin" amber italic CTA hint (relative to card)' },
-            homeStatus:          { x: 40,   y: -76,  w: 460, h: 16,  type: 'label',     notes: 'thin lo-tier status footer (relative to card)' },
+            // ── PRIMARY CTA TRIO (V4 — Find=hero > Start=secondary > MIP=neutral > Bot=training) ──
+            // V4 — Find Match becomes the hero (instant play). Start Match
+            // demoted to secondary (purple, h=96). MIP neutralized to charcoal
+            // (btnGhost, h=80). Bot Match grows full-width (h=88, w=680) and
+            // absorbs Training Mode copy on a second subtitle line.
+            findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 128, type: 'btnSuccess', notes: 'V4 HERO teal — h 92→128; gets idle pulse + ripple + strong-press' },
+            findMatchSubtitle:   { x: 0,    y: -32,               w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton (y -22→-32 for taller hero); copy reflects live lobby count' },
+            findMatchChevron:    { x: 310,  y: 0,                 w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
+            findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'V4 — live count pill repositioned for taller hero (was 142)' },
+            findMatchActivityDot:{ x: -296, y: home.FIND_DOT_Y,   w: 10,  h: 10,  type: 'badge',      notes: 'V4 NEW — pulsing teal dot, upper-left of hero, visible when lobbies > 0' },
+            startMatchBtn:       { x: 0,    y: home.START_CTA_Y,  w: 680, h: 96,  type: 'btnPrimary', notes: 'V4 secondary purple — h 120→96 (lost hero status to FindMatch)' },
+            startMatchSubtitle:  { x: 0,    y: -22,               w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
+            startMatchChevron:   { x: 310,  y: 0,                 w: 24,  h: 24,  type: 'label',      notes: 'CHILD of StartMatchButton' },
+            matchesInProgressBtn:        { x: 0,    y: home.MIP_CTA_Y,   w: 680, h: 80,  type: 'btnGhost',   notes: 'V4 NEUTRAL — type btnSuccess→btnGhost, runtime tinted dark charcoal; clearly contextual not action' },
+            matchesInProgressSubtitle:   { x: 0,    y: -26,               w: 620, h: 14,  type: 'label',      notes: 'CHILD of MatchesInProgressButton — y -22→-26, h 18→14 to clear centered Label bbox in 80h button' },
+            matchesInProgressChevron:    { x: 310,  y: 0,                 w: 24,  h: 24,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
+            matchesInProgressCountBadge: { x: 244,  y: home.MIP_BADGE_Y,  w: 76,  h: 28,  type: 'badge',      notes: 'live count pill, teal accent on neutral card' },
+            matchesInProgressActivityDot:{ x: -296, y: home.MIP_DOT_Y,    w: 10,  h: 10,  type: 'badge',      notes: 'V4 NEW — pulsing teal dot, left edge, visible when active games > 0' },
+            botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 680, h: 88,  type: 'btnWarn',    notes: 'V4 — w 600→680 full-width, h 72→88 to fit two-line subtitle (Train + free-match counter)' },
+            botMatchSubtitle:    { x: 0,    y: -22,  w: 620, h: 14,  type: 'label',      notes: 'CHILD of BotMatchButton — line 1: "Train before real matches" (y -10→-22, h 18→14 to clear centered Label)' },
+            botMatchSubtitleLine2: { x: 0,  y: -38,  w: 620, h: 12,  type: 'label',      notes: 'V4 NEW — CHILD of BotMatchButton — line 2: "N free matches left" (folded from Training card)' },
+            botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton (x 270→310 for full-width)' },
+            // ── TRAINING HERO CARD — V4 REMOVED ──
+            // V4 — HomeTrainingCard + mascot + glow + 4 labels deleted.
+            // Mascot definition kept off-flow so AppUI MascotController lookups
+            // don't 404 at runtime; mascot only renders inside PostMatch panel
+            // now. Training copy lives on the Bot Match card.
+            mascot:              { x: 0,    y: home.LEGACY_RAKE_Y, w: 160, h: 180, type: 'mascot',   notes: 'V4 — pinned off-flow; only PostMatchPanel renders the mascot now' },
+            homeStatus:          { x: 0,    y: -120, w: 460, h: 16,  type: 'label',     notes: 'V4 — reparented to HomePanel root (was inside training card)' },
         },
         allowedOverlaps: [
             // V2 — content scrim sits behind everything; intentionally overlaps all
@@ -706,16 +698,20 @@ const LayoutSpec = {
             ['HomeContentScrim',        'FindMatchButton'],
             ['HomeContentScrim',        'BtnGlow_FindMatchButton'],
             ['HomeContentScrim',        'FindMatchButtonCountBadge'],
-            ['HomeContentScrim',        'MatchesInProgressButton'],         // V3 NEW
-            ['HomeContentScrim',        'BtnGlow_MatchesInProgressButton'], // V3 NEW
-            ['HomeContentScrim',        'MatchesInProgressCountBadge'],     // V3 NEW
+            ['HomeContentScrim',        'FindMatchActivityDot'],            // V4 NEW
+            ['HomeContentScrim',        'MatchesInProgressButton'],
+            ['HomeContentScrim',        'BtnGlow_MatchesInProgressButton'],
+            ['HomeContentScrim',        'MatchesInProgressCountBadge'],
+            ['HomeContentScrim',        'MatchesInProgressActivityDot'],    // V4 NEW
             ['HomeContentScrim',        'BotMatchButton'],
             ['HomeContentScrim',        'BtnGlow_BotMatchButton'],
-            ['HomeContentScrim',        'HomeTrainingCard'],
+            ['HomeContentScrim',        'HomeStatusLabel'],                 // V4 — reparented to panel root
             ['NotificationBellButton',  'NotificationBellBadge'],   // badge ON bell
             ['HomeMatchTicker',         'HomeTournamentBadge'],     // alternates
             ['FindMatchButton',         'FindMatchButtonCountBadge'],// badge sits ON the FindMatch button intentionally
+            ['FindMatchButton',         'FindMatchActivityDot'],     // V4 NEW — dot sits ON FindMatch
             ['MatchesInProgressButton', 'MatchesInProgressCountBadge'], // badge sits ON the MIP button intentionally
+            ['MatchesInProgressButton', 'MatchesInProgressActivityDot'], // V4 NEW — dot sits ON MIP
             // V2 — wallet pill glow halo sits BEHIND the pill; intentional overlap.
             ['WalletPill',              'WalletPillGlow'],
             // Subtitle + chevron now live INSIDE each action button.
@@ -723,49 +719,29 @@ const LayoutSpec = {
             ['StartMatchButton',        'StartMatchChevron'],
             ['FindMatchButton',         'FindMatchSubtitle'],
             ['FindMatchButton',         'FindMatchChevron'],
+            ['MatchesInProgressButton', 'MatchesInProgressSubtitle'],
+            ['MatchesInProgressButton', 'MatchesInProgressChevron'],
             ['BotMatchButton',          'BotMatchSubtitle'],
+            ['BotMatchButton',          'BotMatchSubtitleLine2'],   // V4 NEW — second line carries free-match counter
             ['BotMatchButton',          'BotMatchChevron'],
             // WalletPill bbox houses pubkey + wallet name + secure dot.
             ['WalletPill',              'PubkeyLabel'],
             ['WalletPill',              'WalletNameLabel'],
             ['WalletPill',              'WalletPillSecureDot'],
-            // Training card houses mascot + glow + 3 labels + reparented status footer.
-            ['HomeTrainingCard',        'MascotContainer'],
-            ['HomeTrainingCard',        'TrainingMascotGlow'],
-            ['HomeTrainingCard',        'HomeTrainingTitleLabel'],
-            ['HomeTrainingCard',        'HomeTrainingBodyLabel'],
-            ['HomeTrainingCard',        'HomeTrainingHintLabel'],
-            ['HomeTrainingCard',        'TrainingCtaHint'],
-            ['HomeTrainingCard',        'HomeStatusLabel'],
-            // Mascot glow sits behind mascot — intentional overlap.
-            ['TrainingMascotGlow',      'MascotContainer'],
+            // V4 — HomeTrainingCard + 6 children deleted; mascot off-flow only.
             // Level chip houses progress bar + labels.
             ['HomeLevelChip',           'HomeLevelChipLabel'],
             ['HomeLevelChip',           'HomeXpProgressLabel'],
             ['HomeLevelChip',           'HomeXpBarTrack'],
             ['HomeXpBarTrack',          'HomeXpBarFill'],
-            // RecentMatch divider sits inside card.
+            // RecentMatch divider + elevation sit inside card.
             ['HomeMatchTicker',         'HomeMatchChipDivider'],
-            // V3 — unified card houses dailyChalChip groups + second divider + elevation shadow.
-            ['HomeMatchTicker',         'HomeStreakChipDivider'],
             ['HomeMatchTicker',         'HomeRecentCardElevation'],
             ['HomeRecentCardElevation', 'HomeMatchTicker'],
             ['HomeRecentCardElevation', 'HomeMatchChipDivider'],
-            ['HomeRecentCardElevation', 'HomeStreakChipDivider'],
-            ['HomeMatchTicker',         'HomeChalChip_day'],
-            ['HomeMatchTicker',         'HomeChalChip_challenges'],
-            ['HomeMatchTicker',         'HomeChalChip_pool'],
-            ['HomeMatchTicker',         'HomeChalChip_rake'],
-            // V3 — divider sprites are 1px tall hairlines that geometrically
-            // cross adjacent chip bboxes (chips are 52 tall, dividers sit at
-            // y=-2 / y=-58 which falls inside row-2 / row-3 vertical span).
-            // Visually intentional — divider renders as a thin line on top.
+            // V4 — single divider crosses the row1/row2 chip boundary.
             ['HomeMatchChipDivider',    'HomeMatchChip_duration'],
             ['HomeMatchChipDivider',    'HomeMatchChip_created'],
-            ['HomeMatchChipDivider',    'HomeChalChip_day'],
-            ['HomeStreakChipDivider',   'HomeChalChip_challenges'],
-            ['HomeStreakChipDivider',   'HomeChalChip_pool'],
-            ['HomeStreakChipDivider',   'HomeChalChip_rake'],
         ],
     },
 

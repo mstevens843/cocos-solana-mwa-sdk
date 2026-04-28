@@ -12,8 +12,8 @@ import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
 import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransitions';
 import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
 import { Palette, themeColor, colorFromHex } from '../../token-duel/scripts/Theme';
-import { enhancePrimaryCTA, addIdlePulse, addPressPop, setStrongPress } from '../../token-duel/scripts/ButtonFX';
-import { addFloat, addGlowPulse } from '../../token-duel/scripts/LandingFX';
+import { enhancePrimaryCTA, addIdlePulse, stopPulse, addPressPop, setStrongPress } from '../../token-duel/scripts/ButtonFX';
+import { addFloat, addGlowPulse, addParticleDrift } from '../../token-duel/scripts/LandingFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -628,10 +628,15 @@ export class AppUI extends Component {
     private _homeXpProgressLabel: Label | null = null;
     private _homeMatchTickerHeader: Label | null = null;
     private _homeMatchChips: { mode: Label | null; players: Label | null; stake: Label | null; duration: Label | null; created: Label | null } = { mode: null, players: null, stake: null, duration: null, created: null };
-    private _homeChalChips: { day: Label | null; challenges: Label | null; season: Label | null; pool: Label | null; rake: Label | null } = { day: null, challenges: null, season: null, pool: null, rake: null };
-    private _homeTrainingTitleLabel: Label | null = null;
-    private _homeTrainingBodyLabel: Label | null = null;
-    private _homeTrainingHintLabel: Label | null = null;
+    // V4 — Home Training card removed; mascot off-flow. Bot Match button
+    // absorbs the "Train before real matches" + "N free matches left" copy.
+    private _findMatchSubtitleLabel: Label | null = null;
+    private _findMatchActivityDot: Node | null = null;
+    private _findMatchDotPulsing: boolean = false;
+    private _matchesInProgressActivityDot: Node | null = null;
+    private _matchesInProgressDotPulsing: boolean = false;
+    private _botMatchSubtitleLabel: Label | null = null;
+    private _botMatchSubtitleLine2: Label | null = null;
     private _homeChooseMatchLabel: Label | null = null;
     private _cachedRakeText: string = '—';
 
@@ -3249,6 +3254,24 @@ export class AppUI extends Component {
         console.log(`${TAG} _resetStakeFlow | DONE commit_btn_visible=${this._stakeCommitButton?.node.active === true} start_btn_visible=${this._startGameButton?.node.active === true} claim_btn_visible=${this._claimButton?.node.active === true} game_area_visible=${this._gameArea?.active === true} hero_tiles_visible=${this._heroTileButtons.filter(b => b.node.active).length}`);
     }
 
+    // 2026-04-28 — Idempotent teardown of an in-flight match's RUNTIME state.
+    // Safe to call when no match is active. Picker selections (_squad,
+    // _cachedHoldings, _picker*) intentionally persist so the next match
+    // can reuse them. Call sites: _onGameOver, _onStartGame guard,
+    // _onTokenDuelBack, _onRaceCancel.
+    private _teardownMatchRuntime(reason: string): void {
+        console.log(`${TAG} _teardownMatchRuntime | reason=${reason} hadGame=${!!this._game} hadLocalPda=${this._currentLocalMatchPda ?? 'null'} hadPaperPending=${(this as any)._pendingPaperBotMatch === true} hadRealPda=${this._activeRealMatchPda ?? 'null'} bgRunning=${this._raceRunningInBackground}`);
+        if (this._game) {
+            this._game.destroy();
+            this._game = null;
+        }
+        if (this._currentLocalMatchPda) this._clearCurrentLocalMatch();
+        this._hideRacePanel();
+        (this as any)._pendingPaperBotMatch = false;
+        this._pendingRealMatch = false;
+        this._raceRunningInBackground = false;
+    }
+
     private _setPreGameContextActive(active: boolean): void {
         const sub = this._tokenDuelPanel?.getChildByName('SubtitleLabel');
         const subToggled = !!sub;
@@ -4007,9 +4030,9 @@ export class AppUI extends Component {
      * lookups complete.
      */
     private _bindHomeChips(): void {
-        // V3 — RecentMatch + DailyStreak merged into one card. Both chip
-        // groups now live as children of HomeMatchTicker; DailyStreakStrip
-        // has been removed from the scene. Look up everything under ticker.
+        // V4 — single-row Recent Match (5 chips). Daily-challenge row + the
+        // separate Training card are removed; Bot Match button absorbs the
+        // training copy. Find Match / MIP gain activity dots + subtitle refs.
         const ticker = this._homePanel?.getChildByName('HomeMatchTicker');
         if (ticker) {
             this._homeMatchTickerHeader = ticker.getChildByName('HomeMatchTickerHeader')?.getComponent(Label) ?? null;
@@ -4018,19 +4041,22 @@ export class AppUI extends Component {
                 const chip = ticker.getChildByName(`HomeMatchChip_${k}`);
                 this._homeMatchChips[k] = chip?.getChildByName(`HomeMatchChipVal_${k}`)?.getComponent(Label) ?? null;
             }
-            const chalKeys: Array<keyof typeof this._homeChalChips> = ['day', 'challenges', 'pool', 'rake'];
-            for (const k of chalKeys) {
-                const chip = ticker.getChildByName(`HomeChalChip_${k}`);
-                this._homeChalChips[k] = chip?.getChildByName(`HomeChalChipVal_${k}`)?.getComponent(Label) ?? null;
-            }
         }
-        const trainingCard = this._homePanel?.getChildByName('HomeTrainingCard');
-        if (trainingCard) {
-            this._homeTrainingTitleLabel = trainingCard.getChildByName('HomeTrainingTitleLabel')?.getComponent(Label) ?? null;
-            this._homeTrainingBodyLabel = trainingCard.getChildByName('HomeTrainingBodyLabel')?.getComponent(Label) ?? null;
-            this._homeTrainingHintLabel = trainingCard.getChildByName('HomeTrainingHintLabel')?.getComponent(Label) ?? null;
-        }
-        console.log(`${TAG} _bindHomeChips | match=${Object.values(this._homeMatchChips).filter(Boolean).length}/5 chal=${Object.values(this._homeChalChips).filter(Boolean).length}/4 training=${[this._homeTrainingTitleLabel, this._homeTrainingBodyLabel, this._homeTrainingHintLabel].filter(Boolean).length}/3`);
+        // V4 NEW — Find Match subtitle + activity dot.
+        const findBtnNode = this._homePanel?.getChildByName('FindMatchButton');
+        this._findMatchSubtitleLabel = findBtnNode?.getChildByName('FindMatchSubtitle')?.getComponent(Label) ?? null;
+        this._findMatchActivityDot = this._homePanel?.getChildByName('FindMatchActivityDot') ?? null;
+        if (this._findMatchActivityDot) this._findMatchActivityDot.active = false;
+        // V4 NEW — MIP activity dot (subtitle ref bound elsewhere via _matchesInProgressSubtitleLabel).
+        this._matchesInProgressActivityDot = this._homePanel?.getChildByName('MatchesInProgressActivityDot') ?? null;
+        if (this._matchesInProgressActivityDot) this._matchesInProgressActivityDot.active = false;
+        // V4 NEW — Bot Match two-line subtitle (line 1 static "Train before
+        // real matches", line 2 "N free matches left" driven by _setBotMatchTrainingLine).
+        const botBtnNode = this._homePanel?.getChildByName('BotMatchButton');
+        this._botMatchSubtitleLabel = botBtnNode?.getChildByName('BotMatchSubtitle')?.getComponent(Label) ?? null;
+        this._botMatchSubtitleLine2 = botBtnNode?.getChildByName('BotMatchSubtitleLine2')?.getComponent(Label) ?? null;
+        if (this._botMatchSubtitleLabel) this._botMatchSubtitleLabel.string = 'Train before real matches';
+        console.log(`${TAG} _bindHomeChips | match=${Object.values(this._homeMatchChips).filter(Boolean).length}/5 findDot=${!!this._findMatchActivityDot} mipDot=${!!this._matchesInProgressActivityDot} botSub=${!!this._botMatchSubtitleLabel}/${!!this._botMatchSubtitleLine2}`);
     }
 
     /** Set the 5 MatchStatus chip values from a TickerParts payload. */
@@ -4043,16 +4069,11 @@ export class AppUI extends Component {
         if (c.created) c.created.string = parts.created;
     }
 
-    /** Set ChallengeSeason chip values. Accepts a partial — only writes
-     *  fields present in the payload (so _refreshRakeChip can update RAKE
-     *  without clobbering the other 4). */
-    private _setChallengeChips(parts: Partial<{ day: string; challenges: string; season: string; pool: string; rake: string }>): void {
-        const c = this._homeChalChips;
-        if (parts.day !== undefined && c.day) c.day.string = parts.day;
-        if (parts.challenges !== undefined && c.challenges) c.challenges.string = parts.challenges;
-        if (parts.season !== undefined && c.season) c.season.string = parts.season;
-        if (parts.pool !== undefined && c.pool) c.pool.string = parts.pool;
-        if (parts.rake !== undefined && c.rake) c.rake.string = parts.rake;
+    /** V4 — daily challenge chips dropped from the Home card. This now is a
+     *  no-op so legacy callers (e.g. _refreshRakeChip, _hydrateDailyChallengeWidget)
+     *  don't need to be torn out before the daily UI moves to its own panel. */
+    private _setChallengeChips(_parts: Partial<{ day: string; challenges: string; season: string; pool: string; rake: string }>): void {
+        // intentionally empty — see DailyChallengePanel for the live surface.
     }
 
     /** Update the XP progress label + tween the progress bar fill width.
@@ -4302,9 +4323,15 @@ export class AppUI extends Component {
     private _enhancePrimaryCTAs(): void {
         // Phase 13 (B3): Connect is the gateway action — first thing in any
         // demo recording. It must breathe.
+        // 2026-04-28 hackathon UX — Connect alone is the hero. Guest +
+        // Reconnect drop the idle pulse so visual hierarchy is unambiguous;
+        // they keep press-pop + strong-press for tactile feedback only.
+        // Mirrors the Home V3 pattern below (StartMatch hero, Find/MIP press-only).
         enhancePrimaryCTA(this._landingPanel?.getChildByName('ConnectButton') ?? null);
-        enhancePrimaryCTA(this._landingPanel?.getChildByName('ReconnectButton') ?? null);
-        enhancePrimaryCTA(this._landingPanel?.getChildByName('PlayAsGuestButton') ?? null);
+        const lpReconnBtn = this._landingPanel?.getChildByName('ReconnectButton')?.getComponent(Button) ?? null;
+        if (lpReconnBtn) { addPressPop(lpReconnBtn); setStrongPress(lpReconnBtn); }
+        const lpGuestBtn = this._landingPanel?.getChildByName('PlayAsGuestButton')?.getComponent(Button) ?? null;
+        if (lpGuestBtn) { addPressPop(lpGuestBtn); setStrongPress(lpGuestBtn); }
         // V3 — Home CTA hierarchy. Only Start Match gets the full hero
         // treatment (idle pulse + ripple + press pop + strong press). Find
         // and MIP get press feedback only (Tier 1, no breathing). Bot gets
@@ -4368,13 +4395,28 @@ export class AppUI extends Component {
         if (titleGlow) addGlowPulse(titleGlow, 120, 2.8);
 
         const connectGlow = lp.getChildByName('BtnGlow_ConnectButton');
-        if (connectGlow) addGlowPulse(connectGlow, 130, 3.0);
+        // 2026-04-28 hackathon UX — Connect halo amplified: peak 130 → 170
+        // (+30%), period 3.0 → 2.2 (faster cycle reads as urgency).
+        if (connectGlow) addGlowPulse(connectGlow, 170, 2.2);
 
         const reconn = lp.getChildByName('ReconnectButton');
         if (reconn) {
             const op = reconn.getComponent(UIOpacity) ?? reconn.addComponent(UIOpacity);
             op.opacity = 200;  // ~78% — drops visual weight without breaking accessibility
         }
+        // 2026-04-28 hackathon UX — Guest also dims (lighter than Reconnect).
+        // Visible secondary, but visibly secondary. Connect alone is the hero.
+        const guest = lp.getChildByName('PlayAsGuestButton');
+        if (guest) {
+            const op = guest.getComponent(UIOpacity) ?? guest.addComponent(UIOpacity);
+            op.opacity = 235;  // ~92% — primary-tier weight without competing with Connect
+        }
+
+        // 2026-04-28 hackathon UX — drifting violet/teal particles behind the
+        // mascot for "alive arena" feel. Idempotent + silent no-op if helper
+        // is unavailable in legacy bundles.
+        addParticleDrift(lp, 8);
+
         console.log(`${TAG} _polishLandingPanel | applied`);
     }
 
@@ -5055,10 +5097,8 @@ export class AppUI extends Component {
 
     private _onTokenDuelBack(): void {
         console.log(`${TAG} onTokenDuelBack | returning to Home panel feed_poll_was_active=${this._feedPollTimer !== null} squad_filled=${this._squad.filled}`);
-        if (this._game) {
-            this._game.destroy();
-            this._game = null;
-        }
+        // 2026-04-28 — Centralized match-runtime teardown (was: inline _game.destroy()).
+        this._teardownMatchRuntime('token_duel_back');
         // Phase III teardown — stop feed poll + price feed, but keep the squad
         // in memory so re-entering the panel restores the user's picks.
         if (this._feedPollTimer !== null) {
@@ -5070,6 +5110,15 @@ export class AppUI extends Component {
     }
 
     private _onStartGame(): void {
+        // 2026-04-28 — Defensive teardown so back-to-back match starts don't
+        // collide with a stale TokenDuelGame / orphan PortfolioRace timers.
+        // Covers PostMatch → Back → Start (the bug repro) and start-new-while-
+        // a-backgrounded-race-ticks. Without this, the orphan game's onGameOver
+        // closure can fire against the new match's RacePanel and bounce the
+        // user back to the picker.
+        if (this._game || this._currentLocalMatchPda || this._raceRunningInBackground) {
+            this._teardownMatchRuntime('start_game_reentry');
+        }
         console.log(`${TAG} onStartGame | START squad_filled=${this._squad.filled}`);
 
         // Phase III: prefer the squad's picks. Fallback to the wallet's top
@@ -5199,6 +5248,11 @@ export class AppUI extends Component {
     private _onGameOver(height: number, deltas: Record<string, number>): void {
         console.log(`${TAG} onGameOver | height=${height} deltas=${JSON.stringify(deltas)}`);
         this._sessionDeltas = deltas;
+        // 2026-04-28 — Capture pending-match flags BEFORE _teardownMatchRuntime
+        // clears them; the post-match cinematic branches below read these to
+        // pick real-vs-paper-bot reveal logic.
+        const wasRealPending = this._pendingRealMatch;
+        const wasPaperPending = (this as any)._pendingPaperBotMatch === true;
         // 2026-04-27 (DB Stage 8) — Snapshot the in-flight local match BEFORE
         // _clearCurrentLocalMatch() drops the entry, so the paper-bot branch
         // below can POST a paper_match_history row using its synthetic id +
@@ -5209,16 +5263,19 @@ export class AppUI extends Component {
             ? this._localActiveMatches.find((m) => m.pda === savedLocalPda) ?? null
             : null;
         const savedTrack: 'bot' | 'paper-real' = this._pickerBotMode ? 'bot' : 'paper-real';
-        // 2026-04-27 — Local race ended (settle / forfeit / natural finish).
-        // Drop it from MIP. No-op for real matches (no local entry was registered).
-        this._clearCurrentLocalMatch();
+        // 2026-04-28 — Single-call teardown: destroys this._game (clearing
+        // PortfolioRace timers), drops the MIP entry, hides the race panel,
+        // and clears _pendingRealMatch / _pendingPaperBotMatch / _raceRunningInBackground.
+        // Replaces the prior inline _clearCurrentLocalMatch + _hideRacePanel
+        // pair (which left this._game dangling — the root cause of the
+        // "2nd match never starts" bug).
+        this._teardownMatchRuntime('game_over');
         // betting-duel: the stack-jump legacy overlay (`GameOverLabel` with
         // "Game Over — Height: …" + `ClaimPayoutButton` + "Tap Claim Payout"
         // status) must NOT show on this branch. The match path is paper-bot
         // or real-settle → PostMatchPanel, never legacy solo-settle-by-click.
         if (this._gameOverLabel) this._gameOverLabel.node.active = false;
         if (this._gameArea) this._gameArea.active = false;
-        this._hideRacePanel();
         this._lastGameHeight = height;
         if (this._claimButton) {
             this._claimButton.node.active = false;
@@ -5233,7 +5290,9 @@ export class AppUI extends Component {
 
         // Session D Part 4/5: real on-chain match — capture pre-settle level so
         // PostMatchPanel can flash level-up correctly, then submit + readback.
-        if (this._pendingRealMatch && this._activeRealMatchPda) {
+        // 2026-04-28 — read the captured local; _pendingRealMatch was zeroed
+        // by _teardownMatchRuntime above.
+        if (wasRealPending && this._activeRealMatchPda) {
             this._pendingRealMatch = false;
             const matchPda = this._activeRealMatchPda;
             console.log(`${TAG} onGameOver | pending_real=true match=${matchPda} height=${height}`);
@@ -5361,7 +5420,9 @@ export class AppUI extends Component {
 
         // Session D Part 2/3/6: paper+bot match — any mode now. Samples N-1
         // bots, ranks player among them, awards payout + XP per mode table.
-        if ((this as any)._pendingPaperBotMatch) {
+        // 2026-04-28 — read the captured local; _pendingPaperBotMatch was zeroed
+        // by _teardownMatchRuntime above.
+        if (wasPaperPending) {
             (this as any)._pendingPaperBotMatch = false;
             const paperRecBefore = Stats.load('paper');
             const previousLevel = levelFromXp(paperRecBefore.xp);
@@ -7501,9 +7562,9 @@ export class AppUI extends Component {
         const lastResolved = this._raceLatestSnapshot?.resolvedCount;
         const lastRemaining = this._raceLatestSnapshot?.remainingMs;
         console.log(`${TAG} _onRaceCancel | FORFEIT last_delta=${lastDelta?.toFixed(2) ?? 'null'}% resolved=${lastResolved ?? 'null'} remaining=${lastRemaining ?? 'null'}ms last_sign=${this._raceLastDeltaSign} — submitting score=0 (encoded 0% delta)`);
-        this._game?.destroy();
-        this._game = null;
-        this._hideRacePanel();
+        // 2026-04-28 — _onGameOver now owns _teardownMatchRuntime + _hideRacePanel.
+        // Leave _pendingRealMatch / _pendingPaperBotMatch intact here so
+        // _onGameOver's branch logic still picks the right post-match cinematic.
         this._onGameOver(0, {});
     }
 
