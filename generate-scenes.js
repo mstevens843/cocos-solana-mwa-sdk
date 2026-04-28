@@ -5921,7 +5921,10 @@ function generate() {
         }
         return out;
     };
-    const ACTIVE_TAB = [48, 198, 155];
+    // 2026-04-28 final pass — tabs use violet (Solana brand for navigation),
+    // filter chips keep teal so the two systems read visually distinct.
+    const ACTIVE_TAB = [153, 69, 255];      // violet — for tabs
+    const ACTIVE_FILTER_CHIP = [48, 198, 155]; // teal — for Mode/Window/Wager
     const INACTIVE_TAB = [28, 34, 48];
 
     // 2026-04-27 FindMatch redesign — single unified FilterCard replaces the
@@ -5971,6 +5974,20 @@ function generate() {
     };
     const fmFilterDivider1 = makeDivider('FilterDivider1', FME.filterDivider1);
     const fmFilterDivider2 = makeDivider('FilterDivider2', FME.filterDivider2);
+    const fmFilterDivider3 = makeDivider('FilterDivider3', FME.filterDivider3);
+
+    // 2026-04-28 final pass — small dim row labels on the LEFT of each chip row.
+    // Color = Palette.text.lo (#5D6485 = 93,100,133), font 16, left-aligned.
+    const makeRowLabel = (nodeName, text, spec) => {
+        const lN = mkLabel(sb, nodeName, fmN, text, 16,
+            spec.y, spec.w, spec.h, 168, 174, 201);
+        sb.e[lN]._lpos = v3(spec.x, spec.y, 0);
+        sb.e[sb.e[lN]._components[1].__id__]._horizontalAlign = 0; // left
+        return lN;
+    };
+    const fmModeRowLabel   = makeRowLabel('FindMatchModeRowLabel',   'Mode',     FME.fmModeLabel);
+    const fmWindowRowLabel = makeRowLabel('FindMatchWindowRowLabel', 'Duration', FME.fmWindowLabel);
+    const fmWagerRowLabel  = makeRowLabel('FindMatchWagerRowLabel',  'Stake',    FME.fmWagerLabel);
 
     // Tab active underline — slides between -122 / +122 via AppUI tween.
     const fmTabUnderlineN = sb.e.length;
@@ -5990,12 +6007,13 @@ function generate() {
     });
     sb.e[fmTabUnderlineN]._components = [rf(fmTabUnderlineUT), rf(fmTabUnderlineSpr)];
 
+    // 2026-04-28 final pass — tabs use violet (ACTIVE_TAB), filter chips use teal.
     const [fmTabOpen, fmTabLive] = buildFmRow(FMT.fmTab, 'FindMatchTab', ACTIVE_TAB, INACTIVE_TAB);
 
-    // 3 filter rows (Mode / Window / Wager) — same template pattern.
-    const fmModeIndices = buildFmRow(FMT.fmModeFilter, 'FilterMode', ACTIVE_TAB, INACTIVE_TAB);
-    const fmWindowIndices = buildFmRow(FMT.fmWindowFilter, 'FilterWindow', ACTIVE_TAB, INACTIVE_TAB);
-    const fmWagerIndices = buildFmRow(FMT.fmWagerFilter, 'FilterWager', ACTIVE_TAB, INACTIVE_TAB);
+    // 3 filter rows (Mode / Window / Wager) — teal active to read distinct from tabs.
+    const fmModeIndices = buildFmRow(FMT.fmModeFilter, 'FilterMode', ACTIVE_FILTER_CHIP, INACTIVE_TAB);
+    const fmWindowIndices = buildFmRow(FMT.fmWindowFilter, 'FilterWindow', ACTIVE_FILTER_CHIP, INACTIVE_TAB);
+    const fmWagerIndices = buildFmRow(FMT.fmWagerFilter, 'FilterWager', ACTIVE_FILTER_CHIP, INACTIVE_TAB);
 
     // Phase 2b — emit a glow sibling per chip. Same position as the chip,
     // 14px larger on each side. AppUI._refreshFindMatchFilterChips toggles
@@ -6027,8 +6045,10 @@ function generate() {
         }
         return out;
     };
-    const fmTabGlows    = buildChipGlows(FMT.fmTab,           'FindMatchTab', [48, 198, 155]);
-    const fmModeGlows   = buildChipGlows(FMT.fmModeFilter,    'FilterMode',   [153, 69, 255]);
+    // 2026-04-28 final pass — tab glow violet (matches active tab tint);
+    // filter row glows keep their per-row palette identity.
+    const fmTabGlows    = buildChipGlows(FMT.fmTab,           'FindMatchTab', [153, 69, 255]);
+    const fmModeGlows   = buildChipGlows(FMT.fmModeFilter,    'FilterMode',   [20, 241, 149]);
     const fmWindowGlows = buildChipGlows(FMT.fmWindowFilter,  'FilterWindow', [40, 180, 140]);
     const fmWagerGlows  = buildChipGlows(FMT.fmWagerFilter,   'FilterWager',  [255, 180, 84]);
 
@@ -6043,7 +6063,7 @@ function generate() {
     // that AppUI tweens scale-X based on playerCount/required.
     const MR = FMT.matchRow;
     const fmRowIndices = [];
-    const fmRowChildArrays = [];  // [{ rN, edgeN, capFillN }] for AppUI runtime tinting
+    const fmRowChildArrays = [];  // [{ rN, edgeN, capFillN, glowN, gradientN }] for AppUI runtime tinting
     for (let i = 0; i < MR.count; i++) {
         const ry = MR.baseY + i * MR.gapY;
         const rN = sb.e.length;
@@ -6056,8 +6076,42 @@ function generate() {
             _interactable: true, _transition: 0,
             _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
             _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
-            _duration: 0.1, _zoomScale: 1.02, _target: rf(rN), _id: gid(),
+            _duration: 0.1, _zoomScale: 1.04, _target: rf(rN), _id: gid(),
         });
+        // 2026-04-28 final pass — border glow (violet/teal halo, alpha 0 by default).
+        // AppUI fades alpha in on touch-press for "live opportunity" feel.
+        const glowN = sb.e.length;
+        sb.node(`MatchCardGlow_${i}`, rN, [], [], v3(MR.glow.x, MR.glow.y, 0));
+        const glowUT = sb.ut(glowN, MR.glow.w, MR.glow.h);
+        const glowSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(glowN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(153, 69, 255, 0), // alpha 0 = invisible until tween
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[glowN]._components = [rf(glowUT), rf(glowSpr)];
+        // 2026-04-28 final pass — top-half sheen overlay (subtle white tint w/ alpha 18).
+        // Gives flat-color cards a faux gradient feel without shaders.
+        const gradientN = sb.e.length;
+        sb.node(`MatchCardGradient_${i}`, rN, [], [], v3(MR.gradient.x, MR.gradient.y, 0));
+        const gradientUT = sb.ut(gradientN, MR.gradient.w, MR.gradient.h);
+        const gradientSpr = sb.add({
+            __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+            node: rf(gradientN), _enabled: true, __prefab: null,
+            _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+            _color: cl(255, 255, 255, 14),
+            _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+            _type: 1, _fillType: 0, _sizeMode: 0,
+            _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+            _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+            _id: gid(),
+        });
+        sb.e[gradientN]._components = [rf(gradientUT), rf(gradientSpr)];
         // Edge stripe — mode-coded color (AppUI retints in _renderMatchList).
         const edgeN = sb.e.length;
         sb.node(`MatchCardEdgeStripe_${i}`, rN, [], [], v3(MR.edgeStripe.x, MR.edgeStripe.y, 0));
@@ -6080,8 +6134,8 @@ function generate() {
         sb.e[modeL]._lpos = v3(MR.mode.x, MR.mode.y, 0);
         sb.e[sb.e[modeL]._components[1].__id__]._horizontalAlign = 0;
         sb.e[sb.e[modeL]._components[1].__id__]._isBold = true;
-        // Bold gold wager hero — center-prominent.
-        const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 20,
+        // Bold gold wager hero — center-prominent. 2026-04-28 final pass: 20 → 26.
+        const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 26,
             MR.wager.y, MR.wager.w, MR.wager.h, 218, 165, 32);
         sb.e[wagerL]._lpos = v3(MR.wager.x, MR.wager.y, 0);
         style(sb, wagerL, { mono: true, bold: true });
@@ -6142,15 +6196,30 @@ function generate() {
         style(sb, joinL, { bold: true });
         sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
         sb.e[rN]._children = [
+            // Glow first so it renders BEHIND the card body but in front of canvas bg.
+            rf(glowN),
             rf(edgeN),
+            rf(gradientN),
             rf(modeL), rf(wagerL), rf(trackChipN), rf(winL), rf(subL),
             rf(capBarN), rf(capFillN),
             rf(joinL),
         ];
         sb.e[rN]._active = false;
         fmRowIndices.push(rN);
-        fmRowChildArrays.push({ edgeN, capFillN, trackChipN });
+        fmRowChildArrays.push({ edgeN, capFillN, trackChipN, glowN, gradientN });
     }
+
+    // 2026-04-28 final pass — tail hint shown when 1-2 matches present.
+    // AppUI repositions y based on visibleCount and toggles _active.
+    const fmTailHintTitle = mkLabel(sb, 'FindMatchTailHintTitle', fmN,
+        'No more matches right now', 16,
+        FME.tailHintTitle.y, FME.tailHintTitle.w, FME.tailHintTitle.h, 168, 174, 201);
+    sb.e[sb.e[fmTailHintTitle]._components[1].__id__]._isBold = true;
+    sb.e[fmTailHintTitle]._active = false;
+    const fmTailHintSubtitle = mkLabel(sb, 'FindMatchTailHintSubtitle', fmN,
+        'Try adjusting filters', 14,
+        FME.tailHintSubtitle.y, FME.tailHintSubtitle.w, FME.tailHintSubtitle.h, 110, 118, 140);
+    sb.e[fmTailHintSubtitle]._active = false;
 
     // Legacy empty state — kept for fallback. _active=false by default.
     const fmEmptyL = mkLabel(sb, 'FindMatchEmptyLabel', fmN, 'No open lobbies match these filters — host one or play a bot.', 14,
@@ -6196,8 +6265,10 @@ function generate() {
         rf(fmBackBtn), rf(fmTitle), rf(fmRefreshBtn), rf(fmCountLabel),
         rf(fmLivePulseDotN),
         rf(fmLvXpChipN),
-        // 2026-04-27 redesign — FilterCard FIRST so chips/glows render on top.
-        rf(fmFilterCard), rf(fmFilterDivider1), rf(fmFilterDivider2),
+        // 2026-04-28 final pass — FilterCard FIRST so all sub-elements render on top.
+        rf(fmFilterCard),
+        rf(fmFilterDivider1), rf(fmFilterDivider2), rf(fmFilterDivider3),
+        rf(fmModeRowLabel), rf(fmWindowRowLabel), rf(fmWagerRowLabel),
         // Tab underline sits between FilterCard and the tab buttons.
         rf(fmTabUnderlineN),
         // Then chip glows — sit between the container and the chip itself.
@@ -6209,6 +6280,7 @@ function generate() {
         ...fmWagerIndices.map(rf),
         rf(fmHideFullBtn),
         ...fmRowIndices.map(rf),
+        rf(fmTailHintTitle), rf(fmTailHintSubtitle),
         rf(fmEmptyMascotN), rf(fmEmptyTitle), rf(fmEmptySubtitle),
         rf(fmEmptyHostBtn), rf(fmEmptyBotBtn),
         rf(fmEmptyL), rf(fmHostBtn), rf(fmStatus),

@@ -850,10 +850,15 @@ export class AppUI extends Component {
     private _matchCardEdgeStripes: Node[] = [];
     private _matchCardCapBarFills: Node[] = [];
     private _matchCardTrackChips: Node[] = [];
+    /** 2026-04-28 final pass — per-card border glow nodes (alpha-tweened on press). */
+    private _matchCardGlows: Node[] = [];
     /** 2026-04-27 redesign — unified filter card + tab underline + live pulse dot. */
     private _findMatchFilterCard: Node | null = null;
     private _findMatchTabUnderline: Node | null = null;
     private _findMatchLiveCountPulseDot: Node | null = null;
+    /** 2026-04-28 final pass — tail hint shown when 1-2 matches present. */
+    private _findMatchTailHintTitle: Label | null = null;
+    private _findMatchTailHintSubtitle: Label | null = null;
 
     /** Phase A — JoinMatchConfirmOverlay node refs. */
     private _joinConfirmOverlay: Node | null = null;
@@ -2569,8 +2574,42 @@ export class AppUI extends Component {
                 this._matchCardEdgeStripes.push(row.getChildByName(`MatchCardEdgeStripe_${i}`) as Node);
                 this._matchCardCapBarFills.push(row.getChildByName(`MatchCardCapBarFill_${i}`) as Node);
                 this._matchCardTrackChips.push(row.getChildByName(`MatchCardTrackChip_${i}`) as Node);
+                // 2026-04-28 final pass — per-card border glow (alpha-tweened on press).
+                this._matchCardGlows.push(row.getChildByName(`MatchCardGlow_${i}`) as Node);
                 const joinBtn = row.getChildByName(`MatchCardJoinButton_${i}`)?.getComponent(Button);
                 joinBtn?.node.on(Button.EventType.CLICK, () => this._onMatchCardJoinClick(i), this);
+                // Resume / Join press feedback — quick scale pop + color flash.
+                if (joinBtn) {
+                    try { addPressPop(joinBtn); } catch (_) { /* ignore */ }
+                }
+                // Card touch-glow — fade glow alpha in on touch-start, out on touch-end/cancel.
+                const glow = this._matchCardGlows[i];
+                if (glow) {
+                    const glowSpr = glow.getComponent(Sprite);
+                    row.on(Node.EventType.TOUCH_START, () => {
+                        if (!glowSpr) return;
+                        Tween.stopAllByTarget(glow);
+                        tween(glow).to(0.12, {}, {
+                            onUpdate: (_t, r) => {
+                                const c = glowSpr.color;
+                                glowSpr.color = new Color(c.r, c.g, c.b, Math.round(160 * (r as number)));
+                            },
+                        }).start();
+                    });
+                    const fadeOut = () => {
+                        if (!glowSpr) return;
+                        Tween.stopAllByTarget(glow);
+                        const startAlpha = glowSpr.color.a;
+                        tween(glow).to(0.18, {}, {
+                            onUpdate: (_t, r) => {
+                                const c = glowSpr.color;
+                                glowSpr.color = new Color(c.r, c.g, c.b, Math.round(startAlpha * (1 - (r as number))));
+                            },
+                        }).start();
+                    };
+                    row.on(Node.EventType.TOUCH_END, fadeOut);
+                    row.on(Node.EventType.TOUCH_CANCEL, fadeOut);
+                }
             }
             // Phase A2 — header polish + empty-state cluster bindings.
             this._findMatchLvXpChip = this._findMatchPanel.getChildByName('FindMatchLvXpChip') ?? null;
@@ -2595,6 +2634,9 @@ export class AppUI extends Component {
             this._findMatchFilterCard       = this._findMatchPanel.getChildByName('FilterCard') ?? null;
             this._findMatchTabUnderline     = this._findMatchPanel.getChildByName('TabActiveUnderline') ?? null;
             this._findMatchLiveCountPulseDot = this._findMatchPanel.getChildByName('FindMatchLiveCountPulseDot') ?? null;
+            // 2026-04-28 final pass — tail-hint labels (shown when 1-2 matches present).
+            this._findMatchTailHintTitle    = this._findMatchPanel.getChildByName('FindMatchTailHintTitle')?.getComponent(Label) ?? null;
+            this._findMatchTailHintSubtitle = this._findMatchPanel.getChildByName('FindMatchTailHintSubtitle')?.getComponent(Label) ?? null;
             // Refresh button — 360° spin tween on tap (gives the icon a "refreshing" feel).
             this._findMatchRefreshButton?.node.on(Button.EventType.CLICK, () => {
                 const n = this._findMatchRefreshButton!.node;
@@ -12040,6 +12082,34 @@ export class AppUI extends Component {
         // Hide the legacy bare empty label — replaced by the cluster above.
         if (this._findMatchEmptyLabel) this._findMatchEmptyLabel.node.active = false;
 
+        // 2026-04-28 final pass — tail hint when only 1-2 matches present.
+        // Reposition relative to the LAST visible card so the hint always sits
+        // ~60px below the bottom edge of the bottom-most card. Constants mirror
+        // LayoutSpec.cjs FindMatchPanel.templates.matchRow.
+        const MR_BASE_Y = 320;
+        const MR_GAP_Y  = -118;
+        const MR_HEIGHT = 108;
+        const visibleCount = visible.length;
+        const showTail = visibleCount >= 1 && visibleCount <= 2;
+        if (this._findMatchTailHintTitle) {
+            const titleNode = this._findMatchTailHintTitle.node;
+            titleNode.active = showTail;
+            if (showTail) {
+                const lastCardY = MR_BASE_Y + (visibleCount - 1) * MR_GAP_Y;
+                const titleY = lastCardY - (MR_HEIGHT / 2) - 60;
+                titleNode.setPosition(new Vec3(0, titleY, 0));
+            }
+        }
+        if (this._findMatchTailHintSubtitle) {
+            const subNode = this._findMatchTailHintSubtitle.node;
+            subNode.active = showTail;
+            if (showTail) {
+                const lastCardY = MR_BASE_Y + (visibleCount - 1) * MR_GAP_Y;
+                const subY = lastCardY - (MR_HEIGHT / 2) - 90;
+                subNode.setPosition(new Vec3(0, subY, 0));
+            }
+        }
+
         const now = Date.now() / 1000;
         for (let i = 0; i < this._matchCardRows.length; i++) {
             const node = this._matchCardRows[i];
@@ -12089,6 +12159,23 @@ export class AppUI extends Component {
                 const fillPct = m.requiredPlayers > 0 ? Math.min(1, m.playerCount / m.requiredPlayers) : 0;
                 Tween.stopAllByTarget(capFill);
                 tween(capFill).to(0.35, { scale: new Vec3(fillPct, 1, 1) }, { easing: 'cubicOut' }).start();
+                // 2026-04-28 final pass — subtle continuous shimmer so the bar feels alive.
+                const capFillSpr = capFill.getComponent(Sprite);
+                if (capFillSpr) {
+                    tween(capFill)
+                        .repeatForever(
+                            tween()
+                                .call(() => { if (capFillSpr) capFillSpr.color = new Color(20, 241, 149, 255); })
+                                .delay(1.2)
+                                .call(() => { if (capFillSpr) capFillSpr.color = new Color(20, 241, 149, 200); })
+                                .delay(1.2)
+                        )
+                        .start();
+                }
+            }
+            // Time label — gentle idle pulse so "5m race" subtly breathes.
+            if (winL) {
+                try { addIdlePulse(winL.node, 1.03, 2.0); } catch (_) { /* ignore */ }
             }
             const trackChip = this._matchCardTrackChips[i];
             if (trackChip) trackChip.active = mode === 'open';

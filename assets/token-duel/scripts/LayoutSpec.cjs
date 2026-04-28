@@ -1678,21 +1678,29 @@ const LayoutSpec = {
             // Phase A2 — Lv/XP chip TOP-RIGHT of header (relocated from -260
             // → 240 in Stage 2 to match the new Home + TokenDuel pattern).
             lvxpChip:        { x: 240,  y: 750,  w: 200, h: 32, type: 'chip',     notes: '"Lv N · X/Y"; gold-on-dim; hidden when not connected' },
-            hideFullToggle:  { x: 0,    y: 445,  w: 220, h: 36, type: 'btnPrimary' },
+            // 2026-04-28 final pass — Hide-full now lives INSIDE FilterCard footer.
+            hideFullToggle:  { x: 0,    y: 418,  w: 200, h: 28, type: 'btnPrimary', notes: 'inside FilterCard footer (below Wager row + filterDivider3)' },
             // 2026-04-27 FindMatch redesign — pulse dot left of count label.
             // AppUI tints rose/teal per active tab and runs addIdlePulse on it.
             liveCountPulseDot:  { x: -90, y: 665, w: 10, h: 10, type: 'sprite', notes: 'addIdlePulse — rose on Live, teal on Open' },
-            // 2026-04-27 FindMatch redesign — single unified filter card replacing
-            // the prior 4 separate row containers (Tab/Mode/Window/Wager). Tabs
-            // promote out of the segmented-control aesthetic into proper nav
-            // (own underline indicator). Mode/Window/Wager chips visually sit
-            // INSIDE this card with hairline dividers separating them.
-            filterCard:         { x: 0, y: 535, w: 700, h: 140, type: 'sprite', notes: 'violet edge — unified Mode/Window/Wager card; sized to clear tabs above + Hide-full toggle below' },
-            filterDivider1:     { x: 0, y: 558, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Mode and Window rows' },
-            filterDivider2:     { x: 0, y: 513, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Window and Wager rows' },
+            // 2026-04-28 final pass — unified FilterCard now contains EVERYTHING:
+            // tabs (top), 3 chip rows (with row labels left), and Hide-full footer.
+            // Card grew to h=240 to encapsulate all sub-elements.
+            filterCard:         { x: 0, y: 510, w: 700, h: 240, type: 'sprite', notes: 'violet edge — encapsulates tabs + Mode/Window/Wager rows + Hide-full footer' },
+            filterDivider1:     { x: 0, y: 520, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Mode and Window rows' },
+            filterDivider2:     { x: 0, y: 480, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Window and Wager rows' },
+            filterDivider3:     { x: 0, y: 438, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Wager row and Hide-full footer' },
+            // 2026-04-28 final pass — small dim row labels left of each chip row.
+            fmModeLabel:        { x: -300, y: 540, w: 80,  h: 22, type: 'label',  notes: '"Mode:" — dim text left of mode chips' },
+            fmWindowLabel:      { x: -300, y: 500, w: 80,  h: 22, type: 'label',  notes: '"Duration:" — dim text left of window chips' },
+            fmWagerLabel:       { x: -300, y: 460, w: 80,  h: 22, type: 'label',  notes: '"Stake:" — dim text left of wager chips' },
             // Tab active underline — slides between -122 and +122 via AppUI tween.
-            // y=610 puts it at tab-button bottom edge (intentional overlap with tab bbox).
-            tabActiveUnderline: { x: -122, y: 610, w: 200, h: 4, type: 'sprite', notes: 'violet — slides under active tab' },
+            // y=575 puts it just below the tab buttons (now inside FilterCard top).
+            tabActiveUnderline: { x: -122, y: 575, w: 200, h: 4, type: 'sprite', notes: 'violet — slides under active tab (now inside FilterCard)' },
+            // 2026-04-28 final pass — tail hint shown below match list when 1-2 matches present.
+            // AppUI repositions y at runtime; values here cover the visibleCount=1 case.
+            tailHintTitle:      { x: 0, y: 200, w: 600, h: 24, type: 'label', notes: '"No more matches right now" — shown below 1-2 visible matches' },
+            tailHintSubtitle:   { x: 0, y: 172, w: 600, h: 20, type: 'label', notes: '"Try adjusting filters" — sub-hint, dim' },
             // Phase A2 empty state — mascot + 2 CTAs replace the bare "no lobbies" label.
             emptyMascot:     { x: 0,    y: -50,  w: 200, h: 220, type: 'mascot',  notes: '3rd MascotController; think state on entry' },
             emptyTitle:      { x: 0,    y: -210, w: 600, h: 40,  type: 'label',   notes: 'gold bold "No matches yet"' },
@@ -1705,51 +1713,54 @@ const LayoutSpec = {
             status:          { x: 0,    y: -700, w: 660, h: 20, type: 'label' },
         },
         templates: {
-            // 2026-04-27 FindMatch redesign — tabs promoted to taller, wider nav
-            // controls at y=635 (was 628). Active state is a violet underline
-            // (tabActiveUnderline element above), not a teal background.
+            // 2026-04-28 final pass — tabs promoted INSIDE FilterCard top (y=602).
+            // Active state is violet (Solana brand for navigation) with a sliding
+            // violet underline below.
             fmTab: {
-                count: 2, w: 240, h: 54, y: 635,
+                count: 2, w: 240, h: 46, y: 602,
                 keys:   ['Open', 'Live'],
                 labels: ['Open Lobbies', 'Live Now'],
                 xs: [-122, 122],
                 activeIdx: 0,
             },
-            // 5 mode-filter chips at y=580. Sit visually inside FilterCard.
+            // 5 mode-filter chips at y=540. Sit visually inside FilterCard, right
+            // of fmModeLabel ("Mode:").
             fmModeFilter: {
-                count: 5, w: 125, h: 38, y: 580,
+                count: 5, w: 110, h: 36, y: 540,
                 keys:   ['all', 'oneVone', 'trio', '4p', '8p'],
                 labels: ['All', '1v1', 'Trio', '4p', '8p'],
-                baseX: -266, gapX: 133,
+                baseX: -210, gapX: 118,
             },
-            // 5 window-filter chips at y=535. Sit visually inside FilterCard.
+            // 5 window-filter chips at y=500. Sit visually inside FilterCard.
             fmWindowFilter: {
-                count: 5, w: 125, h: 38, y: 535,
+                count: 5, w: 110, h: 36, y: 500,
                 keys:   ['all', '1h', '1d', '3d', '7d'],
                 labels: ['All', '30s', '1m', '5m', '1h'],
-                baseX: -266, gapX: 133,
+                baseX: -210, gapX: 118,
             },
-            // 5 wager-bucket chips at y=490. Sit visually inside FilterCard.
+            // 5 wager-bucket chips at y=460. Sit visually inside FilterCard.
             fmWagerFilter: {
-                count: 5, w: 125, h: 38, y: 490,
+                count: 5, w: 110, h: 36, y: 460,
                 keys:   ['all', 'low', 'mid', 'high', 'whale'],
                 labels: ['All', 'Low', 'Mid', 'High', 'Whale'],
-                baseX: -266, gapX: 133,
+                baseX: -210, gapX: 118,
             },
-            // 8 match cards. 2026-04-27 redesign: bumped h 80 → 90, gapY −88 → −100,
-            // baseY 380 → 360 so cards feel dominant. Capacity bar +1 px thicker.
+            // 8 match cards. 2026-04-28 final pass: bumped h 90 → 108, gapY −100 → −118,
+            // baseY 360 → 320, capacity bar 5 → 8 thick, Resume btn 120×64 → 150×80.
             matchRow: {
-                count: 8, w: 660, h: 90,
-                baseY: 360, gapY: -100,
-                edgeStripe: { x: -325, y: 0,   w: 12,  h: 80 },  // mode-color accent
-                mode:       { x: -260, y: 22,  w: 100, h: 26 },
-                wager:      { x: -100, y: 22,  w: 160, h: 30 },  // bold gold hero
-                trackChip:  { x: 60,   y: 22,  w: 70,  h: 24 },  // REAL/PAPER pill
-                window:     { x: 150,  y: 22,  w: 110, h: 22 },
-                sub:        { x: -280, y: -18, w: 540, h: 18 },
-                capBar:     { x: -10,  y: -38, w: 240, h: 5 },   // background track
-                capBarFill: { x: -10,  y: -38, w: 240, h: 5 },   // foreground fill
-                join:       { x: 270,  y: 0,   w: 120, h: 64 },  // dominant CTA
+                count: 8, w: 660, h: 108,
+                baseY: 320, gapY: -118,
+                edgeStripe: { x: -325, y: 0,   w: 14,  h: 96 },  // mode-color accent (taller)
+                gradient:   { x: 0,    y: 22,  w: 660, h: 54 },  // top-half sheen overlay
+                glow:       { x: 0,    y: 0,   w: 668, h: 116 }, // border glow (alpha 0 default)
+                mode:       { x: -260, y: 28,  w: 100, h: 26 },
+                wager:      { x: -90,  y: 28,  w: 160, h: 32 },  // bold gold hero
+                trackChip:  { x: 50,   y: 28,  w: 78,  h: 28 },  // REAL/PAPER pill
+                window:     { x: 145,  y: 28,  w: 120, h: 22 },
+                sub:        { x: -280, y: -22, w: 540, h: 18 },
+                capBar:     { x: -30,  y: -44, w: 300, h: 8 },   // thicker background track
+                capBarFill: { x: -30,  y: -44, w: 300, h: 8 },   // foreground fill
+                join:       { x: 275,  y: 0,   w: 150, h: 80 },  // dominant CTA (larger)
             },
         },
         allowedOverlaps: [
@@ -1757,10 +1768,12 @@ const LayoutSpec = {
             ['MatchCardRow_0', 'MatchCardCapBar_0'],
             ['MatchCardRow_0', 'MatchCardCapBarFill_0'],
             ['MatchCardRow_0', 'MatchCardTrackChip_0'],
+            ['MatchCardRow_0', 'MatchCardGradient_0'],
+            ['MatchCardRow_0', 'MatchCardGlow_0'],
             ['MatchCardCapBar_0', 'MatchCardCapBarFill_0'],
             // Empty-state mascot extends below the row pool's 8th row bbox by design.
             ['MatchCardRow_7', 'FindMatchEmptyMascot'],
-            // 2026-04-27 redesign — unified FilterCard wraps all chip rows + dividers.
+            // 2026-04-28 final pass — FilterCard now ENCAPSULATES tabs + chips + dividers + hide-full + row labels.
             ['FilterCard', 'FilterMode_all'],
             ['FilterCard', 'FilterMode_oneVone'],
             ['FilterCard', 'FilterMode_trio'],
@@ -1778,15 +1791,36 @@ const LayoutSpec = {
             ['FilterCard', 'FilterWager_whale'],
             ['FilterCard', 'FilterDivider1'],
             ['FilterCard', 'FilterDivider2'],
+            ['FilterCard', 'FilterDivider3'],
+            ['FilterCard', 'FindMatchTab_Open'],
+            ['FilterCard', 'FindMatchTab_Live'],
+            ['FilterCard', 'TabActiveUnderline'],
+            ['FilterCard', 'FilterHideFullToggle'],
+            ['FilterCard', 'FindMatchModeRowLabel'],
+            ['FilterCard', 'FindMatchWindowRowLabel'],
+            ['FilterCard', 'FindMatchWagerRowLabel'],
+            ['FilterCard', 'ChipGlow_FindMatchTab_Open'],
+            ['FilterCard', 'ChipGlow_FindMatchTab_Live'],
+            ['FilterCard', 'ChipGlow_FilterMode_all'],
+            ['FilterCard', 'ChipGlow_FilterMode_oneVone'],
+            ['FilterCard', 'ChipGlow_FilterMode_trio'],
+            ['FilterCard', 'ChipGlow_FilterMode_4p'],
+            ['FilterCard', 'ChipGlow_FilterMode_8p'],
+            ['FilterCard', 'ChipGlow_FilterWindow_all'],
+            ['FilterCard', 'ChipGlow_FilterWindow_1h'],
+            ['FilterCard', 'ChipGlow_FilterWindow_1d'],
+            ['FilterCard', 'ChipGlow_FilterWindow_3d'],
+            ['FilterCard', 'ChipGlow_FilterWindow_7d'],
+            ['FilterCard', 'ChipGlow_FilterWager_all'],
+            ['FilterCard', 'ChipGlow_FilterWager_low'],
+            ['FilterCard', 'ChipGlow_FilterWager_mid'],
+            ['FilterCard', 'ChipGlow_FilterWager_high'],
+            ['FilterCard', 'ChipGlow_FilterWager_whale'],
             // Tab underline sits below tab buttons by design.
             ['TabActiveUnderline', 'FindMatchTab_Open'],
             ['TabActiveUnderline', 'FindMatchTab_Live'],
             // Pulse dot sits inside the count label band by design.
             ['FindMatchCountLabel', 'FindMatchLiveCountPulseDot'],
-            // Count label bbox bottom dips into top of taller tab buttons by design.
-            ['FindMatchCountLabel', 'FindMatchTab_Open'],
-            ['FindMatchCountLabel', 'FindMatchTab_Live'],
-            ['FindMatchLiveCountPulseDot', 'FindMatchTab_Open'],
         ],
     },
 
