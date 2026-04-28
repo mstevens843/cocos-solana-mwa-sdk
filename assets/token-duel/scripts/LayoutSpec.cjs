@@ -61,15 +61,17 @@ const td = {
     FEED_SCROLL_Y:      26,    // = FEED_SCROLL_TOP - FEED_SCROLL_H/2
     FEED_SCROLL_BOTTOM: -229,
 
-    // SquadPanel — lifted 42.
+    // SquadPanel — 2026-04-27 UI overhaul: bumped 220→230 to host taller (140h) pillar cards.
+    // New stack: header at -279 (30 below top); cards centered at y=-370 spanning [-440,-300]
+    // with h=140; wager row pushed to -488 to clear card bottom; status stays at -568.
     SQUAD_PANEL_TOP:    -249,
-    SQUAD_PANEL_H:      220,
-    SQUAD_PANEL_Y:      -359,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
-    SQUAD_PANEL_BOTTOM: -469,
-    SQUAD_HEADER_Y:     -294,
-    SQUAD_SLOTS_Y:      -359,    // 2026-04-27: -344→-359 (drop 15 px so 90-tall squares clear header bottom)
-    WAGER_Y:            -440,    // 2026-04-27: -409→-440 (gap below 90-tall squad squares)
-    WAGER_DROPDOWN_Y:   -408,    // mirror
+    SQUAD_PANEL_H:      230,
+    SQUAD_PANEL_Y:      -364,  // = SQUAD_PANEL_TOP - SQUAD_PANEL_H/2
+    SQUAD_PANEL_BOTTOM: -479,
+    SQUAD_HEADER_Y:     -279,    // 30 px below panel top; pillar cards drop right under it
+    SQUAD_SLOTS_Y:      -370,    // panel center for 140h cards; spans [-440,-300]
+    WAGER_Y:            -488,    // 48 below card bottom (-440); wager spans [-516,-460]
+    WAGER_DROPDOWN_Y:   -456,    // mirror; opens upward from wager-value button
 
     // Footer.
     STATUS_Y:           -568,    // 2026-04-27: -537→-568 (follow wager down)
@@ -120,22 +122,30 @@ const pm = {
 // from this block; do NOT hand-tune element y values. Panel root is offset
 // by (0, -SAFE_AREA_TOP, 0) so panel-local y maps to world y - 110.
 const home = {
+    // 2026-04-27 V3 — Battle-launcher hierarchy. Header tightens (icon h
+    // 64→44, ≈-30%), RecentMatch + DailyStreak fold into one elevated 2×3
+    // stat card, Start CTA dominates (h 104→120), Find/MIP equalize as
+    // Tier-1 teal pair, Bot demoted (h 84→72, w 680→600, amberDim).
+    // Vertical inter-element gaps drop ~25% (~80→~60 px avg).
+    //
     // Header band — 5-icon bar (bell · trophy · wallet · cog · disconnect).
-    HEADER_Y:         620,
-    HEADER_BADGE_Y:   638,   // notification badge top-right offset (bell.y + 18)
+    HEADER_Y:         640,
+    HEADER_BADGE_Y:   656,   // bell.y + 16 — tighter against 44-px bell
+    HEADER_UNDERLINE_Y: 600, // V3 NEW — subtle violet underline below header band
 
     // Content stack — top → bottom of the lobby.
-    XP_CHIP_Y:        540,   // homeLevelChip (Lv N + XP progress card)
-    RECENT_CARD_Y:    420,   // homeMatchTicker / homeTournamentBadge (mutually exclusive slot)
-    SECONDARY_Y:      320,   // dailyStreakStrip (DAY / CHALLENGES / POOL / RAKE)
-    SECTION_LBL_Y:    260,   // "CHOOSE MATCH TYPE" eyebrow label
-    START_CTA_Y:      196,   // Start Match (violet hero, h=104)
-    FIND_CTA_Y:       80,    // Find Match (teal,   h=92)
-    FIND_BADGE_Y:     102,   // live count pill — sibling of FindMatchBtn
-    MIP_CTA_Y:        -32,   // 2026-04-27 NEW — Matches In Progress (teal, h=84)
-    MIP_BADGE_Y:      -10,   // live count pill — sibling of MatchesInProgressBtn
-    BOT_CTA_Y:        -140,  // Bot Match (warn amber, h=84) — 2026-04-27 was -28; pushed down for MIP
-    TRAINING_Y:       -300,  // homeTrainingCard (mascot + glow + copy) — 2026-04-27 was -200
+    XP_CHIP_Y:        548,   // homeLevelChip (Lv N + XP progress card)
+    RECENT_CARD_Y:    404,   // unified RecentMatch+Daily 2×3 stat card (h 140→184)
+    START_CTA_Y:      240,   // Start Match — V3 hero h=120 (was 104)
+    FIND_CTA_Y:       120,   // Find Match — h=92
+    FIND_BADGE_Y:     142,   // live count pill — sibling of FindMatchBtn
+    MIP_CTA_Y:        18,    // Matches In Progress — V3 h=92 (was 84) — matches Find
+    MIP_BADGE_Y:      40,    // live count pill — sibling of MatchesInProgressBtn
+    BOT_CTA_Y:        -78,   // Bot Match — V3 h=72 (was 84), w=600 (was 680), amberDim
+    TRAINING_Y:       -220,  // homeTrainingCard (mascot + glow + copy)
+
+    // V3 — DailyStreakStrip + ChooseMatch eyebrow folded into Recent card.
+    // Old anchors SECONDARY_Y (320) and SECTION_LBL_Y (260) removed.
 
     // Legacy off-flow nodes — pinned below safe area, kept ONLY for AppUI
     // binding compat after Phase N4 collapsed them into SettingsPanel.
@@ -210,17 +220,18 @@ const landing = {
     SUBTITLE_Y:       445,
     MASCOT_Y:         280,
     TAGLINE_Y:        110,
-    SUPPORT_Y:        66,
+    SUPPORT_Y:        78,     // 2026-04-27 UX upgrade: pulled up 12 (was 66) to tighten support→tagline gap
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
-    CTA_CARD_Y:       -185,
+    CTA_CARD_Y:       -178,   // 2026-04-27 UX upgrade: pulled up 7 (was -185)
 
-    // Action stack inside the CTA card. 2026-04-27 — guest takes slot 2,
-    // reconnect takes slot 3 (was reverse). Slot Y values themselves don't move.
-    CONNECT_Y:        -25,    // PRIMARY — Connect Wallet (h=110)
-    TRUST_Y:          -100,   // small "Secure · Non-custodial" line under Connect
-    GUEST_Y:          -170,   // SECONDARY — Play as Guest (h=100) — was Reconnect's slot
-    RECONNECT_Y:      -285,   // TERTIARY  — Reconnect (h=80)        — was Guest's slot
+    // Action stack inside the CTA card. 2026-04-27 UX upgrade: tightened
+    // ~20% — every Y in the stack moved closer to the next neighbor so the
+    // stack feels "decided" instead of spread.
+    CONNECT_Y:        -18,    // PRIMARY — Connect Wallet (h=110), was -25
+    TRUST_Y:          -88,    // small "Secure · Non-custodial" line under Connect, was -100
+    GUEST_Y:          -158,   // SECONDARY — Play as Guest (h=88), was -170
+    RECONNECT_Y:      -262,   // TERTIARY  — Reconnect (h=72), was -285
 
     // Bottom status footer.
     STATUS_PILL_Y:    -555,
@@ -330,21 +341,23 @@ const leaderboard = {
 
 // 2026-04-27 — MatchesInProgressPanel deterministic Y anchors.
 // Full-screen list of active matches the connected pubkey is in. Scrollview
-// + 30-row pool; each row has a Graphics ring (radius 22) reflecting
-// remaining time and a "winning by X%" focal text on the left.
+// + 30-row pool. Live-battle redesign round 2: each row is a 150-px immersive
+// card with cardBg sprite, leader-tinted glow, big (radius 28) timer ring,
+// split duel bar (track/fill/glow/tick), VS label, and a Resume CTA. Hero
+// treatment when N=1 (runtime scales row 0 to 260px).
 const mip = {
-    // Header band — back / title / subtitle.
-    BACK_Y:           720,
-    TITLE_Y:          680,
-    SUBTITLE_Y:       638,
+    // Header band — tightened from 720/680/638 so the list takes more screen.
+    BACK_Y:           580,
+    TITLE_Y:          540,
+    SUBTITLE_Y:       504,
 
     // Scrollview + row pool.
-    SCROLL_Y:         30,
-    SCROLL_H:         860,
+    SCROLL_Y:         60,
+    SCROLL_H:         1000,
     ROW_W:            660,
-    ROW_H:            80,
+    ROW_H:            150,
     ROW_BASE_Y:       -40,
-    ROW_GAP_Y:        -90,
+    ROW_GAP_Y:        -170,
 
     // Empty state (shown when filteredCount === 0).
     EMPTY_STATE_Y:    120,
@@ -495,20 +508,35 @@ const LayoutSpec = {
         canvas: { w: 720, h: 1280 },
         bg: { color: '#000000' },
         elements: {
+            // 2026-04-27 UX upgrade — depth gradient (purple top → near-black bottom)
+            // sitting BEHIND the global Starfield. Three-stack opacity falloff per
+            // band, matching the BackgroundGlow_TopLeft_Outer/Mid/Inner pattern.
+            bgGradientTopOuter:  { x: 0,   y: 480,  w: 720, h: 320, type: 'sprite',     notes: 'deep purple top band, low alpha (≈18) — softens into mid' },
+            bgGradientTopMid:    { x: 0,   y: 540,  w: 720, h: 200, type: 'sprite',     notes: 'deep purple top band, mid alpha (≈40)' },
+            bgGradientTopInner:  { x: 0,   y: 600,  w: 720, h: 80,  type: 'sprite',     notes: 'deep purple top band, peak alpha (≈80) at very top' },
+            bgGradientBotOuter:  { x: 0,   y: -480, w: 720, h: 320, type: 'sprite',     notes: 'near-black bottom band, low alpha (≈22) — softens into mid' },
+            bgGradientBotMid:    { x: 0,   y: -560, w: 720, h: 200, type: 'sprite',     notes: 'near-black bottom band, mid alpha (≈55)' },
+            bgGradientBotInner:  { x: 0,   y: -620, w: 720, h: 80,  type: 'sprite',     notes: 'near-black bottom band, peak alpha (≈110) at very bottom' },
             // Hero band (compressed — was y=500/432/220/45/-10 in v1)
-            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold' },
-            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: 'Portfolio Race on Solana — 24pt body, mid' },
-            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 260, h: 260, type: 'mascot',     notes: 'idle Seedance frames; slightly larger (was 240)' },
+            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold + letter-spacing 2 + halo behind' },
+            // 2026-04-27 UX upgrade — gold halo behind title for shimmer.
+            titleGlow:           { x: 0,   y: landing.TITLE_Y,    w: 720, h: 140, type: 'sprite',     notes: 'gold radial halo behind TitleLabel; alpha-pulsed by LandingFX.addGlowPulse' },
+            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: '"Outperform. Or get outperformed." — 22pt body, mid, dimmed' },
+            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 280, h: 280, type: 'mascot',     notes: '2026-04-27 UX upgrade: w/h 260→280 (+7.7%); idle Seedance frames; +float, +glow halo, +shadow siblings' },
+            // 2026-04-27 UX upgrade — soft drop-shadow ellipse below mascot.
+            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 150, w: 200, h: 28, type: 'sprite', notes: 'flat dark ellipse under mascot for grounding; cl(0,0,0,90)' },
+            // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
+            mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 440, h: 440, type: 'sprite',     notes: 'violet radial halo SIBLING of mascot, renders BEHIND it; alpha-pulsed by LandingFX.addGlowPulse' },
             tagline:             { x: 0,   y: landing.TAGLINE_Y,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform."' },
-            supportLine:         { x: 0,   y: landing.SUPPORT_Y,  w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 16pt lo' },
+            supportLine:         { x: 0,   y: landing.SUPPORT_Y,  w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 13pt lo (down from 16)' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
             ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
-            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Use real funds · compete for SOL"' },
+            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
             connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
-            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card' },
-            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 660, h: 100, type: 'btnSuccess', notes: 'SECONDARY — Guest w/ DIM halo so it doesnt rival Connect; 2026-04-27 promoted above Reconnect' },
-            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 660, h: 80,  type: 'btnGhost',   notes: 'TERTIARY — ghost-teal Reconnect; only active when AuthCache.hasCachedAuth; 2026-04-27 demoted below Guest' },
+            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card; green-tinted for reassurance' },
+            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 640, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 620, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
         },
         allowedOverlaps: [
@@ -523,6 +551,22 @@ const LayoutSpec = {
             ['CTACardBg', 'CardEdgeAccent'],
             // Chevron sits inside ConnectButton's bbox by design (right-aligned)
             ['ConnectButton', 'ConnectChevron'],
+            // 2026-04-27 UX upgrade — gradient + halos + shadow are intentionally
+            // layered BEHIND or AROUND their anchor elements.
+            ['BgGradientTopOuter', 'BgGradientTopMid'],
+            ['BgGradientTopOuter', 'BgGradientTopInner'],
+            ['BgGradientTopMid', 'BgGradientTopInner'],
+            ['BgGradientBotOuter', 'BgGradientBotMid'],
+            ['BgGradientBotOuter', 'BgGradientBotInner'],
+            ['BgGradientBotMid', 'BgGradientBotInner'],
+            ['TitleGlow', 'TitleLabel'],
+            ['TitleGlow', 'SubtitleLabel'],
+            ['MascotGlow', 'LandingMascotContainer'],
+            ['MascotGlow', 'MascotShadow'],
+            ['MascotGlow', 'TaglineLabel'],
+            ['MascotGlow', 'SubtitleLabel'],
+            ['MascotShadow', 'LandingMascotContainer'],
+            ['MascotShadow', 'TaglineLabel'],
         ],
     },
 
@@ -551,70 +595,85 @@ const LayoutSpec = {
             // by size + glow alpha, training card grown with mascot glow halo.
             // ── BACKGROUND SCRIM (full panel, behind everything) ──
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite', notes: 'dim overlay behind content column — reduces starfield contrast' },
-            // ── HUD HEADER (y=620) — bell · WalletPill · 3 chrome icons ──
-            notificationBell:    { x: -296, y: home.HEADER_Y,       w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x -330→-296 (pulled inward toward wallet)' },
-            notificationBadge:   { x: -274, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 22 to keep top-right offset)' },
+            // ── HUD HEADER (y=640, V3) — bell · WalletPill · 3 chrome icons ──
+            // V3 — icon w/h 64→44 (≈-30% header band height per UX audit).
+            notificationBell:    { x: -296, y: home.HEADER_Y,       w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 — w/h 64→44 (-30% header tighten)' },
+            notificationBadge:   { x: -278, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 18 keeps top-right offset)' },
             walletPill:          { x: 0,    y: home.HEADER_Y,       w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
             walletPillGlow:      { x: 0,    y: home.HEADER_Y,       w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge',    notes: 'green status dot at left edge of pill (relative to pill)' },
-            pubkeyLabel:         { x: -50,  y: 0,    w: 220, h: 26,  type: 'label',    notes: '2026-04-27 — vertically centered (was y=6); shrunk w 280→220 + nudged x -30→-50 to leave room for SeedVault on right' },
-            walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label',    notes: '2026-04-27 — moved from below pubkey (centered) to RIGHT side of pill (vertically centered) so "Seed Vault" is actually visible' },
+            pubkeyLabel:         { x: -50,  y: 0,    w: 220, h: 26,  type: 'label',    notes: 'vertically centered; w 280→220 + x -30→-50 to leave room for SeedVault on right' },
+            walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label',    notes: 'right side of pill (vertically centered) so "Seed Vault" is visible' },
             // Phase N4: openPortfolioBtn removed (Portfolio collapsed into Leaderboard hub).
             // 5-icon bar reordered to [bell | trophy | wallet | cog | disconnect] with wallet centered.
-            openLeaderboardBtn:  { x: -224, y: home.HEADER_Y, w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x -250→-224' },
-            openSettingsBtn:     { x:  224, y: home.HEADER_Y, w: 64,  h: 64,  type: 'btnGhost', notes: '2026-04-27 — w/h 56→64, x  250→ 224' },
+            openLeaderboardBtn:  { x: -224, y: home.HEADER_Y, w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 — w/h 64→44' },
+            openSettingsBtn:     { x:  224, y: home.HEADER_Y, w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 — w/h 64→44' },
+            // V3 NEW — subtle violet underline beneath header band.
+            homeHeaderUnderline: { x: 0,    y: home.HEADER_UNDERLINE_Y, w: 640, h: 1, type: 'sprite', notes: 'V3 — 1×640 violetDim underline at low alpha; visual divider below header' },
             // ── XP MODULE — real progression bar, animated ──
             homeLevelChip:       { x: 0,    y: home.XP_CHIP_Y, w: 680, h: 80,  type: 'chip',     notes: 'Lv N (gold 22pt) + X/Y XP (right) + 640x14 rounded gold progress bar' },
             homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite',   notes: 'rounded track 640x14 (relative to card)' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite',   notes: 'gold fill, left-anchored, width tweens on load (relative to track)' },
-            // ── RECENT MATCH CARD — 2-row chip grid ──
-            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 140, type: 'chip',     notes: 'recent-matches card with header + 2 rows of chips; tap → SpectatorPanel' },
-            homeMatchTickerHeader: { x: 0,  y: 58,   w: 660, h: 16,  type: 'label',    notes: '"RECENT MATCH" header (relative to card)' },
-            homeMatchChipDivider: { x: 0,   y: -7,   w: 600, h: 1,   type: 'sprite',   notes: 'subtle 1-px divider between row 1 and row 2 (relative to card)' },
+            // ── UNIFIED RECENT MATCH CARD — V3 elevated 3×3 stat grid ──
+            // V3 — RecentMatch (5 chips) + DailyStreak (4 chips) merged into a
+            // single card with header + 3 rows. All 9 stat Labels keep their
+            // existing names so AppUI value setters need no rename.
+            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 184, type: 'chip',     notes: 'V3 unified RECENT MATCH · DAILY card; 9 stats in 3×3 grid; tap → SpectatorPanel' },
+            homeMatchTickerHeader: { x: 0,  y: 78,   w: 660, h: 18,  type: 'label',    notes: '"RECENT MATCH · DAILY" header (relative to card)' },
+            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 192, type: 'sprite',   notes: 'V3 NEW — soft drop-shadow sprite behind card for elevation feel (relative to card)' },
+            homeMatchChipDivider: { x: 0,   y: -2,   w: 620, h: 1,   type: 'sprite',   notes: 'V3 — 1-px divider between row 1 and row 2 (relative to card)' },
+            homeStreakChipDivider: { x: 0,  y: -58,  w: 620, h: 1,   type: 'sprite',   notes: 'V3 NEW — 1-px divider between row 2 and row 3 (relative to card)' },
             homeMatchChip:       { keys: ['mode', 'players', 'stake', 'duration', 'created'],
                                    labels: ['MODE', 'PLAYERS', 'STAKE', 'DURATION', 'CREATED'],
-                                   xs: [-200, 0, 200, -100, 100],
-                                   ys: [18, 18, 18, -38, -38],
-                                   ws: [160, 160, 160, 200, 200],
+                                   xs: [-220, 0, 220, -220, 0],
+                                   ys: [34, 34, 34, -22, -22],
+                                   ws: [200, 200, 200, 200, 200],
                                    h: 52,
                                    keyFs: 12, valFs: 18,
-                                   notes: '5 chips: row 1 (mode/players/stake), row 2 (duration/created)' },
+                                   notes: 'V3 — 5 recent-match chips: row1 mode/players/stake @y=34, row2 duration/created @y=-22 (DAY shares row2 right cell)' },
             // Tournament alternate — same slot as ticker, mutually exclusive.
-            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 140, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active' },
+            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 184, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches unified card)' },
             // Off-flow placeholders — superseded by SettingsPanel + homeChalChip
             // 'rake' key. Nodes pinned below safe-area so they never collide.
             homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
-            disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 64,  h: 64,  type: 'btnGhost',  notes: '2026-04-27 — w/h 56→64, x  330→ 296' },
+            disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 44,  h: 44,  type: 'btnGhost',  notes: 'V3 — w/h 64→44' },
             deleteBtn:           { x: 180,  y: home.LEGACY_DELETE_Y,  w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             signOutGuestBtn:     { x: 0,    y: home.LEGACY_SIGNOUT_Y, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
-            // ── SECONDARY STATS CARD — 4 chips, no SEASON ──
-            // Node name "DailyStreakStrip" preserved for AppUI binding stability;
-            // semantically this is now the SecondaryStats card.
-            dailyStreakStrip:    { x: 0,    y: home.SECONDARY_Y, w: 680, h: 64,  type: 'chip',     notes: '4 chips (DAY/CHALLENGES/POOL/RAKE); tap → DailyChallengePanel' },
+            // ── DAILY STAT GROUP (V3 — REPARENTED inside HomeMatchTicker) ──
+            // V3 — DailyStreakStrip dropped; HomeChalChip_* groups now live as
+            // children of HomeMatchTicker. AppUI value setters look up Labels
+            // by name (HomeChalChipVal_*) so the reparent is invisible to them.
+            // Layout: row2 right cell (DAY) at x=220 y=-22 sharing row with
+            // duration/created; row3 (CHALLENGES/POOL/RAKE) at y=-78.
             homeChalChip:        { keys: ['day', 'challenges', 'pool', 'rake'],
                                    labels: ['DAY', 'CHALLENGES', 'POOL', 'RAKE'],
-                                   xs: [-240, -80, 80, 240], y: 0, w: 130, h: 52,
+                                   xs: [220, -220, 0, 220],
+                                   ys: [-22, -78, -78, -78],
+                                   ws: [200, 200, 200, 200],
+                                   h: 52,
                                    keyFs: 12, valFs: 18,
-                                   notes: 'inline 4 chip groups inside SecondaryStats card (SEASON dropped)' },
-            // ── SECTION TITLE ──
-            homeChooseMatchLabel: { x: 0,   y: home.SECTION_LBL_Y, w: 680, h: 24,  type: 'label',    notes: '"CHOOSE MATCH TYPE" tracked uppercase muted lo-tier' },
-            // ── PRIMARY CTA TRIO (tiered hierarchy: Start > Find > Bot) ──
-            startMatchBtn:       { x: 0,    y: home.START_CTA_Y, w: 680, h: 104, type: 'btnPrimary', notes: 'Hero violet — host real match (TALLEST + brightest glow)' },
-            startMatchSubtitle:  { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
+                                   notes: 'V3 — 4 daily chips reparented under HomeMatchTicker; DAY shares row2; CHALLENGES/POOL/RAKE row3 (SEASON dropped)' },
+            // ── PRIMARY CTA TRIO (V3 — Start > Find = MIP > Bot tiered) ──
+            // V3 — "CHOOSE MATCH TYPE" eyebrow dropped; richer subtitles carry
+            // the section affordance. Start grows h=104→120; MIP equalizes
+            // with Find at h=92 + teal; Bot demoted to h=72 w=600 amberDim.
+            startMatchBtn:       { x: 0,    y: home.START_CTA_Y, w: 680, h: 120, type: 'btnPrimary', notes: 'V3 hero — h 104→120; only button with idle pulse + ripple' },
+            startMatchSubtitle:  { x: 0,    y: -28,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton (y -22→-28 for taller hero)' },
             startMatchChevron:   { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
-            findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Hero teal — browse open lobbies (mid)' },
+            findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'Tier-1 teal — browse open lobbies' },
             findMatchSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton' },
             findMatchChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of FindMatchButton' },
             findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of FindMatchBtn' },
-            // 2026-04-27 — Matches In Progress: opens MatchesInProgressPanel.
-            matchesInProgressBtn:        { x: 0,    y: home.MIP_CTA_Y,   w: 680, h: 84,  type: 'btnPrimary', notes: 'NEW — opens MatchesInProgressPanel; teal primary' },
+            // V3 — Matches In Progress: equalize with Find (h=92, teal/btnSuccess).
+            matchesInProgressBtn:        { x: 0,    y: home.MIP_CTA_Y,   w: 680, h: 92,  type: 'btnSuccess', notes: 'V3 — h 84→92, type btnPrimary→btnSuccess (Tier-1 parity with Find)' },
             matchesInProgressSubtitle:   { x: 0,    y: -22,                w: 620, h: 18,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
             matchesInProgressChevron:    { x: 310,  y: 0,                  w: 24,  h: 24,  type: 'label',      notes: 'CHILD of MatchesInProgressButton' },
             matchesInProgressCountBadge: { x: 244,  y: home.MIP_BADGE_Y,   w: 76,  h: 28,  type: 'badge',      notes: 'live count pill on right side of MIP button' },
-            botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 680, h: 84,  type: 'btnWarn',    notes: 'Warn amber — paper / vs bots / free practice (smallest, muted)' },
-            botMatchSubtitle:    { x: 0,    y: -22,  w: 620, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton' },
-            botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton' },
+            // V3 — Bot demoted: shorter (72), narrower (600 inset), color amberDim.
+            botMatchBtn:         { x: 0,    y: home.BOT_CTA_Y,    w: 600, h: 72,  type: 'btnWarn',    notes: 'V3 — h 84→72, w 680→600 (inset), color amberDim — visibly demoted Tier-2' },
+            botMatchSubtitle:    { x: 0,    y: -22,  w: 540, h: 18,  type: 'label',      notes: 'CHILD of BotMatchButton (w 620→540 to fit narrower button)' },
+            botMatchChevron:     { x: 270,  y: 0,    w: 24,  h: 24,  type: 'label',      notes: 'CHILD of BotMatchButton (x 310→270 for narrower button)' },
             // ── TRAINING HERO CARD — mascot + glow + CTA hint ──
             homeTrainingCard:    { x: 0,    y: home.TRAINING_Y, w: 680, h: 196, type: 'card',      notes: 'hero card with mascot (left) + copy (right); subtle gradient feel' },
             trainingMascotGlow:  { x: -220, y: 0,    w: 200, h: 200, type: 'sprite',    notes: 'soft amber glow halo BEHIND mascot (relative to card)' },
@@ -637,13 +696,15 @@ const LayoutSpec = {
             ['HomeContentScrim',        'HomeLevelChip'],
             ['HomeContentScrim',        'HomeMatchTicker'],
             ['HomeContentScrim',        'HomeTournamentBadge'],
-            ['HomeContentScrim',        'DailyStreakStrip'],
-            ['HomeContentScrim',        'HomeChooseMatchLabel'],
+            ['HomeContentScrim',        'HomeHeaderUnderline'],            // V3 NEW
             ['HomeContentScrim',        'StartMatchButton'],
             ['HomeContentScrim',        'BtnGlow_StartMatchButton'],
             ['HomeContentScrim',        'FindMatchButton'],
             ['HomeContentScrim',        'BtnGlow_FindMatchButton'],
             ['HomeContentScrim',        'FindMatchButtonCountBadge'],
+            ['HomeContentScrim',        'MatchesInProgressButton'],         // V3 NEW
+            ['HomeContentScrim',        'BtnGlow_MatchesInProgressButton'], // V3 NEW
+            ['HomeContentScrim',        'MatchesInProgressCountBadge'],     // V3 NEW
             ['HomeContentScrim',        'BotMatchButton'],
             ['HomeContentScrim',        'BtnGlow_BotMatchButton'],
             ['HomeContentScrim',        'HomeTrainingCard'],
@@ -681,6 +742,26 @@ const LayoutSpec = {
             ['HomeXpBarTrack',          'HomeXpBarFill'],
             // RecentMatch divider sits inside card.
             ['HomeMatchTicker',         'HomeMatchChipDivider'],
+            // V3 — unified card houses dailyChalChip groups + second divider + elevation shadow.
+            ['HomeMatchTicker',         'HomeStreakChipDivider'],
+            ['HomeMatchTicker',         'HomeRecentCardElevation'],
+            ['HomeRecentCardElevation', 'HomeMatchTicker'],
+            ['HomeRecentCardElevation', 'HomeMatchChipDivider'],
+            ['HomeRecentCardElevation', 'HomeStreakChipDivider'],
+            ['HomeMatchTicker',         'HomeChalChip_day'],
+            ['HomeMatchTicker',         'HomeChalChip_challenges'],
+            ['HomeMatchTicker',         'HomeChalChip_pool'],
+            ['HomeMatchTicker',         'HomeChalChip_rake'],
+            // V3 — divider sprites are 1px tall hairlines that geometrically
+            // cross adjacent chip bboxes (chips are 52 tall, dividers sit at
+            // y=-2 / y=-58 which falls inside row-2 / row-3 vertical span).
+            // Visually intentional — divider renders as a thin line on top.
+            ['HomeMatchChipDivider',    'HomeMatchChip_duration'],
+            ['HomeMatchChipDivider',    'HomeMatchChip_created'],
+            ['HomeMatchChipDivider',    'HomeChalChip_day'],
+            ['HomeStreakChipDivider',   'HomeChalChip_challenges'],
+            ['HomeStreakChipDivider',   'HomeChalChip_pool'],
+            ['HomeStreakChipDivider',   'HomeChalChip_rake'],
         ],
     },
 
@@ -1373,17 +1454,22 @@ const LayoutSpec = {
     },
 
     /* ───── MATCHES IN PROGRESS ─────────────────────────────────────── */
-    // 2026-04-27 — Full-screen list of active matches the connected pubkey
-    // is in. Card scrollview (30-row pool); each row shows a winning line +
-    // window meta + stake chip (SOL or PAPER) + opponent chip (BOT or @user)
-    // + Graphics ring (radius 22) + remaining time. Tap a row → RacePanel.
+    // 2026-04-27 — Live-battle redesign. Each row is a 150-px immersive card:
+    //   • Card surface (cardBg) + leader-tinted glow halo (cardGlow) behind
+    //   • Top row: OPP/YOU + delta% (left), VS BOT/@user (center), big
+    //     remaining-time label + radius-28 timer ring (right)
+    //   • Mid: split duel bar (track + fill + leading-tip glow + center tick)
+    //     showing your-vs-opponent performance from -1..+1
+    //   • Bottom row: window/age line + stake chip (left), Resume CTA (right)
+    //   • Hero treatment when N=1: row 0 grows to 260px and centers vertically
+    //     (runtime scaling — single shared template).
     MatchesInProgressPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
             backLink:  { x: -280, y: mip.BACK_Y,     w: 110, h: 28,  type: 'label' },
             backBtn:   { x: -280, y: mip.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
             title:     { x: 0,    y: mip.TITLE_Y,    w: 600, h: 44,  type: 'label',
-                notes: '"Matches In Progress" — gold bold 28pt' },
+                notes: '"Matches In Progress" — gold bold 30pt' },
             subtitle:  { x: 0,    y: mip.SUBTITLE_Y, w: 520, h: 22,  type: 'label',
                 notes: 'AppUI fills "{N} games running" / "All clear"' },
             // Empty-state cluster (shown when zero active matches).
@@ -1391,39 +1477,107 @@ const LayoutSpec = {
             emptyStateTitle:   { x: 0, y: mip.EMPTY_TITLE_Y + mip.EMPTY_STATE_Y, w: 600, h: 36, type: 'label' },
             emptyStateSubtitle:{ x: 0, y: mip.EMPTY_SUB_Y   + mip.EMPTY_STATE_Y, w: 600, h: 22, type: 'label' },
             emptyStateCta:     { x: 0, y: mip.EMPTY_CTA_Y   + mip.EMPTY_STATE_Y, w: 320, h: 56, type: 'btnPrimary',
-                notes: '"Find a Match" — routes to FindMatchPanel' },
+                notes: '"Start a Match" — routes to FindMatchPanel' },
             // Scrollview holding the row pool.
             scroll:    { x: 0, y: mip.SCROLL_Y, w: 660, h: mip.SCROLL_H, type: 'scrollview' },
             // Status footer.
             status:    { x: 0, y: mip.STATUS_Y, w: 600, h: 22, type: 'label' },
         },
         templates: {
-            // 30-row pool. Each row = a card with edge stripe + 2 left labels
-            // (winLine + windowLine) + 2 mid chips (stake + opponent) + ring
-            // + time label on the right. Invisible full-row tap target.
+            // 30-row pool. Battle card layout:
+            //   cardGlow (behind) → cardBg (surface) → tapTarget → edge
+            //   → winLine / vsLabel / timeLabel / ring (top row)
+            //   → duelBarTrack / duelBar / duelBarGlow / duelBarTick (mid)
+            //   → windowLine / stakeChip / resumeBtn (bottom row)
+            // tapTarget added before resumeBtn so the button intercepts clicks.
             mipRow: {
                 count: 30, w: mip.ROW_W, h: mip.ROW_H,
                 baseY: mip.ROW_BASE_Y, gapY: mip.ROW_GAP_Y,
-                edge:        { x: -326, y: 0,   w: 4,   h: 64 },
-                winLine:     { x: -195, y: 14,  w: 250, h: 24 },
-                windowLine:  { x: -195, y: -14, w: 250, h: 16 },
-                stakeChip:   { x:   55, y: 14,  w: 100, h: 22 },
-                opponentChip:{ x:   55, y: -14, w: 100, h: 18 },
-                ring:        { x:  240, y: 8,   w: 50,  h: 50 },
-                timeLabel:   { x:  240, y: -22, w: 130, h: 16 },
-                tapTarget:   { x: 0,    y: 0,   w: mip.ROW_W, h: mip.ROW_H },
+
+                // Surface + glow (full-card-sized).
+                cardGlow:     { x: 0,    y: 0,   w: 668, h: 158 },
+                cardBg:       { x: 0,    y: 0,   w: 660, h: 150 },
+                edge:         { x: -326, y: 0,   w: 4,   h: 130 },
+
+                // TOP ROW.
+                winLine:      { x: -200, y: 50,  w: 220, h: 28 },
+                vsLabel:      { x: 0,    y: 50,  w: 200, h: 24 },
+                timeLabel:    { x: 240,  y: 50,  w: 130, h: 24 },
+                ring:         { x: 240,  y: 14,  w: 64,  h: 64 },
+
+                // MIDDLE — duel bar group (Graphics nodes; all centered y=0).
+                duelBarTrack: { x: 0,    y: 0,   w: 480, h: 8  },
+                duelBar:      { x: 0,    y: 0,   w: 480, h: 12 },
+                duelBarGlow:  { x: 0,    y: 0,   w: 480, h: 24 },
+                duelBarTick:  { x: 0,    y: 0,   w: 4,   h: 24 },
+
+                // BOTTOM ROW.
+                windowLine:   { x: -200, y: -50, w: 240, h: 18 },
+                stakeChip:    { x: -50,  y: -50, w: 90,  h: 18 },
+                // Kept in spec for backward compat; AppUI sets _active=false
+                // (data now surfaces via the centered VS label).
+                opponentChip: { x: -50,  y: -50, w: 90,  h: 18 },
+                resumeBtn:    { x: 240,  y: -52, w: 110, h: 36 },
+
+                tapTarget:    { x: 0,    y: 0,   w: mip.ROW_W, h: mip.ROW_H },
             },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
+            // Card surface sits behind everything — overlaps all foreground.
+            ['MIPCardBg', 'MIPCardEdge'],
+            ['MIPCardBg', 'MIPWinLine'],
+            ['MIPCardBg', 'MIPVsLabel'],
+            ['MIPCardBg', 'MIPTimeLabel'],
+            ['MIPCardBg', 'MIPRing'],
+            ['MIPCardBg', 'MIPDuelBar'],
+            ['MIPCardBg', 'MIPDuelBarTrack'],
+            ['MIPCardBg', 'MIPDuelBarGlow'],
+            ['MIPCardBg', 'MIPDuelBarTick'],
+            ['MIPCardBg', 'MIPWindowLine'],
+            ['MIPCardBg', 'MIPStakeChip'],
+            ['MIPCardBg', 'MIPOpponentChip'],
+            ['MIPCardBg', 'MIPResumeBtn'],
+            // Glow sits behind card surface.
+            ['MIPCardGlow', 'MIPCardBg'],
+            ['MIPCardGlow', 'MIPCardEdge'],
+            ['MIPCardGlow', 'MIPWinLine'],
+            ['MIPCardGlow', 'MIPVsLabel'],
+            ['MIPCardGlow', 'MIPTimeLabel'],
+            ['MIPCardGlow', 'MIPRing'],
+            ['MIPCardGlow', 'MIPDuelBar'],
+            ['MIPCardGlow', 'MIPDuelBarTrack'],
+            ['MIPCardGlow', 'MIPDuelBarGlow'],
+            ['MIPCardGlow', 'MIPDuelBarTick'],
+            ['MIPCardGlow', 'MIPWindowLine'],
+            ['MIPCardGlow', 'MIPStakeChip'],
+            ['MIPCardGlow', 'MIPOpponentChip'],
+            ['MIPCardGlow', 'MIPResumeBtn'],
+            // Duel bar group — track/fill/glow/tick all stack at y=0.
+            ['MIPDuelBarTrack', 'MIPDuelBar'],
+            ['MIPDuelBarTrack', 'MIPDuelBarGlow'],
+            ['MIPDuelBarTrack', 'MIPDuelBarTick'],
+            ['MIPDuelBar', 'MIPDuelBarGlow'],
+            ['MIPDuelBar', 'MIPDuelBarTick'],
+            ['MIPDuelBarGlow', 'MIPDuelBarTick'],
+            // Ring + time label share the right rail (ring at y=14, label y=50).
+            ['MIPRing', 'MIPTimeLabel'],
             // Tap target sits BEHIND all visible row content.
+            ['MIPTapTarget', 'MIPCardBg'],
+            ['MIPTapTarget', 'MIPCardGlow'],
             ['MIPTapTarget', 'MIPCardEdge'],
             ['MIPTapTarget', 'MIPWinLine'],
+            ['MIPTapTarget', 'MIPVsLabel'],
             ['MIPTapTarget', 'MIPWindowLine'],
             ['MIPTapTarget', 'MIPStakeChip'],
             ['MIPTapTarget', 'MIPOpponentChip'],
             ['MIPTapTarget', 'MIPRing'],
             ['MIPTapTarget', 'MIPTimeLabel'],
+            ['MIPTapTarget', 'MIPDuelBar'],
+            ['MIPTapTarget', 'MIPDuelBarTrack'],
+            ['MIPTapTarget', 'MIPDuelBarGlow'],
+            ['MIPTapTarget', 'MIPDuelBarTick'],
+            ['MIPTapTarget', 'MIPResumeBtn'],
         ],
     },
 
@@ -1525,13 +1679,20 @@ const LayoutSpec = {
             // → 240 in Stage 2 to match the new Home + TokenDuel pattern).
             lvxpChip:        { x: 240,  y: 750,  w: 200, h: 32, type: 'chip',     notes: '"Lv N · X/Y"; gold-on-dim; hidden when not connected' },
             hideFullToggle:  { x: 0,    y: 445,  w: 220, h: 36, type: 'btnPrimary' },
-            // Phase 2b — segmented-control container cards behind each filter
-            // row. mkCardEdge attaches a 1px brand-color stripe along top edge.
-            // Containers render BEFORE chips in _children so they sit beneath.
-            tabRowContainer:    { x: 0, y: 628, w: 660, h: 50, type: 'sprite', notes: 'teal edge — Open / Live tabs' },
-            modeRowContainer:   { x: 0, y: 580, w: 660, h: 50, type: 'sprite', notes: 'violet edge — Mode filter' },
-            windowRowContainer: { x: 0, y: 535, w: 660, h: 50, type: 'sprite', notes: 'teal-dim edge — Duration filter' },
-            wagerRowContainer:  { x: 0, y: 490, w: 660, h: 50, type: 'sprite', notes: 'amber-dim edge — Wager filter' },
+            // 2026-04-27 FindMatch redesign — pulse dot left of count label.
+            // AppUI tints rose/teal per active tab and runs addIdlePulse on it.
+            liveCountPulseDot:  { x: -90, y: 665, w: 10, h: 10, type: 'sprite', notes: 'addIdlePulse — rose on Live, teal on Open' },
+            // 2026-04-27 FindMatch redesign — single unified filter card replacing
+            // the prior 4 separate row containers (Tab/Mode/Window/Wager). Tabs
+            // promote out of the segmented-control aesthetic into proper nav
+            // (own underline indicator). Mode/Window/Wager chips visually sit
+            // INSIDE this card with hairline dividers separating them.
+            filterCard:         { x: 0, y: 535, w: 700, h: 140, type: 'sprite', notes: 'violet edge — unified Mode/Window/Wager card; sized to clear tabs above + Hide-full toggle below' },
+            filterDivider1:     { x: 0, y: 558, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Mode and Window rows' },
+            filterDivider2:     { x: 0, y: 513, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Window and Wager rows' },
+            // Tab active underline — slides between -122 and +122 via AppUI tween.
+            // y=610 puts it at tab-button bottom edge (intentional overlap with tab bbox).
+            tabActiveUnderline: { x: -122, y: 610, w: 200, h: 4, type: 'sprite', notes: 'violet — slides under active tab' },
             // Phase A2 empty state — mascot + 2 CTAs replace the bare "no lobbies" label.
             emptyMascot:     { x: 0,    y: -50,  w: 200, h: 220, type: 'mascot',  notes: '3rd MascotController; think state on entry' },
             emptyTitle:      { x: 0,    y: -210, w: 600, h: 40,  type: 'label',   notes: 'gold bold "No matches yet"' },
@@ -1544,50 +1705,51 @@ const LayoutSpec = {
             status:          { x: 0,    y: -700, w: 660, h: 20, type: 'label' },
         },
         templates: {
-            // 2 mode tabs at y=628 (Open Lobbies / Live Now).
+            // 2026-04-27 FindMatch redesign — tabs promoted to taller, wider nav
+            // controls at y=635 (was 628). Active state is a violet underline
+            // (tabActiveUnderline element above), not a teal background.
             fmTab: {
-                count: 2, w: 200, h: 38, y: 628,
+                count: 2, w: 240, h: 54, y: 635,
                 keys:   ['Open', 'Live'],
                 labels: ['Open Lobbies', 'Live Now'],
-                xs: [-100, 100],
+                xs: [-122, 122],
                 activeIdx: 0,
             },
-            // 5 mode-filter chips at y=580 (Stage 3: br10 → 8p, added Trio).
+            // 5 mode-filter chips at y=580. Sit visually inside FilterCard.
             fmModeFilter: {
                 count: 5, w: 125, h: 38, y: 580,
                 keys:   ['all', 'oneVone', 'trio', '4p', '8p'],
                 labels: ['All', '1v1', 'Trio', '4p', '8p'],
                 baseX: -266, gapX: 133,
             },
-            // 5 window-filter chips at y=535.
+            // 5 window-filter chips at y=535. Sit visually inside FilterCard.
             fmWindowFilter: {
                 count: 5, w: 125, h: 38, y: 535,
                 keys:   ['all', '1h', '1d', '3d', '7d'],
                 labels: ['All', '30s', '1m', '5m', '1h'],
                 baseX: -266, gapX: 133,
             },
-            // 5 wager-bucket chips at y=490.
+            // 5 wager-bucket chips at y=490. Sit visually inside FilterCard.
             fmWagerFilter: {
                 count: 5, w: 125, h: 38, y: 490,
                 keys:   ['all', 'low', 'mid', 'high', 'whale'],
                 labels: ['All', 'Low', 'Mid', 'High', 'Whale'],
                 baseX: -266, gapX: 133,
             },
-            // 8 match cards. Phase A2 redesign: kept h=80 (preserves baseY/gapY)
-            // but added edge-stripe (mode-color), wager hero, track chip, capacity
-            // bar — all positioned within the 80-px row bbox.
+            // 8 match cards. 2026-04-27 redesign: bumped h 80 → 90, gapY −88 → −100,
+            // baseY 380 → 360 so cards feel dominant. Capacity bar +1 px thicker.
             matchRow: {
-                count: 8, w: 660, h: 80,
-                baseY: 380, gapY: -88,
-                edgeStripe: { x: -325, y: 0,   w: 12,  h: 70 },  // mode-color accent
-                mode:       { x: -260, y: 18,  w: 100, h: 24 },
-                wager:      { x: -100, y: 18,  w: 160, h: 28 },  // bold gold hero
-                trackChip:  { x: 60,   y: 18,  w: 70,  h: 22 },  // REAL/PAPER pill
-                window:     { x: 150,  y: 18,  w: 110, h: 20 },
-                sub:        { x: -280, y: -16, w: 540, h: 18 },
-                capBar:     { x: -10,  y: -34, w: 240, h: 4 },   // background track
-                capBarFill: { x: -10,  y: -34, w: 240, h: 4 },   // foreground fill
-                join:       { x: 270,  y: 0,   w: 110, h: 56 },
+                count: 8, w: 660, h: 90,
+                baseY: 360, gapY: -100,
+                edgeStripe: { x: -325, y: 0,   w: 12,  h: 80 },  // mode-color accent
+                mode:       { x: -260, y: 22,  w: 100, h: 26 },
+                wager:      { x: -100, y: 22,  w: 160, h: 30 },  // bold gold hero
+                trackChip:  { x: 60,   y: 22,  w: 70,  h: 24 },  // REAL/PAPER pill
+                window:     { x: 150,  y: 22,  w: 110, h: 22 },
+                sub:        { x: -280, y: -18, w: 540, h: 18 },
+                capBar:     { x: -10,  y: -38, w: 240, h: 5 },   // background track
+                capBarFill: { x: -10,  y: -38, w: 240, h: 5 },   // foreground fill
+                join:       { x: 270,  y: 0,   w: 120, h: 64 },  // dominant CTA
             },
         },
         allowedOverlaps: [
@@ -1598,24 +1760,33 @@ const LayoutSpec = {
             ['MatchCardCapBar_0', 'MatchCardCapBarFill_0'],
             // Empty-state mascot extends below the row pool's 8th row bbox by design.
             ['MatchCardRow_7', 'FindMatchEmptyMascot'],
-            // Phase 2b — chip-row containers wrap every chip + glow sibling by design.
-            ['TabRowContainer',    'FindMatchTab_Open'],
-            ['TabRowContainer',    'FindMatchTab_Live'],
-            ['ModeRowContainer',   'FilterMode_all'],
-            ['ModeRowContainer',   'FilterMode_oneVone'],
-            ['ModeRowContainer',   'FilterMode_trio'],
-            ['ModeRowContainer',   'FilterMode_4p'],
-            ['ModeRowContainer',   'FilterMode_8p'],
-            ['WindowRowContainer', 'FilterWindow_all'],
-            ['WindowRowContainer', 'FilterWindow_1h'],
-            ['WindowRowContainer', 'FilterWindow_1d'],
-            ['WindowRowContainer', 'FilterWindow_3d'],
-            ['WindowRowContainer', 'FilterWindow_7d'],
-            ['WagerRowContainer',  'FilterWager_all'],
-            ['WagerRowContainer',  'FilterWager_low'],
-            ['WagerRowContainer',  'FilterWager_mid'],
-            ['WagerRowContainer',  'FilterWager_high'],
-            ['WagerRowContainer',  'FilterWager_whale'],
+            // 2026-04-27 redesign — unified FilterCard wraps all chip rows + dividers.
+            ['FilterCard', 'FilterMode_all'],
+            ['FilterCard', 'FilterMode_oneVone'],
+            ['FilterCard', 'FilterMode_trio'],
+            ['FilterCard', 'FilterMode_4p'],
+            ['FilterCard', 'FilterMode_8p'],
+            ['FilterCard', 'FilterWindow_all'],
+            ['FilterCard', 'FilterWindow_1h'],
+            ['FilterCard', 'FilterWindow_1d'],
+            ['FilterCard', 'FilterWindow_3d'],
+            ['FilterCard', 'FilterWindow_7d'],
+            ['FilterCard', 'FilterWager_all'],
+            ['FilterCard', 'FilterWager_low'],
+            ['FilterCard', 'FilterWager_mid'],
+            ['FilterCard', 'FilterWager_high'],
+            ['FilterCard', 'FilterWager_whale'],
+            ['FilterCard', 'FilterDivider1'],
+            ['FilterCard', 'FilterDivider2'],
+            // Tab underline sits below tab buttons by design.
+            ['TabActiveUnderline', 'FindMatchTab_Open'],
+            ['TabActiveUnderline', 'FindMatchTab_Live'],
+            // Pulse dot sits inside the count label band by design.
+            ['FindMatchCountLabel', 'FindMatchLiveCountPulseDot'],
+            // Count label bbox bottom dips into top of taller tab buttons by design.
+            ['FindMatchCountLabel', 'FindMatchTab_Open'],
+            ['FindMatchCountLabel', 'FindMatchTab_Live'],
+            ['FindMatchLiveCountPulseDot', 'FindMatchTab_Open'],
         ],
     },
 
@@ -1700,6 +1871,10 @@ const LayoutSpec = {
             backLink:           { x: -288, y: td.HEADER_Y,  w: 100, h: 28, type: 'label' },
             backBtn:            { x: -288, y: td.HEADER_Y,  w: 120, h: 40, type: 'btnGhost' },
             title:              { x: 0,    y: td.TITLE_Y,   w: 320, h: 36, type: 'label' },
+            // 2026-04-27 UI overhaul — thin violet glow line anchoring header band.
+            // Sits 12 px below title baseline (TITLE_Y - title.h/2 - 12 = 540).
+            headerUnderline:    { x: 0,    y: 540, w: 712, h: 2, type: 'sprite',
+                notes: 'thin violet glow line under title — anchors header band, alpha 80' },
             // 2026-04-27 v3: pills shrunk further (278×54 → 140×44; 195×54 → 140×44)
             // and right-clustered so both sit on the right half of the canvas with
             // the icon row above them.
@@ -1711,6 +1886,11 @@ const LayoutSpec = {
             // can pull upward).
             matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 712, h: 93, type: 'group',
                 notes: 'Match summary card; 4 child labels (mode/squad/stake/hint) populated by AppUI._refreshSquadActionButtons.' },
+            // 2026-04-27 UI overhaul — thin glowing underline at bottom of matchSetupCard.
+            // AppUI tints teal+breathes when squad full, mid-grey when picking. Sits at
+            // matchSetupCard.y - matchSetupCard.h/2 + 1 = 480 - 46.5 + 1 ≈ 434.
+            matchSetupReadyGlow:{ x: 0,    y: 434, w: 700, h: 2, type: 'sprite',
+                notes: 'ready-state underline; tinted by AppUI on squad full' },
             // FeedFrameCard — wraps in-card UI. Bottom shrinks with cut feed h.
             feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
                 notes: 'unified card behind Row 1 + Row 2 + col headers + feed' },
@@ -1732,15 +1912,17 @@ const LayoutSpec = {
                 notes: 'sticky bottom card wrapping squadHeaderLabel + 3 squadSlots + wager row.' },
             squadHeaderLabel:   { x: 0,    y: td.SQUAD_HEADER_Y, w: 420, h: 24, type: 'label',
                 notes: 'YOUR SQUAD label.' },
-            wagerValueButton:   { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'btnGhost',
-                notes: 'tier selector; opens WagerDropdown UPWARD.' },
-            wagerStartButton:   { x: 110,  y: td.WAGER_Y, w: 460, h: 56, type: 'btnPrimary',
-                notes: '▶ Start Duel CTA — relabels to "Pick X more" when squad incomplete.' },
-            wagerLockChip:      { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'chip',       notes: 'JOIN-MODE replaces wagerValueButton.' },
-            wagerBotChip:       { x: -240, y: td.WAGER_Y, w: 200, h: 56, type: 'chip',       notes: 'BOT-MODE replaces wagerValueButton.' },
+            // 2026-04-27 UI overhaul — wagerValueButton compact pill (200→160 w, 56→52 h);
+            // wagerStartButton bumped 56→60 h for "full height" hero feel.
+            wagerValueButton:   { x: -260, y: td.WAGER_Y, w: 160, h: 52, type: 'btnGhost',
+                notes: 'tier selector; compact pill; opens WagerDropdown UPWARD.' },
+            wagerStartButton:   { x:  100, y: td.WAGER_Y, w: 480, h: 60, type: 'btnPrimary',
+                notes: '▶ Start Duel CTA — blue→violet gradient; relabels to "Pick X more" when squad incomplete.' },
+            wagerLockChip:      { x: -260, y: td.WAGER_Y, w: 160, h: 52, type: 'chip',       notes: 'JOIN-MODE replaces wagerValueButton.' },
+            wagerBotChip:       { x: -260, y: td.WAGER_Y, w: 160, h: 52, type: 'chip',       notes: 'BOT-MODE replaces wagerValueButton.' },
             wagerHintLabel:     { x: 0,    y: -700, w: 600, h: 24, type: 'label',      notes: 'LEGACY — _active=false. Hint moved into matchSetupCard.matchSetupHintLabel.' },
-            wagerDropdown:      { x: -240, y: td.WAGER_DROPDOWN_Y, w: 360, h: 360, type: 'group',
-                notes: 'opens UPWARD from wager-value button (anchor 0.5,0 bottom-center; _lpos.y is the dropdown bottom edge).' },
+            wagerDropdown:      { x: -260, y: td.WAGER_DROPDOWN_Y, w: 360, h: 360, type: 'group',
+                notes: 'opens UPWARD from wager-value button (anchor 0.5,0 bottom-center; _lpos.y is the dropdown bottom edge). 2026-04-27 UI overhaul: x -240→-260 to align with new compact wagerValueButton.' },
             // 8c — Legacy stake cluster (kept for node-name bindings; force-hidden
             // at scene-gen so verifier sees real state. AppUI._hideLegacyBettingDuelNodes
             // is belt-and-suspenders.)
@@ -1888,14 +2070,20 @@ const LayoutSpec = {
                 colors: [],
                 bold:   [],
             },
-            // 3 squad slots — 2026-04-27: 200×64 rectangles → 90×90 squares
-            // with logo/symbol/delta stacked vertically in the centered square.
+            // 3 squad slots — 2026-04-27 UI overhaul: 90×90 squares → 222×140 pillars
+            // filling the squadPanel as 3 equal-width cards with 16-px gaps.
+            // 222w + 16 gap = 238 stride; left card spans [-349,-127], center
+            // [-111,111], right [127,349] inside the 700-wide squadPanel.
+            // Internal layout: logo top-left, symbol right of logo, hero delta
+            // centered, score bottom-left, perf bar at bottom edge.
             squadSlot: {
-                count: 3, w: 90, h: 90, y: td.SQUAD_SLOTS_Y,
-                xs: [-110, 0, 110],
-                logo:   { x: 0, y:  18, w: 50, h: 50 },
-                symbol: { x: 0, y: -16, w: 84, h: 20 },
-                delta:  { x: 0, y: -34, w: 84, h: 16 },
+                count: 3, w: 222, h: 140, y: td.SQUAD_SLOTS_Y,
+                xs: [-238, 0, 238],
+                logo:    { x: -78, y:  32, w: 56,  h: 56  },
+                symbol:  { x:  16, y:  36, w: 130, h: 24  },
+                delta:   { x:   0, y: -12, w: 200, h: 32  },
+                score:   { x: -88, y: -52, w: 56,  h: 16  },
+                perfBar: { x:   0, y: -64, w: 196, h: 3   },
             },
             // 8c — 3 legacy stake preset chips at y=-515. LEGACY — _active=false.
             stakeChip: {
@@ -1984,8 +2172,15 @@ const LayoutSpec = {
             ['WagerValueButton', 'WagerLockChip'],
             ['WagerValueButton', 'WagerBotChip'],
             ['WagerLockChip',    'WagerBotChip'],
-            // TODO 8c: squad/stake intentional overlaps (squad buttons span the
-            // stake-control y-range as a layered control panel; revisit then)
+            // 2026-04-27 UI overhaul — pillar squad cards: GradientTop sprite
+            // covers the upper half of the card and is intentionally drawn
+            // beneath the SymbolLabel; verifier should ignore the bbox overlap.
+            ['GradientTop', 'SymbolLabel'],
+            // 2026-04-27 UI overhaul — Start Match button blue→violet gradient
+            // overlay sits beneath the bevel highlight + label by design.
+            ['GradientRight', 'TopHighlight'],
+            ['GradientRight', 'BottomShadow'],
+            ['GradientRight', 'Label'],
         ],
     },
 
@@ -2108,6 +2303,26 @@ const LayoutSpec = {
         allowedOverlaps: [
             // Progress fill is layered on top of the track sprite by design.
             ['PFXpProgressBar', 'PFXpProgressBarFill'],
+        ],
+    },
+
+    // 2026-04-27 UI overhaul — pillar squad cards. Verifier strips trailing
+    // _N so this entry covers SquadSlot_0/_1/_2. The GradientTop sprite is
+    // a layered visual under the SymbolLabel by design (gradient simulation).
+    SquadSlot: {
+        allowedOverlaps: [
+            ['GradientTop', 'SymbolLabel'],
+        ],
+    },
+
+    // 2026-04-27 UI overhaul — Start Match hero CTA. The GradientRight sprite
+    // simulates a blue→violet gradient and intentionally sits beneath the
+    // bevel highlights and label inside the button.
+    WagerStartButton: {
+        allowedOverlaps: [
+            ['GradientRight', 'TopHighlight'],
+            ['GradientRight', 'BottomShadow'],
+            ['GradientRight', 'Label'],
         ],
     },
 

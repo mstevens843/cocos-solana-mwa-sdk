@@ -75,7 +75,8 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'HomeXpProgressLabel', components: ['cc.Label'] },
     { name: 'HomeXpBarTrack',      components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'HomeXpBarFill',       components: ['cc.UITransform', 'cc.Sprite'] },
-    { name: 'HomeChooseMatchLabel', components: ['cc.Label'] },
+    // V3 — HomeChooseMatchLabel REMOVED (eyebrow dropped); richer CTA
+    // subtitles carry the section affordance.
     { name: 'HomeMatchTickerHeader', components: ['cc.Label'] },
     { name: 'HomeMatchChipVal_mode',     components: ['cc.Label'] },
     { name: 'HomeMatchChipVal_players',  components: ['cc.Label'] },
@@ -98,6 +99,16 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'TrainingMascotGlow',         components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'TrainingCtaHint',            components: ['cc.Label'] },
     { name: 'HomeMatchChipDivider',       components: ['cc.UITransform', 'cc.Sprite'] },
+    // V3 — battle-launcher overhaul: header underline, recent-card elevation,
+    // streak divider (second row separator), unified MIP CTA + badge.
+    { name: 'HomeHeaderUnderline',        components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeRecentCardElevation',    components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'HomeStreakChipDivider',      components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'MatchesInProgressButton',    components: ['cc.Button'] },
+    { name: 'MatchesInProgressSubtitle',  components: ['cc.Label'] },
+    { name: 'MatchesInProgressChevron',   components: ['cc.UITransform', 'cc.Label'] },
+    { name: 'MatchesInProgressCountBadge', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'MatchesInProgressCountLabel', components: ['cc.Label'] },
 
     // ── TokenDuelPanel — core game ──
     { name: 'BackButton',           components: ['cc.Button'] },
@@ -128,7 +139,7 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
 
     // ── Part 10 Bundle 2 — squad helpers ──
     // (QuickPlayButton retired — Bot Match takes over the same role; see Home section above.)
-    { name: 'DailyStreakStrip',       components: ['cc.Button'] },
+    // V3 — DailyStreakStrip REMOVED from scene (folded into HomeMatchTicker).
     { name: 'OpenSquadPresetsButton', components: ['cc.Button'] },
     { name: 'SuggestSquadButton',     components: ['cc.Button'] },
 
@@ -299,11 +310,12 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'FilterWager_whale',            components: ['cc.Button'] },
     { name: 'FilterHideFullToggle',         components: ['cc.Button'] },
 
-    // ── Phase 2b — segmented-control container cards behind chip rows ──
-    { name: 'TabRowContainer',              components: ['cc.UITransform', 'cc.Sprite'] },
-    { name: 'ModeRowContainer',             components: ['cc.UITransform', 'cc.Sprite'] },
-    { name: 'WindowRowContainer',           components: ['cc.UITransform', 'cc.Sprite'] },
-    { name: 'WagerRowContainer',            components: ['cc.UITransform', 'cc.Sprite'] },
+    // ── 2026-04-27 redesign — unified filter card replaces 4 separate row containers ──
+    { name: 'FilterCard',                   components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'FilterDivider1',               components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'FilterDivider2',               components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'TabActiveUnderline',           components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'FindMatchLiveCountPulseDot',   components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'FindMatchEmptyLabel',          components: ['cc.Label'] },
     { name: 'FindMatchHostButton',          components: ['cc.Button'] },
     { name: 'FindMatchStatusLabel',         components: ['cc.Label'] },

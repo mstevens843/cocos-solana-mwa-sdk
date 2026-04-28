@@ -357,16 +357,30 @@ export class MascotController extends Component {
     private _playCelebrate(): void {
         const body = this.node;
         const baseY = body.position.y;
-        // Jump + spin. Auto-return to idle only when running the procedural
-        // body — the Seedance celebrate sequence is ~4 s long and clamps to
-        // its last frame, so flipping back to idle here would cut the
-        // animation short.
+        const baseX = body.position.x;
+        const baseZ = body.position.z;
+        // Jump + spin. Bigger amplitude (60→90) so the bounce reads on the
+        // PostMatch screen even at a glance. Looped float keeps motion alive
+        // after the initial spin lands; auto-return to idle only when running
+        // the procedural body — the Seedance celebrate sequence is ~4s long
+        // and clamps to its last frame.
         tween(body)
-            .to(0.20, { position: new Vec3(body.position.x, baseY + 60, body.position.z), angle: 180 }, { easing: 'cubicOut' })
-            .to(0.30, { position: new Vec3(body.position.x, baseY, body.position.z), angle: 360 }, { easing: 'cubicIn' })
+            .to(0.20, { position: new Vec3(baseX, baseY + 90, baseZ), angle: 180 }, { easing: 'cubicOut' })
+            .to(0.30, { position: new Vec3(baseX, baseY,      baseZ), angle: 360 }, { easing: 'cubicIn' })
             .call(() => {
                 body.angle = 0;
-                if (!this._useSpriteSheet) this.setState('idle');
+                if (this._useSpriteSheet) {
+                    // Continue with a gentle upward float so the win mascot
+                    // stays visibly alive instead of freezing on the last frame.
+                    tween(body)
+                        .to(0.9, { position: new Vec3(baseX, baseY + 14, baseZ) }, { easing: 'sineInOut' })
+                        .to(0.9, { position: new Vec3(baseX, baseY,      baseZ) }, { easing: 'sineInOut' })
+                        .union()
+                        .repeatForever()
+                        .start();
+                } else {
+                    this.setState('idle');
+                }
             })
             .start();
         // Sparkle burst — 8 nodes outward
@@ -393,10 +407,14 @@ export class MascotController extends Component {
 
     private _playThink(): void {
         const body = this.node;
-        // Head tilt left ↔ right, slow
+        const baseX = body.position.x;
+        const baseY = body.position.y;
+        const baseZ = body.position.z;
+        // Head tilt left ↔ right + small vertical bob, slow. Tilt amplitude
+        // bumped 10°→14° so the "thinking" pose reads at-a-glance on PostMatch.
         tween(body)
-            .to(0.6, { angle: -10 }, { easing: 'sineInOut' })
-            .to(0.6, { angle: 10 }, { easing: 'sineInOut' })
+            .to(0.6, { angle: -14, position: new Vec3(baseX, baseY + 6, baseZ) }, { easing: 'sineInOut' })
+            .to(0.6, { angle:  14, position: new Vec3(baseX, baseY - 6, baseZ) }, { easing: 'sineInOut' })
             .union()
             .repeatForever()
             .start();
@@ -405,14 +423,26 @@ export class MascotController extends Component {
     private _playLose(): void {
         const body = this.node;
         const baseY = body.position.y;
-        // Slump down, slight tilt. Auto-return to idle only when running the
-        // procedural body — the Seedance lose sequence is ~4 s long and
-        // clamps to its last frame.
+        const baseX = body.position.x;
+        const baseZ = body.position.z;
+        // Slumped, looping bounce-down — replaces the one-shot slump so the
+        // "deflated" mood reads continuously. Slow rocking tilt cross-loops
+        // with the bounce. Auto-return to idle only on procedural body.
         tween(body)
-            .to(0.30, { position: new Vec3(body.position.x, baseY - 12, body.position.z), angle: -8 }, { easing: 'cubicOut' })
-            .delay(1.2)
-            .call(() => { if (!this._useSpriteSheet) this.setState('idle'); })
+            .to(0.25, { position: new Vec3(baseX, baseY - 14, baseZ), angle: -8 }, { easing: 'cubicOut' })
             .start();
+        if (this._useSpriteSheet) {
+            this.scheduleOnce(() => {
+                tween(body)
+                    .to(0.55, { position: new Vec3(baseX, baseY - 8,  baseZ), angle: 2  }, { easing: 'sineInOut' })
+                    .to(0.55, { position: new Vec3(baseX, baseY - 16, baseZ), angle: -8 }, { easing: 'sineInOut' })
+                    .union()
+                    .repeatForever()
+                    .start();
+            }, 0.30);
+        } else {
+            tween(body).delay(1.2).call(() => this.setState('idle')).start();
+        }
     }
 
     private _twirl(n: Node, turns: number, dur: number): void {

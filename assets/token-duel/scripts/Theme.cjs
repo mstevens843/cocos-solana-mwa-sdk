@@ -12,9 +12,13 @@
 const Palette = {
     bg: {
         primary:   '#0B0E1A',
-        surface:   '#151929',
+        // 2026-04-27 UI overhaul: #151929 → #121826 per arena-UI spec.
+        surface:   '#121826',
         card:      '#1E2438',
         cardHover: '#252B42',
+        // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
+        gradientTop: '#1A0B2E',  // deep purple at top
+        gradientBot: '#050810',  // near-black at bottom
     },
     accent: {
         violet:    '#9945FF',
@@ -23,7 +27,8 @@ const Palette = {
         tealDim:   '#0DAA68',
         amber:     '#FFB454',
         amberDim:  '#C8842F',
-        rose:      '#FF5C8A',
+        // 2026-04-27 UI overhaul: #FF5C8A → #FF4D4D for stronger negative read.
+        rose:      '#FF4D4D',
         roseDim:   '#C13B6A',
     },
     text: {
@@ -34,7 +39,7 @@ const Palette = {
     },
     status: {
         win:     '#14F195',
-        loss:    '#FF5C8A',
+        loss:    '#FF4D4D',
         neutral: '#A8AEC9',
         warn:    '#FFB454',
     },
@@ -51,11 +56,23 @@ const Palette = {
         amberW:   [255, 180, 84],   // warmer amber (action)
         teal:     [20, 241, 149],   // status / progress (Solana teal)
         violet:   [153, 69, 255],   // brand / identity
+        // 2026-04-27 UI overhaul: dedicated active/selected glow.
+        violetActive: [153, 69, 255],
+        rose:     [255, 77,  77],   // negative perf glow
         gold:     [255, 210, 74],   // rank
         blue:     [56, 148, 252],   // data / price
         slate:    [93, 100, 133],   // utility / muted
+        // 2026-04-27 FindMatch redesign: hairline used to subdivide rows
+        // inside the unified filter card.
+        divider:  [60, 70, 95],
         edgeAlpha:        255,
         edgeThicknessPx:  4,
+    },
+    // 2026-04-27 FindMatch redesign — pulse dot beside the count label.
+    // Tab-conditional: rose when on Live, teal when on Open Lobbies.
+    live: {
+        pulseOpen: [20, 241, 149],
+        pulseLive: [255, 92, 138],
     },
     // Phase 13 (B3) — premium button bevel + halo alphas.
     btn: {
@@ -63,6 +80,14 @@ const Palette = {
         bevelBottomAlpha: 46,   // bottom shadow strip — black, new in B3
         glowAlpha:        80,   // hero halo alpha
         glowPaddingPx:    12,   // halo extends 12 px on every side
+    },
+    // 2026-04-27 — Game-Over screen palette. Mirrors Theme.ts ResultPalette.
+    result: {
+        baseDark:    '#0B0E1A',
+        cardBg:      '#121826',
+        cardEdge:    '#1F2A44',
+        win:  { glow: '#1FE0A5', accent: '#22E39A', sub: '#7FE9C4' },
+        loss: { glow: '#FF5A6A', accent: '#FF6B7A', sub: '#F2A0AB' },
     },
     // Phase 12 (B1+B2) — neon-trading background polish. Halos sit between
     // the canvas-level black plate and panel content; alpha is intentionally
@@ -74,6 +99,8 @@ const Palette = {
         starFar:  '#FFFFFF40',  // 64 alpha — faintest dust tier
         starMid:  '#FFFFFF96',  // 150 alpha — mid tier
         starNear: '#FFFFFFC8',  // 200 alpha — brightest sparks
+        // 2026-04-27 Landing UX — gold halo behind TitleLabel.
+        gold:     '#FFD24A40',  // 64 alpha — title shimmer
     },
 };
 

@@ -18,9 +18,13 @@ import { Color } from 'cc';
 export const Palette = {
     bg: {
         primary:   '#0B0E1A',
-        surface:   '#151929',
+        // 2026-04-27 UI overhaul: #151929 → #121826 per arena-UI spec.
+        surface:   '#121826',
         card:      '#1E2438',
         cardHover: '#252B42',
+        // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
+        gradientTop: '#1A0B2E',  // deep purple at top
+        gradientBot: '#050810',  // near-black at bottom
     },
     accent: {
         violet:    '#9945FF',  // Solana violet
@@ -29,7 +33,8 @@ export const Palette = {
         tealDim:   '#0DAA68',
         amber:     '#FFB454',
         amberDim:  '#C8842F',
-        rose:      '#FF5C8A',
+        // 2026-04-27 UI overhaul: #FF5C8A → #FF4D4D for stronger negative read.
+        rose:      '#FF4D4D',
         roseDim:   '#C13B6A',
     },
     text: {
@@ -40,7 +45,7 @@ export const Palette = {
     },
     status: {
         win:     '#14F195',
-        loss:    '#FF5C8A',
+        loss:    '#FF4D4D',
         neutral: '#A8AEC9',
         warn:    '#FFB454',
     },
@@ -60,11 +65,23 @@ export const Palette = {
         amberW:   [255, 180, 84],
         teal:     [20, 241, 149],
         violet:   [153, 69, 255],
+        // 2026-04-27 UI overhaul — selected/active glow.
+        violetActive: [153, 69, 255],
+        rose:     [255, 77,  77],
         gold:     [255, 210, 74],
         blue:     [56, 148, 252],
         slate:    [93, 100, 133],
+        // 2026-04-27 FindMatch redesign: hairline used to subdivide rows
+        // inside the unified filter card.
+        divider:  [60, 70, 95],
         edgeAlpha:        255,
         edgeThicknessPx:  4,
+    },
+    // 2026-04-27 FindMatch redesign — pulse dot beside the count label.
+    // Tab-conditional: rose when on Live, teal when on Open Lobbies.
+    live: {
+        pulseOpen: [20, 241, 149],
+        pulseLive: [255, 92, 138],
     },
     // Phase 13 (B3) — premium button bevel + halo alphas.
     btn: {
@@ -72,6 +89,16 @@ export const Palette = {
         bevelBottomAlpha: 46,
         glowAlpha:        80,
         glowPaddingPx:    12,
+    },
+    // 2026-04-27 — Game-Over screen palette. Replaces full-screen pink/teal
+    // wash with a deep-dark base + colored radial glow. Keeps colors out of
+    // AppUI (where they were hardcoded as Color(48,198,155,255) literals).
+    result: {
+        baseDark:    '#0B0E1A',  // canvas wash — deep, near-black
+        cardBg:      '#121826',  // stat-card surface — slightly above bg
+        cardEdge:    '#1F2A44',  // muted blue-gray for secondary chrome
+        win:  { glow: '#1FE0A5', accent: '#22E39A', sub: '#7FE9C4' },
+        loss: { glow: '#FF5A6A', accent: '#FF6B7A', sub: '#F2A0AB' },
     },
     // Phase 12 (B1+B2) — neon-trading background polish.
     glow: {
@@ -81,6 +108,8 @@ export const Palette = {
         starFar:  '#FFFFFF40',
         starMid:  '#FFFFFF96',
         starNear: '#FFFFFFC8',
+        // 2026-04-27 Landing UX — gold halo behind TitleLabel.
+        gold:     '#FFD24A40',
     },
 } as const;
 
