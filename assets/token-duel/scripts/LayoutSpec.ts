@@ -74,7 +74,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         ],
     },
 
-    // 2026-04-27 V3 — Battle-launcher hierarchy. Mirrors LayoutSpec.cjs Home block.
+    // 2026-04-28 V4 — "Play Now" hub. Find Match becomes hero (instant play),
+    // Start Match demoted to secondary, MIP neutralized (charcoal/btnGhost),
+    // Bot Match grows full-width and absorbs Training Mode copy. Recent Match
+    // card collapses to single-row (daily-challenge row dropped). Mirrors
+    // LayoutSpec.cjs Home block.
     Home: {
         canvas: { w: 720, h: 1280 },
         elements: {
@@ -91,49 +95,57 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             openSettingsBtn:     { x:  224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
             disconnectBtn:       { x:  296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
             homeHeaderUnderline: { x: 0,    y: 600,  w: 640, h: 1,   type: 'sprite' },
-            homeLevelChip:       { x: 0,    y: 548,  w: 680, h: 80,  type: 'chip' },
-            homeXpProgressLabel: { x: 310,  y: 18,   w: 280, h: 18,  type: 'label' },
+            // V4 — level chip h 80→72 (8h tighter).
+            homeLevelChip:       { x: 0,    y: 556,  w: 680, h: 72,  type: 'chip' },
+            homeXpProgressLabel: { x: 310,  y: 14,   w: 280, h: 18,  type: 'label' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite' },
-            // Unified RecentMatch + Daily card (V3 — h 140→184, 3×3 grid).
-            homeMatchTicker:     { x: 0,    y: 404,  w: 680, h: 184, type: 'chip' },
-            homeMatchTickerHeader: { x: 0,  y: 78,   w: 660, h: 18,  type: 'label' },
-            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 192, type: 'sprite' },
+            // V4 — Recent Match collapsed to single row (h 184→96). Daily-
+            // challenge row dropped; Trophy header button is now the path
+            // to challenge UI.
+            homeMatchTicker:     { x: 0,    y: 460,  w: 680, h: 96,  type: 'chip' },
+            homeMatchTickerHeader: { x: 0,  y: 32,   w: 660, h: 18,  type: 'label' },
+            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 104, type: 'sprite' },
             homeMatchChipDivider: { x: 0,   y: -2,   w: 620, h: 1,   type: 'sprite' },
-            homeStreakChipDivider: { x: 0,  y: -58,  w: 620, h: 1,   type: 'sprite' },
-            homeTournamentBadge: { x: 0,    y: 404,  w: 680, h: 184, type: 'chip' },
-            // CTA trio (V3 — Start grows, MIP equalizes Find, Bot demoted).
-            startMatchBtn:       { x: 0,    y: 240,  w: 680, h: 120, type: 'btnPrimary' },
-            startMatchSubtitle:  { x: 0,    y: -28,  w: 620, h: 18,  type: 'label' },
-            startMatchChevron:   { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            findMatchBtn:        { x: 0,    y: 120,  w: 680, h: 92,  type: 'btnSuccess' },
-            findMatchSubtitle:   { x: 0,    y: -22,  w: 620, h: 18,  type: 'label' },
+            homeTournamentBadge: { x: 0,    y: 460,  w: 680, h: 96,  type: 'chip' },
+            // V4 — CTA hierarchy. Find Match HERO (teal, 128h), Start Match
+            // secondary (purple, 96h), MIP neutral charcoal (btnGhost, 80h),
+            // Bot Match full-width (gold, 88h) absorbs Training copy.
+            findMatchBtn:        { x: 0,    y: 324,  w: 680, h: 128, type: 'btnSuccess' },
+            findMatchSubtitle:   { x: 0,    y: -32,  w: 620, h: 18,  type: 'label' },
             findMatchChevron:    { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            findMatchCountBadge: { x: 244,  y: 142,  w: 76,  h: 28,  type: 'badge' },
-            matchesInProgressBtn:        { x: 0,    y: 18,   w: 680, h: 92,  type: 'btnSuccess' },
-            matchesInProgressSubtitle:   { x: 0,    y: -22,  w: 620, h: 18,  type: 'label' },
-            matchesInProgressChevron:    { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            matchesInProgressCountBadge: { x: 244,  y: 40,   w: 76,  h: 28,  type: 'badge' },
-            botMatchBtn:         { x: 0,    y: -78,  w: 600, h: 72,  type: 'btnWarn' },
-            botMatchSubtitle:    { x: 0,    y: -22,  w: 540, h: 18,  type: 'label' },
-            botMatchChevron:     { x: 270,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            homeTrainingCard:    { x: 0,    y: -220, w: 680, h: 196, type: 'group' },
-            trainingMascotGlow:  { x: -220, y: 0,    w: 200, h: 200, type: 'sprite' },
-            mascot:              { x: -220, y: 0,    w: 160, h: 180, type: 'mascot' },
-            homeTrainingTitleLabel: { x: 40, y: 60,  w: 440, h: 24,  type: 'label' },
-            homeTrainingBodyLabel:  { x: 40, y: 20,  w: 440, h: 24,  type: 'label' },
-            homeTrainingHintLabel:  { x: 40, y: -12, w: 460, h: 18,  type: 'label' },
-            trainingCtaHint:     { x: 40,   y: -44,  w: 460, h: 18,  type: 'label' },
-            homeStatus:          { x: 40,   y: -76,  w: 460, h: 16,  type: 'label' },
+            findMatchCountBadge: { x: 244,  y: 352,  w: 76,  h: 28,  type: 'badge' },
+            findMatchActivityDot:{ x: -296, y: 380,  w: 10,  h: 10,  type: 'badge' },
+            startMatchBtn:       { x: 0,    y: 196,  w: 680, h: 96,  type: 'btnPrimary' },
+            startMatchSubtitle:  { x: 0,    y: -22,  w: 620, h: 18,  type: 'label' },
+            startMatchChevron:   { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
+            matchesInProgressBtn:        { x: 0,    y: 80,  w: 680, h: 80,  type: 'btnGhost' },
+            matchesInProgressSubtitle:   { x: 0,    y: -18, w: 620, h: 18,  type: 'label' },
+            matchesInProgressChevron:    { x: 310,  y: 0,   w: 24,  h: 24,  type: 'label' },
+            matchesInProgressCountBadge: { x: 244,  y: 104, w: 76,  h: 28,  type: 'badge' },
+            matchesInProgressActivityDot:{ x: -296, y: 104, w: 10,  h: 10,  type: 'badge' },
+            botMatchBtn:         { x: 0,    y: -28,  w: 680, h: 88,  type: 'btnWarn' },
+            botMatchSubtitle:    { x: 0,    y: -10,  w: 620, h: 18,  type: 'label' },
+            botMatchSubtitleLine2: { x: 0,  y: -30,  w: 620, h: 16,  type: 'label' },
+            botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
+            // V4 — Training card REMOVED. Mascot kept here as off-flow node
+            // pinned below safe area (consumed by PostMatch panel only); kept
+            // in spec to avoid breaking AppUI's mascot lookup when Home is
+            // active (mascot is reparented to the HomePanel only by intent).
+            mascot:              { x: 0,    y: -820, w: 160, h: 180, type: 'mascot' },
+            homeStatus:          { x: 0,    y: -120, w: 460, h: 16,  type: 'label' },
         },
         allowedOverlaps: [
             ['NotificationBellButton',  'NotificationBellBadge'],
             ['HomeMatchTicker',         'HomeTournamentBadge'],
             ['HomeMatchTicker',         'HomeMatchChipDivider'],
-            ['HomeMatchTicker',         'HomeStreakChipDivider'],
             ['HomeMatchTicker',         'HomeRecentCardElevation'],
+            ['HomeRecentCardElevation', 'HomeMatchTicker'],
+            ['HomeRecentCardElevation', 'HomeMatchChipDivider'],
             ['FindMatchButton',         'FindMatchButtonCountBadge'],
+            ['FindMatchButton',         'FindMatchActivityDot'],
             ['MatchesInProgressButton', 'MatchesInProgressCountBadge'],
+            ['MatchesInProgressButton', 'MatchesInProgressActivityDot'],
             ['StartMatchButton',        'StartMatchSubtitle'],
             ['StartMatchButton',        'StartMatchChevron'],
             ['FindMatchButton',         'FindMatchSubtitle'],
@@ -141,15 +153,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['MatchesInProgressButton', 'MatchesInProgressSubtitle'],
             ['MatchesInProgressButton', 'MatchesInProgressChevron'],
             ['BotMatchButton',          'BotMatchSubtitle'],
+            ['BotMatchButton',          'BotMatchSubtitleLine2'],
             ['BotMatchButton',          'BotMatchChevron'],
             ['WalletPill',              'PubkeyLabel'],
             ['WalletPill',              'WalletNameLabel'],
             ['WalletPill',              'WalletPillSecureDot'],
-            ['HomeTrainingCard',        'MascotContainer'],
-            ['HomeTrainingCard',        'HomeTrainingTitleLabel'],
-            ['HomeTrainingCard',        'HomeTrainingBodyLabel'],
-            ['HomeTrainingCard',        'HomeTrainingHintLabel'],
-            ['HomeTrainingCard',        'HomeStatusLabel'],
             ['HomeLevelChip',           'HomeLevelChipLabel'],
             ['HomeLevelChip',           'HomeXpProgressLabel'],
             ['HomeLevelChip',           'HomeXpBarTrack'],

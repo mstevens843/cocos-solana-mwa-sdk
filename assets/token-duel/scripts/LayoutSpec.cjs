@@ -133,17 +133,21 @@ const home = {
     HEADER_BADGE_Y:   656,   // bell.y + 16 — tighter against 44-px bell
     HEADER_UNDERLINE_Y: 600, // V3 NEW — subtle violet underline below header band
 
-    // Content stack — top → bottom of the lobby.
-    XP_CHIP_Y:        548,   // homeLevelChip (Lv N + XP progress card)
-    RECENT_CARD_Y:    404,   // unified RecentMatch+Daily 2×3 stat card (h 140→184)
-    START_CTA_Y:      240,   // Start Match — V3 hero h=120 (was 104)
-    FIND_CTA_Y:       120,   // Find Match — h=92
-    FIND_BADGE_Y:     142,   // live count pill — sibling of FindMatchBtn
-    MIP_CTA_Y:        18,    // Matches In Progress — V3 h=92 (was 84) — matches Find
-    MIP_BADGE_Y:      40,    // live count pill — sibling of MatchesInProgressBtn
-    BOT_CTA_Y:        -78,   // Bot Match — V3 h=72 (was 84), w=600 (was 680), amberDim
-    TRAINING_Y:       -220,  // homeTrainingCard (mascot + glow + copy)
+    // Content stack — top → bottom of the lobby. V4 ("Play Now" hub) — Find
+    // Match becomes hero (was Start), Start demoted to secondary, MIP
+    // neutralized, Bot Match grows full-width and absorbs Training copy.
+    XP_CHIP_Y:        556,   // V4 — h 80→72 tighter (was 548)
+    RECENT_CARD_Y:    460,   // V4 — single-row card h 184→96 (was 404)
+    FIND_CTA_Y:       324,   // V4 — HERO (h 92→128, takes Start's role)
+    FIND_BADGE_Y:     352,   // V4 — repositioned for taller hero
+    FIND_DOT_Y:       380,   // V4 NEW — activity dot, upper-left of hero
+    START_CTA_Y:      196,   // V4 — secondary purple (h 120→96)
+    MIP_CTA_Y:        80,    // V4 — neutral charcoal (h 92→80)
+    MIP_BADGE_Y:      104,   // V4 — count pill (was 40)
+    MIP_DOT_Y:        104,   // V4 NEW — activity dot, left edge
+    BOT_CTA_Y:        -28,   // V4 — gold full-width (w 600→680, h 72→88, absorbs Training copy)
 
+    // V4 — TRAINING_Y removed; HomeTrainingCard deleted from scene.
     // V3 — DailyStreakStrip + ChooseMatch eyebrow folded into Recent card.
     // Old anchors SECONDARY_Y (320) and SECTION_LBL_Y (260) removed.
 
