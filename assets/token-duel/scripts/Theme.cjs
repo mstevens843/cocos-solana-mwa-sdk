@@ -49,6 +49,20 @@ const Palette = {
         bronze: '#E08A4A',
         slate:  '#5D6485',
     },
+    // 2026-04-28 fighter-card redesign — squad slot pillar palette.
+    // emptyBg: dark drop-zone background; filledBg: slightly lifted to give the
+    // selected fighter card visual elevation; emptyBorder/targetBorder are the
+    // CardEdgeAccent strip alphas swapped at runtime.
+    slot: {
+        emptyBg:        '#161A28F0',
+        filledBg:       '#181C2CF0',
+        emptyBorder:    '#FFFFFF50',
+        targetBorder:   '#9945FFDC',
+        silhouetteFill: '#5D648540',
+    },
+    // 2026-04-28 fighter-card redesign — alpha applied to WagerStartButton
+    // sprite when the squad is incomplete, so the CTA visibly dims.
+    ctaDimAlpha: 130,
     // Phase 14 (B4) — card edge-accent palette. Each card gets a 4-px
     // brand-color strip at its top edge that signals semantic role.
     cardEdge: {

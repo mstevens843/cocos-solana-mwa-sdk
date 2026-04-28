@@ -955,6 +955,10 @@ export class AppUI extends Component {
     private _squadSlotScoreLabels: (Label | null)[] = [];
     private _squadSlotPerfBars: (Sprite | null)[] = [];
     private _squadSlotEdges: (Sprite | null)[] = [];
+    // 2026-04-28 fighter-card redesign — "Slot 1/2/3" label at top of empty
+    // cards + faint "+" silhouette behind "Pick +". Hidden on filled slots.
+    private _squadSlotIndexLabels: (Label | null)[] = [];
+    private _squadSlotSilhouettes: (Label | null)[] = [];
     // Tracks per-slot filled state across renders so we can pop only on
     // empty → filled transitions (game-feel polish 2026-04-26).
     private _squadSlotPrevFilled: boolean[] = [false, false, false];
@@ -2864,6 +2868,9 @@ export class AppUI extends Component {
             const scoreLbl = node?.getChildByName('ScoreBadge')?.getComponent(Label) ?? null;
             const perfBar  = node?.getChildByName('PerformanceBar')?.getComponent(Sprite) ?? null;
             const edgeSpr  = node?.getChildByName('CardEdgeAccent')?.getComponent(Sprite) ?? null;
+            // 2026-04-28 fighter-card redesign — empty-state chrome.
+            const slotIdxLbl = node?.getChildByName('SlotIndexLabel')?.getComponent(Label) ?? null;
+            const silhouetteLbl = node?.getChildByName('SilhouettePlus')?.getComponent(Label) ?? null;
             if (btn && symLbl) {
                 this._squadSlotButtons.push(btn);
                 this._squadSlotLabels.push(symLbl);
@@ -2873,6 +2880,8 @@ export class AppUI extends Component {
                 this._squadSlotScoreLabels.push(scoreLbl);
                 this._squadSlotPerfBars.push(perfBar);
                 this._squadSlotEdges.push(edgeSpr);
+                this._squadSlotIndexLabels.push(slotIdxLbl);
+                this._squadSlotSilhouettes.push(silhouetteLbl);
                 const idx = i;
                 btn.node.on(Button.EventType.CLICK, () => this._onSquadSlotTap(idx), this);
                 // 2026-04-27 UI overhaul — tap-feedback on the pillar card.
@@ -8621,6 +8630,8 @@ export class AppUI extends Component {
             const scoreLbl = this._squadSlotScoreLabels[i] ?? null;
             const perfBar  = this._squadSlotPerfBars[i]  ?? null;
             const edge     = this._squadSlotEdges[i]     ?? null;
+            const idxLbl   = this._squadSlotIndexLabels[i] ?? null;
+            const silhouette = this._squadSlotSilhouettes[i] ?? null;
             const slot = slots[i];
             const slotNode = btn?.node ?? null;
             const wasFilled = this._squadSlotPrevFilled[i] ?? false;
@@ -8636,29 +8647,46 @@ export class AppUI extends Component {
                 symLbl.color = targeted
                     ? new Color(48, 198, 155, 255)   // bright emerald when targeted
                     : new Color(168, 230, 200, 255); // mint when idle
-                symLbl.fontSize = 28;
+                symLbl.fontSize = 26;
                 // 2026-04-27 UI overhaul — center the placeholder on empty cards.
                 symLbl.horizontalAlign = Label.HorizontalAlign.CENTER;
                 if (dltLbl) { dltLbl.string = ''; dltLbl.node.active = false; }
                 if (logo) { logo.spriteFrame = null; logo.node.active = false; }
                 if (scoreLbl) { scoreLbl.string = ''; scoreLbl.node.active = false; }
+                // 2026-04-28 fighter-card redesign — show slot label + silhouette.
+                if (idxLbl) {
+                    idxLbl.string = `Slot ${i + 1}`;
+                    idxLbl.color = targeted
+                        ? new Color(168, 230, 200, 220)  // mint when targeted
+                        : new Color(130, 138, 168, 200); // muted slate idle
+                    idxLbl.node.active = true;
+                }
+                if (silhouette) {
+                    silhouette.color = targeted
+                        ? new Color(153, 69, 255, 90)    // violet hint when targeted
+                        : new Color(93, 100, 133, 64);   // faint slate idle
+                    silhouette.node.active = true;
+                }
                 if (perfBar) {
                     // Muted slate bar on empty.
                     perfBar.color = new Color(93, 100, 133, 90);
                 }
                 if (edge) {
-                    // Active pick target → violet glow; otherwise faint white.
+                    // Active pick target → violet glow; otherwise stronger
+                    // white border (alpha 80) so empty cards read as
+                    // intentional drop zones, not weak placeholders.
                     edge.color = targeted
                         ? new Color(153, 69, 255, 220)
-                        : new Color(255, 255, 255, 40);
+                        : new Color(255, 255, 255, 80);
                 }
                 if (removeBtn) removeBtn.active = false;
-                // Brighten the slot bg when this slot is the active target.
+                // Slot bg — slightly different shades for empty vs filled so
+                // filled fighter cards visually elevate above empty drop zones.
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
                 if (slotSpr) {
                     slotSpr.color = targeted
                         ? new Color(36, 30, 56, 240)        // violet-tinted target
-                        : new Color(20, 24, 38, 240);       // base dark
+                        : new Color(22, 26, 40, 240);       // empty drop zone
                 }
             } else {
                 const d = slot.change24hPct;
@@ -8666,9 +8694,12 @@ export class AppUI extends Component {
                 const pctStr = Number.isFinite(d) && d !== 0 ? `${sign}${d.toFixed(1)}%` : '—';
                 symLbl.string = slot.symbol ?? '?';
                 symLbl.color = new Color(244, 245, 249, 255);
-                symLbl.fontSize = 24;
+                symLbl.fontSize = 26;
                 // 2026-04-27 UI overhaul — left-align symbol so it sits right of the logo.
                 symLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
+                // 2026-04-28 fighter-card redesign — hide empty-state chrome.
+                if (idxLbl) idxLbl.node.active = false;
+                if (silhouette) silhouette.node.active = false;
                 if (dltLbl) {
                     dltLbl.string = pctStr;
                     dltLbl.color = d > 0
@@ -8711,10 +8742,11 @@ export class AppUI extends Component {
                     }
                 }
                 if (removeBtn) removeBtn.active = true;
-                // Reset slot bg to neutral once filled (clears any leftover
-                // targeted highlight from when it was empty).
+                // 2026-04-28 fighter-card redesign — filled cards sit one
+                // shade lighter than empty drop zones so the selected fighter
+                // visually elevates within the 3-pillar row.
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
-                if (slotSpr) slotSpr.color = new Color(20, 24, 38, 240);
+                if (slotSpr) slotSpr.color = new Color(24, 28, 44, 240);
                 // Slot pop on empty → filled transition.
                 if (!wasFilled && slotNode) {
                     try {
@@ -12595,10 +12627,22 @@ export class AppUI extends Component {
      * Attach/detach the idle-pulse breathing tween on the primary CTA based on
      * whether the squad is full. Pulses while ready, stops when not. Tracks
      * state so we don't stack tweens across re-renders.
+     *
+     * 2026-04-28 fighter-card redesign — also tints the button sprite so the
+     * "Pick N more" state visibly dims and the "Start Match" state lights up.
+     * Centralized here so all 3 mode branches (join / bot / create) share the
+     * dim/bright behavior without each branch reaching for the Sprite directly.
      */
     private _syncWagerStartPulse(ready: boolean): void {
         const node = this._wagerStartButton?.node;
         if (!node) return;
+        // 2026-04-28 fighter-card redesign — dim the entire CTA (base sprite +
+        // violet gradient overlay + label) via UIOpacity when the squad isn't
+        // full. Tinting the base Sprite only would leave the GradientRight
+        // overlay at full alpha and the read would be off.
+        let opacity = node.getComponent(UIOpacity);
+        if (!opacity) opacity = node.addComponent(UIOpacity);
+        opacity.opacity = ready ? 255 : 130;
         if (ready && !this._wagerStartPulsing) {
             try { addIdlePulse(node); } catch (_) { /* ignore */ }
             this._wagerStartPulsing = true;

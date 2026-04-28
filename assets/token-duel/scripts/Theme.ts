@@ -59,6 +59,20 @@ export const Palette = {
         subtleHex: '#FFFFFF14',  // 8% alpha
         strongHex: '#FFFFFF29',  // 16% alpha
     },
+    // 2026-04-28 fighter-card redesign — squad slot pillar palette.
+    // emptyBg: dark drop-zone background; filledBg: slightly lifted to give the
+    // selected fighter card visual elevation; emptyBorder/targetBorder are the
+    // CardEdgeAccent strip alphas swapped at runtime.
+    slot: {
+        emptyBg:        '#161A28F0',
+        filledBg:       '#181C2CF0',
+        emptyBorder:    '#FFFFFF50',
+        targetBorder:   '#9945FFDC',
+        silhouetteFill: '#5D648540',
+    },
+    // 2026-04-28 fighter-card redesign — alpha applied to WagerStartButton
+    // sprite when the squad is incomplete, so the CTA visibly dims.
+    ctaDimAlpha: 130,
     // Phase 14 (B4) — card edge-accent palette.
     cardEdge: {
         amber:    [255, 210, 74],

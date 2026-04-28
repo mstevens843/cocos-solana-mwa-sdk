@@ -2372,6 +2372,19 @@ function generate() {
         sb.e[ln]._components = [rf(lnUT), rf(lnL)];
         sb.e[ln]._active = false;
 
+        // 2026-04-28 fighter-card redesign — faint "+" silhouette behind the
+        // "Pick +" text on empty slots so the drop zone reads as intentional.
+        // Hidden by AppUI when the slot fills.
+        const silN = sb.e.length;
+        sb.node('SilhouettePlus', bn, [], [], v3(SS.silhouette.x, SS.silhouette.y, 0));
+        const silUT = sb.ut(silN, SS.silhouette.w, SS.silhouette.h);
+        const silL = sb.lbl(silN, '+', 84, 93, 100, 133);
+        sb.e[silL]._color = cl(93, 100, 133, 64); // faint slate, alpha 64
+        sb.e[silL]._horizontalAlign = 1; // center
+        sb.e[silL]._verticalAlign = 1;   // middle
+        sb.e[silL]._isBold = true;
+        sb.e[silN]._components = [rf(silUT), rf(silL)];
+
         // Logo top-left.
         const logoN = sb.e.length;
         sb.node('LogoSprite', bn, [], [], v3(SS.logo.x, SS.logo.y, 0));
@@ -2388,6 +2401,16 @@ function generate() {
         sb.e[symL]._isBold = true;
         sb.e[symL]._horizontalAlign = 0; // left-align for filled state (right of logo)
         sb.e[symN]._components = [rf(symUT), rf(symL)];
+
+        // 2026-04-28 fighter-card redesign — small "Slot N" label at top of
+        // empty cards. AppUI populates text + toggles _active by fill state.
+        const idxN = sb.e.length;
+        sb.node('SlotIndexLabel', bn, [], [], v3(SS.slotIndex.x, SS.slotIndex.y, 0));
+        const idxUT = sb.ut(idxN, SS.slotIndex.w, SS.slotIndex.h);
+        const idxL = sb.lbl(idxN, `Slot ${slotIdx + 1}`, 13, 130, 138, 168);
+        sb.e[idxL]._horizontalAlign = 1; // center
+        sb.e[idxL]._isBold = true;
+        sb.e[idxN]._components = [rf(idxUT), rf(idxL)];
 
         // Hero Δ% label — centered, prominent.
         const dltN = sb.e.length;
@@ -2442,12 +2465,17 @@ function generate() {
         sb.e[rmN]._children = [rf(rmLblN)];
         sb.e[rmN]._active = false; // shown by AppUI when slot fills
 
-        // Card top-edge accent (faint white default; AppUI swaps to violet/teal/rose).
-        // mkCardEdge paints a single 4-px strip at the card's top edge.
-        const edgeN = mkCardEdge(sb, bn, SS.w, SS.h, 255, 255, 255, 40);
+        // Card top-edge accent — 2026-04-28 fighter-card redesign: idle alpha
+        // bumped 40 → 80 so empty cards' borders read as intentional, not weak.
+        // AppUI swaps the strip to violet (target) / teal (positive) / rose
+        // (negative) at runtime via _squadSlotEdges[i].
+        const edgeN = mkCardEdge(sb, bn, SS.w, SS.h, 255, 255, 255, 80);
 
         sb.e[bn]._components = [rf(bnUT), rf(bnSpr), rf(bnBtn)];
-        sb.e[bn]._children = [rf(gradN), rf(ln), rf(logoN), rf(symN), rf(dltN), rf(scoN), rf(perfN), rf(edgeN), rf(rmN)];
+        // Render order (back→front): bg gradient, hidden compat label, faint
+        // silhouette, logo, symbol, hero delta, score, perf bar, slot index
+        // label, top-edge accent, remove button (×).
+        sb.e[bn]._children = [rf(gradN), rf(ln), rf(silN), rf(logoN), rf(symN), rf(dltN), rf(scoN), rf(perfN), rf(idxN), rf(edgeN), rf(rmN)];
         return bn;
     }
     const tdSquad0 = mkSquadSlot(0);

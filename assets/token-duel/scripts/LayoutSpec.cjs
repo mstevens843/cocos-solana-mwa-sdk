@@ -2076,9 +2076,14 @@ const LayoutSpec = {
             // [-111,111], right [127,349] inside the 700-wide squadPanel.
             // Internal layout: logo top-left, symbol right of logo, hero delta
             // centered, score bottom-left, perf bar at bottom edge.
+            // 2026-04-28 fighter-card redesign — added slotIndex (top label,
+            // "Slot 1/2/3" for empty cards) + silhouette (faint "+" placeholder
+            // behind "Pick +" so empty slots read as intentional drop zones).
             squadSlot: {
                 count: 3, w: 222, h: 140, y: td.SQUAD_SLOTS_Y,
                 xs: [-238, 0, 238],
+                slotIndex:  { x:   0, y:  54, w: 200, h: 16  },
+                silhouette: { x:   0, y:  -4, w: 90,  h: 90  },
                 logo:    { x: -78, y:  32, w: 56,  h: 56  },
                 symbol:  { x:  16, y:  36, w: 130, h: 24  },
                 delta:   { x:   0, y: -12, w: 200, h: 32  },
