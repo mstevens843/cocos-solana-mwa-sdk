@@ -3968,6 +3968,15 @@ function generate() {
     }
     const [denomPriceBtn, denomMcapBtn, denomUsdBtn, denomSolBtn] = denomBtnIndices;
 
+    // ─── Hairline divider between control band and ChartCard ────────
+    const chartDivN = sb.e.length;
+    sb.node('ChartDivider', tdetN, [], [],
+        v3(TDETE.chartDivider.x, TDETE.chartDivider.y, 0));
+    const chartDivUT = sb.ut(chartDivN, TDETE.chartDivider.w, TDETE.chartDivider.h);
+    const chartDivSpr = sb.spr(chartDivN, 56, 148, 252);
+    sb.e[chartDivSpr]._color = cl(56, 148, 252, 60);
+    sb.e[chartDivN]._components = [rf(chartDivUT), rf(chartDivSpr)];
+
     // ─── Chart card wrapper (opaque, blocks BG halo bleed) ───────────
     const chartCardN = sb.e.length;
     sb.node('ChartCard', tdetN, [], [], v3(TDETE.chartCard.x, TDETE.chartCard.y, 0));
@@ -3979,10 +3988,14 @@ function generate() {
     const chartCardEdge = mkCardEdge(sb, chartCardN, TDETE.chartCard.w, TDETE.chartCard.h, 56, 148, 252, 80);
 
     // Chart header label inside the card — "PRICE · 15m · USD" (AppUI rewrites).
+    // Anchored top-left INSIDE ChartCard (left-aligned, dim) so it reads as a
+    // caption, not a centered title-bar.
     const chartHeaderLbl = mkLabel(sb, 'ChartHeaderLabel', chartCardN, 'PRICE · 15m · USD', 11,
-        TDETE.chartHeader.y, TDETE.chartHeader.w, TDETE.chartHeader.h, 168, 174, 201);
+        TDETE.chartHeader.y, TDETE.chartHeader.w, TDETE.chartHeader.h, 125, 134, 158);
     sb.e[chartHeaderLbl]._lpos = v3(TDETE.chartHeader.x, TDETE.chartHeader.y, 0);
     const chartHeaderLblL = sb.e[chartHeaderLbl]._components[1].__id__;
+    sb.e[chartHeaderLblL]._horizontalAlign = 0; // 0 = LEFT
+    sb.e[chartHeaderLblL]._color = cl(125, 134, 158, 180);
     sb.e[chartHeaderLblL]._spacingX = 2;
 
     // ChartArea — cc.Graphics surface for candles + volume bars.
@@ -4060,6 +4073,7 @@ function generate() {
         ...safetyIndices.map(rf),
         ...tfIndices.map(rf),
         rf(denomPriceBtn), rf(denomMcapBtn), rf(denomUsdBtn), rf(denomSolBtn),
+        rf(chartDivN),
         rf(chartCardN),
         rf(detStatsHdr),
         ...statIndices.map(rf),
@@ -4982,7 +4996,11 @@ function generate() {
     // ═══════════════════════════════════════════════════════════════
     const pmN = sb.e.length;
     sb.node('PostMatchPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
-    sb.ut(pmN, 720, 1280);
+    // 2026-04-28 spatial pass — panel canvas grows 720×1280 → 720×1800 to
+    // mirror RacePanel (Main.scene:103900). Without this, the dark wash
+    // (#0B0E1A) stops at 1280 logical px and the underlying app/Home
+    // gradient (#1A0B2E) bleeds through above the title on tall devices.
+    sb.ut(pmN, LAYOUT.PostMatchPanel.canvas.w, LAYOUT.PostMatchPanel.canvas.h);
     sb.spr(pmN, 10, 14, 22);
 
     // All PostMatchPanel positions sourced from LAYOUT.PostMatchPanel.
@@ -5013,8 +5031,17 @@ function generate() {
     const pmBackBtn = mkBtn(sb, 'PostMatchBackButton', pmN, '← Back',
         PME.backBtn.y, PME.backBtn.w, PME.backBtn.h, 55, 65, 85);
     sb.e[pmBackBtn]._lpos = v3(PME.backBtn.x, PME.backBtn.y, 0);
+    // 2026-04-28 spatial pass — Back button drops into title row; dim to
+    // ~0.78 opacity so it doesn't compete with "YOU WON" for attention.
+    const pmBackBtnOp = sb.add({
+        __type__: 'cc.UIOpacity', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(pmBackBtn), _enabled: true, __prefab: null,
+        _opacity: 200,
+    });
+    sb.e[pmBackBtn]._components.push(rf(pmBackBtnOp));
     // Title — bold, color-coded (green on win, rose on loss) at runtime.
-    const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'YOU WON!', 56,
+    // 2026-04-28 — 56pt → 60pt for slightly bigger reward-moment energy.
+    const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'YOU WON!', 60,
         PME.title.y, PME.title.w, PME.title.h, 255, 255, 255);
     style(sb, pmTitle, { bold: true });
     const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 28,
@@ -5047,10 +5074,24 @@ function generate() {
     const pmMascotUT = sb.ut(pmMascotN, PME.mascotContainer.w, PME.mascotContainer.h);
     sb.e[pmMascotN]._components = [rf(pmMascotUT)];
 
-    const pmPayout = mkLabel(sb, 'PostMatchPayoutLabel', pmN, '', 64,
+    // 2026-04-28 spatial pass — payout 64pt → 72pt (+12.5% per spec).
+    const pmPayout = mkLabel(sb, 'PostMatchPayoutLabel', pmN, '', 72,
         PME.payoutLabel.y, PME.payoutLabel.w, PME.payoutLabel.h, 48, 198, 155);
-    const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 18,
+    // 2026-04-28 — subtitle now ONLY carries "Won by X.XX%" headline (one
+    // line, 22pt). Per-token breakdown moves to PostMatchBreakdownLabel below.
+    const pmSubtitle = mkLabel(sb, 'PostMatchSubtitleLabel', pmN, '', 22,
         PME.subtitle.y, PME.subtitle.w, PME.subtitle.h, 220, 226, 240);
+    // NEW 2026-04-28 — per-token breakdown row, dimmed to opacity ~0.7 so it
+    // reads as supporting context and stops competing with the +0.10 SOL hero.
+    const pmBreakdown = mkLabel(sb, 'PostMatchBreakdownLabel', pmN, '', 18,
+        PME.breakdown.y, PME.breakdown.w, PME.breakdown.h, 168, 174, 201);
+    const pmBreakdownOp = sb.add({
+        __type__: 'cc.UIOpacity', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(pmBreakdown), _enabled: true, __prefab: null,
+        _opacity: 178,
+    });
+    sb.e[pmBreakdown]._components.push(rf(pmBreakdownOp));
+    style(sb, pmBreakdown, { mono: true });
     const pmRake = mkLabel(sb, 'PostMatchRakeLabel', pmN, '', 24,
         PME.rake.y, PME.rake.w, PME.rake.h, 150, 160, 180);
     // Mono payout + rake for aligned digits through the ticker roll.
@@ -5119,9 +5160,13 @@ function generate() {
     style(sb, pmXPLabelRight, { bold: true, mono: true });
 
     // CTAs. SameSquad (renamed "▶ Play Again") gets the teal hero halo (replay-loop primary).
+    // 2026-04-28 spatial pass — glow constrained to button bounds (glowPad 12 → 0
+    // so halo no longer extends past button rect) and dimmed (alpha 80 → 56)
+    // so it stops bleeding into the XP bar above.
     const { glow: pmSameSquadGlow, btn: pmSameSquadBtn } = mkBtnHero(sb,
         'PostMatchSameSquadButton', pmN, '▶ Play Again',
-        PME.sameSquadBtn.x, PME.sameSquadBtn.y, PME.sameSquadBtn.w, PME.sameSquadBtn.h, 48, 198, 155);
+        PME.sameSquadBtn.x, PME.sameSquadBtn.y, PME.sameSquadBtn.w, PME.sameSquadBtn.h, 48, 198, 155,
+        { glowPad: 0, glowAlpha: 56 });
     style(sb, pmSameSquadBtn, { bold: true });
     const pmAgainBtn = mkBtnXY(sb, 'PostMatchAgainButton', pmN, 'Pick New Squad',
         PME.againBtn.x, PME.againBtn.y, PME.againBtn.w, PME.againBtn.h, 56, 148, 252);
@@ -5157,12 +5202,13 @@ function generate() {
     sb.e[pmTrophy]._children = pmConfettiIndices.map(rf);
 
     // Children order: bg-tint first (behind everything), then back btn, title row,
-    // mascot glow, mascot, payout, subtitle/rake, cards, XP bar, CTAs, share, status, trophy.
+    // mascot glow, mascot, payout, subtitle, breakdown, rake, cards, XP bar,
+    // CTAs, share, status, trophy.
     sb.e[pmN]._children = [
         rf(pmOutcomeBgN),
         rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmTrophy),
         rf(pmMascotGlowN), rf(pmMascotN),
-        rf(pmPayout), rf(pmSubtitle), rf(pmRake),
+        rf(pmPayout), rf(pmSubtitle), rf(pmBreakdown), rf(pmRake),
         ...pmCardIndices.map(rf),
         rf(pmXPLabelLeft), rf(pmXPFillN), rf(pmXPLabelRight),
         rf(pmSameSquadGlow), rf(pmSameSquadBtn), rf(pmAgainBtn),
@@ -6895,19 +6941,22 @@ function generate() {
     sb.e[luN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
-    // Phase N3 — NotificationPanel (slide-in feed from the right edge).
-    // Backdrop button tap-outside-to-dismiss · 480×1280 card on right ·
-    // header (Notifications · Mark all read · ✕) · 8-row pool below ·
-    // empty state label centered when no rows visible.
+    // Phase N3 — NotificationPanel (right-side tray slide-in).
+    // 2026-04-28 refactor: card narrowed 480→400 (≈55% canvas), backdrop
+    // moved off the root onto a dedicated child node with UIOpacity so
+    // AppUI can fade a real scrim (alpha 0→90) in parallel with the card
+    // slide. Header now hosts title + Mark-all-read inline; close ✕ in
+    // the top-right corner. A 1px divider separates header from list.
+    // Group labels (Now / Today / Earlier) and an empty-state group
+    // (icon + title + subtitle) added; AppUI shows/hides based on data.
     // ═══════════════════════════════════════════════════════════════
+    const NPC = LAYOUT.NotificationPanel.card;
+    const NPE = LAYOUT.NotificationPanel.elements;
     const npN = sb.e.length;
     sb.node('NotificationPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
     const npUT = sb.ut(npN, 720, 1280);
-    // Full-panel backdrop sprite — tap-outside-to-dismiss surface, fully
-    // opaque (matches NotifPanelCard color so the whole panel reads as one
-    // solid dark-slate surface). 2026-04-27: bumped from cl(0,0,0,140) scrim
-    // to solid Palette.bg.primary after device-test feedback that the home
-    // bleeding through the left ~33% looked broken.
+    // Tap-outside-to-dismiss: invisible Button on the panel root. Card
+    // children intercept their own taps; misses fall through to here.
     const npBackdropBtn = sb.add({
         __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(npN), _enabled: true, __prefab: null,
@@ -6916,22 +6965,36 @@ function generate() {
         _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
         _duration: 0.1, _zoomScale: 1, _target: rf(npN), _id: gid(),
     });
+
+    // Scrim child — its UIOpacity is what AppUI tweens on show/hide so
+    // the full-screen dim fades cleanly (and starts hidden so the panel's
+    // first paint isn't a flash of black).
+    const npBackdropN = sb.e.length;
+    sb.node('NotifBackdrop', npN, [], [], v3(0, 0, 0));
+    const npBackdropUT = sb.ut(npBackdropN, 720, 1280);
     const npBackdropSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(npN), _enabled: true, __prefab: null,
+        node: rf(npBackdropN), _enabled: true, __prefab: null,
         _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(11, 14, 26, 255), // Palette.bg.primary — match NotifPanelCard
+        _color: cl(0, 0, 0, 255), // Color is solid black; UIOpacity drives the alpha.
         _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
         _type: 1, _fillType: 0, _sizeMode: 0,
         _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
+    const npBackdropOpacity = sb.add({
+        __type__: 'cc.UIOpacity', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(npBackdropN), _enabled: true, __prefab: null,
+        _opacity: 0, _id: gid(),
+    });
+    sb.e[npBackdropN]._components = [rf(npBackdropUT), rf(npBackdropSpr), rf(npBackdropOpacity)];
 
-    // Card container — 480×1280 anchored to right edge (x=120 means +120 from canvas center, so its right edge sits at the right wall).
+    // Card container — 400×1280 anchored to right edge. restingX=160 ⇒
+    // card right edge sits at canvas right edge (160 + 200 = 360).
     const npCardN = sb.e.length;
-    sb.node('NotifPanelCard', npN, [], [], v3(120, 0, 0));
-    const npCardUT = sb.ut(npCardN, 480, 1280);
+    sb.node('NotifPanelCard', npN, [], [], v3(NPC.restingX, 0, 0));
+    const npCardUT = sb.ut(npCardN, NPC.w, NPC.h);
     const npCardSpr = sb.add({
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(npCardN), _enabled: true, __prefab: null,
@@ -6945,11 +7008,12 @@ function generate() {
     });
     sb.e[npCardN]._components = [rf(npCardUT), rf(npCardSpr)];
 
-    // Header — 9c: w 360→320 to clear NotifCloseButton bbox left x=176.
-    const NPE = LAYOUT.NotificationPanel.elements;
-    const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 26,
+    // Header row: title (left) · Mark-all-read (right) · close ✕ (top-right corner).
+    const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 22,
         NPE.cardHeaderLabel.y, NPE.cardHeaderLabel.w, NPE.cardHeaderLabel.h, 218, 165, 32);
-    style(sb, npHeader, { bold: true });
+    sb.e[npHeader]._lpos = v3(NPE.cardHeaderLabel.x, NPE.cardHeaderLabel.y, 0);
+    sb.e[sb.e[npHeader]._components[1].__id__]._horizontalAlign = 0; // left-align
+    sb.e[sb.e[npHeader]._components[1].__id__]._isBold = true;
     const npCloseBtn = mkBtnXY(sb, 'NotifCloseButton', npCardN, '✕',
         NPE.cardCloseButton.x, NPE.cardCloseButton.y,
         NPE.cardCloseButton.w, NPE.cardCloseButton.h, 30, 36, 52);
@@ -6957,19 +7021,50 @@ function generate() {
         NPE.cardMarkAllReadButton.x, NPE.cardMarkAllReadButton.y,
         NPE.cardMarkAllReadButton.w, NPE.cardMarkAllReadButton.h, 38, 44, 64);
 
-    // 8 row pool. Rows stack top→bottom inside a "list area" Node positioned
-    // below the header. We don't use a ScrollView here — 8 rows fit comfortably
-    // in the 1000px below header on most viewports. Future polish: wrap in a
-    // ScrollView with anchor 0.5/1 if rows ever exceed the visible area.
+    // 1px divider beneath the header row.
+    const npDividerN = sb.e.length;
+    sb.node('NotifHeaderDivider', npCardN, [], [],
+        v3(NPE.cardHeaderDivider.x, NPE.cardHeaderDivider.y, 0));
+    const npDividerUT = sb.ut(npDividerN, NPE.cardHeaderDivider.w, NPE.cardHeaderDivider.h);
+    const npDividerSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(npDividerN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(255, 255, 255, 28),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[npDividerN]._components = [rf(npDividerUT), rf(npDividerSpr)];
+
+    // List area — 8 reusable rows + 3 reusable group labels. AppUI
+    // computes Y at runtime to interleave group labels above their rows.
     const npListN = sb.e.length;
-    sb.node('NotifListContainer', npCardN, [], [], v3(0, -60, 0));
-    const npListUT = sb.ut(npListN, 460, 980);
+    sb.node('NotifListContainer', npCardN, [], [],
+        v3(NPE.listContainer.x, NPE.listContainer.y, 0));
+    const npListUT = sb.ut(npListN, NPE.listContainer.w, NPE.listContainer.h);
     sb.e[npListN]._components = [rf(npListUT)];
+
+    // Group labels — created inactive; AppUI activates per group with text + Y.
+    const groupSpecs = [
+        { name: 'NotifGroupLabel_now',     spec: NPE.groupLabelNow,     text: 'Now' },
+        { name: 'NotifGroupLabel_today',   spec: NPE.groupLabelToday,   text: 'Today' },
+        { name: 'NotifGroupLabel_earlier', spec: NPE.groupLabelEarlier, text: 'Earlier' },
+    ];
+    const npGroupLabelIndices = [];
+    for (const { name, spec, text } of groupSpecs) {
+        const gN = mkLabel(sb, name, npListN, text, 12, spec.y, spec.w, spec.h, 168, 174, 201);
+        sb.e[gN]._lpos = v3(spec.x, spec.y, 0);
+        sb.e[sb.e[gN]._components[1].__id__]._horizontalAlign = 0; // left-align
+        sb.e[sb.e[gN]._components[1].__id__]._isBold = true;
+        sb.e[gN]._active = false;
+        npGroupLabelIndices.push(gN);
+    }
 
     const npRowIndices = [];
     {
-        // 8 reusable rows from LAYOUT.NotificationPanel.templates.notifRow.
-        // Phase 9b: Body y/h fixed (-8/32 → -10/30) so its top edge clears Title's bottom.
         const NR = LAYOUT.NotificationPanel.templates.notifRow;
         for (let i = 0; i < NR.count; i++) {
             const rN = sb.e.length;
@@ -7041,18 +7136,38 @@ function generate() {
             npRowIndices.push(rN);
         }
     }
-    sb.e[npListN]._children = npRowIndices.map(rf);
+    sb.e[npListN]._children = [...npGroupLabelIndices.map(rf), ...npRowIndices.map(rf)];
 
-    // Empty state — visible when no rows are active.
-    const npEmptyL = mkLabel(sb, 'NotifEmptyLabel', npCardN, 'You\'re all caught up!', 16, 0, 360, 28, 168, 174, 201);
-    sb.e[npEmptyL]._active = false;
+    // Empty-state group: centered icon + title + subtitle. Hidden when
+    // any rows are visible. AppUI does IconLibrary.attach('bell') on the
+    // icon container at start.
+    const npEmptyN = sb.e.length;
+    sb.node('NotifEmptyGroup', npCardN, [], [], v3(0, 0, 0));
+    const npEmptyUT = sb.ut(npEmptyN, NPC.w, 400);
+    sb.e[npEmptyN]._components = [rf(npEmptyUT)];
+    const npEmptyIconN = sb.e.length;
+    sb.node('NotifEmptyIcon', npEmptyN, [], [],
+        v3(NPE.emptyIcon.x, NPE.emptyIcon.y, 0));
+    const npEmptyIconUT = sb.ut(npEmptyIconN, NPE.emptyIcon.w, NPE.emptyIcon.h);
+    sb.e[npEmptyIconN]._components = [rf(npEmptyIconUT)];
+    const npEmptyTitleN = mkLabel(sb, 'NotifEmptyTitleLabel', npEmptyN,
+        'No notifications yet', 16,
+        NPE.emptyTitleLabel.y, NPE.emptyTitleLabel.w, NPE.emptyTitleLabel.h,
+        244, 245, 249);
+    style(sb, npEmptyTitleN, { bold: true });
+    const npEmptySubL = mkLabel(sb, 'NotifEmptySubtitleLabel', npEmptyN,
+        'Matches, wins, and updates will show here', 13,
+        NPE.emptySubtitleLabel.y, NPE.emptySubtitleLabel.w, NPE.emptySubtitleLabel.h,
+        168, 174, 201);
+    sb.e[npEmptyN]._children = [rf(npEmptyIconN), rf(npEmptyTitleN), rf(npEmptySubL)];
+    sb.e[npEmptyN]._active = false;
 
     sb.e[npCardN]._children = [
         rf(npHeader), rf(npCloseBtn), rf(npMarkAllBtn),
-        rf(npListN), rf(npEmptyL),
+        rf(npDividerN), rf(npListN), rf(npEmptyN),
     ];
-    sb.e[npN]._components = [rf(npUT), rf(npBackdropSpr), rf(npBackdropBtn)];
-    sb.e[npN]._children = [rf(npCardN)];
+    sb.e[npN]._components = [rf(npUT), rf(npBackdropBtn)];
+    sb.e[npN]._children = [rf(npBackdropN), rf(npCardN)];
     sb.e[npN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════

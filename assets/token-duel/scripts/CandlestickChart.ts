@@ -47,9 +47,10 @@ export interface ChartRenderOpts {
 
 const COLOR_UP     = new Color(48, 198, 155, 255);
 const COLOR_DOWN   = new Color(236, 88, 122, 255);
-const COLOR_VOL_UP = new Color(48, 198, 155, 100);
-const COLOR_VOL_DN = new Color(236, 88, 122, 100);
+const COLOR_VOL_UP = new Color(48, 198, 155, 70);
+const COLOR_VOL_DN = new Color(236, 88, 122, 70);
 const COLOR_GRID   = new Color(255, 255, 255, 18);
+const COLOR_PV_DIV = new Color(255, 255, 255, 32);
 
 /**
  * Render the full chart into the provided Graphics node.
@@ -142,6 +143,13 @@ export function renderCandles(
             g.rect(x - bodyW / 2, volBottom, bodyW, h);
             g.fill();
         }
+        // Hairline between price band and volume band so volume reads as an
+        // intentional sub-layer, not bleed.
+        g.strokeColor = COLOR_PV_DIV;
+        g.lineWidth = 1;
+        g.moveTo(plotLeft, priceBottom - 3);
+        g.lineTo(plotRight, priceBottom - 3);
+        g.stroke();
     }
 
     // Candle wicks + bodies.

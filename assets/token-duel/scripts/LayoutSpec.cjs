@@ -194,13 +194,19 @@ const race = {
     DUEL_BAR_Y:          300,
 
     // Opponent's hero delta (big 80pt portfolio %).
-    OPP_HERO_DELTA_Y:    140,
+    // 2026-04-28: 140 → 100 to drop -0.07% into the mid-low zone, reduce its
+    // vertical dominance, and pull weight into the under-used bottom half.
+    OPP_HERO_DELTA_Y:    100,
 
     // Opponent identity card ("BOT · Lv N"). 2026-04-27: 40 → 0 to clear opponentDelta visual extent.
-    OPP_IDENTITY_Y:      0,
+    // 2026-04-28: 0 → -20 to follow opponentDelta down and keep a clear ≥20px
+    // gap between the 80pt PnL glyph extent and the pill (no visual collision).
+    OPP_IDENTITY_Y:      -20,
 
     // Opponent-side token row (3 cards side-by-side, duel layout).
-    OPP_TOKEN_ROW_Y:     -90,
+    // 2026-04-28: -90 → -130 to anchor the opponent row near the bottom safe
+    // area (mirrors player row top-spacing; gives the screen a 3-zone read).
+    OPP_TOKEN_ROW_Y:     -130,
 
     // 2026-04-27 — Forfeit + Home buttons paired on y=-260. Home on LEFT,
     // Forfeit on RIGHT. Hint text + mascot stay where they are.
@@ -829,13 +835,13 @@ const LayoutSpec = {
     // Live race panel — fullscreen overlay during active match. 720×1800
     // (oversized for tall device viewports).
     //
-    // 1v1 DUEL LAYOUT (2026-04-26 battle-UI polish):
+    // 1v1 DUEL LAYOUT (2026-04-26 battle-UI polish; 2026-04-28 vertical-balance pass):
     //   Top row y=720: [Lv chip] (Timer) [hero +%] — single horizontal band.
     //   Player tokens y=540 (3 horizontal cards w/ contribution bars).
     //   Lead-state line y=410 ("YOU LEAD\n+0.48 pp"; replaces tiny gap text).
     //   Duel bar y=300 — tug-of-war bar that moves toward winner.
-    //   Opp hero % y=140, opp identity y=40 ("BOT · Lv 3" header).
-    //   Opp tokens y=-90 (mirror).
+    //   Opp hero % y=100, opp identity y=-20 ("BOT · Lv 3" header).
+    //   Opp tokens y=-130 (mirror; pushed down for bottom-safe-area anchor).
     //   Forfeit y=-260 (small/recessed), mascot y=-460 (dimmed @ 55%).
     //
     // 4p/8p MULTI-MODE FALLBACK: AppUI hides the duel surfaces and re-shows
@@ -2481,34 +2487,46 @@ const LayoutSpec = {
     },
 
     /* ───── NOTIFICATION PANEL ──────────────────────────────────────── */
-    // Phase 9b — Row template migrated. Full chrome (header, close,
-    // mark-all, list container, empty label, backdrop) deferred.
+    // Right-side tray refactor (2026-04-28): card narrowed 480→400 (≈55%
+    // of canvas), backdrop restored to scrim so the home dims through the
+    // left side instead of reading as one solid full-width panel. Header
+    // now hosts title + Mark-all-read inline, with close ✕ at top-right.
     NotificationPanel: {
         canvas: { w: 720, h: 1280 },
+        // Card geometry consumed by scene-gen + AppUI tweens.
+        card: { w: 400, h: 1280, restingX: 160, offX: 600 },
         elements: {
-            listContainer: { x: 0, y: -60, w: 460, h: 980, type: 'group' },
-            // 9c — NotifPanelCard chrome (the visible card inside the panel).
-            cardHeaderLabel: { x: 0,   y: 580, w: 320, h: 36, type: 'label',
-                notes: '9c: w 360→320 to clear NotifCloseButton bbox left x=176' },
-            cardCloseButton: { x: 200, y: 580, w: 48,  h: 48, type: 'btnGhost' },
-            cardMarkAllReadButton: { x: -100, y: 530, w: 200, h: 36, type: 'btnGhost' },
+            // List area sits below header divider; w 360 matches card content width.
+            listContainer:        { x: 0,    y: -80, w: 360, h: 940, type: 'group' },
+            // Header row: title left, Mark-all-read right-of-title, close ✕ top-right corner.
+            cardHeaderLabel:      { x: -88,  y: 600, w: 180, h: 30, type: 'label' },
+            cardMarkAllReadButton:{ x: 84,   y: 600, w: 124, h: 30, type: 'btnGhost' },
+            cardCloseButton:      { x: 168,  y: 600, w: 36,  h: 36, type: 'btnGhost' },
+            // 1px low-alpha divider beneath the header row.
+            cardHeaderDivider:    { x: 0,    y: 572, w: 356, h: 1,  type: 'sprite' },
+            // Group section headers ("Now" / "Today" / "Earlier"). Y is
+            // computed at runtime; these specs lock width/height/x only.
+            groupLabelNow:        { x: -78,  y: 0,   w: 200, h: 18, type: 'label' },
+            groupLabelToday:      { x: -78,  y: 0,   w: 200, h: 18, type: 'label' },
+            groupLabelEarlier:    { x: -78,  y: 0,   w: 200, h: 18, type: 'label' },
+            // Empty-state group: centered icon + title + subtitle, swaps in when no rows.
+            emptyIcon:            { x: 0,    y: 80,  w: 64,  h: 64, type: 'group' },
+            emptyTitleLabel:      { x: 0,    y: 0,   w: 320, h: 24, type: 'label' },
+            emptySubtitleLabel:   { x: 0,    y: -28, w: 340, h: 18, type: 'label' },
         },
         templates: {
             // 8 reusable rows in NotifListContainer. AppUI activates per
             // unread notification, writes Title/Body/Time labels, toggles
-            // unread dot.
-            //
-            // Phase 9b fix: body.h shrunk 32→30 and y shifted -8→-10 so
-            // its top edge clears Title's bottom edge.
+            // unread dot. Geometry tightened to fit 360-wide content area.
             notifRow: {
-                count: 8, w: 460, h: 92, gap: 8,
-                baseY: 480, gapY: -100,
-                stripe: { x: -227, y: 0,   w: 6,   h: 92 },
-                icon:   { x: -185, y: 0,   w: 40,  h: 40 },
-                title:  { x: -15,  y: 18,  w: 280, h: 22 },
-                body:   { x: -15,  y: -8,  w: 270, h: 28, notes: 'Phase 9b: w 280→270 clears Time x[120,220]; h 32→28 clears Title bbox top + Time bbox top' },
-                time:   { x: 170,  y: -32, w: 100, h: 16 },
-                dot:    { x: 210,  y: 32,  w: 8,   h: 8 },
+                count: 8, w: 360, h: 92, gap: 8,
+                baseY: 460, gapY: -100,
+                stripe: { x: -177, y: 0,   w: 6,   h: 92 },
+                icon:   { x: -150, y: 0,   w: 40,  h: 40 },
+                title:  { x: -18,  y: 18,  w: 200, h: 22 },
+                body:   { x: -18,  y: -10, w: 200, h: 28 },
+                time:   { x: 130,  y: -32, w: 80,  h: 16 },
+                dot:    { x: 162,  y: 32,  w: 8,   h: 8 },
             },
         },
         allowedOverlaps: [],
@@ -2572,17 +2590,24 @@ const LayoutSpec = {
             viewHeader:      { x: -200, y: 386, w: 120, h: 14, type: 'label' },
             unitHeader:      { x:  140, y: 386, w: 120, h: 14, type: 'label' },
 
-            // Chart module — wrapped in an opaque dark card to block BackgroundFX bleed.
-            chartCard:       { x:    0, y:  60, w: 680, h: 600, type: 'group' },
-            chartHeader:     { x:    0, y: 268, w: 660, h: 18, type: 'label',
-                notes: 'rel to ChartCard center; e.g. "PRICE · 15m · USD"' },
-            chartArea:       { x:    0, y: -20, w: 660, h: 540, type: 'group',
-                notes: 'rel to ChartCard center; cc.Graphics surface' },
+            // Chart module — strict 380px-tall framed container with internal padding.
+            // Top edge at y=320 clears denom-toggle bottom (y=341) with 21px gap that
+            // also accommodates the chartDivider hairline at y=330. Bottom at y=-60
+            // leaves 30px breathing room above statsHeader at y=-90.
+            chartCard:       { x:    0, y: 130, w: 680, h: 380, type: 'group' },
+            chartHeader:     { x: -160, y: 168, w: 320, h: 16, type: 'label',
+                notes: 'rel ChartCard center; left-aligned dim caption, top-left inside card with 20px left / 14px top padding' },
+            chartArea:       { x:    0, y: -18, w: 656, h: 332, type: 'group',
+                notes: 'rel ChartCard center; cc.Graphics surface; sits below 24px header band, 12px symmetric inside-card padding' },
             chartLoadLabel:  { x:    0, y:   0, w: 300, h: 22, type: 'label',
                 notes: 'rel to ChartArea center; shown while loading' },
 
-            // Token Stats label.
-            statsHeader:     { x: -290, y: -310, w: 220, h: 14, type: 'label' },
+            // Hairline divider between control band and ChartCard.
+            chartDivider:    { x:    0, y: 330, w: 600, h:   1, type: 'sprite',
+                notes: 'low-alpha blue hairline; sits in the gap between denom toggles and ChartCard top' },
+
+            // Token Stats label — moved up to sit 30px below ChartCard bottom (y=-60).
+            statsHeader:     { x: -290, y: -90, w: 220, h: 14, type: 'label' },
 
             status:          { x:    0, y: -625, w: 660, h: 20, type: 'label' },
         },
@@ -2626,12 +2651,12 @@ const LayoutSpec = {
             detailStatCard: {
                 count: 6, w: 210, h: 70,
                 defs: [
-                    { key: 'price',   label: 'PRICE',   x: -225, y: -365, accent: 'amber' },
-                    { key: 'liq',     label: 'LIQ',     x:  0,   y: -365, accent: 'blue'  },
-                    { key: 'mcap',    label: 'MCAP',    x:  225, y: -365, accent: 'blue'  },
-                    { key: 'vol24h',  label: 'VOL 24H', x: -225, y: -445, accent: 'blue'  },
-                    { key: 'change',  label: '24H',     x:  0,   y: -445, accent: 'dynamic' },
-                    { key: 'holders', label: 'HOLDERS', x:  225, y: -445, accent: 'slate' },
+                    { key: 'price',   label: 'PRICE',   x: -225, y: -155, accent: 'amber' },
+                    { key: 'liq',     label: 'LIQ',     x:  0,   y: -155, accent: 'blue'  },
+                    { key: 'mcap',    label: 'MCAP',    x:  225, y: -155, accent: 'blue'  },
+                    { key: 'vol24h',  label: 'VOL 24H', x: -225, y: -235, accent: 'blue'  },
+                    { key: 'change',  label: '24H',     x:  0,   y: -235, accent: 'dynamic' },
+                    { key: 'holders', label: 'HOLDERS', x:  225, y: -235, accent: 'slate' },
                 ],
                 header: { x: 0, y: 16,  w: 200, h: 22 },
                 value:  { x: 0, y: -14, w: 200, h: 28 },
@@ -2802,6 +2827,12 @@ const LayoutSpec = {
             ['PostMatchTitleLabel', 'PostMatchTrackLabel'],
             ['PostMatchRakeLabel',  'PMCard_you'],
             ['PostMatchRakeLabel',  'PMCard_opp'],
+            // 2026-04-28 — back button drops into title row (BACK_Y=TITLE_Y).
+            // Back is left-anchored at x=-260 (small ghost btn); title is
+            // center-anchored at x=0 (620 wide). They share Y but render in
+            // disjoint horizontal regions.
+            ['PostMatchBackButton', 'PostMatchTitleLabel'],
+            ['PostMatchTitleLabel', 'TrophyLabel'],
         ],
     },
 

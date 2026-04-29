@@ -755,9 +755,17 @@ export class AppUI extends Component {
     private _notifBadgeLabel: Label | null = null;
     private _notifPanel: Node | null = null;
     private _notifPanelCard: Node | null = null;
+    private _notifBackdropOpacity: UIOpacity | null = null;
+    private _notifHeaderLabel: Label | null = null;
+    private _notifDivider: Node | null = null;
     private _notifCloseButton: Button | null = null;
     private _notifMarkAllReadButton: Button | null = null;
-    private _notifEmptyLabel: Label | null = null;
+    private _notifMarkAllReadLabel: Label | null = null;
+    private _notifEmptyGroup: Node | null = null;
+    private _notifEmptyIcon: Node | null = null;
+    private _notifGroupLabelNow: Node | null = null;
+    private _notifGroupLabelToday: Node | null = null;
+    private _notifGroupLabelEarlier: Node | null = null;
     private _notifRows: Node[] = [];
     /** Row idx → currently bound notification id (null if row inactive). */
     private _notifRowIds: (string | null)[] = [];
@@ -995,6 +1003,9 @@ export class AppUI extends Component {
     private _postMatchTrackLabel: Label | null = null;
     private _postMatchPayoutLabel: Label | null = null;
     private _postMatchSubtitleLabel: Label | null = null;
+    // 2026-04-28 spatial pass — per-token breakdown row split out of subtitle
+    // so it can render dimmed (opacity 0.7) without dragging the headline down.
+    private _postMatchBreakdownLabel: Label | null = null;
     private _postMatchBackButton: Button | null = null;
     private _postMatchAgainButton: Button | null = null;
     private _postMatchCardValues: Map<string, Label> = new Map();
@@ -2499,6 +2510,8 @@ export class AppUI extends Component {
             this._postMatchTrackLabel    = this._postMatchPanel.getChildByName('PostMatchTrackLabel')?.getComponent(Label) ?? null;
             this._postMatchPayoutLabel   = this._postMatchPanel.getChildByName('PostMatchPayoutLabel')?.getComponent(Label) ?? null;
             this._postMatchSubtitleLabel = this._postMatchPanel.getChildByName('PostMatchSubtitleLabel')?.getComponent(Label) ?? null;
+            // 2026-04-28 spatial pass — dimmed token breakdown sibling.
+            this._postMatchBreakdownLabel = this._postMatchPanel.getChildByName('PostMatchBreakdownLabel')?.getComponent(Label) ?? null;
             this._postMatchBackButton    = this._postMatchPanel.getChildByName('PostMatchBackButton')?.getComponent(Button) ?? null;
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
             this._postMatchBackButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchBack(), this);
@@ -2993,11 +3006,25 @@ export class AppUI extends Component {
         this._notifPanel = this.node.getChildByName('NotificationPanel') ?? null;
         if (this._notifPanel) {
             this._notifPanelCard = this._notifPanel.getChildByName('NotifPanelCard') ?? null;
+            this._notifBackdropOpacity = this._notifPanel.getChildByName('NotifBackdrop')?.getComponent(UIOpacity) ?? null;
+            this._notifHeaderLabel = this._notifPanelCard?.getChildByName('NotifHeaderLabel')?.getComponent(Label) ?? null;
+            this._notifDivider = this._notifPanelCard?.getChildByName('NotifHeaderDivider') ?? null;
             this._notifCloseButton = this._notifPanelCard?.getChildByName('NotifCloseButton')?.getComponent(Button) ?? null;
             this._notifMarkAllReadButton = this._notifPanelCard?.getChildByName('NotifMarkAllReadButton')?.getComponent(Button) ?? null;
-            this._notifEmptyLabel = this._notifPanelCard?.getChildByName('NotifEmptyLabel')?.getComponent(Label) ?? null;
+            this._notifMarkAllReadLabel = this._notifMarkAllReadButton?.node.getChildByName('Label')?.getComponent(Label) ?? null;
+            const emptyN = this._notifPanelCard?.getChildByName('NotifEmptyGroup');
+            this._notifEmptyGroup = emptyN ?? null;
+            this._notifEmptyIcon = emptyN?.getChildByName('NotifEmptyIcon') ?? null;
+            // Pre-attach the bell mascot icon for the empty state.
+            if (this._notifEmptyIcon) {
+                try { IconLibrary.attach(this._notifEmptyIcon, 'bell', { size: 64 }); }
+                catch (e) { console.log(`${TAG} start | empty-icon attach failed ${e}`); }
+            }
             const listN = this._notifPanelCard?.getChildByName('NotifListContainer');
             if (listN) {
+                this._notifGroupLabelNow     = listN.getChildByName('NotifGroupLabel_now') ?? null;
+                this._notifGroupLabelToday   = listN.getChildByName('NotifGroupLabel_today') ?? null;
+                this._notifGroupLabelEarlier = listN.getChildByName('NotifGroupLabel_earlier') ?? null;
                 for (let i = 0; i < 8; i++) {
                     const row = listN.getChildByName(`NotifRow_${i}`);
                     if (!row) continue;
@@ -3438,13 +3465,22 @@ export class AppUI extends Component {
     // _cachedHoldings, _picker*) intentionally persist so the next match
     // can reuse them. Call sites: _onGameOver, _onStartGame guard,
     // _onTokenDuelBack, _onRaceCancel.
-    private _teardownMatchRuntime(reason: string): void {
-        console.log(`${TAG} _teardownMatchRuntime | reason=${reason} hadGame=${!!this._game} hadLocalPda=${this._currentLocalMatchPda ?? 'null'} hadPaperPending=${(this as any)._pendingPaperBotMatch === true} hadRealPda=${this._activeRealMatchPda ?? 'null'} bgRunning=${this._raceRunningInBackground}`);
+    //
+    // `removeMatch=true` (default) clears the prior local match from MIP +
+    // backend (the user finished or backed out). Pass `removeMatch=false`
+    // when starting a NEW match while the prior one is still legitimately
+    // in-flight — the prior match keeps its DB row + MIP entry and
+    // continues counting down via `_mipRemainingMs`.
+    private _teardownMatchRuntime(reason: string, removeMatch: boolean = true): void {
+        console.log(`${TAG} _teardownMatchRuntime | reason=${reason} removeMatch=${removeMatch} hadGame=${!!this._game} hadLocalPda=${this._currentLocalMatchPda ?? 'null'} hadPaperPending=${(this as any)._pendingPaperBotMatch === true} hadRealPda=${this._activeRealMatchPda ?? 'null'} bgRunning=${this._raceRunningInBackground}`);
         if (this._game) {
             this._game.destroy();
             this._game = null;
         }
-        if (this._currentLocalMatchPda) this._clearCurrentLocalMatch();
+        if (this._currentLocalMatchPda) {
+            if (removeMatch) this._clearCurrentLocalMatch();
+            else this._pauseCurrentLocalMatch();
+        }
         this._hideRacePanel();
         (this as any)._pendingPaperBotMatch = false;
         this._pendingRealMatch = false;
@@ -3647,6 +3683,17 @@ export class AppUI extends Component {
         if (op) op.opacity = 255;
         const sv = this._mipPanel.getChildByName('MIPScrollView')?.getComponent(ScrollView);
         sv?.scrollToTop(0);
+        // (c) Recurse the opacity reset to ScrollView, mask view, content,
+        //     and row 0 so a stale child-level UIOpacity tween (e.g. from a
+        //     prior animateOut) can't keep the hero card invisible. The
+        //     panel-level reset above doesn't propagate.
+        const mipScrollNode = this._mipPanel.getChildByName('MIPScrollView');
+        const mipViewNode = mipScrollNode?.getChildByName('view');
+        const mipContentNode = mipViewNode?.getChildByName('content');
+        for (const n of [mipScrollNode, mipViewNode, mipContentNode, this._mipRowNodes[0] ?? null]) {
+            const childOp = n?.getComponent(UIOpacity);
+            if (childOp) childOp.opacity = 255;
+        }
         this._startMipTick();
     }
 
@@ -3862,16 +3909,26 @@ export class AppUI extends Component {
         const r0 = this._mipRowNodes[0];
         const r0Pos = r0?.position;
         const r0CardBg = this._mipCardBgUTs[0];
+        const r0CardBgSpr = this._mipCardBgs[0];
         const panelOp = this._mipPanel?.getComponent(UIOpacity);
         const scrollNode = this._mipPanel?.getChildByName('MIPScrollView');
         const scrollSV = scrollNode?.getComponent(ScrollView);
         const scrollContent = scrollSV?.content;
+        const scrollOp = scrollNode?.getComponent(UIOpacity);
+        const contentOp = scrollContent?.getComponent(UIOpacity);
+        const r0Op = r0?.getComponent(UIOpacity);
+        const contentPos = scrollContent?.position;
         console.log(`${TAG} _renderMipRows | n=${n} rowPool=${this._mipRowNodes.length}/30`
             + ` empty=${!!this._mipEmptyState} emptyActive=${this._mipEmptyState?.active}`
             + ` panel=${!!this._mipPanel} panelActive=${this._mipPanel?.active} panelOpacity=${panelOp?.opacity ?? 'no-op'}`
-            + ` scroll=${!!scrollSV} content=${!!scrollContent} contentChildren=${scrollContent?.children.length ?? 0}`
+            + ` scroll=${!!scrollSV} scrollOpacity=${scrollOp?.opacity ?? 'no-op'}`
+            + ` content=${!!scrollContent} contentChildren=${scrollContent?.children.length ?? 0}`
+            + ` contentOpacity=${contentOp?.opacity ?? 'no-op'}`
+            + ` contentPos=(${contentPos?.x ?? '?'},${contentPos?.y ?? '?'})`
             + ` row0Active=${r0?.active} row0Pos=(${r0Pos?.x ?? '?'},${r0Pos?.y ?? '?'})`
-            + ` row0CardSize=(${r0CardBg?.width ?? '?'}x${r0CardBg?.height ?? '?'})`);
+            + ` row0Opacity=${r0Op?.opacity ?? 'no-op'}`
+            + ` row0CardSize=(${r0CardBg?.width ?? '?'}x${r0CardBg?.height ?? '?'})`
+            + ` row0CardAlpha=${r0CardBgSpr?.color?.a ?? '?'}`);
     }
 
     /** Resize + reposition row 0 when the active count is 1. Restores the
@@ -4098,6 +4155,23 @@ export class AppUI extends Component {
         if (this._shouldHitBackend() && pda.startsWith('local-')) {
             void deletePaperMatchActive(pda);
         }
+    }
+
+    /**
+     * 2026-04-28 — Detach the runtime from the current local match WITHOUT
+     * removing it from MIP / DB. Used when the user starts a NEW match while
+     * a prior one is still in-flight; the prior match stays in
+     * `_localActiveMatches` and (for signed-in users) the `paper_match_active`
+     * backend row, so MIP keeps surfacing it. `_mipRemainingMs` is pure clock
+     * math (`startedAt + windowDuration`), so the paused match keeps counting
+     * down without a runtime ticker. The user can resume via the MIP card.
+     */
+    private _pauseCurrentLocalMatch(): void {
+        if (!this._currentLocalMatchPda) return;
+        const pda = this._currentLocalMatchPda;
+        this._currentLocalMatchPda = null;
+        console.log(`${TAG} _pauseCurrentLocalMatch | detach pda=${pda} kept_in_mip+db remaining_local=${this._localActiveMatches.length}`);
+        this._rebuildMipDisplay();
     }
 
     /** Re-paint home button subtitle + count badge + activity dot based on _mipMatches. */
@@ -5461,7 +5535,10 @@ export class AppUI extends Component {
         // closure can fire against the new match's RacePanel and bounce the
         // user back to the picker.
         if (this._game || this._currentLocalMatchPda || this._raceRunningInBackground) {
-            this._teardownMatchRuntime('start_game_reentry');
+            // Preserve the prior local match in MIP + DB — it keeps counting
+            // down via clock math and the user can resume from the MIP card.
+            // Only the runtime (game instance + race-UI ticker) detaches.
+            this._teardownMatchRuntime('start_game_reentry', /* removeMatch */ false);
         }
         this._dumpAppState('start_game_enter');
         console.log(`${TAG} onStartGame | START squad_filled=${this._squad.filled}`);
@@ -10450,12 +10527,18 @@ export class AppUI extends Component {
 
     private _redrawChart(): void {
         if (!this._detailChartGraphics) return;
+        // Source dimensions from the actual ChartArea UITransform so renderer
+        // never overshoots the visible card frame (prior bug: hardcoded 680×640
+        // into a 660×540 node, volume bars bled into TOKEN STATS).
+        const ut = this._detailChartGraphics.node.getComponent(UITransform);
+        const w = ut?.contentSize.width  ?? 656;
+        const h = ut?.contentSize.height ?? 332;
         renderCandles(this._detailChartGraphics, this._detailLastCandles, {
-            width: 680,
-            height: 640,
-            paddingTop: 12,
-            paddingBottom: 90,
-            paddingX: 8,
+            width: w,
+            height: h,
+            paddingTop: 16,
+            paddingBottom: Math.round(h * 0.22),
+            paddingX: 12,
         }, {
             timeframe: this._detailActiveTimeframe,
             denom: this._detailDenom,
@@ -10839,6 +10922,9 @@ export class AppUI extends Component {
         setOpZero(this._postMatchTitleLabel?.node);
         setOpZero(this._postMatchTrackLabel?.node);
         setOpZero(this._postMatchSubtitleLabel?.node);
+        // 2026-04-28 — breakdown is the same beat as subtitle but reveals to
+        // its dim target (178, not 255) inside beatSubtitleRake.
+        setOpZero(this._postMatchBreakdownLabel?.node);
         setOpZero(this._postMatchRakeLabel?.node);
         const ctaPrimary   = this._postMatchPanel?.getChildByName('PostMatchSameSquadButton');
         const ctaSecondary = this._postMatchPanel?.getChildByName('PostMatchAgainButton');
@@ -10965,9 +11051,15 @@ export class AppUI extends Component {
 
         // Subtitle: default = portfolio-delta diff; level-up message overrides;
         // unverified-real-match badge takes priority over both.
+        // 2026-04-28 spatial pass — split into TWO labels so the per-token
+        // breakdown can render dimmed (opacity ~0.7) without pulling the
+        // headline down with it. Subtitle holds the single-line headline only.
+        const breakdownLine = (() => {
+            if (outcome.track === 'real' && this._lastMatchUnverifiedReason) return '';
+            if (leveledUp) return '';
+            return buildSlotBreakdown();
+        })();
         if (this._postMatchSubtitleLabel) {
-            // Staging pass: 22pt headline, 26 line height — secondary to the
-            // 96pt PnL but readable enough to clarify the result story.
             this._postMatchSubtitleLabel.fontSize = 22;
             this._postMatchSubtitleLabel.lineHeight = 26;
             if (outcome.track === 'real' && this._lastMatchUnverifiedReason) {
@@ -10977,17 +11069,24 @@ export class AppUI extends Component {
                 this._postMatchSubtitleLabel.string = `LEVEL UP! ${previousLevel} → ${outcome.newLevel}`;
                 this._postMatchSubtitleLabel.color = new Color(218, 165, 32, 255);
             } else {
-                const breakdown = buildSlotBreakdown();
-                // 2026-04-27 v2 — tighter, sharper copy. "Won by 0.09%" reads
-                // faster than "You won by 0.09 pp"; matches PnL terseness.
-                const headline = outcome.won
+                // 2026-04-27 v2 — "Won by 0.09%" / "Lost by 0.09%". No \n
+                // suffix any more — breakdown lives in its own label.
+                this._postMatchSubtitleLabel.string = outcome.won
                     ? `Won by ${deltaDiff.toFixed(2)}%`
                     : `Lost by ${deltaDiff.toFixed(2)}%`;
-                this._postMatchSubtitleLabel.string = breakdown
-                    ? `${headline}\n${breakdown}`
-                    : headline;
                 this._postMatchSubtitleLabel.color = new Color(220, 226, 240, 255);
             }
+        }
+        if (this._postMatchBreakdownLabel) {
+            // Pad delimiters with extra spaces so each token reads as its own
+            // chip ("BIO +0.00%   ·   PUMP -0.00%   ·   Goblin -1.76%").
+            const padded = breakdownLine
+                ? breakdownLine.split(' · ').join('   ·   ')
+                : '';
+            this._postMatchBreakdownLabel.string = padded;
+            // text.mid (#A8AEC9). UIOpacity (178/255 ≈ 0.7) is set in
+            // generate-scenes.js so the row is half-bright versus subtitle.
+            this._postMatchBreakdownLabel.color = new Color(168, 174, 201, 255);
         }
 
         // Part 13: rake paid line. Reads last-known level + wager from the
@@ -11137,10 +11236,14 @@ export class AppUI extends Component {
         // pre-hidden every fading element to opacity=0; beats fade them in
         // and trigger the per-beat side animations. Tap-to-skip jumps to
         // the finalizer which snaps every element to its terminal state.
-        const titleNode    = this._postMatchTitleLabel?.node ?? null;
-        const trackNode    = this._postMatchTrackLabel?.node ?? null;
-        const subtitleNode = this._postMatchSubtitleLabel?.node ?? null;
-        const rakeNode     = this._postMatchRakeLabel?.node ?? null;
+        const titleNode     = this._postMatchTitleLabel?.node ?? null;
+        const trackNode     = this._postMatchTrackLabel?.node ?? null;
+        const subtitleNode  = this._postMatchSubtitleLabel?.node ?? null;
+        const breakdownNode = this._postMatchBreakdownLabel?.node ?? null;
+        const rakeNode      = this._postMatchRakeLabel?.node ?? null;
+        // 2026-04-28 spatial pass — breakdown row reveals to opacity 178
+        // (~0.7) so it stays visibly dimmer than the subtitle headline.
+        const BREAKDOWN_DIM_ALPHA = 178;
         const payoutNodeFinal = this._postMatchPayoutLabel?.node ?? null;
         const payoutOp        = payoutNodeFinal ? this._ensureOpacity(payoutNodeFinal) : null;
         const payoutSol       = outcome.payoutLamports / 1e9;
@@ -11148,11 +11251,11 @@ export class AppUI extends Component {
             ? this._realMatchWagerLamports / 1e9
             : Number(this._selectedStakeLamports ?? 0n) / 1e9;
 
-        const fadeIn = (n: Node | null, durationS: number = 0.22) => {
+        const fadeIn = (n: Node | null, durationS: number = 0.22, targetAlpha: number = 255) => {
             if (!n) return;
             const op = this._ensureOpacity(n);
             Tween.stopAllByTarget(op);
-            tween(op).to(durationS, { opacity: 255 }, { easing: 'sineOut' }).start();
+            tween(op).to(durationS, { opacity: targetAlpha }, { easing: 'sineOut' }).start();
         };
 
         // Beat 0 — title (T=0).
@@ -11196,9 +11299,11 @@ export class AppUI extends Component {
             }
             this._postMatchMascot?.setState(mascotState, true);
         };
-        // Beat 4 — subtitle headline + rake details (T=1450; rake +80ms).
+        // Beat 4 — subtitle headline + breakdown + rake details (T=1450).
+        // Breakdown reveals to dim alpha so per-token row stays muted.
         const beatSubtitleRake = () => {
             fadeIn(subtitleNode, 0.18);
+            fadeIn(breakdownNode, 0.18, BREAKDOWN_DIM_ALPHA);
             const t = setTimeout(() => fadeIn(rakeNode, 0.18), 80);
             this._postMatchRevealTimers.push(t as unknown as number);
         };
@@ -11273,15 +11378,16 @@ export class AppUI extends Component {
 
         // Tap-to-skip finalizer — snaps every beat to its terminal state.
         this._postMatchCascadeFinalizer = () => {
-            const snap = (n: Node | null | undefined) => {
+            const snap = (n: Node | null | undefined, targetAlpha: number = 255) => {
                 if (!n) return;
                 const op = this._ensureOpacity(n);
                 Tween.stopAllByTarget(op);
-                op.opacity = 255;
+                op.opacity = targetAlpha;
             };
             snap(titleNode);
             snap(trackNode);
             snap(subtitleNode);
+            snap(breakdownNode, BREAKDOWN_DIM_ALPHA);
             snap(rakeNode);
             // Payout — snap to final string + scale, skip count-up.
             if (this._postMatchPayoutLabel && payoutNodeFinal && payoutOp) {
@@ -12495,29 +12601,43 @@ export class AppUI extends Component {
     //  Phase N — Notification system (panel + bell + render + dispatch)
     // ═══════════════════════════════════════════════════════════════
 
+    private static readonly NOTIF_REST_X = 160;
+    private static readonly NOTIF_OFF_X  = 600;
+    private static readonly NOTIF_SCRIM_ALPHA = 90;
+
     private _showNotificationPanel(): void {
         if (!this._notifPanel) return;
         console.log(`${TAG} _showNotificationPanel | SHOW`);
         this._notifPanel.active = true;
-        // Slide-in animation: card starts off-right and slides to resting x.
+        // Render BEFORE the slide so the rows are sized + visible during entry.
+        this._renderNotificationList();
+        // Card slide.
         if (this._notifPanelCard) {
-            const restingX = 120;
-            const offX = 600;
+            const restingX = AppUI.NOTIF_REST_X;
+            const offX = AppUI.NOTIF_OFF_X;
             Tween.stopAllByTarget(this._notifPanelCard);
             this._notifPanelCard.setPosition(restingX + offX, 0, 0);
             tween(this._notifPanelCard)
                 .to(0.22, { position: new Vec3(restingX, 0, 0) }, { easing: 'cubicOut' })
                 .start();
         }
-        this._renderNotificationList();
+        // Scrim fade-in (parallel with card slide).
+        if (this._notifBackdropOpacity) {
+            const op = this._notifBackdropOpacity;
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op)
+                .to(0.22, { opacity: AppUI.NOTIF_SCRIM_ALPHA }, { easing: 'cubicOut' })
+                .start();
+        }
     }
 
     private _hideNotificationPanel(): void {
         if (!this._notifPanel) return;
         console.log(`${TAG} _hideNotificationPanel | HIDE`);
+        const restingX = AppUI.NOTIF_REST_X;
+        const offX = AppUI.NOTIF_OFF_X;
         if (this._notifPanelCard) {
-            const restingX = 120;
-            const offX = 600;
             Tween.stopAllByTarget(this._notifPanelCard);
             tween(this._notifPanelCard)
                 .to(0.18, { position: new Vec3(restingX + offX, 0, 0) }, { easing: 'cubicIn' })
@@ -12526,11 +12646,52 @@ export class AppUI extends Component {
         } else {
             this._notifPanel.active = false;
         }
+        if (this._notifBackdropOpacity) {
+            const op = this._notifBackdropOpacity;
+            Tween.stopAllByTarget(op);
+            tween(op)
+                .to(0.18, { opacity: 0 }, { easing: 'cubicIn' })
+                .start();
+        }
     }
 
     private _onNotifMarkAllReadTap(): void {
-        const n = NotificationStore.instance.markAllRead();
-        console.log(`${TAG} _onNotifMarkAllReadTap | marked=${n}`);
+        const marked = NotificationStore.instance.markAllRead();
+        console.log(`${TAG} _onNotifMarkAllReadTap | marked=${marked}`);
+        if (marked === 0) return;
+        // Force-paint immediately so the user sees rows dim within <100ms;
+        // the store's _fanout will re-render again, which is harmless.
+        this._renderNotificationList();
+        this._setMarkAllReadEnabled(false);
+        // Transient confirmation toast — emitted via a synthetic notification
+        // straight to the toast queue so it surfaces but never persists.
+        const queue = this._notifToastQueue;
+        if (queue) {
+            const transient: Notification = {
+                id: `transient-allread-${Date.now()}`,
+                kind: 'challenge_done', // teal + check-icon styling fits "all caught up"
+                title: 'All caught up',
+                body: 'No more unread notifications',
+                payload: undefined,
+                createdAt: Date.now(),
+                readAt: Date.now(),
+                dismissedAt: null,
+                quietToast: false,
+            };
+            try { queue.enqueue(transient); }
+            catch (e) { console.log(`${TAG} _onNotifMarkAllReadTap | toast enqueue err ${e}`); }
+        }
+    }
+
+    private _setMarkAllReadEnabled(enabled: boolean): void {
+        const btn = this._notifMarkAllReadButton;
+        if (!btn) return;
+        btn.interactable = enabled;
+        if (this._notifMarkAllReadLabel) {
+            // Bright when actionable, muted when disabled.
+            const c = this._notifMarkAllReadLabel.color;
+            this._notifMarkAllReadLabel.color = new Color(c.r, c.g, c.b, enabled ? 255 : 110);
+        }
     }
 
     private _onNotifRowTap(rowIdx: number): void {
