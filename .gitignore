@@ -26,3 +26,44 @@ Cargo.lock
 
 target/
 Cargo.lock
+
+#//////////////////////////
+# Secrets (NEVER commit)
+#//////////////////////////
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-keypair.json
+secrets/
+credentials/
+
+#//////////////////////////
+# Build outputs (TS/Node)
+#//////////////////////////
+dist/
+**/dist/
+*.tsbuildinfo
+
+#//////////////////////////
+# OS files
+#//////////////////////////
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+#//////////////////////////
+# Animation / render outputs (large binaries)
+#//////////////////////////
+mascot-animations/out/
+**/out/*.mp4
+**/out/*.mov
+**/out/*.webm
+
+#//////////////////////////
+# Editor / misc
+#//////////////////////////
+*.swp
+*.swo
+*~
