@@ -231,6 +231,8 @@ Example flow:
 
 ## Token Duel: Demo Game + Anchor Program
 
+> Actively developed for the May 11 Colosseum submission. Commits land daily.
+
 Bundled with the SDK: **Token Duel**, a Stack-Jump-style demo game that exercises the full MWA method surface against a real on-chain Anchor program. Pick a squad of 3 tokens from Solana's entire market → stake SOL → play tap-timing game where block widths are driven by your tokens' real 24-hour price deltas → settle on-chain. Every wallet prompt in the pitch video corresponds to a real program invocation.
 
 Feature surface on the panel:
