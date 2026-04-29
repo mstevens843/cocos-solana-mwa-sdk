@@ -41,7 +41,19 @@ const SAFE_AREA_TOP = 110;
 // whole RacePanel down by an extra 90 keeps internal proportions intact
 // (top row, player cards, duel bar, opponent strip, mascot all shift as one
 // unit) and gives the ring real clearance below the device toolbar.
+// 2026-04-29: superseded by lobbyMount() below — kept for reference only.
 const RACE_SAFE_AREA_EXTRA = 90;
+
+// 2026-04-29 — UNIFORM TOP-OF-PAGE alignment.
+// Every panel's "top header band" lands at this world-y. Each panel's
+// mount offset is derived from its TOP_ANCHOR_Y (defined per panel in
+// LayoutSpec), so the panel translates as a rigid block — internal
+// spacing is unchanged, and the top row aligns with HomePanel's header.
+//   world_y_of_top_row = TOP_ANCHOR_Y + mount.y = LOBBY_TOP_Y  (always)
+// To shift the whole app's top up or down, edit LOBBY_TOP_Y in this file
+// once. NEVER hand-tune individual panel mount offsets.
+const LOBBY_TOP_Y = 530;
+const lobbyMount = (anchorY) => v3(0, LOBBY_TOP_Y - anchorY, 0);
 
 const UUIDS = {
     MWAManager: '409dciqDmlP9rvNGXKC80Rx',
@@ -1048,7 +1060,7 @@ function generate() {
     // DeleteAccountSettingsButton, ReconnectSettingsButton).
     // ═══════════════════════════════════════════════════════════════
     const hpN = sb.e.length;
-    sb.node('HomePanel', canvas, [], [hpN+1], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('HomePanel', canvas, [], [hpN+1], lobbyMount(LAYOUT.Home.TOP_ANCHOR_Y));
     sb.ut(hpN, LAYOUT.Home.canvas.w, LAYOUT.Home.canvas.h);
 
     const HE = LAYOUT.Home.elements;
@@ -1711,7 +1723,7 @@ function generate() {
     //     the scene regen ships a version that removes them.
     // ═══════════════════════════════════════════════════════════════
     const tdN = sb.e.length;
-    sb.node('TokenDuelPanel', canvas, [], [tdN+1], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('TokenDuelPanel', canvas, [], [tdN+1], lobbyMount(LAYOUT.TokenDuelPanel.TOP_ANCHOR_Y));
     sb.ut(tdN, 720, 1280);
     sb.spr(tdN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind data
 
@@ -2842,7 +2854,7 @@ function generate() {
     const RPT = LAYOUT.RacePanel.templates;
 
     const racePanelN = sb.e.length;
-    sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], v3(0, -RACE_SAFE_AREA_EXTRA, 0));
+    sb.node('RacePanel', tdN, [], [racePanelN+1, racePanelN+2], lobbyMount(LAYOUT.RacePanel.TOP_ANCHOR_Y));
     sb.ut(racePanelN, LAYOUT.RacePanel.canvas.w, LAYOUT.RacePanel.canvas.h);
     sb.spr(racePanelN, 8, 12, 20);                // near-black scrim — covers feed/HUD below
     sb.e[racePanelN]._active = false;
@@ -3861,7 +3873,7 @@ function generate() {
     //   -625  Status line
     // ═══════════════════════════════════════════════════════════════
     const tdetN = sb.e.length;
-    sb.node('TokenDetailPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('TokenDetailPanel', canvas, [], [], lobbyMount(LAYOUT.TokenDetailPanel.TOP_ANCHOR_Y));
     sb.ut(tdetN, 720, 1280);
     sb.spr(tdetN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind chart/stats
 
@@ -4089,7 +4101,7 @@ function generate() {
     const LPT = LAYOUT.LeaderboardPanel.templates;
 
     const lbN = sb.e.length;
-    sb.node('LeaderboardPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('LeaderboardPanel', canvas, [], [], lobbyMount(LAYOUT.LeaderboardPanel.TOP_ANCHOR_Y));
     sb.ut(lbN, LAYOUT.LeaderboardPanel.canvas.w, LAYOUT.LeaderboardPanel.canvas.h);
     sb.spr(lbN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind rank rows
 
@@ -4289,7 +4301,7 @@ function generate() {
     // from UserStats + DailyChallenge + Season RPCs.
     // ═══════════════════════════════════════════════════════════════
     const dcN = sb.e.length;
-    sb.node('DailyChallengePanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('DailyChallengePanel', canvas, [], [], lobbyMount(LAYOUT.DailyChallengePanel.TOP_ANCHOR_Y));
     sb.ut(dcN, 720, 1280);
     sb.spr(dcN, 10, 14, 22);
     // Chrome from LAYOUT.DailyChallengePanel.elements.
@@ -4405,7 +4417,7 @@ function generate() {
     // Session 14 C3 — PORTFOLIO PANEL (user stats — Paper / Real tabs)
     // ═══════════════════════════════════════════════════════════════
     const pfN = sb.e.length;
-    sb.node('PortfolioPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('PortfolioPanel', canvas, [], [], lobbyMount(LAYOUT.PortfolioPanel.TOP_ANCHOR_Y));
     sb.ut(pfN, 720, 1280);
     sb.spr(pfN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind stats/history/trophies
     // betting-duel polish: stretch the panel to fill the Canvas on any device
@@ -4774,7 +4786,7 @@ function generate() {
     };
 
     const mipN = sb.e.length;
-    sb.node('MatchesInProgressPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('MatchesInProgressPanel', canvas, [], [], lobbyMount(LAYOUT.MatchesInProgressPanel.TOP_ANCHOR_Y));
     sb.ut(mipN, 720, 1280);
 
     const mipBackLink = mkLabel(sb, 'BackLinkLabel', mipN, '← Back', 18,
@@ -4998,7 +5010,7 @@ function generate() {
     // glow halo provide outcome-coded visual reaction.
     // ═══════════════════════════════════════════════════════════════
     const pmN = sb.e.length;
-    sb.node('PostMatchPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('PostMatchPanel', canvas, [], [], lobbyMount(LAYOUT.PostMatchPanel.TOP_ANCHOR_Y));
     // 2026-04-28 spatial pass — panel canvas grows 720×1280 → 720×1800 to
     // mirror RacePanel (Main.scene:103900). Without this, the dark wash
     // (#0B0E1A) stops at 1280 logical px and the underlying app/Home
@@ -5281,7 +5293,7 @@ function generate() {
     };
 
     const stN = sb.e.length;
-    sb.node('SettingsPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('SettingsPanel', canvas, [], [], lobbyMount(LAYOUT.SettingsPanel.TOP_ANCHOR_Y));
     sb.ut(stN, LAYOUT.SettingsPanel.canvas.w, LAYOUT.SettingsPanel.canvas.h);
     sb.spr(stN, 10, 14, 22);
 
@@ -6038,7 +6050,7 @@ function generate() {
     // event feed + optional "Join this match" button when Waiting.
     // ═══════════════════════════════════════════════════════════════
     const specN = sb.e.length;
-    sb.node('SpectatorPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('SpectatorPanel', canvas, [], [], lobbyMount(LAYOUT.SpectatorPanel.TOP_ANCHOR_Y));
     sb.ut(specN, 720, 1280);
     sb.spr(specN, 10, 14, 22);
 
@@ -6126,7 +6138,7 @@ function generate() {
     // subscribe (poll every 3s + backend WS).
     // ═══════════════════════════════════════════════════════════════
     const tourN = sb.e.length;
-    sb.node('TournamentPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('TournamentPanel', canvas, [], [], lobbyMount(LAYOUT.TournamentPanel.TOP_ANCHOR_Y));
     sb.ut(tourN, 720, 1280);
     sb.spr(tourN, 18, 12, 26); // slight purple tint vs spectator's slate
 
@@ -6202,7 +6214,7 @@ function generate() {
     const FMT = LAYOUT.FindMatchPanel.templates;
 
     const fmN = sb.e.length;
-    sb.node('FindMatchPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('FindMatchPanel', canvas, [], [], lobbyMount(LAYOUT.FindMatchPanel.TOP_ANCHOR_Y));
     sb.ut(fmN, LAYOUT.FindMatchPanel.canvas.w, LAYOUT.FindMatchPanel.canvas.h);
     sb.spr(fmN, 10, 14, 22);
 
@@ -6956,7 +6968,7 @@ function generate() {
     const NPC = LAYOUT.NotificationPanel.card;
     const NPE = LAYOUT.NotificationPanel.elements;
     const npN = sb.e.length;
-    sb.node('NotificationPanel', canvas, [], [], v3(0, -SAFE_AREA_TOP, 0));
+    sb.node('NotificationPanel', canvas, [], [], lobbyMount(LAYOUT.NotificationPanel.TOP_ANCHOR_Y));
     const npUT = sb.ut(npN, 720, 1280);
     // Tap-outside-to-dismiss: invisible Button on the panel root. Card
     // children intercept their own taps; misses fall through to here.

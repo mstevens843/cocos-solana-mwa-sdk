@@ -3957,6 +3957,50 @@ export class AppUI extends Component {
             + ` row0Opacity=${r0Op?.opacity ?? 'no-op'}`
             + ` row0CardSize=(${r0CardBg?.width ?? '?'}x${r0CardBg?.height ?? '?'})`
             + ` row0CardAlpha=${r0CardBgSpr?.color?.a ?? '?'}`);
+
+        // 2026-04-29 — defensive row-child reset: pin every active row's child
+        // UIOpacity to 255 + re-pin the teal edge stripe alpha. Covers stale
+        // tweens that could leave a child invisible on the next render.
+        for (let ri = 0; ri < n && ri < this._mipRowNodes.length; ri++) {
+            const rNode = this._mipRowNodes[ri];
+            if (!rNode) continue;
+            for (const child of rNode.children) {
+                const cop = child.getComponent(UIOpacity);
+                if (cop) cop.opacity = 255;
+            }
+            const edge = this._mipCardEdges[ri];
+            if (edge) edge.color = new Color(edge.color.r, edge.color.g, edge.color.b, 255);
+        }
+
+        // 2026-04-29 — DETERMINISTIC GEOMETRY LOG. Prints actual worldPosition
+        // of row 0, title, subtitle, view mask bounds. Empirical proof of where
+        // each element ACTUALLY renders on the device — supersedes hand-traced
+        // parent-chain math. If row.worldY > subtitle.worldY, the row is
+        // colliding with header text (the suspected bug). If row.worldY <
+        // subtitle.worldY, row sits below subtitle as designed.
+        if (n >= 1 && r0) {
+            const titleNode = this._mipPanel?.getChildByName('MatchesInProgressTitleLabel');
+            const subtitleNode = this._mipPanel?.getChildByName('MatchesInProgressSubtitleLabel');
+            const viewNode = this._mipPanel?.getChildByName('MIPScrollView')?.getChildByName('view');
+            const r0World = r0.worldPosition;
+            const titleWorld = titleNode?.worldPosition;
+            const subtitleWorld = subtitleNode?.worldPosition;
+            const viewUT = viewNode?.getComponent(UITransform);
+            const viewWorld = viewNode?.worldPosition;
+            const viewTop = viewWorld && viewUT ? (viewWorld.y + viewUT.height * (1 - (viewUT.anchorY ?? 0.5))) : null;
+            const viewBot = viewWorld && viewUT ? (viewWorld.y - viewUT.height * (viewUT.anchorY ?? 0.5)) : null;
+            const r0UT = r0.getComponent(UITransform);
+            const r0Top = r0World && r0UT ? (r0World.y + r0UT.height * (1 - (r0UT.anchorY ?? 0.5))) : null;
+            const r0Bot = r0World && r0UT ? (r0World.y - r0UT.height * (r0UT.anchorY ?? 0.5)) : null;
+            console.log(`${TAG} GEOM`
+                + ` row0.world=(${r0World?.x.toFixed(0) ?? '?'},${r0World?.y.toFixed(0) ?? '?'})`
+                + ` row0.span=[${r0Bot?.toFixed(0) ?? '?'}..${r0Top?.toFixed(0) ?? '?'}]`
+                + ` title.world=(${titleWorld?.x.toFixed(0) ?? '?'},${titleWorld?.y.toFixed(0) ?? '?'})`
+                + ` subtitle.world=(${subtitleWorld?.x.toFixed(0) ?? '?'},${subtitleWorld?.y.toFixed(0) ?? '?'})`
+                + ` view.world=(${viewWorld?.x.toFixed(0) ?? '?'},${viewWorld?.y.toFixed(0) ?? '?'})`
+                + ` view.span=[${viewBot?.toFixed(0) ?? '?'}..${viewTop?.toFixed(0) ?? '?'}]`
+                + ` collidesTitle=${(r0Top !== null && titleWorld) ? (r0Top >= titleWorld.y - 22) : '?'}`);
+        }
     }
 
     /** Resize + reposition row 0 when the active count is 1. Restores the
@@ -3979,7 +4023,7 @@ export class AppUI extends Component {
             cardBgUT.setContentSize(660, 260);
             cardGlowUT.setContentSize(668, 268);
         } else {
-            row0.setPosition(0, -40, 0);  // mip.ROW_BASE_Y from LayoutSpec.cjs
+            row0.setPosition(0, -200, 0);  // mip.ROW_BASE_Y from LayoutSpec.cjs (2026-04-29: -40→-200)
             cardBgUT.setContentSize(660, 150);
             cardGlowUT.setContentSize(668, 158);
         }
