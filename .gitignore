@@ -21,25 +21,49 @@ node_modules/
 #//////////////////////////
 # WebStorm
 #//////////////////////////
-.idea/
+.idea/target/
+Cargo.lock
 
-#//////////////////////////
-# Anchor / Rust (Token Duel program)
-#//////////////////////////
 target/
-.anchor/
-test-ledger/
-**/*.rs.bk
-.yarn/
-yarn.lock.DS_Store
+Cargo.lock
 
 #//////////////////////////
-# Secrets / env files (DB URLs, API keys, wallet keypairs)
+# Secrets (NEVER commit)
 #//////////////////////////
 .env
-.env.local
-.env.*.local
-backend/.env
-backend/.env.local
-*.keypair.json
-scripts/.test-player-*.json
+.env.*
+!.env.example
+*.pem
+*.key
+*-keypair.json
+secrets/
+credentials/
+
+#//////////////////////////
+# Build outputs (TS/Node)
+#//////////////////////////
+dist/
+**/dist/
+*.tsbuildinfo
+
+#//////////////////////////
+# OS files
+#//////////////////////////
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+#//////////////////////////
+# Animation / render outputs (large binaries)
+#//////////////////////////
+mascot-animations/out/
+**/out/*.mp4
+**/out/*.mov
+**/out/*.webm
+
+#//////////////////////////
+# Editor / misc
+#//////////////////////////
+*.swp
+*.swo
+*~
