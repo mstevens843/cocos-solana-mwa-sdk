@@ -14955,7 +14955,11 @@ export class AppUI extends Component {
         drawBg();
 
         // Outer glow — soft ambient halo, slides with active segment.
-        const glowOuterW = TAB_W + 24, glowOuterH = TAB_H + 18;
+        // Horizontal size is clamped to TAB_W + 2*PAD so the halo stays flush
+        // with the strip's outer edges when the active segment is at the
+        // leftmost / rightmost slot (otherwise it bleeds past as a visible
+        // "stub" on the dark panel surface). Vertical bloom is unchanged.
+        const glowOuterW = TAB_W + 2 * PAD, glowOuterH = TAB_H + 18;
         const glowOuter = new Node('PillGlowOuter');
         strip.addChild(glowOuter);
         glowOuter.addComponent(UITransform).setContentSize(glowOuterW, glowOuterH);

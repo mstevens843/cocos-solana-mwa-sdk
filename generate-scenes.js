@@ -637,7 +637,7 @@ function mkSlider(sb, name, parent, x, y, w=500, h=20, progress=0.1) {
  * Returns { root, content }. Caller populates `content` children + resizes
  * content UITransform to rowCount × rowHeight.
  */
-function mkScrollView(sb, name, parent, x, y, w, h, bgAlpha = 255) {
+function mkScrollView(sb, name, parent, x, y, w, h) {
     const svN = sb.e.length;
     sb.node(name, parent, [], [], v3(x, y, 0));
     const viewN = sb.e.length;
@@ -673,7 +673,7 @@ function mkScrollView(sb, name, parent, x, y, w, h, bgAlpha = 255) {
         __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
         node: rf(svN), _enabled: true, __prefab: null,
         _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(25, 25, 40, bgAlpha),
+        _color: cl(25, 25, 40, 255),
         _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
         _type: 1, _fillType: 0, _sizeMode: 0,
         _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
@@ -4802,10 +4802,9 @@ function generate() {
     sb.e[mipEmptyN]._children = [rf(mipEmptyTitle), rf(mipEmptySub), rf(mipEmptyCta)];
     sb.e[mipEmptyN]._active = false;
 
-    // Scrollview + 30-row pool. bgAlpha=0 so the row content sits directly on
-    // the app background (matches FindMatch styling — no card chrome).
+    // Scrollview + 30-row pool.
     const mipScroll = mkScrollView(sb, 'MIPScrollView', mipN,
-        MIPE.scroll.x, MIPE.scroll.y, MIPE.scroll.w, MIPE.scroll.h, 0);
+        MIPE.scroll.x, MIPE.scroll.y, MIPE.scroll.w, MIPE.scroll.h);
     // 2026-04-28 — MIP regression fix: content must fit the full 30-row pool.
     // Row 29 sits at y = baseY + 29 * gapY = -40 + 29*(-170) = -4970, plus the
     // row's own half-height (75). mkScrollView's default content size matches
@@ -4838,12 +4837,10 @@ function generate() {
         const cardGlowN = mipSolidSprite(`MIPCardGlow_${i}`, rowN,
             MIPR.cardGlow.x, MIPR.cardGlow.y, MIPR.cardGlow.w, MIPR.cardGlow.h,
             48, 198, 155, 0); // alpha 0; AppUI tints + alpha-pulses
-        // Card surface — alpha 0 so rows render directly on the app background
-        // (no dark card chrome). Node + UITransform stay live for runtime
-        // sizing (hero-card grow at AppUI._applyMipHeroLayout).
+        // Card surface — dark bg of the card.
         const cardBgN = mipSolidSprite(`MIPCardBg_${i}`, rowN,
             MIPR.cardBg.x, MIPR.cardBg.y, MIPR.cardBg.w, MIPR.cardBg.h,
-            30, 36, 56, 0);
+            30, 36, 56, 255);
 
         // Invisible full-row tap target — added BEFORE Resume so the button
         // (added later) intercepts clicks first.
@@ -7023,11 +7020,6 @@ function generate() {
     const npMarkAllBtn = mkBtnXY(sb, 'NotifMarkAllReadButton', npCardN, 'Mark all read',
         NPE.cardMarkAllReadButton.x, NPE.cardMarkAllReadButton.y,
         NPE.cardMarkAllReadButton.w, NPE.cardMarkAllReadButton.h, 38, 44, 64);
-    // Selection-mode CTA — sibling of MarkAllRead in the new 50/50 row.
-    // Label morphs in AppUI: "Mark as Read" → "Mark N Read - Confirm".
-    const npMarkAsReadBtn = mkBtnXY(sb, 'NotifMarkAsReadButton', npCardN, 'Mark as Read',
-        NPE.cardMarkAsReadButton.x, NPE.cardMarkAsReadButton.y,
-        NPE.cardMarkAsReadButton.w, NPE.cardMarkAsReadButton.h, 38, 44, 64);
 
     // 1px divider beneath the header row.
     const npDividerN = sb.e.length;
@@ -7109,43 +7101,6 @@ function generate() {
             sb.node(`NotifRowIcon_${i}`, rN, [], [], v3(NR.icon.x, NR.icon.y, 0));
             const iconUT = sb.ut(iconN, NR.icon.w, NR.icon.h);
             sb.e[iconN]._components = [rf(iconUT)];
-            // Checkbox frame — between stripe and icon. Hidden by default;
-            // AppUI._setNotifSelectionMode flips active state.
-            const cbN = sb.e.length;
-            sb.node(`NotifRowCheckbox_${i}`, rN, [], [], v3(NR.checkbox.x, NR.checkbox.y, 0));
-            const cbUT = sb.ut(cbN, NR.checkbox.w, NR.checkbox.h);
-            const cbSpr = sb.add({
-                __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-                node: rf(cbN), _enabled: true, __prefab: null,
-                _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-                _color: cl(168, 174, 201, 60),
-                _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-                _type: 1, _fillType: 0, _sizeMode: 0,
-                _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-                _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-                _id: gid(),
-            });
-            // Checkmark — teal inner sprite (matches match_settled accent).
-            // AppUI sets active per-row when its id is in _notifSelectedIds.
-            const cmN = sb.e.length;
-            sb.node(`NotifRowCheckmark_${i}`, cbN, [], [], v3(0, 0, 0));
-            const cmUT = sb.ut(cmN, 18, 18);
-            const cmSpr = sb.add({
-                __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-                node: rf(cmN), _enabled: true, __prefab: null,
-                _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-                _color: cl(48, 198, 155, 255),
-                _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-                _type: 1, _fillType: 0, _sizeMode: 0,
-                _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-                _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-                _id: gid(),
-            });
-            sb.e[cmN]._components = [rf(cmUT), rf(cmSpr)];
-            sb.e[cmN]._active = false;
-            sb.e[cbN]._components = [rf(cbUT), rf(cbSpr)];
-            sb.e[cbN]._children = [rf(cmN)];
-            sb.e[cbN]._active = false;
             // Title — bold 16pt.
             const titleN = mkLabel(sb, `NotifRowTitleLabel_${i}`, rN, 'Title', 16, 18, NR.title.w, NR.title.h, 244, 245, 249);
             sb.e[titleN]._lpos = v3(NR.title.x, NR.title.y, 0);
@@ -7176,7 +7131,7 @@ function generate() {
             });
             sb.e[dotN]._components = [rf(dotUT), rf(dotSpr)];
             sb.e[rN]._components = [rf(rUT), rf(rSpr), rf(rBtn)];
-            sb.e[rN]._children = [rf(stripeN), rf(cbN), rf(iconN), rf(titleN), rf(bodyN), rf(timeN), rf(dotN)];
+            sb.e[rN]._children = [rf(stripeN), rf(iconN), rf(titleN), rf(bodyN), rf(timeN), rf(dotN)];
             sb.e[rN]._active = false;
             npRowIndices.push(rN);
         }
@@ -7208,7 +7163,7 @@ function generate() {
     sb.e[npEmptyN]._active = false;
 
     sb.e[npCardN]._children = [
-        rf(npHeader), rf(npCloseBtn), rf(npMarkAllBtn), rf(npMarkAsReadBtn),
+        rf(npHeader), rf(npCloseBtn), rf(npMarkAllBtn),
         rf(npDividerN), rf(npListN), rf(npEmptyN),
     ];
     sb.e[npN]._components = [rf(npUT), rf(npBackdropBtn)];
