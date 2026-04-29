@@ -5,7 +5,7 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director } from 'cc';
+import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen } from 'cc';
 // UX overhaul: Phase 1+2 helpers — central theme, procedural icons, panel
 // transitions, mascot. All runtime-only; no asset deps.
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
@@ -78,6 +78,7 @@ import { showToast } from './AndroidToast';
 
 const { ccclass } = _decorator;
 const TAG = '[AppUI]';
+const PMBTAG = `${TAG}[PostMatchBtn]`;
 
 // ─── DIAGNOSTIC: SIGSEGV @0x28 Thread-2 triangulation ─────────────────────
 // Captures uncaught JS exceptions that the normal log flow would miss.
@@ -1103,6 +1104,9 @@ export class AppUI extends Component {
 
     start(): void {
         console.log(`${TAG} BUILD_STAMP v=2026-04-25-T0330-mascot-4state — Landing+Race mascots, instant-ref reveal, CC strip`);
+        // 2026-04-29 — runtime layout diagnostics. Prints once at start() so we
+        // can see what Cocos actually thinks the viewport / canvas / camera are.
+        try { this._dumpViewInfo(); } catch (e: any) { console.log(`[LayoutDiag][view] DUMP_THREW ${e?.message ?? e}`); }
         // SURGICAL BISECT: NotificationToastOverlay is the ONLY new always-active
         // top-level panel since master (16 other new panels are active=False).
         // Disable it BEFORE any wiring runs — if crash gone, this overlay (or
@@ -2530,11 +2534,57 @@ export class AppUI extends Component {
             this._postMatchBreakdownLabel = this._postMatchPanel.getChildByName('PostMatchBreakdownLabel')?.getComponent(Label) ?? null;
             this._postMatchBackButton    = this._postMatchPanel.getChildByName('PostMatchBackButton')?.getComponent(Button) ?? null;
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
-            this._postMatchBackButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchBack(), this);
-            this._postMatchAgainButton?.node.on(Button.EventType.CLICK, () => this._onPostMatchAgain(), this);
             // Block 6 — Same Squad shortcut
-            const sameSquadBtn = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button);
-            sameSquadBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchSameSquad(), this);
+            const sameSquadBtn = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
+
+            // Deterministic wire-up logging — see [PostMatchBtn] tag in device log.
+            const logBtn = (label: string, btn: Button | null, name: string) => {
+                if (!btn) {
+                    console.log(`${PMBTAG} WIRE ${label} | NOT_FOUND name=${name}`);
+                    return;
+                }
+                const n = btn.node;
+                const ut = n.getComponent(UITransform);
+                const wp = n.worldPosition;
+                console.log(
+                    `${PMBTAG} WIRE ${label} | FOUND name=${name} ` +
+                    `active=${n.active} activeInHier=${n.activeInHierarchy} ` +
+                    `interactable=${btn.interactable} ` +
+                    `worldPos=(${wp.x.toFixed(1)},${wp.y.toFixed(1)}) ` +
+                    `size=(${ut?.width ?? '?'},${ut?.height ?? '?'}) ` +
+                    `parent=${n.parent?.name ?? 'null'} idx=${n.getSiblingIndex()}`
+                );
+            };
+            logBtn('back',      this._postMatchBackButton,   'PostMatchBackButton');
+            logBtn('again',     this._postMatchAgainButton,  'PostMatchAgainButton');
+            logBtn('sameSquad', sameSquadBtn,                'PostMatchSameSquadButton');
+
+            // Wire CLICK + diagnostic TOUCH_START / TOUCH_END on each button node.
+            // If CLICK fires → handler runs. If only TOUCH_START fires → Button
+            // component is rejecting the click (interactable / hit-test). If
+            // nothing fires → touches are being captured by something on top.
+            const wireBtn = (label: string, node: Node | undefined | null, handler: () => void) => {
+                if (!node) {
+                    console.log(`${PMBTAG} WIRE ${label} | SKIP_NO_NODE`);
+                    return;
+                }
+                node.off(Button.EventType.CLICK);
+                node.off(Node.EventType.TOUCH_START);
+                node.off(Node.EventType.TOUCH_END);
+                node.on(Button.EventType.CLICK, () => {
+                    console.log(`${PMBTAG} CLICK ${label}`);
+                    handler();
+                }, this);
+                node.on(Node.EventType.TOUCH_START, () => {
+                    console.log(`${PMBTAG} TOUCH_START ${label}`);
+                }, this);
+                node.on(Node.EventType.TOUCH_END, () => {
+                    console.log(`${PMBTAG} TOUCH_END ${label} | bubblePhase`);
+                }, this);
+            };
+            wireBtn('back',      this._postMatchBackButton?.node,   () => this._onPostMatchBack());
+            wireBtn('again',     this._postMatchAgainButton?.node,  () => this._onPostMatchAgain());
+            wireBtn('sameSquad', sameSquadBtn?.node,                () => this._onPostMatchSameSquad());
             // Part 11 A: share-to-X button.
             const shareBtn = this._postMatchPanel.getChildByName('PostMatchShareButton')?.getComponent(Button);
             shareBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchShare(), this);
@@ -3050,7 +3100,13 @@ export class AppUI extends Component {
                     this._notifRowIds.push(null);
                     const cbNode = row.getChildByName(`NotifRowCheckbox_${i}`) ?? null;
                     this._notifRowCheckboxes.push(cbNode);
-                    this._notifRowCheckmarks.push(cbNode?.getChildByName(`NotifRowCheckmark_${i}`) ?? null);
+                    const cmNode = cbNode?.getChildByName(`NotifRowCheckmark_${i}`) ?? null;
+                    this._notifRowCheckmarks.push(cmNode);
+                    if (cmNode) {
+                        const cmSpr = cmNode.getComponent(Sprite);
+                        if (cmSpr) cmSpr.color = new Color(0, 0, 0, 0);
+                        try { IconLibrary.attach(cmNode, 'check', { size: 18 }); } catch (_) { /* ignore */ }
+                    }
                     const rb = row.getComponent(Button);
                     rb?.node.on(Button.EventType.CLICK, () => this._onNotifRowTap(i), this);
                 }
@@ -3646,6 +3702,75 @@ export class AppUI extends Component {
         console.log(`${TAG} _offerHeroPickIfSupported | DONE path=shown source=${source} tiles_shown=${shown} tiles_empty=${empty} bindings_missing=${missingBindings} symbols=[${symbols.join(',')}]`);
     }
 
+    /**
+     * 2026-04-29 — [LayoutDiag] runtime diagnostics. Prints view/canvas/camera
+     * state once at start() so we can see what Cocos thinks the viewport is on
+     * device. Pair with `_dumpPanelLayout` for per-panel-show breakdowns.
+     */
+    private _dumpViewInfo(): void {
+        try {
+            const dr = view.getDesignResolutionSize();
+            const vs = view.getVisibleSize();
+            const vp = view.getViewportRect();
+            const ws = (screen as any).windowSize ?? null;
+            const dpr = (screen as any).devicePixelRatio ?? null;
+            console.log(`[LayoutDiag][view] designResolution=${dr.width}x${dr.height} visibleSize=${vs.width}x${vs.height}`);
+            console.log(`[LayoutDiag][view] viewportRect=(x=${vp.x},y=${vp.y},w=${vp.width},h=${vp.height})`);
+            console.log(`[LayoutDiag][view] screenWindowSize=${ws ? `${ws.width}x${ws.height}` : 'n/a'} devicePixelRatio=${dpr}`);
+            // AppUI is attached to Canvas in this codebase (per Main.scene), so
+            // this.node IS the Canvas node.
+            const canvasNode = this.node;
+            const cwp = new Vec3();
+            canvasNode.getWorldPosition(cwp);
+            const cUt = canvasNode.getComponent(UITransform);
+            const cAnc = cUt?.anchorPoint;
+            console.log(`[LayoutDiag][view] canvasNode name=${canvasNode.name} lpos=(${canvasNode.position.x},${canvasNode.position.y}) worldPos=(${cwp.x.toFixed(1)},${cwp.y.toFixed(1)}) UITrans=${cUt ? `${cUt.contentSize.width}x${cUt.contentSize.height}` : 'NONE'} anchor=${cAnc ? `(${cAnc.x},${cAnc.y})` : 'n/a'}`);
+        } catch (e: any) {
+            console.log(`[LayoutDiag][view] THREW ${e?.message ?? e}`);
+        }
+    }
+
+    /**
+     * 2026-04-29 — [LayoutDiag] per-panel-show dump. Prints the panel's
+     * lpos/worldPos/UITransform plus the top 6 children sorted by world Y.
+     * Includes BOTH solid and decorative children — the build-time scan
+     * skips sprites/graphics, but at runtime we want to see everything that
+     * could be visually at the top (glows, halos, bgs, etc.).
+     */
+    private _dumpPanelLayout(panel: Node | null, source: string): void {
+        try {
+            if (!panel) {
+                console.log(`[LayoutDiag][panel] NULL src=${source}`);
+                return;
+            }
+            const wp = new Vec3();
+            panel.getWorldPosition(wp);
+            const ut = panel.getComponent(UITransform);
+            const anc = ut?.anchorPoint;
+            console.log(`[LayoutDiag][panel] ${panel.name} src=${source} active=${panel.active} activeInHierarchy=${panel.activeInHierarchy}`);
+            console.log(`  lpos=(${panel.position.x},${panel.position.y},${panel.position.z}) worldPos=(${wp.x.toFixed(1)},${wp.y.toFixed(1)},${wp.z.toFixed(1)})`);
+            console.log(`  UITransform=${ut ? `${ut.contentSize.width}x${ut.contentSize.height}` : 'NONE'} anchor=${anc ? `(${anc.x},${anc.y})` : 'n/a'}`);
+            // Top 6 direct children by world Y, including decorative.
+            const childInfo: Array<{ name: string; lposY: number; h: number; topEdgeWorld: number; worldY: number }> = [];
+            for (const c of panel.children) {
+                const cwp = new Vec3();
+                c.getWorldPosition(cwp);
+                const cUt = c.getComponent(UITransform);
+                const h = cUt ? cUt.contentSize.height : 0;
+                const topEdgeWorld = cwp.y + h / 2;
+                childInfo.push({ name: c.name, lposY: c.position.y, h, topEdgeWorld, worldY: cwp.y });
+            }
+            childInfo.sort((a, b) => b.topEdgeWorld - a.topEdgeWorld);
+            console.log(`  topChildren (top 6 by world top edge, total=${panel.children.length}):`);
+            for (let i = 0; i < Math.min(6, childInfo.length); i++) {
+                const ci = childInfo[i];
+                console.log(`    ${i+1}. ${ci.name} topEdgeWorld=${ci.topEdgeWorld.toFixed(1)} worldY=${ci.worldY.toFixed(1)} lposY=${ci.lposY} h=${ci.h}`);
+            }
+        } catch (e: any) {
+            console.log(`[LayoutDiag][panel] THREW src=${source} ${e?.message ?? e}`);
+        }
+    }
+
     private _setActivePanel(which: 'landing' | 'home' | 'tokenDuel' | 'mip'): void {
         this._dumpAppState('set_active_panel:' + which);
         // UX overhaul Phase 1F: smooth fade+scale swap instead of instant
@@ -3685,6 +3810,7 @@ export class AppUI extends Component {
             try { ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' }); } catch (_) { /* tween/Graphics may not be loaded yet */ }
         }
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
+        this._dumpPanelLayout(target ?? null, 'set_active_panel:' + which);
     }
 
     /* ── 2026-04-27 — Matches In Progress ─────────────────────────────── */
@@ -4000,6 +4126,24 @@ export class AppUI extends Component {
                 + ` view.world=(${viewWorld?.x.toFixed(0) ?? '?'},${viewWorld?.y.toFixed(0) ?? '?'})`
                 + ` view.span=[${viewBot?.toFixed(0) ?? '?'}..${viewTop?.toFixed(0) ?? '?'}]`
                 + ` collidesTitle=${(r0Top !== null && titleWorld) ? (r0Top >= titleWorld.y - 22) : '?'}`);
+
+            // 2026-04-29 — per-child probe: UITransform size, layer, and
+            // renderable-component details. If a child has size 0×0, missing
+            // sprite frame, empty label string, missing font, or wrong layer,
+            // it'll surface here. Prior diagnostics covered active/opacity/
+            // alpha but never these dimensions.
+            for (let ci = 0; ci < r0.children.length; ci++) {
+                const c = r0.children[ci];
+                const ut = c.getComponent(UITransform);
+                const lbl = c.getComponent(Label);
+                const spr = c.getComponent(Sprite);
+                const grx = c.getComponent(Graphics);
+                const desc = lbl ? `LABEL str="${lbl.string}" fs=${lbl.fontSize} fontUUID=${(lbl as any)._font?._uuid ?? 'system'} sysFont=${(lbl as any)._isSystemFontUsed}`
+                          : spr ? `SPRITE frameUUID=${(spr as any).spriteFrame?._uuid ?? 'null'}`
+                          : grx ? `GRAPHICS lineW=${(grx as any).lineWidth}`
+                          : 'OTHER';
+                console.log(`${TAG} CHILD[${ci}] ${c.name} size=(${ut?.width.toFixed(0) ?? '?'}x${ut?.height.toFixed(0) ?? '?'}) layer=${c.layer} ${desc}`);
+            }
         }
     }
 
@@ -5575,6 +5719,7 @@ export class AppUI extends Component {
         console.log(`${TAG} _onOpenDailyChallenges | OPEN`);
         this._homePanel.active = false;
         this._dailyChallengePanel.active = true;
+        this._dumpPanelLayout(this._dailyChallengePanel, 'show_daily_challenges');
         void this._refreshDailyChallengePanel();
     }
 
@@ -6433,6 +6578,7 @@ export class AppUI extends Component {
         if (this._raceHeroSubtitleLabel) this._raceHeroSubtitleLabel.string = 'Fetching entry prices…';
         this._dumpAppState('show_race_panel_about_to_activate');
         this._racePanel.active = true;
+        this._dumpPanelLayout(this._racePanel, 'show_race');
         this._dumpAppState('show_race_panel_activated');
         if (this._gameArea) this._gameArea.active = false;
         const symbols = holdings.slice(0, n).map((h) => h?.symbol || '?').join(',');
@@ -10443,6 +10589,7 @@ export class AppUI extends Component {
         if (this._landingPanel) this._landingPanel.active = false;
         if (this._homePanel) this._homePanel.active = false;
         this._tokenDetailPanel.active = true;
+        this._dumpPanelLayout(this._tokenDetailPanel, 'show_token_detail');
 
         // Hydrate header + stats + pick/unpick state.
         if (this._detailSymbolLabel) this._detailSymbolLabel.string = row.symbol ? `$${row.symbol}` : '$—';
@@ -10681,6 +10828,7 @@ export class AppUI extends Component {
         if (!this._waitingPanel) return;
         this._tokenDuelPanel.active = false;
         this._waitingPanel.active = true;
+        this._dumpPanelLayout(this._waitingPanel, 'show_waiting');
         const n = opts.requiredPlayers ?? 2;
         if (this._waitingTitleLabel) this._waitingTitleLabel.string = opts.track === 'real' ? 'Finding opponents…' : 'Matching vs Bots…';
         if (this._waitingModeLabel) this._waitingModeLabel.string = `${opts.mode} · ${opts.wagerSol.toFixed(3)} SOL · ${opts.track === 'real' ? 'Real' : 'Paper'}`;
@@ -10882,6 +11030,18 @@ export class AppUI extends Component {
         if (!this._postMatchPanel) return;
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
+        this._dumpPanelLayout(this._postMatchPanel, 'show_post_match');
+        // Defensive: force-enable each PostMatch button so a leftover
+        // interactable=false from a prior cascade can't persist into this show.
+        const ensureInteractable = (btn: Button | null, label: string) => {
+            if (!btn) return;
+            btn.interactable = true;
+            console.log(`${PMBTAG} ENSURE_INTERACTABLE ${label}=true`);
+        };
+        ensureInteractable(this._postMatchBackButton,  'back');
+        ensureInteractable(this._postMatchAgainButton, 'again');
+        const ssBtnShow = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
+        ensureInteractable(ssBtnShow, 'sameSquad');
         // Cascade safety: cancel any in-flight beats from a prior result show
         // before we re-prep. Re-entry (back-to-back matches) would otherwise
         // double-fire setTimeouts.
@@ -11522,8 +11682,20 @@ export class AppUI extends Component {
 
         // Tap-to-skip wiring — bind once on the panel; idempotent. Tapping
         // anywhere during the cascade snaps everything to final state.
+        // Skip-suppress on PostMatch button taps so a fast tap doesn't race
+        // the cascade-skip and mutate panel state out from under the button.
         if (this._postMatchPanel && !(this._postMatchPanel as any)._tapSkipBound) {
-            this._postMatchPanel.on(Node.EventType.TOUCH_END, () => {
+            this._postMatchPanel.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
+                const t = e.target as Node | null;
+                const tName = t?.name ?? 'null';
+                if (tName === 'PostMatchBackButton' ||
+                    tName === 'PostMatchAgainButton' ||
+                    tName === 'PostMatchSameSquadButton' ||
+                    tName === 'PostMatchShareButton') {
+                    console.log(`${PMBTAG} PANEL_TOUCH_END | SUPPRESS_SKIP target=${tName}`);
+                    return;
+                }
+                console.log(`${PMBTAG} PANEL_TOUCH_END | RUN_SKIP target=${tName}`);
                 this._skipPostMatchReveal();
             });
             (this._postMatchPanel as any)._tapSkipBound = true;
@@ -11937,6 +12109,7 @@ export class AppUI extends Component {
     }
 
     private _onPostMatchBack(): void {
+        console.log(`${PMBTAG} HANDLER_FIRED back`);
         this._dumpAppState('post_match_back_enter');
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
@@ -11945,6 +12118,7 @@ export class AppUI extends Component {
     }
 
     private _onPostMatchAgain(): void {
+        console.log(`${PMBTAG} HANDLER_FIRED again`);
         this._dumpAppState('post_match_again_enter');
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
@@ -11962,6 +12136,7 @@ export class AppUI extends Component {
      * settings. Bypasses ModePicker → goes straight to countdown → race.
      */
     private _onPostMatchSameSquad(): void {
+        console.log(`${PMBTAG} HANDLER_FIRED sameSquad`);
         this._dumpAppState('post_match_same_squad_enter');
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
@@ -12681,6 +12856,7 @@ export class AppUI extends Component {
         if (!this._notifPanel) return;
         console.log(`${TAG} _showNotificationPanel | SHOW`);
         this._notifPanel.active = true;
+        this._dumpPanelLayout(this._notifPanel, 'show_notification');
         // Render BEFORE the slide so the rows are sized + visible during entry.
         this._renderNotificationList();
         // Card slide.
@@ -12813,7 +12989,7 @@ export class AppUI extends Component {
 
     private _confirmMarkAsRead(): void {
         const ids = Array.from(this._notifSelectedIds);
-        for (const id of ids) NotificationStore.instance.markRead(id);
+        for (const id of ids) NotificationStore.instance.dismiss(id);
         console.log(`${TAG} _confirmMarkAsRead | count=${ids.length}`);
         this._setNotifSelectionMode(false);
         this._renderNotificationList();
@@ -13070,6 +13246,7 @@ export class AppUI extends Component {
         }
         console.log(`${TAG} _showFindMatchPanel | SHOW`);
         this._findMatchPanel.active = true;
+        this._dumpPanelLayout(this._findMatchPanel, 'show_find_match');
         if (this._homePanel) this._homePanel.active = false;
         // V5 (2026-04-28 home UX) — portal flourish on hero CTA destination.
         // Tinted teal (Find = the "go play" path).
@@ -15282,6 +15459,7 @@ export class AppUI extends Component {
         // tokenDuel; this covers the full set.
         this._hideAllTopLevelPanelsExcept('leaderboard');
         this._leaderboardPanel.active = true;
+        this._dumpPanelLayout(this._leaderboardPanel, 'show_leaderboard');
         // 2026-04-28 tab-system desync fix: re-assert every runtime pill on
         // the panel into a known-good visible+synced state. Replaces the
         // ad-hoc HubTabStrip visibility guard that lived here previously.
@@ -15945,6 +16123,7 @@ export class AppUI extends Component {
         if (source === 'home') this._homePanel.active = false;
         else this._tokenDuelPanel.active = false;
         this._settingsPanel.active = true;
+        this._dumpPanelLayout(this._settingsPanel, 'show_settings');
         this._hydrateSettingsPanel();
         // Guest mode — hide wallet card + username editbox + delete account +
         // the Disconnect row (now inside AccountSettingsCard). Sound + haptics
@@ -16377,6 +16556,7 @@ export class AppUI extends Component {
         console.log(`${TAG} TabState | _openPortfolioInternal hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         this._hideAllTopLevelPanelsExcept('portfolio');
         this._portfolioPanel.active = true;
+        this._dumpPanelLayout(this._portfolioPanel, 'show_portfolio');
         // 2026-04-28 tab-system desync fix: re-assert every runtime pill on
         // the panel into a known-good visible+synced state. Replaces the
         // ad-hoc HubTabStrip visibility guard that lived here previously.
@@ -16911,6 +17091,7 @@ export class AppUI extends Component {
         this._stopTournamentCountdown();
         this._homePanel.active = false;
         this._tournamentPanel.active = true;
+        this._dumpPanelLayout(this._tournamentPanel, 'show_tournament');
 
         // UX Phase 2b: emoji stripped; IconBadge sword attached at bind time.
         if (this._tournamentTitleLabel) this._tournamentTitleLabel.string = 'Tournament';
@@ -17231,6 +17412,7 @@ export class AppUI extends Component {
         this._stopMatchTicker();
         this._homePanel.active = false;
         this._spectatorPanel.active = true;
+        this._dumpPanelLayout(this._spectatorPanel, 'show_spectator');
 
         // Reset UI to "connecting" state.
         // UX Phase 2b: emoji stripped; IconBadge eye attached at bind time.

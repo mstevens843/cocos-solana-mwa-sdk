@@ -629,10 +629,6 @@ const LayoutSpec = {
     // Home; SettingsPanel is the single account-control surface.
     Home: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor. Generator's lobbyMount()
-        // computes mount offset = LOBBY_TOP_Y - TOP_ANCHOR_Y so this panel's
-        // header band lands at world-y = LOBBY_TOP_Y. Don't hand-tune.
-        TOP_ANCHOR_Y: home.HEADER_Y,
         elements: {
             // 2026-04-26 V2 — production lobby polish: scrim behind content, wallet
             // pill upgraded to glowing centered anchor, XP card grown to a real
@@ -863,8 +859,6 @@ const LayoutSpec = {
     // legacy raceCard 5-stack + opponentStrip when requiredPlayers > 2.
     RacePanel: {
         canvas: { w: 720, h: 1800 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: race.TOP_HEADER_Y,
         elements: {
             // 2026-04-26 battle-UI polish — top row is one horizontal band:
             //   [Lv pill]  ( Timer )  [+0.00%]
@@ -1118,8 +1112,6 @@ const LayoutSpec = {
     // Account is now a small red text button below the Account card.
     SettingsPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: settings.HEADER_Y,
         elements: {
             // Phase 30 redesign — premium settings page. Compact wallet identity
             // card, real toggle switches, account hierarchy with group labels,
@@ -1522,8 +1514,6 @@ const LayoutSpec = {
     //     (runtime scaling — single shared template).
     MatchesInProgressPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: mip.BACK_Y,
         elements: {
             backLink:  { x: -280, y: mip.BACK_Y,     w: 110, h: 28,  type: 'label' },
             backBtn:   { x: -280, y: mip.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
@@ -1648,8 +1638,11 @@ const LayoutSpec = {
     // a wins-based render path.
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: leaderboard.BACK_Y,
+        // 2026-04-29 v2 — HubTabStrip (Portfolio | Leaderboard) is built at
+        // runtime by AppUI._buildHubTabs at panel-local y=720 (h=56). It's the
+        // visible top of this panel; generator's computePanelTopEdge() picks
+        // up RUNTIME_TOP_EDGE to align with other panels.
+        RUNTIME_TOP_EDGE: 748,
         elements: {
             backLink:        { x: -280, y: leaderboard.BACK_Y,     w: 110, h: 28,  type: 'label' },
             backBtn:         { x: -280, y: leaderboard.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
@@ -1731,10 +1724,6 @@ const LayoutSpec = {
     // clear pre-existing overlaps with Back and Tab rows.
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        // Anchored on backBtn/title row (y=700); lvxpChip at y=750 floats above
-        // as a decoration, like Home's notificationBadge.
-        TOP_ANCHOR_Y: 700,
         elements: {
             backBtn:         { x: -280, y: 700,  w: 160, h: 44, type: 'btnGhost' },
             title:           { x: 0,    y: 700,  w: 400, h: 40, type: 'label',    notes: 'gold bold; sword IconBadge attached at runtime via _attachStaticIconBadges' },
@@ -1963,8 +1952,6 @@ const LayoutSpec = {
     // Status footer y=-740.
     TokenDuelPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: td.HEADER_Y,
         elements: {
             // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30%. Every Y derives from `td`.
@@ -2303,8 +2290,11 @@ const LayoutSpec = {
     // secondary Paper/Real toggle below with MODE eyebrow label.
     PortfolioPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: portfolio.BACK_Y,
+        // 2026-04-29 v2 — HubTabStrip (Portfolio | Leaderboard) is built at
+        // runtime by AppUI._buildHubTabs at panel-local y=720 (h=56). It's the
+        // visible top of this panel; generator's computePanelTopEdge() picks
+        // up RUNTIME_TOP_EDGE to align with other panels.
+        RUNTIME_TOP_EDGE: 748,
         elements: {
             historyView: { x: 0, y: 0, w: 720, h: 1280, type: 'group',
                 notes: 'PortfolioHistoryView container; hidden until History tab active' },
@@ -2524,8 +2514,6 @@ const LayoutSpec = {
     // now hosts title + Mark-all-read inline, with close ✕ at top-right.
     NotificationPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: 608,
         // Card geometry consumed by scene-gen + AppUI tweens.
         card: { w: 400, h: 1280, restingX: 160, offX: 600 },
         elements: {
@@ -2578,8 +2566,6 @@ const LayoutSpec = {
     // (back, title, status, prize, join, status footer) deferred.
     TournamentPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: 600,
         elements: {
             roster:  { x: 0, y: 150, w: 640, h: 440, type: 'group' },
             // 9c — chrome (back/title) migrated.
@@ -2616,9 +2602,6 @@ const LayoutSpec = {
     // chart card with dynamic header, and Token Stats grid with edge accents.
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        // backLink/backBtn at 612; symbolLabel slightly higher at 614 floats above.
-        TOP_ANCHOR_Y: 612,
         elements: {
             // Identity band — Back at left, Symbol/Name centered, MintChip at right.
             backLink:        { x: -300, y: 612, w: 100, h: 26, type: 'label' },
@@ -2721,8 +2704,6 @@ const LayoutSpec = {
     // StreakBestLabel.
     DailyChallengePanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: 618,
         elements: {
             backLink:        { x: -280, y: 618, w: 110, h: 28, type: 'label' },
             backBtn:         { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
@@ -2764,8 +2745,6 @@ const LayoutSpec = {
     // Phase 9c — chrome migrated. Title shrunk to clear back button.
     SpectatorPanel: {
         canvas: { w: 720, h: 1280 },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: 600,
         elements: {
             backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
             title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label',
@@ -2804,8 +2783,6 @@ const LayoutSpec = {
     //   Squad secondary blue); Share + Status as small bottom-row affordances.
     PostMatchPanel: {
         canvas: { w: pm.PANEL_W, h: pm.PANEL_H },
-        // 2026-04-29 — uniform top-of-page anchor (see Home block).
-        TOP_ANCHOR_Y: pm.BACK_Y,
         elements: {
             // 2026-04-27 — every Y on this page is derived from the `pm`
             // constants block at the top of this file. NEVER hand-tune y.

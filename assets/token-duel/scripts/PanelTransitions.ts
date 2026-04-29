@@ -18,13 +18,28 @@ import { Motion } from './Theme';
 
 const TAG = '[PanelTransitions]';
 
-// Phase 18 — slide-in distances. Subtle horizontal slide layered on top of
+// Phase 18: slide-in distances. Subtle horizontal slide layered on top of
 // existing fade+scale gives panel transitions a spatial direction (forward
-// = right→left motion, back = left→right) without dragging out the duration.
+// is right-to-left motion, back is left-to-right) without dragging out the duration.
 const SLIDE_IN_DX  = 80;
 const SLIDE_OUT_DX = 40;
 
 export type PanelDir = 'forward' | 'back' | 'instant';
+
+// 2026-04-29: capture each panel's intended resting position once on first
+// activation. The generator sets _lpos to the panel's mount offset; this
+// helper persists those values on the node so the slide tweens can return
+// the panel to its intended Y instead of clobbering it to 0. Without this,
+// every swap forced lpos to (0, 0, 0), erasing per-panel mount offsets and
+// causing visible cross-panel top-of-page misalignment.
+type PanelRest = { x: number; y: number };
+function captureRest(node: Node): PanelRest {
+    const data: any = (node as any).__panelData ?? ((node as any).__panelData = {});
+    if (!data.__layoutRest__) {
+        data.__layoutRest__ = { x: node.position.x, y: node.position.y };
+    }
+    return data.__layoutRest__;
+}
 
 export function swapPanel(out: Node | null, into: Node | null, dir: PanelDir = 'forward'): void {
     if (dir === 'instant') {
@@ -32,6 +47,8 @@ export function swapPanel(out: Node | null, into: Node | null, dir: PanelDir = '
         if (into) {
             into.active = true;
             into.setScale(Vec3.ONE);
+            const rest = captureRest(into);
+            into.setPosition(new Vec3(rest.x, rest.y, 0));
             const op = into.getComponent(UIOpacity);
             if (op) op.opacity = 255;
         }
@@ -50,15 +67,16 @@ function animateOut(node: Node, dir: PanelDir = 'forward'): void {
     Tween.stopAllByTarget(node);
     const op = ensureOpacity(node);
     Tween.stopAllByTarget(op);
-    // Phase 18: outgoing slides opposite of incoming. Forward → left, Back → right.
+    const rest = captureRest(node);
+    // Phase 18: outgoing slides opposite of incoming. Forward goes left, Back goes right.
     const slideOutSign = dir === 'back' ? 1 : -1;
-    const endX = slideOutSign * SLIDE_OUT_DX;
+    const endX = rest.x + slideOutSign * SLIDE_OUT_DX;
     tween(node)
         .to(Motion.fast, { scale: new Vec3(0.96, 0.96, 1) }, { easing: 'cubicIn' })
         .call(() => {
             node.active = false;
             node.setScale(Vec3.ONE);
-            node.setPosition(new Vec3(0, 0, 0)); // reset for next show
+            node.setPosition(new Vec3(rest.x, rest.y, 0)); // restore resting pos for next show
         })
         .start();
     tween(op)
@@ -67,7 +85,7 @@ function animateOut(node: Node, dir: PanelDir = 'forward'): void {
         .start();
     // Phase 18: x-axis slide as it fades.
     tween(node)
-        .to(Motion.fast, { position: new Vec3(endX, 0, 0) }, { easing: 'cubicIn' })
+        .to(Motion.fast, { position: new Vec3(endX, rest.y, 0) }, { easing: 'cubicIn' })
         .start();
 }
 
@@ -75,15 +93,16 @@ function animateIn(node: Node, dir: PanelDir): void {
     Tween.stopAllByTarget(node);
     const op = ensureOpacity(node);
     Tween.stopAllByTarget(op);
+    const rest = captureRest(node);
     node.active = true;
     const startScale = dir === 'back' ? 0.96 : 1.04;
     node.setScale(new Vec3(startScale, startScale, 1));
     op.opacity = 0;
-    // Phase 18: incoming starts off-center on x-axis. Forward = +80 (slides
-    // in from right). Back = -80 (slides in from left).
+    // Phase 18: incoming starts off-center on x-axis. Forward starts at rest.x+80
+    // (slides in from right). Back starts at rest.x-80 (slides in from left).
     const slideInSign = dir === 'back' ? -1 : 1;
-    const startX = slideInSign * SLIDE_IN_DX;
-    node.setPosition(new Vec3(startX, 0, 0));
+    const startX = rest.x + slideInSign * SLIDE_IN_DX;
+    node.setPosition(new Vec3(startX, rest.y, 0));
     tween(node)
         .to(Motion.base, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicOut' })
         .start();
@@ -91,7 +110,7 @@ function animateIn(node: Node, dir: PanelDir): void {
         .to(Motion.base, { opacity: 255 })
         .start();
     tween(node)
-        .to(Motion.base, { position: new Vec3(0, 0, 0) }, { easing: 'cubicOut' })
+        .to(Motion.base, { position: new Vec3(rest.x, rest.y, 0) }, { easing: 'cubicOut' })
         .start();
 }
 

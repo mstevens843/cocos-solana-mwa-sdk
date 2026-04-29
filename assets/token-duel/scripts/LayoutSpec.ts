@@ -23,11 +23,12 @@ export interface PanelSpec {
     canvas: { w: number; h: number };
     bg?: { color: string };
     /**
-     * Panel-local Y of the topmost header band. Generator's lobbyMount()
-     * computes mount.y = LOBBY_TOP_Y - TOP_ANCHOR_Y so every panel's header
-     * lands at the same world-y. Don't hand-tune; see generate-scenes.js.
+     * Override for panels whose topmost solid element is built at runtime
+     * (e.g. Portfolio/Leaderboard HubTabStrip). Generator's lobbyMount()
+     * uses this when scanning `elements` would miss the real visual top.
+     * See generate-scenes.js `computePanelTopEdge()`.
      */
-    TOP_ANCHOR_Y?: number;
+    RUNTIME_TOP_EDGE?: number;
     elements: Record<string, ElementSpec>;
     templates?: Record<string, { count: number; baseX?: number; baseY?: number; gapX?: number; gapY?: number; x?: number; y?: number; w: number; h: number }>;
     allowedOverlaps: Array<[string, string]>;
@@ -88,7 +89,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     // LayoutSpec.cjs Home block.
     Home: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 640,
         elements: {
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite' },
             // Header band (V3 — h 64→44, ≈-30%).
@@ -210,7 +210,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     RacePanel: {
         canvas: { w: 720, h: 1800 },
-        TOP_ANCHOR_Y: 720,
         elements: {
             // Battle-UI top row (2026-04-26): [Lv chip] (Timer) [+0.00%]
             racePlayerLevelChip: { x: -260, y: 720, w: 120, h: 40,   type: 'chip' },
@@ -239,7 +238,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     SettingsPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 620,
         elements: {
             // Phase 30 — premium settings redesign. KEEP IN SYNC with LayoutSpec.cjs.
             sheetBg:       { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite' },
@@ -270,7 +268,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 720,
+        RUNTIME_TOP_EDGE: 748,
         elements: {
             backLink:         { x: -280, y: 720,  w: 110, h: 28,  type: 'label' },
             backBtn:          { x: -280, y: 720,  w: 140, h: 36,  type: 'btnGhost' },
@@ -282,7 +280,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 700,
         elements: {
             backBtn:        { x: -280, y: 700,  w: 160, h: 44, type: 'btnGhost' },
             title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
@@ -312,7 +309,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     TokenDuelPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 620,
         elements: {
             // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30% (388→272). Mirrors `td`
@@ -373,7 +369,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     PortfolioPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 720,
+        RUNTIME_TOP_EDGE: 748,
         elements: {
             historyView: { x: 0,    y: 0,   w: 720, h: 1280, type: 'group' },
             backLink:    { x: -280, y: 720, w: 110, h: 28,   type: 'label' },
@@ -394,7 +390,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     NotificationPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 608,
         elements: {
             listContainer:         { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
             cardHeaderLabel:       { x: -170, y: 608, w: 200, h: 30,  type: 'label' },
@@ -413,7 +408,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     TournamentPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 600,
         elements: {
             roster:  { x: 0,    y: 150, w: 640, h: 440, type: 'group' },
             backBtn: { x: -260, y: 600, w: 160, h: 44,  type: 'btnGhost' },
@@ -423,7 +417,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 612,
         elements: {
             backLink:        { x: -300, y: 612,  w: 100, h: 26, type: 'label' },
             backBtn:         { x: -300, y: 612,  w: 130, h: 34, type: 'btnGhost' },
@@ -447,7 +440,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     DailyChallengePanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 618,
         elements: {
             backLink:        { x: -280, y: 618, w: 110, h: 28, type: 'label' },
             backBtn:         { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
@@ -459,7 +451,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     SpectatorPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 600,
         elements: {
             backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
             title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label' },
@@ -468,7 +459,6 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     },
     PostMatchPanel: {
         canvas: { w: 720, h: 1280 },
-        TOP_ANCHOR_Y: 564,
         elements: {
             // 2026-04-27 — mirrors the `pm` constants block in LayoutSpec.cjs.
             payoutLabel:     { x: 0, y: -20,  w: 620, h: 96,  type: 'label' },

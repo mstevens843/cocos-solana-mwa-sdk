@@ -1,10 +1,38 @@
-# Cocos Creator MWA SDK for Solana
+<p align="center">
+  <img src="branding/project-logo.png" alt="Cocos × Solana MWA SDK" width="440" />
+</p>
 
-> **Colosseum Frontier 2026 submission** (`betting-duel` branch — SDK + Token Duel demo game). The SDK code in `assets/scripts/walletService/` is identical to the `master` branch, which carries a clean example app exercising the full MWA 2.0 surface. See [`PITCH.md`](PITCH.md) for the market thesis.
+<h1 align="center">Cocos Creator MWA SDK for Solana</h1>
 
-A complete Solana Mobile Wallet Adapter (MWA) 2.0 SDK for Cocos Creator 3.8+ — bringing full MWA API parity to the dominant mobile game engine in Asia (1.7M+ developers, zero prior Solana integration).
+<p align="center">
+  The first Solana Mobile Wallet Adapter SDK for Cocos Creator. Built for Asia's dominant mobile game engine.<br/>
+  Hardware-verified on Solana Seeker. MIT-licensed. Open source.
+</p>
 
-Built and tested on Solana Seeker hardware with Phantom, Solflare, Backpack, Jupiter, and Seed Vault.
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-9945FF.svg" alt="MIT License">
+  <img src="https://img.shields.io/badge/cocos%20creator-3.8%2B-5BD4D6.svg" alt="Cocos Creator 3.8+">
+  <img src="https://img.shields.io/badge/MWA-2.0-19FB9B.svg" alt="MWA 2.0">
+  <img src="https://img.shields.io/badge/wallets-5%20verified-FFFFFF.svg?labelColor=1B1138" alt="5 wallets verified">
+  <img src="https://img.shields.io/badge/Seeker-hardware%20verified-9945FF.svg" alt="Seeker hardware verified">
+</p>
+
+---
+
+## Two branches, one SDK
+
+The SDK lives at `assets/scripts/walletService/` and is **identical on both branches**. They differ only in what's built *on top* of it:
+
+| Branch | What's built on the SDK | What you'll see |
+|---|---|---|
+| [`master`](../../tree/master) | **Example App.** A clean Cocos scene that exercises every MWA 2.0 method (`authorize`, `SIWS`, batch `signMessages`, `signAndSendTransactions`, `deauthorize`, `getCapabilities`, etc.) against every supported wallet. | The SDK alone, every API method visible end-to-end. |
+| [`betting-duel`](../../tree/betting-duel) | **Token Duel.** A real-time portfolio-race game with an on-chain Anchor escrow program on devnet. Pick 3 tokens, stake SOL, race for 60 seconds, settle on-chain. | The SDK driving a production-shaped game. |
+
+> 🏆 **Colosseum Frontier 2026 hackathon submission**: the [`betting-duel`](../../tree/betting-duel) branch. SDK is the product, Token Duel is the proof.
+
+A complete Solana Mobile Wallet Adapter (MWA) 2.0 SDK for Cocos Creator 3.8+, bringing full MWA API parity to the dominant mobile game engine in Asia (1.7M+ developers, zero prior Solana integration). Built and tested on Solana Seeker hardware with Phantom, Solflare, Backpack, Jupiter, and Seed Vault. See [`PITCH.md`](PITCH.md) for the market thesis.
+
+---
 
 ## Features
 
@@ -22,13 +50,13 @@ Built and tested on Solana Seeker hardware with Phantom, Solflare, Backpack, Jup
 
 ### Additional Capabilities
 
-- **Auth Caching** — Persistent token storage via `sys.localStorage` for silent reconnection across app restarts
-- **Multi-Wallet Support** — Seed Vault (biometric), Phantom, Solflare, Backpack, Jupiter
-- **Wallet Detection** — Detect installed MWA-compatible wallets by package name
-- **Device Detection** — Identify Solana Mobile devices (Seeker, Saga)
-- **Compound Commands** — `authorize_and_sign` (single-session biometric) and `sign_and_deauthorize` (delete flow)
-- **Transaction Builder** — Zero-dependency binary serializer for memo, SOL transfer, and SPL token transfer
-- **Deterministic Logging** — Every operation logs entry, parameters, results, and exit at both Java and TypeScript layers
+- **Auth Caching:** Persistent token storage via `sys.localStorage` for silent reconnection across app restarts
+- **Multi-Wallet Support:** Seed Vault (biometric), Phantom, Solflare, Backpack, Jupiter
+- **Wallet Detection:** Detect installed MWA-compatible wallets by package name
+- **Device Detection:** Identify Solana Mobile devices (Seeker, Saga)
+- **Compound Commands:** `authorize_and_sign` (single-session biometric) and `sign_and_deauthorize` (delete flow)
+- **Transaction Builder:** Zero-dependency binary serializer for memo, SOL transfer, and SPL token transfer
+- **Deterministic Logging:** Every operation logs entry, parameters, results, and exit at both Java and TypeScript layers
 
 ## Architecture
 
@@ -188,25 +216,25 @@ Example flow:
 [MWASessionManager] authorize | client connected
 [MWASessionManager] authorize | SUCCESS pubkey=7xKX...4bNr auth_token_len=87
 [MWAManager] authorize | STATE_SET pubkey=7xKX...4bNr authToken_len=87 isConnected=true
-[MWAManager] authorize | DONE connected=true — emitted MWA_AUTHORIZED
+[MWAManager] authorize | DONE connected=true | emitted MWA_AUTHORIZED
 ```
 
-## Token Duel — Demo Game + Anchor Program
+## Token Duel: Demo Game + Anchor Program
 
 Bundled with the SDK: **Token Duel**, a Stack-Jump-style demo game that exercises the full MWA method surface against a real on-chain Anchor program. Pick a squad of 3 tokens from Solana's entire market → stake SOL → play tap-timing game where block widths are driven by your tokens' real 24-hour price deltas → settle on-chain. Every wallet prompt in the pitch video corresponds to a real program invocation.
 
 Feature surface on the panel:
-- **Live Birdeye feed** — Trending / Gainers / New-listings tabs with scrollable rows, symbol + price + 24h delta + async-loaded logos.
-- **Search** — `cc.EditBox` with 500ms debounce into Birdeye's fuzzy search endpoint.
-- **Squad picker** — 3 slots, tap feed rows to add, tap slots to clear.
-- **Stake slider** — continuous 0.001–0.1 SOL with snap-to chips.
-- **On-chain leaderboard** — 4th tab "🏆 Top 10" reads the `Leaderboard` PDA live; top-10 by height, sort-insert-evict in the settle ix.
-- **Single-tap commit** — `signAndSendTransaction` routes per wallet (Phantom/Jupiter native, Backpack sign+RPC fallback, others universal sign+RPC).
+- **Live Birdeye feed:** Trending / Gainers / New-listings tabs with scrollable rows, symbol + price + 24h delta + async-loaded logos.
+- **Search:** `cc.EditBox` with 500ms debounce into Birdeye's fuzzy search endpoint.
+- **Squad picker:** 3 slots, tap feed rows to add, tap slots to clear.
+- **Stake slider:** Continuous 0.001-0.1 SOL with snap-to chips.
+- **On-chain leaderboard:** 4th tab "🏆 Top 10" reads the `Leaderboard` PDA live; top-10 by height, sort-insert-evict in the settle ix.
+- **Single-tap commit:** `signAndSendTransaction` routes per wallet (Phantom/Jupiter native, Backpack sign+RPC fallback, others universal sign+RPC).
 
 **Token Duel Anchor program (devnet):**
 - Program ID: `14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd`
 - Pool PDA: `Gq2WfDRim2pu4x6FW3adpwMRah4uW46hNt3dTYeSFgp4`
-- Leaderboard PDA: seeded `[b"leaderboard"]` — see `scripts/init-leaderboard.ts` bootstrap.
+- Leaderboard PDA: seeded `[b"leaderboard"]`. See `scripts/init-leaderboard.ts` bootstrap.
 - Source: [`programs/token-duel/src/`](./programs/token-duel/src/)
 - Explorer: https://explorer.solana.com/address/14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd?cluster=devnet
 
@@ -220,18 +248,18 @@ Feature surface on the panel:
 | `settle` | `height: u8` | Player claims payout by height tier + leaderboard insert-sort-evict. Emits `SessionSettled` + optional `LeaderboardInserted`. |
 
 **PDA seed scheme:**
-- Pool: `[b"pool"]` — singleton, protocol-owned
-- Leaderboard: `[b"leaderboard"]` — singleton, holds top-10 entries
-- Session: `[b"session", player.key(), session_seed.to_le_bytes()]` — per-round state
-- Escrow: `[b"escrow", session.key()]` — per-round SOL vault
+- Pool: `[b"pool"]`, singleton, protocol-owned
+- Leaderboard: `[b"leaderboard"]`, singleton, holds top-10 entries
+- Session: `[b"session", player.key(), session_seed.to_le_bytes()]`, per-round state
+- Escrow: `[b"escrow", session.key()]`, per-round SOL vault
 
 **Tier payout table** (enforced in `programs/token-duel/src/instructions/settle.rs`):
 
 | Height | Tier | Payout |
 |---|---|---|
-| 0–10 | Forfeit | escrow → pool (stake) |
-| 11–20 | Half | escrow → player (stake/2) + pool (stake/2) |
-| 21–35 | Full | escrow → player (stake) |
+| 0-10 | Forfeit | escrow → pool (stake) |
+| 11-20 | Half | escrow → player (stake/2) + pool (stake/2) |
+| 21-35 | Full | escrow → player (stake) |
 | 36+ | Double | escrow → player (stake) + pool → player (stake) |
 
 **Build + deploy:**
@@ -267,13 +295,13 @@ npm run smoke-tiers        # all 4 tiers on-chain: forfeit / half / full / doubl
 npm run smoke-negatives    # all 5 error paths: stake bounds, height OOR, double-settle, foreign-player
 ```
 
-**Client integration** — `assets/token-duel/scripts/AnchorBackend.ts` builds commit/settle transactions as raw `Uint8Array` bytes (no `@coral-xyz/anchor` dep — hand-rolled discriminator + borsh). Feed those bytes into `MWAManager.signTransaction` / `signAndSendTransaction` and the wallet signs them unchanged.
+**Client integration:** `assets/token-duel/scripts/AnchorBackend.ts` builds commit/settle transactions as raw `Uint8Array` bytes (no `@coral-xyz/anchor` dep, hand-rolled discriminator + borsh). Feed those bytes into `MWAManager.signTransaction` / `signAndSendTransaction` and the wallet signs them unchanged.
 
 ## Sister Projects
 
-- [godot-solana-mwa-example](https://github.com/mstevens843/godot-solana-mwa-example) — Godot 4.x MWA example app
-- [godot-solana-sdk](https://github.com/mstevens843/godot-solana-sdk) — Godot SDK fork with MWA 2.0 Kotlin plugin
-- [Solana.Unity-SDK](https://github.com/mstevens843/Solana.Unity-SDK) — Unity SDK fork with MWA 2.0 C# implementation
+- [godot-solana-mwa-example](https://github.com/mstevens843/godot-solana-mwa-example): Godot 4.x MWA example app
+- [godot-solana-sdk](https://github.com/mstevens843/godot-solana-sdk): Godot SDK fork with MWA 2.0 Kotlin plugin
+- [Solana.Unity-SDK](https://github.com/mstevens843/Solana.Unity-SDK): Unity SDK fork with MWA 2.0 C# implementation
 
 ## License
 
