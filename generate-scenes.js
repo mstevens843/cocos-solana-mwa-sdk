@@ -4624,6 +4624,14 @@ function generate() {
     // Scrollview + 30-row pool.
     const mipScroll = mkScrollView(sb, 'MIPScrollView', mipN,
         MIPE.scroll.x, MIPE.scroll.y, MIPE.scroll.w, MIPE.scroll.h);
+    // 2026-04-28 — MIP regression fix: content must fit the full 30-row pool.
+    // Row 29 sits at y = baseY + 29 * gapY = -40 + 29*(-170) = -4970, plus the
+    // row's own half-height (75). mkScrollView's default content size matches
+    // view height (1000), which clips/clamps everything past row 6 and (post
+    // UX upgrade where the row container itself is invisible) makes the hero
+    // card y=-500 land outside the scrollable region on some devices.
+    const mipContentH = Math.abs(MIPR.baseY) + Math.abs(MIPR.gapY) * (MIPR.count - 1) + MIPR.h; // 5120
+    sb.e[mipScroll.contentUT]._contentSize = sz(MIPE.scroll.w, mipContentH);
 
     const mipRows = [];
     for (let i = 0; i < MIPR.count; i++) {
@@ -5651,6 +5659,10 @@ function generate() {
         const bodyN = mkLabel(sb, `${TCT.names[i]}_Body`, cardN, TCT.bodies[i], 24,
             TCC.body.y, TCC.body.w, TCC.body.h, 230, 235, 245);
         sb.e[bodyN]._lpos = v3(TCC.body.x, TCC.body.y, 0);
+        // SHRINK overflow — wrap body text within 540×120 box. Default
+        // mkLabel emits _overflow=0 (NONE) which ignores _enableWrapText
+        // and lets the sentence run off the right edge of the card.
+        sb.e[sb.e[bodyN]._components[1].__id__]._overflow = 2;
 
         // Mascot container — empty Node + UITransform; AppUI adds
         // MascotController + setSpriteSheet at runtime.

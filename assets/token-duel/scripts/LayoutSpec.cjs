@@ -747,66 +747,69 @@ const LayoutSpec = {
 
     /* ───── MODE PICKER OVERLAY ─────────────────────────────────────── */
     // Game-setup overlay shown when user taps Run Squad / Quick Play.
-    // Layout (top-down): Title + ✕ at y=500, Hint y=460, 2×2 mode grid
-    // y=410/330, WagerReadout y=230, 4-col window row y=150, Paper/Real
-    // toggle y=90, 3-col difficulty row y=40, Start CTA y=-30, Status y=-100.
-    // Phase 23 — premium redesign. Spread across full canvas; bigger
-    // buttons; section headers ("MATCH MODE" / "DURATION" / "TRACK" /
-    // "DIFFICULTY") above each row to give visual rhythm.
+    // Lock-in redesign — modal reframed as commitment screen, not settings.
+    // Title "Configure Your Duel" + thin gold divider, softened section
+    // labels (title-case 13pt, no tracking), bigger primary mode buttons,
+    // shrunken secondary chips, new MatchSummaryCard above CTA, larger
+    // "Enter Match" CTA. Hint and wagerReadout removed (folded into card).
     ModePickerOverlay: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            title:             { x: 0,    y: 580,  w: 480, h: 44, type: 'label',
-                notes: 'Phase 23: y 500→580, w 500→480 (clears Cancel ✕ at x=290), fontSize 26→32, gold bold tracked' },
+            title:             { x: 0,    y: 580,  w: 600, h: 48, type: 'label',
+                notes: 'Lock-in: "Configure Your Duel" 32pt gold bold tracked' },
+            titleDivider:      { x: 0,    y: 548,  w: 240, h: 2,  type: 'sprite',
+                notes: 'Thin gold divider under title' },
             cancelBtn:         { x: 290,  y: 580,  w: 44,  h: 44, type: 'btnGhost' },
-            hint:              { x: 0,    y: 530,  w: 600, h: 18, type: 'label' },
-            // Phase 23 — section headers above each button row.
-            sectionMode:       { x: 0,    y: 440,  w: 600, h: 22, type: 'label',
-                notes: 'tracked uppercase 16pt lo-tier' },
-            sectionDuration:   { x: 0,    y: 190,  w: 600, h: 22, type: 'label' },
-            sectionTrack:      { x: 0,    y: 40,   w: 600, h: 22, type: 'label' },
-            sectionDifficulty: { x: 0,    y: -110, w: 600, h: 22, type: 'label' },
-            wagerReadout:      { x: 0,    y: -280, w: 600, h: 32, type: 'label',
-                notes: 'Phase 23: fontSize 14→20, gold bold' },
-            paperToggle:       { x: -115, y: -20,  w: 220, h: 60, type: 'btnPrimary' },
-            realToggle:        { x: 115,  y: -20,  w: 220, h: 60, type: 'btnGhost' },
-            startBtn:          { x: 0,    y: -380, w: 560, h: 80, type: 'btnPrimary',
-                notes: 'Phase 23: hero CTA — 420×60 → 560×80; idle pulse + halo from Phase 13/AppUI' },
-            statusLbl:         { x: 0,    y: -460, w: 600, h: 20, type: 'label' },
+            // Section headers — title-case 13pt no-tracking; less shouty.
+            sectionMode:       { x: 0,    y: 490,  w: 580, h: 18, type: 'label' },
+            sectionDuration:   { x: 0,    y: 200,  w: 580, h: 18, type: 'label' },
+            sectionTrack:      { x: 0,    y: 90,   w: 580, h: 18, type: 'label' },
+            sectionDifficulty: { x: 0,    y: -30,  w: 580, h: 18, type: 'label' },
+            paperToggle:       { x: -100, y: 40,   w: 200, h: 52, type: 'btnPrimary' },
+            realToggle:        { x: 100,  y: 40,   w: 200, h: 52, type: 'btnGhost' },
+            // New summary card — gold-edged dark card with mode/modifiers/stake stack.
+            summaryCard:       { x: 0,    y: -200, w: 600, h: 130, type: 'group',
+                notes: 'Lock-in card; gold edge; mode/modifiers/stake stack.' },
+            startBtn:          { x: 0,    y: -340, w: 580, h: 96,  type: 'btnPrimary',
+                notes: '"Enter Match" hero CTA — taller than Phase 23 (was 560×80).' },
+            statusLbl:         { x: 0,    y: -440, w: 600, h: 20, type: 'label' },
         },
         templates: {
             // Stage 3 mode rebalance: [1v1, Trio, 4p, 8p].
             // Names: Mode_<key>. AppUI key handlers in _onPickerModeTap key off these.
             modeBtn: {
-                count: 4, w: 300, h: 80,
+                count: 4, w: 320, h: 96,
                 keys: ['oneVone', 'trio', 'fourPlayer', 'eightPlayer'],
                 labels: ['1 vs 1', 'Trio · 1v1v1', '4 Player FFA', 'Battle Royale'],
                 positions: [
-                    { x: -160, y: 380 },
-                    { x:  160, y: 380 },
-                    { x: -160, y: 290 },
-                    { x:  160, y: 290 },
+                    { x: -170, y: 420 },
+                    { x:  170, y: 420 },
+                    { x: -170, y: 290 },
+                    { x:  170, y: 290 },
                 ],
             },
-            // 2026-04-27 — 6 window chips in a single row (was 4). Re-keyed
-            // to match real durations. baseX -270 / gapX 108 → 6×100 + 5×8 = 640
-            // total span, centered on x=0; first chip at x=-270, last at +270.
+            // 6 duration chips — shrunk to 92×44 (was 100×52); secondary weight.
             windowBtn: {
-                count: 6, w: 100, h: 52, y: 130,
+                count: 6, w: 92, h: 44, y: 148,
                 keys: ['30s', '1m', '5m', '1h', '24h', '7d'],
                 labels: ['30s', '1m', '5m', '1h', '24h', '7d'],
-                baseX: -270, gapX: 108,
+                baseX: -275, gapX: 110,
             },
-            // 3 difficulty chips in a single row. Phase 23: 130×40 → 180×52.
+            // 3 difficulty chips — shrunk to 168×44 (was 180×52); secondary weight.
             difficultyBtn: {
-                count: 3, w: 180, h: 52, y: -170,
+                count: 3, w: 168, h: 44, y: -90,
                 keys: ['easy', 'medium', 'hard'],
                 labels: ['Easy', 'Medium', 'Hard'],
                 names: ['PickerDifficultyEasy', 'PickerDifficultyMedium', 'PickerDifficultyHard'],
-                baseX: -200, gapX: 200,
+                baseX: -186, gapX: 186,
             },
         },
-        allowedOverlaps: [],
+        allowedOverlaps: [
+            ['PickerSummaryCard', 'PickerSummaryModeLabel'],
+            ['PickerSummaryCard', 'PickerSummaryModifiersLabel'],
+            ['PickerSummaryCard', 'PickerSummaryStakeLabel'],
+            ['PickerSummaryCard', 'CardEdgeAccent'],
+        ],
     },
 
     /* ───── RACE ────────────────────────────────────────────────────── */
