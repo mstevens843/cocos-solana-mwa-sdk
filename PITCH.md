@@ -55,15 +55,45 @@ We're not crypto-washing games. We're giving the largest mobile-game engine on e
 
 ---
 
-## Why Cocos, Why Now
+## Why now
 
-Three things lined up that have never lined up before:
+Three windows just aligned:
 
-1. **Cocos 4 went fully open source in 2026** [15]. The friction to integrate, fork, and ship against Cocos is the lowest it has ever been.
-2. **Solana Seeker is shipping into Asia**, where Cocos is the incumbent engine. Distribution and engine alignment only become possible once.
-3. **WeChat mini-games cleared $5.56B in 2024** — a **99% year-over-year jump** into the exact category Cocos dominates. The revenue curve is going up the right-hand side of the chart, and today there is no onchain primitive inside it.
+1. **Cocos Creator 4 went fully open source in 2026** [15]
+   → lowest friction ever to integrate, fork, and ship
 
-This window closes the moment another team ships. It hasn't, so we did.
+2. **Solana Seeker is entering Asia**
+   → the same region where Cocos dominates mobile development
+
+3. **WeChat mini-games reached $5.56B in 2024 (+99% YoY)**
+   → a massive ecosystem with zero on-chain primitives
+
+This alignment is rare.
+
+The moment one team ships the bridge, the window closes.
+
+Until now, no one had.
+
+## Why this
+
+Cocos powers 1.7M+ developers and a large share of mobile games in Asia.
+
+There was no native path to Solana.
+
+This SDK provides that path.
+
+## Why me
+
+Full-stack Solana developer with shipped mobile infrastructure (SolPulse):
+- Live on web, iOS, Android, and Solana dApp Store
+- Hardware-integrated MWA signing (Seed Vault)
+- Real production experience with wallets and execution flows
+
+Built solo. Hardware-verified on Seeker. Tested across all major MWA wallets.
+
+MIT licensed. No token. No capture.
+
+This is infrastructure, not a startup.
 
 ---
 
