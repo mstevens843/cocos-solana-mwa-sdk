@@ -14,7 +14,7 @@ import { MascotController, MascotState } from '../../token-duel/scripts/MascotCo
 import { Palette, themeColor, colorFromHex, TabTier, TabTierSpec } from '../../token-duel/scripts/Theme';
 import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, DashboardLayoutSpec } from '../../token-duel/scripts/LayoutSpec';
 import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
-import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
+import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -287,6 +287,18 @@ export class AppUI extends Component {
     private _opponentLastTokenDelta: number[] = [0, 0, 0];
     private _opponentHeroDeltaLabel: Label | null = null;
     private _opponentSubtitleGapLabel: Label | null = null;
+    // Round Advantage card (2026-04-29). Wraps _opponentHeroDeltaLabel which
+    // now renders the LEAD in pp (player − bot). Border + halo + subtext flip
+    // green/red based on lead state; one-shot halo flash on lead reversal.
+    private _raceAdvantageHaloNode: Node | null = null;
+    private _raceAdvantageHaloOpacity: UIOpacity | null = null;
+    private _raceAdvantageBorderGfx: Graphics | null = null;
+    private _raceAdvantageCaptionLabel: Label | null = null;
+    private _raceAdvantageSubtextLabel: Label | null = null;
+    /** Last rendered round-advantage gap (player − opponent, in pp). */
+    private _lastRoundGap: number = 0;
+    /** Border color cached so we only redraw the rounded-rect when it changes. */
+    private _lastAdvantageBorderColor: { r: number; g: number; b: number } | null = null;
     /** Decorative mascot opacity controller (dimmed during duel). */
     private _raceMascotOpacity: UIOpacity | null = null;
     /** Gameplay hint label below Forfeit ("Tap to drop - stack as high as you can"). */
@@ -737,6 +749,8 @@ export class AppUI extends Component {
     private _matchSetupSquadLabel: Label | null = null;
     private _matchSetupStakeLabel: Label | null = null;
     private _matchSetupHintLabel: Label | null = null;
+    // 2026-04-29 god-tier UX pass — squad header eyebrow ("N / 3 SELECTED").
+    private _squadHeaderEyebrow: Label | null = null;
     private _wagerDropdown: Node | null = null;
     private _wagerDropdownRows: Button[] = [];
     /** Phase A — JOIN mode: locked-wager chip; replaces WagerValueButton when _pickerJoinTarget set. */
@@ -859,11 +873,13 @@ export class AppUI extends Component {
     private _mipResumeButtons: Button[] = [];
     /** 2026-04-29 — live-control-center redesign refs. */
     private _mipLiveDots: Sprite[] = [];
+    private _mipLiveGlows: Sprite[] = [];
     private _mipLiveLabels: Label[] = [];
     private _mipProgressFills: Node[] = [];
     private _mipProgressFillUTs: UITransform[] = [];
     private _mipProgressFillSprites: Sprite[] = [];
     private _mipProgressTracks: Sprite[] = [];
+    private _mipResumeGlows: Sprite[] = [];
     private _mipResumePulsing: boolean[] = [];
     /** Eased duel-bar position per row (-1..+1). _renderMipRows sets target;
      *  _mipFrameTick lerps current toward target so the bar slides instead
@@ -936,8 +952,8 @@ export class AppUI extends Component {
     /** 2026-04-28 polish — empty-state subtitle phrase rotation. */
     private _findMatchEmptyPhraseTimer: ReturnType<typeof setInterval> | null = null;
     private _findMatchEmptyPhraseIdx: number = 0;
-    /** 2026-04-28 polish — pagination state for FindMatchPanel. */
-    private static readonly FIND_MATCH_PAGE_SIZE = 8;
+    /** 2026-04-29 god-tier rebuild — 4 tall cards per page (was 8 flat). */
+    private static readonly FIND_MATCH_PAGE_SIZE = 4;
     private _findMatchPageIdx: number = 0;
     private _findMatchPrevButton: Button | null = null;
     private _findMatchNextButton: Button | null = null;
@@ -1028,10 +1044,17 @@ export class AppUI extends Component {
     private _postMatchTitleLabel: Label | null = null;
     private _postMatchTrackLabel: Label | null = null;
     private _postMatchPayoutLabel: Label | null = null;
+    // 2026-04-29 win-screen redesign — eyebrow ("YOU EARNED") above the
+    // payout hero. AppUI sets the string + color per outcome.
+    private _postMatchEarnedLabel: Label | null = null;
     private _postMatchSubtitleLabel: Label | null = null;
     // 2026-04-28 spatial pass — per-token breakdown row split out of subtitle
     // so it can render dimmed (opacity 0.7) without dragging the headline down.
     private _postMatchBreakdownLabel: Label | null = null;
+    // 2026-04-29 win-screen redesign — chip pill wrapping the breakdown row.
+    private _postMatchBreakdownPill: Node | null = null;
+    // 2026-04-29 win-screen redesign — per-card icon glyph (▲ ▼ ★ ▰).
+    private _postMatchCardIcons: Map<string, Label> = new Map();
     private _postMatchBackButton: Button | null = null;
     private _postMatchAgainButton: Button | null = null;
     private _postMatchCardValues: Map<string, Label> = new Map();
@@ -1518,6 +1541,12 @@ export class AppUI extends Component {
             }
             this._opponentHeroDeltaLabel    = this._racePanel.getChildByName('OpponentDeltaHeroLabel')?.getComponent(Label) ?? null;
             this._opponentSubtitleGapLabel  = this._racePanel.getChildByName('OpponentSubtitleGapLabel')?.getComponent(Label) ?? null;
+            // Round Advantage card (2026-04-29) — halo + border + caption + subtext.
+            this._raceAdvantageHaloNode      = this._racePanel.getChildByName('RaceAdvantageHalo') ?? null;
+            this._raceAdvantageBorderGfx     = this._racePanel.getChildByName('RaceAdvantageBorder')?.getComponent(Graphics) ?? null;
+            this._raceAdvantageCaptionLabel  = this._racePanel.getChildByName('RaceAdvantageCaption')?.getComponent(Label) ?? null;
+            this._raceAdvantageSubtextLabel  = this._racePanel.getChildByName('RaceAdvantageSubtext')?.getComponent(Label) ?? null;
+            this._initAdvantageCardVisuals();
             // Duel bar.
             this._duelBarContainer = this._racePanel.getChildByName('RaceDuelBarContainer') ?? null;
             if (this._duelBarContainer) {
@@ -2022,11 +2051,20 @@ export class AppUI extends Component {
             // edge of PersonalRankCard so it reads as a sticky "YOU" footer
             // anchored to the bottom of the leaderboard panel.
             if (personalRankCardN) this._mountPersonalRankBorder(personalRankCardN);
-            // 2026-04-27 UX overhaul — gold halo behind TopPlayerCard with a
-            // looping alpha pulse. The halo Node is parented to the card so it
-            // tracks visibility automatically.
+            // 2026-04-29 v2 — gold halo removed. The TopPlayerCard already has a
+            // 4 px gold CardEdge accent + crown glyph from the scene spec, which is
+            // the "thin gold border + small crown" the redesign asks for. The old
+            // halo (cardW+36 × cardH+28, breathing alpha pulse) read as a slab
+            // banner. Mount the rank-#1 badge here so the gold square sits behind
+            // the rank label inside the slim card.
             const topPlayerCardN = this._leaderboardPanel.getChildByName('TopPlayerCard');
-            if (topPlayerCardN) this._mountTopPlayerHalo(topPlayerCardN);
+            if (topPlayerCardN) this._mountRankBadge(topPlayerCardN, 1, -250, 64, 40);
+            // 2026-04-29 v2 — runtime safety net: if the scene still has the
+            // legacy ModeTabsContainer sprite (older library/ cache, pre-rebuild
+            // device), hide it so it cannot leak past the runtime LBModePill's
+            // left edge. New scene gen drops the node entirely.
+            const legacyModeContainer = this._leaderboardPanel.getChildByName('ModeTabsContainer');
+            if (legacyModeContainer) legacyModeContainer.active = false;
             // Phase N4: build hub-tab strip (Portfolio | Leaderboard) at top.
             // 2026-04-27: setActive callback is stashed inside _buildHubTabs;
             // the returned button refs are unused here.
@@ -2536,8 +2574,12 @@ export class AppUI extends Component {
             this._postMatchTrackLabel    = this._postMatchPanel.getChildByName('PostMatchTrackLabel')?.getComponent(Label) ?? null;
             this._postMatchPayoutLabel   = this._postMatchPanel.getChildByName('PostMatchPayoutLabel')?.getComponent(Label) ?? null;
             this._postMatchSubtitleLabel = this._postMatchPanel.getChildByName('PostMatchSubtitleLabel')?.getComponent(Label) ?? null;
-            // 2026-04-28 spatial pass — dimmed token breakdown sibling.
-            this._postMatchBreakdownLabel = this._postMatchPanel.getChildByName('PostMatchBreakdownLabel')?.getComponent(Label) ?? null;
+            // 2026-04-29 win-screen redesign — eyebrow + breakdown chip pill.
+            this._postMatchEarnedLabel = this._postMatchPanel.getChildByName('PostMatchEarnedLabel')?.getComponent(Label) ?? null;
+            this._postMatchBreakdownPill = this._postMatchPanel.getChildByName('PostMatchBreakdownPill') ?? null;
+            // 2026-04-28 spatial pass — dimmed token breakdown sibling. As of
+            // 2026-04-29 the breakdown label is a CHILD of PostMatchBreakdownPill.
+            this._postMatchBreakdownLabel = this._postMatchBreakdownPill?.getChildByName('PostMatchBreakdownLabel')?.getComponent(Label) ?? null;
             this._postMatchBackButton    = this._postMatchPanel.getChildByName('PostMatchBackButton')?.getComponent(Button) ?? null;
             this._postMatchAgainButton   = this._postMatchPanel.getChildByName('PostMatchAgainButton')?.getComponent(Button) ?? null;
             // Block 6 — Same Squad shortcut
@@ -2588,9 +2630,16 @@ export class AppUI extends Component {
                     console.log(`${PMBTAG} TOUCH_END ${label} | bubblePhase`);
                 }, this);
             };
+            // 2026-04-29 win-screen redesign — back btn is hidden on the
+            // win screen. Wiring stays for safety. The two visible CTAs
+            // are the green PRIMARY ('sameSquad' node) → "PICK NEW SQUAD"
+            // and the dark SECONDARY ('again' node) → "HOME". Per user
+            // confirmation the same-squad instant-replay path is dropped:
+            // the green button now re-opens the ModePicker (squad intact),
+            // and the secondary button routes to HomePanel.
             wireBtn('back',      this._postMatchBackButton?.node,   () => this._onPostMatchBack());
-            wireBtn('again',     this._postMatchAgainButton?.node,  () => this._onPostMatchAgain());
-            wireBtn('sameSquad', sameSquadBtn?.node,                () => this._onPostMatchSameSquad());
+            wireBtn('again',     this._postMatchAgainButton?.node,  () => this._onPostMatchBack());
+            wireBtn('sameSquad', sameSquadBtn?.node,                () => this._onPostMatchAgain());
             // Part 11 A: share-to-X button.
             const shareBtn = this._postMatchPanel.getChildByName('PostMatchShareButton')?.getComponent(Button);
             shareBtn?.node.on(Button.EventType.CLICK, () => this._onPostMatchShare(), this);
@@ -2604,6 +2653,9 @@ export class AppUI extends Component {
                 // Drifting-gadget: card-edge accents are now runtime-tinted by outcome.
                 const edge = cN?.getChildByName(`PMCardEdge_${key}`)?.getComponent(Sprite) ?? null;
                 if (edge) this._postMatchCardEdges.set(key, edge);
+                // 2026-04-29 win-screen redesign — leftmost icon glyph.
+                const icon = cN?.getChildByName(`PMCardIcon_${key}`)?.getComponent(Label) ?? null;
+                if (icon) this._postMatchCardIcons.set(key, icon);
             }
             // Drifting-gadget: bg-tint + mascot glow + XP bar refs.
             const bgN = this._postMatchPanel.getChildByName('OutcomeBgTint');
@@ -2767,12 +2819,14 @@ export class AppUI extends Component {
             if (fmTabUnderline) fmTabUnderline.active = false;
             if (fmTabGlowOpen)  fmTabGlowOpen.active = false;
             if (fmTabGlowLive)  fmTabGlowLive.active = false;
-            // Build the runtime pill at the same Y (=602) the scene tabs used.
+            // 2026-04-29 god-tier rebuild — tab pill widens to 560 and shifts
+            // up to FINDMATCH_LAYOUT.TABS_Y (590) so it sits on its own row
+            // above the FilterCard, no longer nested inside it.
             const fmTabPill = this._buildSegmentedPill(this._findMatchPanel, {
                 name: 'FindMatchTabsPill',
                 tier: 'mode',
-                width: 484,
-                y: 602,
+                width: 560,
+                y: 590,
                 segments: [
                     { key: 'open', label: 'Open Lobbies' },
                     { key: 'live', label: 'Live Now' },
@@ -2800,7 +2854,7 @@ export class AppUI extends Component {
                 const pill = this._buildSegmentedPill(fmModeMount, {
                     name: 'FindMatchModeFilterPill',
                     tier: 'mode',
-                    width: 480, height: 44, y: 0,
+                    width: 440, height: 44, y: 0,
                     segments: [
                         { key: 'all',     label: 'All' },
                         { key: 'oneVone', label: '1v1' },
@@ -2819,7 +2873,7 @@ export class AppUI extends Component {
                 const pill = this._buildSegmentedPill(fmWindowMount, {
                     name: 'FindMatchWindowFilterPill',
                     tier: 'mode',
-                    width: 480, height: 44, y: 0,
+                    width: 440, height: 44, y: 0,
                     segments: [
                         { key: 'all', label: 'All' },
                         { key: '30s', label: '30s' },
@@ -2838,7 +2892,7 @@ export class AppUI extends Component {
                 const pill = this._buildSegmentedPill(fmWagerMount, {
                     name: 'FindMatchWagerFilterPill',
                     tier: 'mode',
-                    width: 480, height: 44, y: 0,
+                    width: 440, height: 44, y: 0,
                     segments: [
                         { key: 'all',   label: 'All' },
                         { key: 'low',   label: 'Low' },
@@ -2867,20 +2921,18 @@ export class AppUI extends Component {
                 this._matchCardTrackChips.push(row.getChildByName(`MatchCardTrackChip_${i}`) as Node);
                 // 2026-04-28 final pass — per-card border glow (alpha-tweened on press).
                 this._matchCardGlows.push(row.getChildByName(`MatchCardGlow_${i}`) as Node);
-                // 2026-04-28 polish — sub-label overflow fix. Default mkLabel anchor
-                // (0.5, 0.5) at x=-280 w=540 spans -550..-10, leaking past the card's
-                // left edge (-330..+330). Re-anchor to (0, 0.5) at x=-318, w=460 so
-                // the bbox sits cleanly inside the card body and clears the join
-                // button's left edge (x=200). _overflow=1 (CLAMP) suppresses the
-                // overflow without wrap.
+                // 2026-04-29 god-tier rebuild — sub label is the metadata line
+                // ("5m race . 1/2 players") on row 2 of the new 4-row card.
+                // Anchor (0, 0.5) at x=-300 w=480 keeps it left-aligned and
+                // clear of the bottom-right action button at x=240.
                 const subNode = row.getChildByName(`MatchCardSubLabel_${i}`);
                 if (subNode) {
                     const subUt = subNode.getComponent(UITransform);
                     if (subUt) {
                         subUt.setAnchorPoint(0, 0.5);
-                        subUt.setContentSize(460, 18);
+                        subUt.setContentSize(480, 20);
                     }
-                    subNode.setPosition(-318, -22, 0);
+                    subNode.setPosition(-300, 8, 0);
                     const subLbl = subNode.getComponent(Label);
                     if (subLbl) {
                         (subLbl as any)._overflow = 1;
@@ -2889,15 +2941,12 @@ export class AppUI extends Component {
                 }
                 const joinBtn = row.getChildByName(`MatchCardJoinButton_${i}`)?.getComponent(Button);
                 joinBtn?.node.on(Button.EventType.CLICK, () => this._onMatchCardJoinClick(i), this);
-                // Resume / Join press feedback — quick scale pop + color flash.
-                // 2026-04-28 polish — Phase C: layered idle breathe so it reads as
-                // the brightest live element on the card.
+                // 2026-04-29 god-tier rebuild — replaced the aggressive 1.04
+                // scale bounce with a subtle alpha flicker so the action
+                // button reads as "active" without dominating the card.
                 if (joinBtn) {
                     try { addPressPop(joinBtn); } catch (_) { /* ignore */ }
-                    try { addIdlePulse(joinBtn.node, 1.04, 1.4); } catch (_) { /* ignore */ }
-                    // 2026-04-29 FindMatch UX rebuild: Resume CTA geometry now
-                    // baked at codegen (96x56 at x=246), so the prior runtime
-                    // resize/reposition workaround is no longer needed.
+                    try { addSignalFlicker(joinBtn.node, 200, 2.4); } catch (_) { /* ignore */ }
                 }
                 // Card touch-glow — fade glow alpha in on touch-start, return to
                 // baseline on touch-end/cancel. 2026-04-28 polish — Phase C: baseline
@@ -2949,18 +2998,16 @@ export class AppUI extends Component {
             this._findMatchFilterCard       = this._findMatchPanel.getChildByName('FilterCard') ?? null;
             this._findMatchTabUnderline     = this._findMatchPanel.getChildByName('TabActiveUnderline') ?? null;
             this._findMatchLiveCountPulseDot = this._findMatchPanel.getChildByName('FindMatchLiveCountPulseDot') ?? null;
-            // Pin the dot LEFT of the count label with a fixed 6–8px gap. Re-anchor
-            // the label LEFT and align text LEFT so the text-start x is deterministic
-            // regardless of count string length, then pin the dot just left of it.
-            const _countLbl = this._findMatchCountLabel;
-            if (_countLbl) {
-                const _lblUt = _countLbl.node.getComponent(UITransform);
-                if (_lblUt) _lblUt.setAnchorPoint(0, 0.5);
-                _countLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
-                _countLbl.node.setPosition(-220, 665, 0);
-            }
-            if (this._findMatchLiveCountPulseDot) {
-                this._findMatchLiveCountPulseDot.setPosition(-232, 665, 0);
+            // 2026-04-29 god-tier rebuild — count label position + alignment now
+            // owned by the scene spec (left-anchored, x=-80, y=655). Pulse dot
+            // sits at x=-300, same y. The previous runtime override (-220/-232)
+            // moved them out of grid alignment with the title/back/back-link.
+            // Reduce the level chip to 70% opacity per status-bar visual weight.
+            const _lvxpChip = this._findMatchLvXpChip;
+            if (_lvxpChip) {
+                let lvOp = _lvxpChip.getComponent(UIOpacity);
+                if (!lvOp) lvOp = _lvxpChip.addComponent(UIOpacity);
+                lvOp.opacity = 178;
             }
             // 2026-04-28 final pass — tail-hint labels (shown when 1-2 matches present).
             this._findMatchTailHintTitle    = this._findMatchPanel.getChildByName('FindMatchTailHintTitle')?.getComponent(Label) ?? null;
@@ -3058,10 +3105,16 @@ export class AppUI extends Component {
                 }
 
                 // LIVE indicator refs (top-right cluster).
+                const liveGlow = rowN.getChildByName(`MIPLiveGlow_${i}`)?.getComponent(Sprite);
+                if (liveGlow) this._mipLiveGlows.push(liveGlow);
                 const liveDot = rowN.getChildByName(`MIPLiveDot_${i}`)?.getComponent(Sprite);
                 if (liveDot) this._mipLiveDots.push(liveDot);
                 const liveLbl = rowN.getChildByName(`MIPLiveLabel_${i}`)?.getComponent(Label);
                 if (liveLbl) this._mipLiveLabels.push(liveLbl);
+
+                // Resume glow halo — replaces the prior idle scale pulse.
+                const resumeGlow = rowN.getChildByName(`MIPResumeGlow_${i}`)?.getComponent(Sprite);
+                if (resumeGlow) this._mipResumeGlows.push(resumeGlow);
 
                 const vsL = rowN.getChildByName(`MIPVsLabel_${i}`)?.getComponent(Label);
                 if (vsL) this._mipVsLabels.push(vsL);
@@ -3279,6 +3332,12 @@ export class AppUI extends Component {
         const matchSetupCardN = this._tokenDuelPanel.getChildByName('MatchSetupCard');
         this._matchSetupReadyGlow = matchSetupCardN?.getChildByName('MatchSetupReadyGlow')
             ?.getComponent(Sprite) ?? null;
+
+        // 2026-04-29 god-tier UX pass — squad header eyebrow becomes the live
+        // "N / 3 SELECTED" subtitle under "YOUR SQUAD". Bound here, updated
+        // every time _renderSquad fires.
+        this._squadHeaderEyebrow = this._tokenDuelPanel.getChildByName('SquadHeaderEyebrow')
+            ?.getComponent(Label) ?? null;
 
         // Stake chips — 3 preset amounts. Default selection is 0.01 SOL (middle).
         const chipDefs: Array<{ name: string; kind: '001' | '010' | '100'; sol: number }> = [
@@ -4007,41 +4066,49 @@ export class AppUI extends Component {
             if (!row) continue;
             if (!m) {
                 row.active = false;
-                // Stop the resume idle pulse on rows that just went inactive
-                // so they don't tween in the background.
+                // 2026-04-29 v2 — defensive: kill any leftover scale tween
+                // from prior builds that called addIdlePulse on the button.
                 const resumeBtn = this._mipResumeButtons[i];
-                if (resumeBtn && this._mipResumePulsing[i]) {
+                if (resumeBtn) {
                     try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
-                    this._mipResumePulsing[i] = false;
+                    resumeBtn.node.setScale(1, 1, 1);
                 }
+                this._mipResumePulsing[i] = false;
                 continue;
             }
             row.active = true;
 
-            // VS label.
+            // 2026-04-29 v2 — title row: "VS Bot • PAPER" / "VS @user • 0.05 SOL".
+            // Mixed case (no toUpperCase); stake folded into title.
             const oppPubkey = m.players.find((p) => p !== me) ?? '';
             const isBot = !oppPubkey || oppPubkey.endsWith('BOT') || /bot/i.test(oppPubkey);
+            const isPaper = m.wagerLamports === 0n;
+            const stakeText = isPaper
+                ? 'PAPER'
+                : (() => {
+                    const sol = Number(m.wagerLamports) / 1e9;
+                    return `${sol < 0.01 ? sol.toFixed(4) : sol.toFixed(2)} SOL`;
+                })();
             const vsLbl = this._mipVsLabels[i];
             if (vsLbl) {
                 if (isBot) {
-                    vsLbl.string = 'VS BOT';
+                    vsLbl.string = `VS Bot • ${stakeText}`;
                 } else {
                     const display = this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`;
-                    vsLbl.string = `VS ${display.toUpperCase()}`;
+                    vsLbl.string = `VS ${display} • ${stakeText}`;
                 }
             }
 
-            // Time label + remaining/total fraction (drives progress bar +
-            // _mipFrameTick urgent-pulse).
+            // Remaining/total fraction (drives progress bar + _mipFrameTick urgent-pulse).
             const remainingMs = this._mipRemainingMs(m);
             const totalMs = this._mipWindowDurationMs(m.timeWindow);
-            const timeLbl = this._mipTimeLabels[i];
-            if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
             const remainingFrac = totalMs > 0 ? Math.max(0, Math.min(1, remainingMs / totalMs)) : 0;
-            // _mipRowFraction stores REMAINING fraction (legacy convention —
-            // _mipFrameTick uses `frac < 0.2` to detect <20% remaining).
             this._mipRowFraction[i] = remainingFrac;
             const elapsedFrac = 1 - remainingFrac;
+
+            // Time slot is folded into statusLabel; drain the legacy label.
+            const timeLbl = this._mipTimeLabels[i];
+            if (timeLbl) timeLbl.string = '';
 
             // Leader state.
             const myIdx = m.players.indexOf(me);
@@ -4053,38 +4120,32 @@ export class AppUI extends Component {
                 isPregame ? 'pregame' : isWinning ? 'winning' : 'losing';
             this._mipRowLeaderState[i] = state;
 
-            // Status label (was win-line — now carries pregame copy too).
-            const winLbl = this._mipStatusLabels[i];
-            if (winLbl) {
-                if (isPregame) {
-                    winLbl.string = 'Round just started';
-                    winLbl.color = new Color(168, 174, 201, 255);
-                } else if (isWinning) {
-                    winLbl.string = `YOU +${decodeScore(myHeight).toFixed(2)}%`;
-                    winLbl.color = new Color(48, 198, 155, 255);
-                } else {
-                    winLbl.string = `OPP +${decodeScore(leaderHeight).toFixed(2)}%`;
-                    winLbl.color = new Color(236, 88, 122, 255);
-                }
+            // 2026-04-29 v2 — merged phase + time line; always shown.
+            // Phase replaces the useless "Round just started" filler.
+            const phase = this._mipPhaseLabel(elapsedFrac);
+            const statusLbl = this._mipStatusLabels[i];
+            if (statusLbl) {
+                statusLbl.string = `${phase} • ${this._formatRemainingTime(remainingMs)}`;
+                statusLbl.color = new Color(200, 206, 226, 255);
             }
 
-            // Stake chip.
-            const stakeLbl = this._mipStakeChipLabels[i];
-            if (stakeLbl) {
-                const isPaper = m.wagerLamports === 0n;
-                if (isPaper) {
-                    stakeLbl.string = 'PAPER';
-                    stakeLbl.color = new Color(48, 198, 155, 255);
+            // 2026-04-29 v2 — leader chip (repurposed stakeChip slot).
+            // Hidden in pregame; "YOU/OPP +X.XX%" tinted by leader state.
+            const leaderChip = this._mipStakeChipLabels[i];
+            if (leaderChip) {
+                if (isPregame) {
+                    leaderChip.string = '';
+                } else if (isWinning) {
+                    leaderChip.string = `YOU +${decodeScore(myHeight).toFixed(2)}%`;
+                    leaderChip.color = new Color(48, 198, 155, 255);
                 } else {
-                    const sol = Number(m.wagerLamports) / 1e9;
-                    stakeLbl.string = `${sol < 0.01 ? sol.toFixed(4) : sol.toFixed(2)} SOL`;
-                    stakeLbl.color = new Color(255, 210, 74, 255);
+                    leaderChip.string = `OPP +${decodeScore(leaderHeight).toFixed(2)}%`;
+                    leaderChip.color = new Color(236, 88, 122, 255);
                 }
             }
 
             // Edge stripe + glow-halo RGB tint per leader state. Glow alpha
-            // is animated separately in _mipFrameTick (0 alpha here is a
-            // sentinel; tick raises it to ~36-110 based on state + breathe).
+            // is animated separately in _mipFrameTick.
             const stateTint = isPregame ? new Color(100, 110, 140, 255)
                             : isWinning ? new Color(48, 198, 155, 255)
                                         : new Color(236, 88, 122, 255);
@@ -4095,9 +4156,14 @@ export class AppUI extends Component {
                 glow.color = new Color(stateTint.r, stateTint.g, stateTint.b, glow.color.a);
             }
 
-            // LIVE indicator dot + label — tinted by leader state.
+            // LIVE cluster — dot + label tinted by state; glow halo gets
+            // matching RGB and a static alpha (140 active / 60 pregame).
             const liveDot = this._mipLiveDots[i];
             if (liveDot) liveDot.color = stateTint;
+            const liveGlowSpr = this._mipLiveGlows[i];
+            if (liveGlowSpr) {
+                liveGlowSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, isPregame ? 60 : 140);
+            }
             const liveLbl = this._mipLiveLabels[i];
             if (liveLbl) {
                 liveLbl.color = isPregame
@@ -4105,24 +4171,39 @@ export class AppUI extends Component {
                     : new Color(stateTint.r, stateTint.g, stateTint.b, 255);
             }
 
-            // Progress bar — fills from left as elapsed time grows. Tints with
-            // leader state. Width = PROGRESS_W * elapsed/total.
+            // Progress bar — fills from left as elapsed time grows. h=6 (was 4).
             const fillUT = this._mipProgressFillUTs[i];
-            if (fillUT) fillUT.setContentSize(PROGRESS_W * elapsedFrac, 4);
+            if (fillUT) fillUT.setContentSize(PROGRESS_W * elapsedFrac, 6);
             const fillSpr = this._mipProgressFillSprites[i];
             if (fillSpr) {
                 fillSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, 230);
             }
 
-            // Resume CTA — start a low-intensity idle pulse the first time the
-            // row becomes active. _mipResumePulsing tracks the state so we
-            // don't restart the tween every render.
+            // 2026-04-29 v2 — Resume CTA stays static. The breathing cue is
+            // the glow halo behind it (alpha animated in _mipFrameTick). Kill
+            // any leftover scale tween from prior builds.
             const resumeBtn = this._mipResumeButtons[i];
-            if (resumeBtn && !this._mipResumePulsing[i]) {
-                try { addIdlePulse(resumeBtn.node, 1.6, 1.02); } catch (_) { /* tween not loaded */ }
-                this._mipResumePulsing[i] = true;
+            if (resumeBtn && this._mipResumePulsing[i]) {
+                try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
+                resumeBtn.node.setScale(1, 1, 1);
+                this._mipResumePulsing[i] = false;
+            }
+            // Tint the resume glow RGB to match leader state (winning teal,
+            // losing rose, pregame muted). Alpha is animated in _mipFrameTick.
+            const resumeGlow = this._mipResumeGlows[i];
+            if (resumeGlow) {
+                resumeGlow.color = new Color(stateTint.r, stateTint.g, stateTint.b, resumeGlow.color.a);
             }
         }
+    }
+
+    /** 2026-04-29 v2 — phase label from elapsed fraction.
+     *  Drives the merged "<phase> • <time-left>" line on each MIP card. */
+    private _mipPhaseLabel(elapsedFrac: number): string {
+        if (elapsedFrac >= 0.90) return 'Ending soon';
+        if (elapsedFrac >= 0.75) return 'Late match';
+        if (elapsedFrac >= 0.25) return 'Mid match';
+        return 'Early match';
     }
 
     /** Resize + reposition row 0 when the active count is 1. Restores the
@@ -4243,10 +4324,14 @@ export class AppUI extends Component {
     }
 
     /** Per-frame loop: ease duel-bar pos toward target, redraw fill + glow,
-     *  pulse card glow alpha (when remaining<20%) + ring stroke width. */
+     *  pulse card glow alpha (when remaining<20%) + ring stroke width.
+     *  2026-04-29 v2: also drives resume-button glow halo (slow 2.5s breathe). */
     private _mipFrameTick = (_dt: number): void => {
         const now = performance.now();
         const breathe = 0.5 + 0.5 * Math.sin((now / 1000) * 1.5 * Math.PI * 2);
+        // 2026-04-29 v2 — slower 2.5s cycle for the resume glow so it reads
+        // as "confident" rather than "needy".
+        const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
         for (let i = 0; i < this._mipMatches.length; i++) {
             const row = this._mipRowNodes[i];
             if (!row || !row.active) continue;
@@ -4271,6 +4356,16 @@ export class AppUI extends Component {
                     a = state === 'winning' || state === 'losing' ? 56 : 36;
                 }
                 glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, a);
+            }
+            // Resume glow halo — alpha breathes 30→90 on a 2.5s cycle for
+            // active rows; muted in pregame so the CTA doesn't shout before
+            // the round starts mattering.
+            const rg = this._mipResumeGlows[i];
+            if (rg) {
+                const a = state === 'pregame'
+                    ? Math.round(20 + 25 * breatheSlow)
+                    : Math.round(30 + 60 * breatheSlow);
+                rg.color = new Color(rg.color.r, rg.color.g, rg.color.b, a);
             }
             // Ring stroke pulse when remaining<20% — driven by lineWidth.
             if (frac < 0.2 && frac > 0) {
@@ -4719,7 +4814,7 @@ export class AppUI extends Component {
             { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 26, offsetX: -70 },
 
             // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
-            { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 28, offsetX: -150 },
+            { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 56, offsetX: -85 },
             { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
             { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 56, offsetX: -85 },
             { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
@@ -4953,10 +5048,43 @@ export class AppUI extends Component {
         const mascot = lp.getChildByName('LandingMascotContainer');
         if (mascot) addFloat(mascot, 10, 3.2);
 
+        // 2026-04-29 landing UX — convert hard-edged white-square halos into
+        // soft Graphics-drawn radials. Cocos Sprite has no soft-edge primitive,
+        // so the scene-built TitleGlow/MascotGlow/MascotShadow render as
+        // literal rectangles and become visible artifacts on Landing (which
+        // exposes its background more than any other screen). Layer-compatible
+        // with the addGlowPulse calls below — installSoftGlow preserves
+        // UIOpacity so the breathing animation continues to work.
+        const titleGlow  = lp.getChildByName('TitleGlow');
         const mascotGlow = lp.getChildByName('MascotGlow');
+        const mascotShdw = lp.getChildByName('MascotShadow');
+        if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
+        if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 130 });
+        if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
+
+        // Soften the 6 depth-gradient plates ~50% so their hard rectangular
+        // edges stop reading as horizontal bands. They still imply depth at
+        // the very top / very bottom but no longer compete with the hero.
+        const GRAD_DIM: ReadonlyArray<readonly [string, number]> = [
+            ['BgGradientTopOuter', 0.45], ['BgGradientTopMid', 0.45], ['BgGradientTopInner', 0.55],
+            ['BgGradientBotOuter', 0.45], ['BgGradientBotMid', 0.45], ['BgGradientBotInner', 0.55],
+        ];
+        for (const [name, factor] of GRAD_DIM) {
+            const n = lp.getChildByName(name);
+            const sp = n?.getComponent(Sprite);
+            if (sp) {
+                const c = sp.color.clone();
+                c.a = Math.round(c.a * factor);
+                sp.color = c;
+            }
+        }
+
+        // Edge vignette overlay — sits between gradient stack and content.
+        // Subtle corner darken focuses the eye on the center hero.
+        installLandingVignette(lp);
+
         if (mascotGlow) addGlowPulse(mascotGlow, 110, 2.6);
 
-        const titleGlow = lp.getChildByName('TitleGlow');
         if (titleGlow) addGlowPulse(titleGlow, 120, 2.8);
 
         const connectGlow = lp.getChildByName('BtnGlow_ConnectButton');
@@ -6535,12 +6663,25 @@ export class AppUI extends Component {
                 this._opponentIdentityLevel.string = '';
                 this._opponentIdentityLevel.node.active = false;
             }
-            // Opponent hero label seed.
+            // Round Advantage card seed (2026-04-29) — opponent hero label
+            // now renders the LEAD in pp inside the card.
             if (this._opponentHeroDeltaLabel) {
-                this._opponentHeroDeltaLabel.string = '+0.00%';
+                this._opponentHeroDeltaLabel.string = '+0.00 pp';
                 this._opponentHeroDeltaLabel.color = new Color(168, 174, 201);
                 Tween.stopAllByTarget(this._opponentHeroDeltaLabel.node);
                 this._opponentHeroDeltaLabel.node.setScale(new Vec3(1, 1, 1));
+            }
+            this._lastRoundGap = 0;
+            this._lastRenderedOpponentDeltaPct = 0;
+            if (this._raceAdvantageSubtextLabel) {
+                this._raceAdvantageSubtextLabel.string = 'Waiting for prices…';
+                this._raceAdvantageSubtextLabel.color = new Color(168, 174, 201);
+            }
+            this._setAdvantageBorderColor(168, 174, 201);
+            this._setAdvantageHaloColor(168, 174, 201);
+            if (this._raceAdvantageHaloOpacity) {
+                Tween.stopAllByTarget(this._raceAdvantageHaloOpacity);
+                this._raceAdvantageHaloOpacity.opacity = 130;
             }
             if (this._opponentSubtitleGapLabel) {
                 this._opponentSubtitleGapLabel.string = '—';
@@ -7063,8 +7204,9 @@ export class AppUI extends Component {
         // token cards, gap subtitle, duel bar).
         if (this._isDuelLayout && oppDeltaForDuel != null) {
             const oppDelta = oppDeltaForDuel;
-            const oppHeroColor = snap.resolvedCount === 0 ? neutral : (oppDelta >= 0 ? green : red);
-            this._tweenOpponentDelta(oppDelta, oppHeroColor);
+            // Round Advantage card (2026-04-29) — opponent hero label now
+            // renders the LEAD (player − bot) in pp with a glowing surround.
+            this._updateAdvantageCard(deltaPct, oppDelta, snap.resolvedCount === 0);
 
             // Opponent token cards — same live-feedback layers as player.
             if (oppPerTokenForDuel && oppSymbolsForDuel) {
@@ -7682,7 +7824,123 @@ export class AppUI extends Component {
         lbl.node.setPosition(new Vec3(x, 24, 0));
     }
 
-    /** Phase 22 — mirror of _tweenHeroDelta for opponent hero %. */
+    /** Round Advantage card (2026-04-29) — drives gap label, border, halo, caption, subtext. Replaces _tweenOpponentDelta. */
+    private _updateAdvantageCard(playerDeltaPct: number, opponentDeltaPct: number, waitingForPrices: boolean): void {
+        const lbl = this._opponentHeroDeltaLabel;
+        if (!lbl) return;
+        const gap = playerDeltaPct - opponentDeltaPct;
+        const GREEN_R = 51,  GREEN_G = 204, GREEN_B = 85;
+        const RED_R   = 255, RED_G   = 85,  RED_B   = 85;
+        const NEUTRAL_R = 168, NEUTRAL_G = 174, NEUTRAL_B = 201;
+        const isAhead  = !waitingForPrices && gap >  0.04;
+        const isBehind = !waitingForPrices && gap < -0.04;
+        const r = waitingForPrices ? NEUTRAL_R : (isAhead ? GREEN_R : isBehind ? RED_R : NEUTRAL_R);
+        const g = waitingForPrices ? NEUTRAL_G : (isAhead ? GREEN_G : isBehind ? RED_G : NEUTRAL_G);
+        const b = waitingForPrices ? NEUTRAL_B : (isAhead ? GREEN_B : isBehind ? RED_B : NEUTRAL_B);
+        const cardColor = new Color(r, g, b);
+        const prev = this._lastRenderedOpponentDeltaPct;
+        const diff = Math.abs(gap - prev);
+        const sign = (v: number) => (v >= 0 ? '+' : '');
+        if (diff <= 0.3) {
+            lbl.string = `${sign(gap)}${gap.toFixed(2)} pp`;
+            lbl.color = cardColor;
+            this._lastRenderedOpponentDeltaPct = gap;
+        } else {
+            const carrier = { v: prev };
+            Tween.stopAllByTarget(carrier);
+            tween(carrier)
+                .to(0.4, { v: gap }, {
+                    easing: 'quartOut',
+                    onUpdate: () => {
+                        lbl.string = `${sign(carrier.v)}${carrier.v.toFixed(2)} pp`;
+                        lbl.color = cardColor;
+                    },
+                })
+                .call(() => { this._lastRenderedOpponentDeltaPct = gap; })
+                .start();
+        }
+        this._setAdvantageBorderColor(r, g, b);
+        this._setAdvantageHaloColor(r, g, b);
+        if (this._raceAdvantageSubtextLabel) {
+            this._raceAdvantageSubtextLabel.string = waitingForPrices
+                ? 'Waiting for prices…'
+                : isAhead  ? "You're ahead this round!"
+                : isBehind ? "You're behind this round!"
+                :            'Round is tied';
+            this._raceAdvantageSubtextLabel.color = cardColor;
+        }
+        if (!waitingForPrices) {
+            const flipped =
+                (this._lastRoundGap < -0.04 && gap >  0.04) ||
+                (this._lastRoundGap >  0.04 && gap < -0.04);
+            if (flipped) this._flashAdvantageHalo();
+        }
+        this._lastRoundGap = gap;
+        if (this._duelBarPos < -0.04 && gap < -0.3) this._pulseOpponentDeltaLosing();
+    }
+
+    /** Build static card visuals once (caption text+color, halo soft glow, border seed). */
+    private _initAdvantageCardVisuals(): void {
+        if (this._raceAdvantageCaptionLabel) {
+            this._raceAdvantageCaptionLabel.string = 'ROUND ADVANTAGE';
+            this._raceAdvantageCaptionLabel.color = new Color(168, 174, 201);
+        }
+        if (this._raceAdvantageHaloNode) {
+            this._raceAdvantageHaloOpacity = this._raceAdvantageHaloNode.getComponent(UIOpacity)
+                ?? this._raceAdvantageHaloNode.addComponent(UIOpacity);
+            this._raceAdvantageHaloOpacity.opacity = 130;
+            installSoftGlow(this._raceAdvantageHaloNode, {
+                color: new Color(168, 174, 201),
+                peakAlpha: 110,
+                rings: 14,
+            });
+        }
+        this._setAdvantageBorderColor(168, 174, 201);
+    }
+
+    /** Restroke the rounded-rect border — only redraws when color changes. */
+    private _setAdvantageBorderColor(r: number, g: number, b: number): void {
+        const gfx = this._raceAdvantageBorderGfx;
+        if (!gfx) return;
+        const prev = this._lastAdvantageBorderColor;
+        if (prev && prev.r === r && prev.g === g && prev.b === b) return;
+        this._lastAdvantageBorderColor = { r, g, b };
+        const ut = gfx.node.getComponent(UITransform);
+        const w = ut?.contentSize.width  ?? 320;
+        const h = ut?.contentSize.height ?? 180;
+        gfx.clear();
+        gfx.lineWidth = 2;
+        gfx.strokeColor = new Color(r, g, b, 220);
+        gfx.fillColor   = new Color(r, g, b, 22);
+        gfx.roundRect(-w / 2, -h / 2, w, h, 24);
+        gfx.fill();
+        gfx.stroke();
+    }
+
+    /** Re-color the soft halo — uses LandingFX.installSoftGlow's force flag. */
+    private _setAdvantageHaloColor(r: number, g: number, b: number): void {
+        const node = this._raceAdvantageHaloNode;
+        if (!node) return;
+        installSoftGlow(node, {
+            color: new Color(r, g, b),
+            peakAlpha: 110,
+            rings: 14,
+            force: true,
+        });
+    }
+
+    /** One-shot halo brighten on lead reversal — surge then settle (~600ms). */
+    private _flashAdvantageHalo(): void {
+        const op = this._raceAdvantageHaloOpacity;
+        if (!op) return;
+        Tween.stopAllByTarget(op);
+        tween(op)
+            .to(0.20, { opacity: 230 }, { easing: 'quartOut' })
+            .to(0.40, { opacity: 130 }, { easing: 'quartIn'  })
+            .start();
+    }
+
+    /** Phase 22 — mirror of _tweenHeroDelta for opponent hero % (legacy, retained for any latent callers). */
     private _tweenOpponentDelta(newDelta: number, color: Color): void {
         const lbl = this._opponentHeroDeltaLabel;
         if (!lbl) return;
@@ -9100,8 +9358,9 @@ export class AppUI extends Component {
 
             // Session 13 A5: selection edge — emerald strip on left when this
             // mint matches _selectedRowMint.
+            const isSelected = row.address === this._selectedRowMint;
             const selEdge = this._feedRowSelectedEdges[i];
-            if (selEdge) selEdge.active = row.address === this._selectedRowMint;
+            if (selEdge) selEdge.active = isSelected;
 
             // 2026-04-26 — checkbox is ALWAYS visible (no longer gated on
             // pick/watchlist mode). Its checked state mirrors squad membership
@@ -9226,25 +9485,31 @@ export class AppUI extends Component {
             if (liveDot) liveDot.active = isNewTab;
 
             // Session 13: flat list + selection highlight.
-            // 2026-04-27 UI overhaul — selected row reads violet (brand glow)
-            // instead of emerald, so selection energy aligns with the active
-            // squad-card glow + Start Match gradient endpoint.
+            // 2026-04-29 god-tier UX pass — selected card reads emerald
+            // (border + soft halo) per "draft room" brief: emerald = active
+            // pick on the discovery surface; violet stays reserved for the
+            // squad-side commitment ring + Start Match CTA gradient.
             const spr = this._feedRowSprites[i];
             if (spr) {
-                if (row.address === this._selectedRowMint) {
-                    spr.color = new Color(40, 28, 64, 255); // violet-tinted selected
+                if (isSelected) {
+                    spr.color = new Color(20, 40, 56, 255); // teal-tinted selected
                 } else {
                     const base = i % 2 === 0 ? [14, 18, 28] : [18, 22, 32];
                     spr.color = new Color(base[0], base[1], base[2], 255);
                 }
             }
-            // 2026-04-27 UI overhaul — selected-edge stripe also flips to violet.
             const selEdgeNode = this._feedRowSelectedEdges[i];
             const selEdgeSpr = selEdgeNode?.getComponent(Sprite) ?? null;
             if (selEdgeSpr) {
-                selEdgeSpr.color = row.address === this._selectedRowMint
-                    ? new Color(153, 69, 255, 255)
-                    : new Color(20, 241, 149, 255);
+                selEdgeSpr.color = isSelected
+                    ? new Color(20, 241, 149, 255)
+                    : new Color(20, 241, 149, 180);
+            }
+            // 2026-04-29 god-tier UX pass — slight elevation pop on the
+            // selected card (snap, no tween — selection rarely flips).
+            const targetScale = isSelected ? 1.02 : 1.0;
+            if (Math.abs(node.scale.x - targetScale) > 0.001) {
+                node.setScale(targetScale, targetScale, 1);
             }
         }
     }
@@ -9545,6 +9810,11 @@ export class AppUI extends Component {
     private _renderSquad(): void {
         const slots = this._squad.slots;
         const RANK_GLYPHS = ['#1', '#2', '#3'];
+        const RANK_COLORS = [
+            new Color(255, 210, 74, 255),
+            new Color(216, 221, 240, 255),
+            new Color(224, 138, 74, 255),
+        ];
         for (let i = 0; i < this._squadSlotSymbolLabels.length; i++) {
             const symLbl = this._squadSlotSymbolLabels[i];
             const dltLbl = this._squadSlotDeltaLabels[i];
@@ -9586,8 +9856,11 @@ export class AppUI extends Component {
                 }
                 if (silhouette) {
                     silhouette.color = targeted
-                        ? new Color(153, 69, 255, 130)   // violet hint when targeted (stronger "ready" read)
-                        : new Color(93, 100, 133, 64);   // faint slate idle
+                        ? new Color(153, 69, 255, 220)   // violet bright when targeted
+                        : new Color(153, 69, 255, 180);  // violet at rest — clearer "tap me" affordance
+                    // 2026-04-30 — bigger "+" so the empty slot reads as a CTA,
+                    // not a placeholder. 28→44pt matches the Pick + label hero.
+                    silhouette.fontSize = 44;
                     silhouette.node.active = true;
                 }
                 if (perfBar) {
@@ -9595,14 +9868,21 @@ export class AppUI extends Component {
                     perfBar.color = new Color(93, 100, 133, 90);
                 }
                 if (edge) {
-                    // Active pick target → violet glow; otherwise stronger
-                    // drop-zone border (alpha 110) so empty cards read as
-                    // intentional drop zones, not weak placeholders.
+                    // 2026-04-30 — empty slot edge is now violet (target-border
+                    // alpha) so the drop-zone reads as "available pick" with
+                    // brand color, not a generic white hairline. Bright violet
+                    // when actively targeted.
                     edge.color = targeted
-                        ? new Color(153, 69, 255, 220)
-                        : new Color(255, 255, 255, 110);
+                        ? new Color(153, 69, 255, 240)
+                        : new Color(153, 69, 255, 130);
                 }
                 if (removeBtn) removeBtn.active = false;
+                // 2026-04-30 — gentle idle pulse on empty slots so the user's
+                // eye is drawn to "tap me" zones. Idempotent — addIdlePulse
+                // returns early if already pulsing.
+                if (slotNode) {
+                    try { addIdlePulse(slotNode, 1.02, 1.8); } catch (_) { /* optional */ }
+                }
                 // Slot bg — slightly different shades for empty vs filled so
                 // filled fighter cards visually elevate above empty drop zones.
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
@@ -9640,7 +9920,8 @@ export class AppUI extends Component {
                 }
                 if (scoreLbl) {
                     scoreLbl.string = RANK_GLYPHS[i] ?? '';
-                    scoreLbl.color = new Color(168, 174, 201, 255);
+                    scoreLbl.color = RANK_COLORS[i] ?? new Color(168, 174, 201, 255);
+                    scoreLbl.fontSize = 14;
                     scoreLbl.node.active = true;
                 }
                 if (perfBar) {
@@ -9667,6 +9948,12 @@ export class AppUI extends Component {
                     }
                 }
                 if (removeBtn) removeBtn.active = true;
+                // 2026-04-30 — stop the empty-slot idle pulse the moment a
+                // token lands so the "anchored / committed" read isn't fighting
+                // a breathing animation.
+                if (slotNode) {
+                    try { stopPulse(slotNode); } catch (_) { /* optional */ }
+                }
                 // 2026-04-28 fighter-card redesign — filled cards sit one
                 // shade DARKER than empty drop zones so the selected fighter
                 // reads as "anchored / committed" within the 3-pillar row.
@@ -9705,6 +9992,14 @@ export class AppUI extends Component {
         // 2026-04-27 UI overhaul — celebratory pulse on every card when squad
         // first becomes full. Reset the latch when the squad drops below 3.
         const filledCount = slots.reduce((acc, s) => acc + (s ? 1 : 0), 0);
+        // 2026-04-29 god-tier UX pass — write live "N / 3 SELECTED" subtitle
+        // into the squad header eyebrow. Color brightens to teal at 3/3.
+        if (this._squadHeaderEyebrow) {
+            this._squadHeaderEyebrow.string = `${filledCount} / 3 SELECTED`;
+            this._squadHeaderEyebrow.color = filledCount >= 3
+                ? new Color(20, 241, 149, 255)
+                : new Color(168, 174, 201, 220);
+        }
         if (filledCount >= 3 && !this._squadFullPulseFired) {
             for (const sb of this._squadSlotButtons) {
                 try { popScale(sb.node, 1.08); } catch (_) { /* ignore */ }
@@ -11034,8 +11329,14 @@ export class AppUI extends Component {
             btn.interactable = true;
             console.log(`${PMBTAG} ENSURE_INTERACTABLE ${label}=true`);
         };
+        // 2026-04-29 win-screen redesign — back button is hidden. We still
+        // call ensureInteractable so any latent state stays sane, but the
+        // node itself is forced inactive immediately after.
         ensureInteractable(this._postMatchBackButton,  'back');
         ensureInteractable(this._postMatchAgainButton, 'again');
+        if (this._postMatchBackButton) this._postMatchBackButton.node.active = false;
+        const _backLink = this._postMatchPanel.getChildByName('PostMatchBackLinkLabel');
+        if (_backLink) _backLink.active = false;
         const ssBtnShow = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
         ensureInteractable(ssBtnShow, 'sameSquad');
         // Cascade safety: cancel any in-flight beats from a prior result show
@@ -11085,24 +11386,43 @@ export class AppUI extends Component {
             // rings concentric on the mascot's panel-local Y cradle it. No
             // 200 px fallback: if the mascot node is missing we fall back to
             // 0 (the viewport mid), not an arbitrary upper-third Y.
+            // 2026-04-29 win-screen redesign — the rings were washing the
+            // whole screen and flattening depth. Tightened radii (90→354 outer)
+            // and dimmed alphas (outer 2 → inner 35) so the bloom only frames
+            // the mascot. Combined with the new corner vignette below, this
+            // pulls focus inward instead of dominating the layout.
             const mascotN = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
             const cx = mascotN ? mascotN.position.x : 0;
             const cy = mascotN ? mascotN.position.y : 0;
             for (let i = 11; i >= 0; i--) {
-                const r = 120 + i * 36;
-                const a = Math.max(0, 4 + (11 - i) * 5);  // dimmed: outer 4 → inner 59 (was 6→94)
+                const r = 90 + i * 24;
+                const a = Math.max(0, 2 + (11 - i) * 3);  // outer 2 → inner 35
                 bg.fillColor = new Color(glow.r, glow.g, glow.b, a);
                 bg.circle(cx, cy, r);
                 bg.fill();
             }
+            // Layer 3: corner vignette — concentric rectangle strokes,
+            // each progressively darker. Pulls the eye toward the centered
+            // mascot/payout cluster so corner content reads as background.
+            const vignetteAlphas = [30, 60, 90, 120];
+            const vignetteInsets = [120, 80, 40, 0];
+            for (let i = 0; i < vignetteAlphas.length; i++) {
+                const inset = vignetteInsets[i];
+                const w = vwBg - inset * 2;
+                const h = vhBg - inset * 2;
+                if (w <= 0 || h <= 0) continue;
+                bg.lineWidth = 60;
+                bg.strokeColor = new Color(0, 0, 0, vignetteAlphas[i]);
+                bg.rect(-w / 2, -h / 2, w, h);
+                bg.stroke();
+            }
             const op = this._postMatchOutcomeBgOpacity;
             Tween.stopAllByTarget(op);
-            op.opacity = 200;
-            // Slow ambient pulse — keeps the focus zone breathing. Dimmed
-            // 255↔215 → 200↔170 so the rings sit further back behind the mascot.
+            op.opacity = 140;
+            // Slow ambient pulse — gentler since the rings are dimmer now.
             tween(op)
-                .to(1.6, { opacity: 170 }, { easing: 'sineInOut' })
-                .to(1.6, { opacity: 200 }, { easing: 'sineInOut' })
+                .to(1.6, { opacity: 110 }, { easing: 'sineInOut' })
+                .to(1.6, { opacity: 140 }, { easing: 'sineInOut' })
                 .union()
                 .repeatForever()
                 .start();
@@ -11114,9 +11434,11 @@ export class AppUI extends Component {
             g.fillColor = new Color(0, 0, 0, 110);
             g.ellipse(0, -110, 110, 22);
             g.fill();
-            // Mascot aura — bigger + brighter than before (140→200, α 200→235).
-            g.fillColor = new Color(glow.r, glow.g, glow.b, 235);
-            g.circle(0, 0, 200);
+            // 2026-04-29 win-screen redesign — halo dimmed + tightened
+            // (200→160 radius, α 235→180) so the mascot reads as the focus
+            // and the halo supports rather than dominates.
+            g.fillColor = new Color(glow.r, glow.g, glow.b, 180);
+            g.circle(0, 0, 160);
             g.fill();
             const op = this._postMatchMascotGlowOpacity;
             Tween.stopAllByTarget(op);
@@ -11153,9 +11475,14 @@ export class AppUI extends Component {
         };
         setOpZero(this._postMatchTitleLabel?.node);
         setOpZero(this._postMatchTrackLabel?.node);
+        // 2026-04-29 win-screen redesign — eyebrow + breakdown chip pill.
+        setOpZero(this._postMatchEarnedLabel?.node);
         setOpZero(this._postMatchSubtitleLabel?.node);
         // 2026-04-28 — breakdown is the same beat as subtitle but reveals to
-        // its dim target (178, not 255) inside beatSubtitleRake.
+        // its dim target (178, not 255) inside beatSubtitleRake. As of
+        // 2026-04-29, the breakdown label is a CHILD of the pill, so we hide
+        // both the pill background and the label.
+        setOpZero(this._postMatchBreakdownPill);
         setOpZero(this._postMatchBreakdownLabel?.node);
         setOpZero(this._postMatchRakeLabel?.node);
         const ctaPrimary   = this._postMatchPanel?.getChildByName('PostMatchSameSquadButton');
@@ -11225,6 +11552,14 @@ export class AppUI extends Component {
         if (this._postMatchTrackLabel) {
             const modeLbl = outcome.modeLabel ?? '1v1 Duel';
             this._postMatchTrackLabel.string = `${outcome.track === 'real' ? 'Real' : 'Paper'} · ${modeLbl}`;
+        }
+        // 2026-04-29 win-screen redesign — eyebrow above the payout hero.
+        // Win → "YOU EARNED" (accent), loss → "YOU LOST" (rose accent).
+        if (this._postMatchEarnedLabel) {
+            this._postMatchEarnedLabel.string = outcome.won ? 'YOU EARNED' : 'YOU LOST';
+            this._postMatchEarnedLabel.color = new Color(accent.r, accent.g, accent.b, 230);
+            this._postMatchEarnedLabel.fontSize = 14;
+            this._postMatchEarnedLabel.spacingX = 2;
         }
         if (this._postMatchPayoutLabel) {
             const sol = outcome.payoutLamports / 1e9;
@@ -11415,6 +11750,20 @@ export class AppUI extends Component {
             edge.color = edgeColor;
         }
 
+        // 2026-04-29 win-screen redesign — tint each card's icon glyph by
+        // the data sign / outcome so the row reads as a celebration not a
+        // ledger. ▲ green / ▼ red on delta cards; ★ gold on XP; ▰ accent
+        // on LEVEL (gold when leveled up, neutral otherwise).
+        const goldIcon = new Color(255, 210, 74, 255);
+        const iconYou = this._postMatchCardIcons.get('you');
+        const iconOpp = this._postMatchCardIcons.get('opp');
+        const iconXp  = this._postMatchCardIcons.get('xp');
+        const iconLvl = this._postMatchCardIcons.get('lvl');
+        if (iconYou) iconYou.color = playerDeltaPct >= 0 ? green : red;
+        if (iconOpp) iconOpp.color = opponentDeltaPct >= 0 ? green : red;
+        if (iconXp)  iconXp.color  = goldIcon;
+        if (iconLvl) iconLvl.color = leveledUp ? goldIcon : new Color(168, 174, 201, 255);
+
         console.log(`${TAG} _showPostMatchPanel | won=${outcome.won} player=${outcome.playerHeight} opp=${outcome.opponentHeight} xp=${outcome.xpGained} total_xp=${outcome.totalXp ?? '?'} level_was=${previousLevel} level_now=${outcome.newLevel} level_up=${leveledUp} payout_sol=${(outcome.payoutLamports / 1e9).toFixed(4)} track=${outcome.track}`);
 
         // Part 11 C: PostMatch audio — victory fanfare on 1st, level-up chime
@@ -11470,8 +11819,10 @@ export class AppUI extends Component {
         // the finalizer which snaps every element to its terminal state.
         const titleNode     = this._postMatchTitleLabel?.node ?? null;
         const trackNode     = this._postMatchTrackLabel?.node ?? null;
+        const earnedNode    = this._postMatchEarnedLabel?.node ?? null;
         const subtitleNode  = this._postMatchSubtitleLabel?.node ?? null;
         const breakdownNode = this._postMatchBreakdownLabel?.node ?? null;
+        const breakdownPillNode = this._postMatchBreakdownPill ?? null;
         const rakeNode      = this._postMatchRakeLabel?.node ?? null;
         // 2026-04-28 spatial pass — breakdown row reveals to opacity 178
         // (~0.7) so it stays visibly dimmer than the subtitle headline.
@@ -11498,7 +11849,10 @@ export class AppUI extends Component {
         // shared-phase pulse-sync (mascot glow + PnL label heartbeat) starts
         // here too, after the scale-in completes — a single proxy drives
         // both so they breathe in lockstep.
+        // 2026-04-29 win-screen redesign — eyebrow fades in just before the
+        // hero number lands so "YOU EARNED" + "+0.10 SOL" read as one unit.
         const beatPayout = () => {
+            fadeIn(earnedNode, 0.18);
             if (!this._postMatchPayoutLabel || !payoutNodeFinal || !payoutOp) return;
             Tween.stopAllByTarget(payoutNodeFinal);
             Tween.stopAllByTarget(payoutOp);
@@ -11534,14 +11888,17 @@ export class AppUI extends Component {
             if (this._postMatchMascotGlowOpacity) {
                 const gop = this._postMatchMascotGlowOpacity;
                 Tween.stopAllByTarget(gop);
-                tween(gop).to(0.4, { opacity: 235 }, { easing: 'sineOut' }).start();
+                // 2026-04-29 win-screen redesign — halo target alpha 235→180.
+                tween(gop).to(0.4, { opacity: 180 }, { easing: 'sineOut' }).start();
             }
             this._postMatchMascot?.setState(mascotState, true);
         };
-        // Beat 4 — subtitle headline + breakdown + rake details (T=1450).
-        // Breakdown reveals to dim alpha so per-token row stays muted.
+        // Beat 4 — subtitle headline + breakdown chip pill + rake (T=1450).
+        // 2026-04-29 win-screen redesign — pill background fades to full
+        // alpha; the breakdown LABEL inside it stays at its dim target.
         const beatSubtitleRake = () => {
             fadeIn(subtitleNode, 0.18);
+            fadeIn(breakdownPillNode, 0.18);
             fadeIn(breakdownNode, 0.18, BREAKDOWN_DIM_ALPHA);
             const t = setTimeout(() => fadeIn(rakeNode, 0.18), 80);
             this._postMatchRevealTimers.push(t as unknown as number);
@@ -11625,7 +11982,9 @@ export class AppUI extends Component {
             };
             snap(titleNode);
             snap(trackNode);
+            snap(earnedNode);
             snap(subtitleNode);
+            snap(breakdownPillNode);
             snap(breakdownNode, BREAKDOWN_DIM_ALPHA);
             snap(rakeNode);
             // Payout — snap to final string + scale, skip count-up.
@@ -11651,7 +12010,7 @@ export class AppUI extends Component {
             if (this._postMatchMascotGlowOpacity) {
                 const gop = this._postMatchMascotGlowOpacity;
                 Tween.stopAllByTarget(gop);
-                gop.opacity = 235;
+                gop.opacity = 180;
             }
             this._postMatchMascot?.setState(mascotState, true);
             // Cards — snap to opacity 255 + scale 1.
@@ -11717,7 +12076,7 @@ export class AppUI extends Component {
 
     /**
      * Drifting-gadget — XP progress bar fill animation.
-     * Track is 480×16, rounded; dark fill behind, accent fill on top.
+     * 2026-04-29 win-screen redesign — track h 16→24 + gradient highlight.
      * On level-up: roll prev → 100%, flash gold, reset to 0, roll → new.
      * Otherwise: roll prev → new in 700ms.
      */
@@ -11730,20 +12089,28 @@ export class AppUI extends Component {
         const prog0 = levelProgress(prevTotalXp);
         const prog1 = levelProgress(newTotalXp);
         const trackW = 480;
-        const trackH = 16;
+        const trackH = 24;
         const halfW = trackW / 2;
+        const radius = trackH / 2;
 
         const drawBar = (pct: number, fill: Color) => {
             g.clear();
             // Dark track behind.
-            g.fillColor = new Color(28, 32, 48, 200);
-            g.roundRect(-halfW, -trackH / 2, trackW, trackH, trackH / 2);
+            g.fillColor = new Color(28, 32, 48, 220);
+            g.roundRect(-halfW, -trackH / 2, trackW, trackH, radius);
             g.fill();
             // Accent fill on top, clamped 0..1.
             const w = Math.max(0, Math.min(1, pct)) * trackW;
             if (w > 1) {
                 g.fillColor = fill;
-                g.roundRect(-halfW, -trackH / 2, w, trackH, trackH / 2);
+                g.roundRect(-halfW, -trackH / 2, w, trackH, radius);
+                g.fill();
+                // Subtle gradient highlight — thin lighter band across the
+                // top half of the fill so the bar reads like a glossy chip
+                // instead of a flat block.
+                g.fillColor = new Color(255, 255, 255, 60);
+                const inset = 3;
+                g.roundRect(-halfW + inset, 1, Math.max(0, w - inset * 2), trackH / 2 - 2, (trackH / 2 - 2) / 2);
                 g.fill();
             }
         };
@@ -11898,17 +12265,25 @@ export class AppUI extends Component {
             n.setPosition(new Vec3(p.x, y, p.z));
         };
 
-        // TOP zone — back row, title, subtitle, trophy badge.
-        setY('PostMatchBackLinkLabel', topAnchor + Z.top.backLink);
-        setY('PostMatchBackButton',    topAnchor + Z.top.backBtn);
-        setY('PostMatchTitleLabel',    topAnchor + Z.top.title);
-        setY('PostMatchTrackLabel',    topAnchor + Z.top.track);
-        setY('TrophyLabel',            topAnchor + Z.top.trophy);
+        // 2026-04-29 win-screen redesign — reward block (eyebrow → payout
+        // → breakdown pill → subtitle) lives in the TOP zone above the
+        // mascot. Back nodes parked off-screen and disabled at show time.
+        // Rake drops to BOTTOM zone above the stat-card grid.
+        //
+        // TOP zone — title row + reward block.
+        setY('PostMatchBackLinkLabel',   topAnchor + Z.top.backLink);
+        setY('PostMatchBackButton',      topAnchor + Z.top.backBtn);
+        setY('PostMatchTitleLabel',      topAnchor + Z.top.title);
+        setY('PostMatchTrackLabel',      topAnchor + Z.top.track);
+        setY('PostMatchEarnedLabel',     topAnchor + Z.top.earned);
+        setY('PostMatchPayoutLabel',     topAnchor + Z.top.payoutLabel);
+        setY('PostMatchBreakdownPill',   topAnchor + Z.top.breakdownPill);
+        setY('PostMatchSubtitleLabel',   topAnchor + Z.top.subtitle);
+        setY('TrophyLabel',              topAnchor + Z.top.trophy);
 
-        // CENTER zone — mascot is the anchor; glow + payout cradle it.
+        // CENTER zone — mascot is the anchor; glow + mascot cradle it.
         setY('MascotGlow',                Z.center.mascotGlow);
         setY('PostMatchMascotContainer',  Z.center.mascotContainer);
-        setY('PostMatchPayoutLabel',      Z.center.payoutLabel);
 
         // BOTTOM zone — CTAs hug the safe-bottom, stats stack above them.
         // mkBtnHero builds the halo as a sibling node named BtnGlow_<btn>;
@@ -11924,8 +12299,6 @@ export class AppUI extends Component {
         setY('PMCard_you',                   botAnchor + Z.bottom.cardsRow1);
         setY('PMCard_opp',                   botAnchor + Z.bottom.cardsRow1);
         setY('PostMatchRakeLabel',           botAnchor + Z.bottom.rake);
-        setY('PostMatchBreakdownLabel',      botAnchor + Z.bottom.breakdown);
-        setY('PostMatchSubtitleLabel',       botAnchor + Z.bottom.subtitle);
         setY('PostMatchShareButton',         botAnchor + Z.bottom.shareButton);
         setY('PostMatchStatusLabel',         botAnchor + Z.bottom.status);
 
@@ -12205,31 +12578,49 @@ export class AppUI extends Component {
      */
     private _stylePostMatchCTAs(won: boolean, applyPulse: boolean = true): void {
         if (!this._postMatchPanel) return;
+        // 2026-04-29 win-screen redesign — buttons are now built via
+        // mkBtnHeroLayered (TitleLabel + SubtitleLabel children). The
+        // primary green button reads "PICK NEW SQUAD" / "Try a different
+        // lineup"; the secondary ghost button reads "HOME" / "Back to main
+        // menu". Loss palette swaps primary green → rose so "run it back"
+        // still pops.
         const primaryNode   = this._postMatchPanel.getChildByName('PostMatchSameSquadButton');
         const secondaryNode = this._postMatchPanel.getChildByName('PostMatchAgainButton');
-        // Primary — bright green (win) or rose-warm (loss; "run it back").
         if (primaryNode) {
             const spr = primaryNode.getComponent(Sprite);
             if (spr) spr.color = won
-                ? new Color(34, 227, 154, 255)   // #22E39A
-                : new Color(255, 107, 122, 255); // #FF6B7A
-            const lbl = primaryNode.getChildByName('Label')?.getComponent(Label);
-            if (lbl) {
-                lbl.color = new Color(4, 20, 12, 255); // dark text on bright bg
-                lbl.fontSize = 30;
+                ? new Color(34, 227, 154, 255)
+                : new Color(255, 107, 122, 255);
+            const titleLbl = primaryNode.getChildByName('TitleLabel')?.getComponent(Label);
+            if (titleLbl) {
+                titleLbl.color = new Color(4, 20, 12, 255);
+                titleLbl.fontSize = 24;
             }
+            const subLbl = primaryNode.getChildByName('SubtitleLabel')?.getComponent(Label);
+            if (subLbl) {
+                subLbl.color = new Color(4, 20, 12, 200);
+                subLbl.fontSize = 13;
+            }
+            const glow = this._postMatchPanel.getChildByName('BtnGlow_PostMatchSameSquadButton');
+            const glowSpr = glow?.getComponent(Sprite);
+            if (glowSpr) glowSpr.color = won
+                ? new Color(34, 227, 154, 110)
+                : new Color(255, 107, 122, 110);
             primaryNode.setScale(1.04, 1.04, 1);
-            // Pulse is gated to Beat 7 in the staged reveal — see _showPostMatchPanel.
             if (applyPulse) addIdlePulse(primaryNode, 1.04, 1.4);
         }
-        // Secondary — muted blue-gray, no glow, no pulse.
         if (secondaryNode) {
             const spr = secondaryNode.getComponent(Sprite);
-            if (spr) spr.color = new Color(31, 42, 68, 255); // #1F2A44
-            const lbl = secondaryNode.getChildByName('Label')?.getComponent(Label);
-            if (lbl) {
-                lbl.color = new Color(154, 176, 214, 255); // #9AB0D6
-                lbl.fontSize = 26;
+            if (spr) spr.color = new Color(31, 42, 68, 255);
+            const titleLbl = secondaryNode.getChildByName('TitleLabel')?.getComponent(Label);
+            if (titleLbl) {
+                titleLbl.color = new Color(220, 226, 240, 255);
+                titleLbl.fontSize = 22;
+            }
+            const subLbl = secondaryNode.getChildByName('SubtitleLabel')?.getComponent(Label);
+            if (subLbl) {
+                subLbl.color = new Color(154, 176, 214, 220);
+                subLbl.fontSize = 13;
             }
             secondaryNode.setScale(1.0, 1.0, 1);
         }
@@ -12291,20 +12682,13 @@ export class AppUI extends Component {
     }
 
     /**
-     * betting-duel Block 6: Play Again with the same squad + same picker
-     * settings. Bypasses ModePicker → goes straight to countdown → race.
+     * 2026-04-29 win-screen redesign — instant-replay path was dropped per
+     * user spec ("Pick New Squad" + "Home" are the only two CTAs). The
+     * binder now wires the green button to _onPostMatchAgain instead;
+     * this method stays as a thin alias so any latent caller keeps working.
      */
     private _onPostMatchSameSquad(): void {
-        console.log(`${PMBTAG} HANDLER_FIRED sameSquad`);
-        this._dumpAppState('post_match_same_squad_enter');
-        this._stopPostMatchPulseSync();
-        if (this._postMatchPanel) this._postMatchPanel.active = false;
-        this._tokenDuelPanel.active = true;
-        // Reuse existing picker state — wager, mode, window, track are all
-        // still set from the last run. Just kick onStartGame directly.
-        console.log(`${TAG} _onPostMatchSameSquad | SKIP_PICKER mode=${this._pickerSelectedMode} wager_idx=${this._pickerSelectedWagerIndex} window=${this._pickerSelectedWindow} track=${this._pickerSelectedTrack}`);
-        // Defer by one frame so the panel-hide tween completes cleanly.
-        setTimeout(() => this._onStartGame(), 50);
+        this._onPostMatchAgain();
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -13651,10 +14035,13 @@ export class AppUI extends Component {
         if (!fm) return;
         if (this._findMatchPageStrip) return;  // idempotent
 
+        // 2026-04-29 god-tier rebuild — pagination strip moves below the new
+        // 4-tall-card pool (last row bottom ~y=-338). Was at y=395 which sat
+        // inside the Stake filter row and overlapped with the FilterCard.
         const strip = new Node('FindMatchPageStrip');
         fm.addChild(strip);
         strip.addComponent(UITransform).setContentSize(360, 32);
-        strip.setPosition(new Vec3(0, 395, 0));
+        strip.setPosition(new Vec3(0, -380, 0));
         strip.active = false;
         const stripOp = strip.addComponent(UIOpacity);
         stripOp.opacity = 255;
@@ -13817,7 +14204,10 @@ export class AppUI extends Component {
         if (this._findMatchPageIdx > totalPages - 1) this._findMatchPageIdx = totalPages - 1;
         if (this._findMatchPageIdx < 0) this._findMatchPageIdx = 0;
         const pageStart = this._findMatchPageIdx * AppUI.FIND_MATCH_PAGE_SIZE;
-        const visible = rows.slice(pageStart, pageStart + this._matchCardRows.length);
+        // 2026-04-29 god-tier rebuild — slice by PAGE_SIZE (=4) not pool size,
+        // so rows 4-7 stay hidden and we never render more than the 4 tall
+        // cards the new layout reserves space for.
+        const visible = rows.slice(pageStart, pageStart + AppUI.FIND_MATCH_PAGE_SIZE);
         if (this._findMatchPageStrip) {
             this._findMatchPageStrip.active = totalPages > 1;
         }
@@ -14494,7 +14884,7 @@ export class AppUI extends Component {
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {
-                    this._wagerStartLabel.string = ready ? 'Resume Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
+                    this._wagerStartLabel.string = ready ? 'RESUME MATCH' : (filled === 0 ? 'PICK 3 TOKENS' : `PICK ${3 - filled} MORE`);
                 }
             }
             if (this._wagerHintLabel) {
@@ -14523,7 +14913,7 @@ export class AppUI extends Component {
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {
-                    this._wagerStartLabel.string = ready ? 'Join Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
+                    this._wagerStartLabel.string = ready ? 'JOIN MATCH' : (filled === 0 ? 'PICK 3 TOKENS' : `PICK ${3 - filled} MORE`);
                 }
             }
             if (this._wagerHintLabel) {
@@ -14552,7 +14942,7 @@ export class AppUI extends Component {
             if (this._wagerStartButton) {
                 this._wagerStartButton.interactable = ready;
                 if (this._wagerStartLabel) {
-                    this._wagerStartLabel.string = ready ? 'Start Bot Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
+                    this._wagerStartLabel.string = ready ? 'START BOT MATCH' : (filled === 0 ? 'PICK 3 TOKENS' : `PICK ${3 - filled} MORE`);
                 }
             }
             if (this._wagerHintLabel) {
@@ -14574,13 +14964,15 @@ export class AppUI extends Component {
         if (this._wagerStartButton) {
             this._wagerStartButton.interactable = ready;
             if (this._wagerStartLabel) {
-                this._wagerStartLabel.string = ready ? 'Start Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
+                this._wagerStartLabel.string = ready ? 'LOCK IN SQUAD' : (filled === 0 ? 'PICK 3 TOKENS' : `PICK ${3 - filled} MORE`);
             }
         }
         if (this._wagerHintLabel) {
             this._wagerHintLabel.string = ready
-                ? `Ready · ${label} · tap Start to launch`
-                : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
+                ? `Ready · ${label} · tap to start your match`
+                : filled === 2
+                    ? 'Pick your final token to lock in your squad'
+                    : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
         }
         this._syncWagerStartPulse(ready);
     }
@@ -14805,11 +15197,19 @@ export class AppUI extends Component {
         }
         if (this._matchSetupHintLabel) {
             const remaining = 3 - filled;
+            // 2026-04-29 god-tier UX pass — copy lifted from brief; "enter the
+            // duel" reads as the call-to-action on first land, "tap Start Duel"
+            // closes the loop when squad is full.
             this._matchSetupHintLabel.string = filled >= 3
-                ? '✓ Squad full — tap Start Duel'
-                : remaining === 1
-                    ? 'Pick 1 more token to start'
-                    : `Pick ${remaining} tokens to start`;
+                ? 'Squad ready · tap Start Duel'
+                : filled === 0
+                    ? 'Pick 3 tokens to enter the duel'
+                    : remaining === 1
+                        ? 'Pick 1 more token to start'
+                        : `Pick ${remaining} more tokens to start`;
+            this._matchSetupHintLabel.color = filled >= 3
+                ? new Color(20, 241, 149, 255)
+                : new Color(168, 174, 201, 230);
         }
         // Pick button
         if (this._squadPickLabel) {
@@ -14843,20 +15243,15 @@ export class AppUI extends Component {
     }
 
     /**
-     * State-driven bottom helper text. Top hint (`_matchSetupHintLabel`)
-     * carries context; bottom (`_tokenDuelStatus`) carries the action verb,
-     * short and squad-aware. Called from squad onChange + initial render.
-     * Skip when status label is being driven by transient flows (settle
-     * errors, loading) — those overwrite during their own lifecycles and
-     * the next onChange restores the squad-action copy.
+     * 2026-04-30 token-picker polish — _wagerHintLabel (now visible under the
+     * full-width CTA) is the canonical squad-state helper caption. The status
+     * label is reserved for transient toasts (settle errors, loading, broadcast
+     * failures) that the wallet/RPC flows write directly. Clear it on every
+     * squad change so a stale toast doesn't outlive the action that produced it.
      */
     private _refreshBottomHelperText(): void {
         if (!this._tokenDuelStatus) return;
-        const filled = this._squad?.filled ?? 0;
-        this._tokenDuelStatus.string = filled === 0 ? 'Build your 3-token squad'
-            : filled === 1 ? 'Pick 2 more tokens'
-            : filled === 2 ? 'Pick your final token'
-            : 'Squad ready — Start Match';
+        this._tokenDuelStatus.string = '';
     }
 
     private _onSquadPickClick(): void {
@@ -15406,36 +15801,47 @@ export class AppUI extends Component {
     }
 
     /**
-     * 2026-04-27 UX overhaul — gold halo behind the TopPlayerCard with a
-     * looping alpha pulse to draw the eye to rank #1. Mounted as a child of
-     * the card so it tracks visibility (TopPlayerCard.active = false hides the
-     * halo too). Idempotent: skips if `_HaloPulse` already exists.
+     * 2026-04-29 v2 — rank badge: a small rounded square sitting BEHIND the
+     * RankLabel (`#1`/`#2`/...) so the rank marker is visible against any row
+     * background. Tint by rank tier: gold (#1), silver (#2), bronze (#3),
+     * surface neutral (4-10). Idempotent: re-tints in place when called again
+     * (covers the case where a pooled row gets reassigned to a new rank).
+     *
+     * @param parent Row node or TopPlayerCard
+     * @param rankNum 1-based rank
+     * @param x       Local x to match the RankLabel child position
+     * @param w       Badge width (60 for rows; 64 for TopPlayerCard)
+     * @param h       Badge height (36 for rows; 40 for TopPlayerCard)
      */
-    private _mountTopPlayerHalo(card: Node): void {
-        if (card.getChildByName('TopPlayerHalo')) return;
-        const ut = card.getComponent(UITransform);
-        const cardW = ut?.contentSize?.width ?? 660;
-        const cardH = ut?.contentSize?.height ?? 100;
-        const haloW = cardW + 36, haloH = cardH + 28;
-
-        const halo = new Node('TopPlayerHalo');
-        card.insertChild(halo, 0); // behind card content
-        halo.addComponent(UITransform).setContentSize(haloW, haloH);
-        const g = halo.addComponent(Graphics);
-        const gold = colorFromHex(Palette.rank.gold);
-        g.fillColor = new Color(gold.r, gold.g, gold.b, 90);
-        g.roundRect(-haloW / 2, -haloH / 2, haloW, haloH, 24);
+    private _mountRankBadge(parent: Node, rankNum: number, x: number, w: number, h: number): void {
+        let badge = parent.getChildByName('RankBadge');
+        if (!badge) {
+            badge = new Node('RankBadge');
+            parent.insertChild(badge, 0); // behind labels
+            badge.addComponent(UITransform).setContentSize(w, h);
+            badge.setPosition(new Vec3(x, 0, 0));
+            badge.addComponent(Graphics);
+        }
+        const g = badge.getComponent(Graphics)!;
+        g.clear();
+        const gold   = colorFromHex(Palette.rank.gold);
+        const surf   = colorFromHex(Palette.bg.surface);
+        const tint =
+            rankNum === 1 ? gold :
+            rankNum === 2 ? new Color(216, 221, 240, 255) :
+            rankNum === 3 ? new Color(224, 138, 74, 255)  :
+                            surf;
+        const fillAlpha   = rankNum <= 3 ? 90  : 160;
+        const strokeAlpha = rankNum <= 3 ? 220 : 0;
+        g.fillColor = new Color(tint.r, tint.g, tint.b, fillAlpha);
+        g.roundRect(-w / 2, -h / 2, w, h, 8);
         g.fill();
-        const op = halo.addComponent(UIOpacity);
-        op.opacity = 90;
-        // Loop: 90 → 160 → 90 over 2.4s, easing in/out, restarts forever.
-        tween(op)
-            .repeatForever(
-                tween(op)
-                    .to(1.2, { opacity: 160 }, { easing: 'sineInOut' })
-                    .to(1.2, { opacity: 90 },  { easing: 'sineInOut' })
-            )
-            .start();
+        if (strokeAlpha > 0) {
+            g.lineWidth = 1.5;
+            g.strokeColor = new Color(tint.r, tint.g, tint.b, strokeAlpha);
+            g.roundRect(-w / 2, -h / 2, w, h, 8);
+            g.stroke();
+        }
     }
 
     /**
@@ -15628,7 +16034,8 @@ export class AppUI extends Component {
             populated[0]
                 ? {
                     player: populated[0].player,
-                    score: `+${populated[0].height}`,
+                    // 2026-04-29 v2 — score format "+100 PTS" (mode tab path).
+                    score: `+${populated[0].height} PTS`,
                     elapsedSec: Math.max(0, nowSec - Number(populated[0].settledAt)),
                 }
                 : null,
@@ -15639,7 +16046,7 @@ export class AppUI extends Component {
             if (!entry) { n.active = false; continue; }
             this._renderLeaderboardRow(n, i + 1, {
                 player: entry.player,
-                score: `+${entry.height}`,
+                score: `+${entry.height} PTS`,
                 elapsedSec: Math.max(0, nowSec - Number(entry.settledAt)),
             });
         }
@@ -15681,6 +16088,9 @@ export class AppUI extends Component {
             const scoreL = top.getChildByName('ScoreLabel')?.getComponent(Label);
             const elapsedL = top.getChildByName('ElapsedLabel')?.getComponent(Label);
             if (playerL) playerL.string = this._fmtMintShort(leader.player);
+            // 2026-04-29 v2 — score string is pre-formatted by the caller so the
+            // mode-tab path can carry " PTS" while the season path keeps its
+            // "5w" (wins) shorthand. ScoreLabel is right-aligned in scene gen.
             if (scoreL) scoreL.string = leader.score;
             if (elapsedL) elapsedL.string = this._fmtElapsed(leader.elapsedSec);
         }
@@ -15696,15 +16106,20 @@ export class AppUI extends Component {
         const playerL = n.getChildByName('PlayerLabel')?.getComponent(Label);
         const scoreL = n.getChildByName('ScoreLabel')?.getComponent(Label);
         const elapsedL = n.getChildByName('ElapsedLabel')?.getComponent(Label);
+        // 2026-04-29 v2 — mount/refresh the rounded-square rank badge behind the
+        // rank label so the marker reads at a glance. rankNum here is 1-based for
+        // ranks 2-10 (TopPlayerCard handles rank #1).
+        const displayRank = rankNum + 1;
+        this._mountRankBadge(n, displayRank, -300, 60, 36);
         if (rankL) {
-            rankL.string = `#${rankNum + 1}`;
-            // Top-3 ranks (silver / bronze for #2 / #3) get rank-color tint;
-            // others stay text.mid. Rank-1 lives in TopPlayerCard.
-            rankL.color = rankNum === 1 ? new Color(216, 221, 240, 255)
-                        : rankNum === 2 ? new Color(224, 138, 74, 255)
-                        :                 new Color(168, 174, 201, 255);
+            rankL.string = `#${displayRank}`;
+            // Keep the label text white-bright on top of the tinted badge so the
+            // number reads clearly against gold/silver/bronze fills.
+            rankL.color = new Color(244, 245, 249, 255);
         }
         if (playerL) playerL.string = this._fmtMintShort(entry.player);
+        // 2026-04-29 v2 — score is pre-formatted (mode tab carries " PTS"; the
+        // season path emits "5w"). Renderer stays format-agnostic.
         if (scoreL) scoreL.string = entry.score;
         if (elapsedL) elapsedL.string = this._fmtElapsed(entry.elapsedSec);
     }

@@ -16,13 +16,16 @@
  * Patterns mirror ButtonFX.ts (sineInOut, .union().repeatForever()).
  */
 
-import { Color, Graphics, Node, UIOpacity, UITransform, tween, Tween, Vec3 } from 'cc';
+import { Color, Graphics, Node, Sprite, UIOpacity, UITransform, tween, Tween, Vec3 } from 'cc';
 
 const TAG = '[LandingFX]';
 
-const floatSet = new WeakSet<Node>();
-const pulseSet = new WeakSet<Node>();
-const driftSet = new WeakSet<Node>();
+const floatSet      = new WeakSet<Node>();
+const pulseSet      = new WeakSet<Node>();
+const driftSet      = new WeakSet<Node>();
+const softGlowSet   = new WeakSet<Node>();
+const softEllipseSet = new WeakSet<Node>();
+const vignetteSet   = new WeakSet<Node>();
 
 /**
  * Y-axis sine oscillation around the node's current position. Cancelable via
@@ -262,5 +265,149 @@ export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): 
         .start();
 
     console.log(`${TAG} panelEnterFlourish | ${panelRoot.name} accent=(${accentColor.r},${accentColor.g},${accentColor.b})`);
+}
+
+/**
+ * 2026-04-29 landing UX — replace a hard-edged white-square Sprite halo with a
+ * Graphics-drawn radial. Cocos Sprite has no soft-edge primitive, so the
+ * "halo" sprites in the scene render as literal rectangles; on the Landing
+ * panel (where nothing covers them) the artifact is glaringly visible.
+ *
+ * We strip the Sprite component and draw `rings` concentric filled circles
+ * with quadratic alpha falloff (bright center → transparent edge), faking
+ * a smooth radial gradient. The node's existing UIOpacity is preserved so
+ * `addGlowPulse` continues to breathe the alpha.
+ *
+ * Idempotent per-node. No-op if `node` is null.
+ */
+export function installSoftGlow(node: Node | null, opts: { color: Color; peakAlpha?: number; rings?: number; force?: boolean }): void {
+    if (!node) return;
+    if (softGlowSet.has(node)) {
+        if (!opts.force) return;
+        // Re-color path: clear cached entry + destroy the existing Graphics so
+        // the redraw below uses the new color.
+        softGlowSet.delete(node);
+        const existing = node.getComponent(Graphics);
+        if (existing) existing.destroy();
+    }
+    softGlowSet.add(node);
+
+    const peakAlpha = opts.peakAlpha ?? 130;
+    const rings     = opts.rings ?? 14;
+
+    // Strip the rectangular Sprite frame — that's the artifact source.
+    const oldSprite = node.getComponent(Sprite);
+    if (oldSprite) oldSprite.destroy();
+
+    const ut = node.getComponent(UITransform) ?? node.addComponent(UITransform);
+    const maxR = Math.min(ut.contentSize.width, ut.contentSize.height) / 2;
+
+    const g = node.addComponent(Graphics);
+    // Outermost-first so inner (brighter) rings paint over outer (dimmer) ones.
+    for (let i = 0; i < rings; i++) {
+        const t = (i + 1) / rings;          // 1/N → 1
+        const r = maxR * (1 - i / rings);   // descending radius
+        const alpha = Math.round(peakAlpha * t * t); // quadratic falloff
+        g.fillColor = new Color(opts.color.r, opts.color.g, opts.color.b, alpha);
+        g.circle(0, 0, r);
+        g.fill();
+    }
+
+    // Preserve / install UIOpacity so addGlowPulse can animate the breathing.
+    if (!node.getComponent(UIOpacity)) node.addComponent(UIOpacity);
+
+    console.log(`${TAG} installSoftGlow | ${node.name} peak=${peakAlpha} rings=${rings} maxR=${maxR}`);
+}
+
+/**
+ * 2026-04-29 landing UX — soft drop-shadow ellipse for under the mascot.
+ * Same idea as installSoftGlow but draws scaled circles to fake an ellipse
+ * (Cocos Graphics has g.ellipse, but stacking multiple filled ellipses with
+ * fading alpha gives the cleanest soft edge).
+ *
+ * Idempotent per-node. No-op if `node` is null.
+ */
+export function installSoftEllipse(node: Node | null, opts: { color: Color; peakAlpha?: number; rings?: number }): void {
+    if (!node || softEllipseSet.has(node)) return;
+    softEllipseSet.add(node);
+
+    const peakAlpha = opts.peakAlpha ?? 80;
+    const rings     = opts.rings ?? 8;
+
+    const oldSprite = node.getComponent(Sprite);
+    if (oldSprite) oldSprite.destroy();
+
+    const ut = node.getComponent(UITransform) ?? node.addComponent(UITransform);
+    const maxW = ut.contentSize.width  / 2;
+    const maxH = ut.contentSize.height / 2;
+
+    const g = node.addComponent(Graphics);
+    for (let i = 0; i < rings; i++) {
+        const t = (i + 1) / rings;
+        const w = maxW * (1 - i / rings);
+        const h = maxH * (1 - i / rings);
+        const alpha = Math.round(peakAlpha * t * t);
+        g.fillColor = new Color(opts.color.r, opts.color.g, opts.color.b, alpha);
+        g.ellipse(0, 0, w, h);
+        g.fill();
+    }
+
+    if (!node.getComponent(UIOpacity)) node.addComponent(UIOpacity);
+
+    console.log(`${TAG} installSoftEllipse | ${node.name} peak=${peakAlpha} rings=${rings}`);
+}
+
+/**
+ * 2026-04-29 landing UX — landing-only edge vignette overlay. Adds a
+ * `LandingVignetteOverlay` child Node above the bg gradient stack but
+ * below content (sibling index 6 — directly after the 6 BgGradient*
+ * sprites). Subtle corner darken to focus the eye on center hero,
+ * unify color tone, and hide the seams between gradient bands.
+ *
+ * Drawn as concentric translucent rings stroked from the panel edges
+ * toward center — outer rings darker, inner rings transparent. Same
+ * Graphics primitives as installSoftGlow, just inverted (dark, edge-out).
+ *
+ * Idempotent per-panel. No-op if `panel` is null.
+ */
+export function installLandingVignette(panel: Node | null): void {
+    if (!panel || vignetteSet.has(panel)) return;
+    if (panel.getChildByName('LandingVignetteOverlay')) {
+        vignetteSet.add(panel);
+        return;
+    }
+    vignetteSet.add(panel);
+
+    const panelUT = panel.getComponent(UITransform);
+    const w = panelUT?.contentSize.width  ?? 720;
+    const h = panelUT?.contentSize.height ?? 1280;
+
+    const overlay = new Node('LandingVignetteOverlay');
+    panel.addChild(overlay);
+    const ut = overlay.addComponent(UITransform);
+    ut.setContentSize(w, h);
+    overlay.setPosition(0, 0, 0);
+
+    const g = overlay.addComponent(Graphics);
+
+    // Stroked rings from outer (dark) to inner (clear). lineWidth large
+    // so the bands overlap and read as a smooth radial darken. Centered
+    // on (0,0); panel anchor is mid-mid in this scene.
+    const rings = 6;
+    const maxR  = Math.max(w, h) * 0.62; // reach past the corners
+    for (let i = 0; i < rings; i++) {
+        const t = i / (rings - 1);                 // 0 → 1 (outer → inner)
+        const r = maxR - (maxR * 0.45) * t;
+        const alpha = Math.round(38 * (1 - t));    // 38 → 0
+        g.lineWidth   = 110;
+        g.strokeColor = new Color(0, 0, 0, alpha);
+        g.circle(0, 0, r);
+        g.stroke();
+    }
+
+    // After bg gradients (index 0-5), before TitleGlow.
+    overlay.setSiblingIndex(6);
+
+    console.log(`${TAG} installLandingVignette | ${panel.name} size=${w}x${h}`);
 }
 

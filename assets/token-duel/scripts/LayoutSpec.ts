@@ -100,6 +100,33 @@ export const UNIFORM_CARD = {
     NOTIFICATION_H:  92,
 } as const;
 
+// 2026-04-29 FindMatch UX rebuild (god-tier prompt). Strict vertical rhythm,
+// dominant primary CTA, FilterCard container, 4 tall lobby cards per page.
+// One source of truth — both LayoutSpec.cjs (scene-gen) and AppUI runtime
+// must read y/w/h from this block so the layout cannot drift.
+export const FINDMATCH_LAYOUT = {
+    SECTION_GAP:     24,
+    GROUP_GAP:       16,
+    PILL_GAP:         8,
+    CARD_PADDING:    16,
+    HEADER_Y:       750,   // back link / level chip
+    TITLE_Y:        695,   // own row, no overlap with mode pill
+    STATUS_Y:       655,   // LIVE SYSTEM . N LOBBIES ACTIVE
+    TABS_Y:         590,   // Open Lobbies / Live Now segmented pill
+    FILTER_CARD:  { x: 0, y: 460, w: 640, h: 220 },
+    MODE_ROW_Y:     510,
+    WINDOW_ROW_Y:   460,
+    WAGER_ROW_Y:    410,
+    HIDE_FULL_Y:    372,
+    PRIMARY_CTA_Y:  320,
+    PRIMARY_CTA_W:  640,
+    PRIMARY_CTA_H:   64,
+    ROW_BASE_Y:     200,   // first lobby card center
+    ROW_STRIDE_Y:  -156,   // 140h card + 16 gap
+    ROW_HEIGHT:     140,
+    PAGINATION_Y:  -380,
+} as const;
+
 // 2026-04-29 PostMatch viewport-aware 3-zone resolver. Mirrors pm.zones
 // in LayoutSpec.cjs. AppUI._relayoutPostMatchToViewport reads
 // view.getVisibleSize() and snaps each child to (zoneAnchor + delta) so
@@ -109,31 +136,36 @@ export const UNIFORM_CARD = {
 //   botAnchor = (-vh / 2) + SAFE_AREA_BOT
 export const POSTMATCH_SAFE_AREA_TOP = 110;
 export const POSTMATCH_SAFE_AREA_BOT =  96;
+// 2026-04-29 win-screen redesign: reward block (eyebrow + payout +
+// breakdown + subtitle) moves OUT of bottom zone INTO top zone, above the
+// mascot. Mascot stays centered. Rake drops to bottom zone above cards.
+// KEEP IN SYNC with LayoutSpec.cjs `pm.zones`.
 export const POSTMATCH_ZONES = {
     top: {
-        backLink:        -28,
-        backBtn:         -28,
-        title:           -90,
-        track:          -148,
+        backLink:      -2000,    // hidden — back button removed from win screen
+        backBtn:       -2000,
+        title:            -8,
+        track:           -54,
+        earned:          -98,    // NEW eyebrow ("YOU EARNED")
+        payoutLabel:    -148,    // moved OUT of center
+        breakdownPill:  -208,    // NEW chip pill wrapping breakdown row
+        subtitle:       -250,
         trophy:          -28,
     },
     center: {
         mascotGlow:        0,
         mascotContainer:   0,
-        payoutLabel:    -200,
     },
     bottom: {
-        sameSquadBtn:     44,
-        againBtn:         44,
-        sameSquadGlow:    44,
-        xpBarFill:       120,
-        xpBarLabelLeft:  120,
-        xpBarLabelRight: 120,
-        cardsRow2:       198,
-        cardsRow1:       330,
-        rake:            420,
-        breakdown:       450,
-        subtitle:        482,
+        sameSquadBtn:     56,
+        againBtn:         56,
+        sameSquadGlow:    56,
+        xpBarFill:       150,
+        xpBarLabelLeft:  150,
+        xpBarLabelRight: 150,
+        cardsRow2:       244,
+        cardsRow1:       388,
+        rake:            540,    // moved out of card-row interleave
         shareButton:      90,
         status:          -50,
     },
@@ -367,7 +399,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             playerTokenRow:      { x: 0,    y: 540, w: UNIFORM_LAYOUT.CONTENT_W, h: 110,  type: 'group' },
             opponentSubtitle:    { x: 0,    y: 410, w: 620, h: 64,   type: 'label' },
             duelBarContainer:    { x: 0,    y: 300, w: 680, h: 80,   type: 'group' },
-            opponentDelta:       { x: 0,    y: 100,  w: 680, h: 96,   type: 'label' },
+            advantageHalo:       { x: 0,    y: 110, w: 420, h: 200,  type: 'graphics' },
+            advantageBorder:     { x: 0,    y: 110, w: 320, h: 180,  type: 'graphics' },
+            advantageCaption:    { x: 0,    y: 178, w: 300, h: 22,   type: 'label' },
+            opponentDelta:       { x: 0,    y: 110, w: 300, h: 90,   type: 'label' },
+            advantageSubtext:    { x: 0,    y: 42,  w: 300, h: 24,   type: 'label' },
             opponentIdentityCard:{ x: 0,    y: -20,  w: 280, h: 44,   type: 'sprite' },
             opponentTokenRow:    { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 110,  type: 'group' },
             opponentCard:        { x: 0,    y: -400, w: 640, h: 110, type: 'sprite' },
@@ -382,6 +418,14 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['RaceTokenCard_4', 'RaceOpponentCard'],
             ['RaceTokenCard_4', 'RaceOpponentStrip'],
             ['RaceOpponentCard', 'RaceOpponentStrip'],
+            // Round-advantage card — halo wraps border + labels by design.
+            ['RaceAdvantageHalo', 'RaceAdvantageBorder'],
+            ['RaceAdvantageHalo', 'RaceAdvantageCaption'],
+            ['RaceAdvantageHalo', 'OpponentDeltaHeroLabel'],
+            ['RaceAdvantageHalo', 'RaceAdvantageSubtext'],
+            ['RaceAdvantageBorder', 'RaceAdvantageCaption'],
+            ['RaceAdvantageBorder', 'OpponentDeltaHeroLabel'],
+            ['RaceAdvantageBorder', 'RaceAdvantageSubtext'],
         ],
     },
     SettingsPanel: {
@@ -429,36 +473,51 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: 750, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: 750, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
-            refreshBtn:     { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost' },
-            countLabel:     { x: 0,    y: 665,  w: 600, h: 18, type: 'label' },
-            hideFullToggle: { x: 0,    y: 388,  w: 160, h: 28, type: 'btnPrimary' },
-            liveCountPulseDot:  { x: -90, y: 665, w: 10,  h: 10,  type: 'sprite' },
-            // 2026-04-29 FindMatch UX rebuild: 3 row trays + SegmentMount stubs.
-            modeTray:           { x: 80,  y: 540, w: 480, h: 50, type: 'sprite' },
-            windowTray:         { x: 80,  y: 480, w: 480, h: 50, type: 'sprite' },
-            wagerTray:          { x: 80,  y: 420, w: 480, h: 50, type: 'sprite' },
-            segmentMountMode:   { x: 80,  y: 540, w: 480, h: 44, type: 'group'  },
-            segmentMountWindow: { x: 80,  y: 480, w: 480, h: 44, type: 'group'  },
-            segmentMountWager:  { x: 80,  y: 420, w: 480, h: 44, type: 'group'  },
-            fmModeLabel:        { x: -260, y: 540, w: 100, h: 22, type: 'label' },
-            fmWindowLabel:      { x: -260, y: 480, w: 100, h: 22, type: 'label' },
-            fmWagerLabel:       { x: -260, y: 420, w: 100, h: 22, type: 'label' },
-            // Legacy stubs kept for AppUI binding compat (hidden / zero size).
-            filterCard:         { x: 0, y: 510, w: UNIFORM_LAYOUT.CONTENT_W, h: 1, type: 'sprite' },
+            // 2026-04-29 god-tier UX rebuild — strict top-to-bottom flow,
+            // dominant primary CTA, FilterCard glass container, 4 tall cards.
+            backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: FINDMATCH_LAYOUT.HEADER_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: FINDMATCH_LAYOUT.HEADER_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:          { x: 0,    y: FINDMATCH_LAYOUT.TITLE_Y,  w: 400, h: 44, type: 'label' },
+            refreshBtn:     { x: 280,  y: FINDMATCH_LAYOUT.TITLE_Y,  w: 56,  h: 44, type: 'btnGhost' },
+            countLabel:     { x: -80,  y: FINDMATCH_LAYOUT.STATUS_Y, w: 540, h: 22, type: 'label' },
+            liveCountPulseDot:  { x: -300, y: FINDMATCH_LAYOUT.STATUS_Y, w: 14,  h: 14,  type: 'sprite' },
+            // FilterCard — glass container that visually groups the 3 filter rows
+            // and the Hide-Full toggle. 1px outer stroke, alpha-220 bg.
+            filterCard:     { x: FINDMATCH_LAYOUT.FILTER_CARD.x, y: FINDMATCH_LAYOUT.FILTER_CARD.y, w: FINDMATCH_LAYOUT.FILTER_CARD.w, h: FINDMATCH_LAYOUT.FILTER_CARD.h, type: 'sprite' },
+            // Filter rows (label LEFT, pill mount RIGHT of label, no overflow).
+            fmModeLabel:        { x: -280, y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 80,  h: 22, type: 'label' },
+            fmWindowLabel:      { x: -280, y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 80,  h: 22, type: 'label' },
+            fmWagerLabel:       { x: -280, y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 80,  h: 22, type: 'label' },
+            segmentMountMode:   { x: 80,   y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 440, h: 44, type: 'group' },
+            segmentMountWindow: { x: 80,   y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 440, h: 44, type: 'group' },
+            segmentMountWager:  { x: 80,   y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 440, h: 44, type: 'group' },
+            hideFullToggle:     { x: 240,  y: FINDMATCH_LAYOUT.HIDE_FULL_Y,  w: 120, h: 28, type: 'btnPrimary' },
+            // Top-right level chip; AppUI applies UIOpacity 178 (~70%) so it
+            // does not compete with the title for visual weight.
+            lvxpChip:       { x: 240, y: FINDMATCH_LAYOUT.HEADER_Y, w: 200, h: 32, type: 'chip' },
+            // Primary "FIND MATCH" CTA — dominant, full-width, below filters.
+            // Wires to existing _onFindMatchHostTap (legacy handler kept).
+            hostBtn:        { x: 0, y: FINDMATCH_LAYOUT.PRIMARY_CTA_Y, w: FINDMATCH_LAYOUT.PRIMARY_CTA_W, h: FINDMATCH_LAYOUT.PRIMARY_CTA_H, type: 'btnPrimary' },
+            // Empty-state cluster (only visible when 0 lobbies match filters).
+            emptyMascot:    { x: 0,    y: -50,  w: 200, h: 220, type: 'mascot' },
+            emptyTitle:     { x: 0,    y: -210, w: 600, h: 40,  type: 'label' },
+            emptySubtitle:  { x: 0,    y: -260, w: 600, h: 22,  type: 'label' },
+            emptyHostBtn:   { x: -135, y: -340, w: 240, h: 64,  type: 'btnPrimary' },
+            emptyBotBtn:    { x: 135,  y: -340, w: 240, h: 64,  type: 'btnGhost' },
+            // Legacy zero-size stubs kept so AppUI bindings do not break.
+            modeTray:           { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            windowTray:         { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            wagerTray:          { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
             filterDivider1:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
             filterDivider2:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
             filterDivider3:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
             tabActiveUnderline: { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
-            tailHintTitle:      { x: 0, y: -2000, w: 600, h: 24, type: 'label'  },
-            tailHintSubtitle:   { x: 0, y: -2000, w: 600, h: 20, type: 'label'  },
+            tailHintTitle:      { x: 0, y: -2000, w: 600, h: 24, type: 'label' },
+            tailHintSubtitle:   { x: 0, y: -2000, w: 600, h: 20, type: 'label' },
             tailResetBtn:       { x: 0, y: -2000, w: 160, h: 40, type: 'btnGhost' },
             tailStartBtn:       { x: 0, y: -2000, w: 160, h: 40, type: 'btnGhost' },
-            emptyLabel:     { x: 0,    y: -340, w: 660, h: 22, type: 'label' },
-            hostBtn:        { x: 0,    y: -440, w: 540, h: 64, type: 'btnPrimary' },
-            status:         { x: 0,    y: -700, w: 660, h: 20, type: 'label' },
+            emptyLabel:         { x: 0, y: -2000, w: 660, h: 22, type: 'label' },
+            status:             { x: 0, y: -700,  w: 660, h: 20, type: 'label' },
         },
         allowedOverlaps: [],
     },
@@ -474,39 +533,41 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             title:           { x: 0,    y: 560,  w: 360, h: 48, type: 'label' },
             // 2026-04-29 — moved 540→520 to clear bbox of larger title (h:36→48 at y:560).
             headerUnderline: { x: 0,    y: 520,  w: 712, h: 2,  type: 'sprite' },
-            levelPill:       { x: 85,   y: 620,  w: 140, h: 44, type: 'chip' },
-            solPill:         { x: 255,  y: 620,  w: 140, h: 44, type: 'chip' },
-            // 2026-04-29b flagship rebalance — h 80→64 (orientation hint, not hero).
-            matchSetupCard:  { x: 0,    y: 470,  w: UNIFORM_LAYOUT.CONTENT_W, h: 64, type: 'group' },
-            // ready-state underline at matchSetupCard bottom (y = 470 - 32 + 1 = 439).
-            matchSetupReadyGlow: { x: 0, y: 439, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
-            // 2026-04-29b — frame h 656→540 to free vertical real estate for squad.
-            feedFrameCard:   { x: 0,    y: 147,  w: 712, h: 540, type: 'sprite' },
+            levelPill:       { x: 120,  y: 620,  w: 140, h: 44, type: 'chip' },
+            solPill:         { x: 265,  y: 620,  w: 140, h: 44, type: 'chip' },
+            // 2026-04-29 god-tier UX pass — mission bar h 64→80, recentered y
+            // 470→462 so top edge stays at 502; bottom 438→422.
+            matchSetupCard:  { x: 0,    y: 462,  w: UNIFORM_LAYOUT.CONTENT_W, h: 80, type: 'group' },
+            // ready-state underline at matchSetupCard bottom (y = 462 - 40 + 1 = 423).
+            matchSetupReadyGlow: { x: 0, y: 423, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
+            // 2026-04-29 god-tier UX pass — frame top 417→405 (gap 17 below
+            // mission card), h 540→528. Bottom unchanged at -123.
+            feedFrameCard:   { x: 0,    y: 141,  w: 712, h: 528, type: 'sprite' },
             // 2026-04-29 — Row 1 re-balanced (priority width on search, no overflow on LIVE).
-            search:          { x: 18,   y: 387,  w: 332, h: 44, type: 'editbox' },
-            searchClear:     { x: 168,  y: 387,  w: 32,  h: 32, type: 'btnGhost' },
-            feedTabDropdown: { x: -250, y: 387,  w: 180, h: 44, type: 'btnGhost' },
-            watchlistStar:   { x: 218,  y: 387,  w: 44,  h: 44, type: 'btnGhost' },
-            cancelWatchlist: { x: 218,  y: 387,  w: 36,  h: 36, type: 'btnGhost' },
-            liveIndicator:   { x: 292,  y: 387,  w: 80,  h: 24, type: 'label' },
-            minLiqDropdown:    { x: -16,  y: 343,  w: 110, h: 32,  type: 'chip' },
-            columnsBtn:        { x: 270,  y: 343,  w: 96,  h: 32,  type: 'chip' },
-            feedColumnHeaders: { x: 0,    y: 305,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
-            feedScrollView:    { x: 0,    y: 85,   w: UNIFORM_LAYOUT.CONTENT_W, h: 392, type: 'scrollview' },
+            // Y shifted 387→375 to follow new FEED_FRAME_TOP (405 vs 417).
+            search:          { x: 18,   y: 375,  w: 332, h: 44, type: 'editbox' },
+            searchClear:     { x: 168,  y: 375,  w: 32,  h: 32, type: 'btnGhost' },
+            feedTabDropdown: { x: -250, y: 375,  w: 180, h: 44, type: 'btnGhost' },
+            watchlistStar:   { x: 218,  y: 375,  w: 44,  h: 44, type: 'btnGhost' },
+            cancelWatchlist: { x: 218,  y: 375,  w: 36,  h: 36, type: 'btnGhost' },
+            liveIndicator:   { x: 292,  y: 375,  w: 80,  h: 24, type: 'label' },
+            minLiqDropdown:    { x: -16,  y: 331,  w: 110, h: 32,  type: 'chip' },
+            columnsBtn:        { x: 270,  y: 331,  w: 96,  h: 32,  type: 'chip' },
+            feedColumnHeaders: { x: 0,    y: 293,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
+            feedScrollView:    { x: 0,    y: 79,   w: UNIFORM_LAYOUT.CONTENT_W, h: 380, type: 'scrollview' },
             // 2026-04-29b flagship rebalance — panel h 230→296; squad becomes hero region.
             squadPanel:        { x: 0,    y: -283, w: UNIFORM_LAYOUT.CONTENT_W, h: 296, type: 'group' },
             squadHeaderEyebrow:{ x: 0,    y: -156, w: 360, h: 14,  type: 'label' },
             squadHeaderLabel:  { x: 0,    y: -180, w: 420, h: 28,  type: 'label' },
             squadHeaderRule:   { x: 0,    y: -202, w: 240, h: 1,   type: 'sprite' },
-            // 2026-04-29b — divider above wager row (commitment grouping).
-            wagerRowDivider:   { x: 0,    y: -428, w: 680, h: 1,   type: 'sprite' },
-            // 2026-04-29 — stake + CTA share 60-px baseline; CTA fills remaining width.
-            wagerValueButton:  { x: -252, y: -468, w: 160, h: 60,  type: 'btnGhost' },
-            wagerStartButton:  { x:   88, y: -468, w: 480, h: 60,  type: 'btnPrimary' },
-            wagerLockChip:     { x: -252, y: -468, w: 160, h: 60,  type: 'chip' },
-            wagerBotChip:      { x: -252, y: -468, w: 160, h: 60,  type: 'chip' },
-            wagerHintLabel:    { x: 0,    y: -700, w: 600, h: 24,  type: 'label' },
-            wagerDropdown:     { x: -240, y: -436, w: 360, h: 360, type: 'group' },
+            // 2026-04-30 — stake chip stacked ABOVE the full-width CTA.
+            wagerRowDivider:   { x: 0,    y: -400, w: 680, h: 1,   type: 'sprite' },
+            wagerValueButton:  { x: -240, y: -432, w: 200, h: 36,  type: 'btnGhost' },
+            wagerStartButton:  { x:    0, y: -480, w: 640, h: 64,  type: 'btnPrimary' },
+            wagerLockChip:     { x: -240, y: -432, w: 200, h: 36,  type: 'chip' },
+            wagerBotChip:      { x: -240, y: -432, w: 200, h: 36,  type: 'chip' },
+            wagerHintLabel:    { x: 0,    y: -528, w: 600, h: 22,  type: 'label' },
+            wagerDropdown:     { x: -240, y: -414, w: 360, h: 360, type: 'group' },
             stakeHeaderLabel:  { x: 0,    y: -395, w: 280, h: 18,  type: 'label' },
             stakeValueLabel:   { x: 0,    y: -420, w: 300, h: 28,  type: 'label' },
             stakeSlider:       { x: 0,    y: -455, w: 560, h: 14,  type: 'graphics' },
@@ -518,7 +579,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             holding3Label:     { x: 0,    y: -550, w: 200, h: 50,  type: 'label' },
             gameArea:          { x: 0,    y: 0,    w: 720, h: 1000,type: 'group' },
             gameOverLabel:     { x: 0,    y: 0,    w: 680, h: 180, type: 'label' },
-            status:            { x: 0,    y: -560, w: 688, h: 26,  type: 'label' },
+            status:            { x: 0,    y: -580, w: 688, h: 22,  type: 'label' },
             rowActionPopover:  { x: 0,    y: 0,    w: 260, h: 110, type: 'group' },
             rowActionPickBtn:  { x: 0,    y:  26,  w: 240, h: 44,  type: 'btnPrimary' },
             rowActionChartBtn: { x: 0,    y: -26,  w: 240, h: 44,  type: 'btnGhost' },
@@ -621,12 +682,20 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         allowedOverlaps: [],
     },
     PostMatchPanel: {
-        canvas: { w: 720, h: 1280 },
+        canvas: { w: 720, h: 1800 },
         elements: {
-            // 2026-04-27 — mirrors the `pm` constants block in LayoutSpec.cjs.
-            payoutLabel:     { x: 0, y: -20,  w: 620, h: 96,  type: 'label' },
+            // 2026-04-29 — mirrors PostMatchPanel.elements in LayoutSpec.cjs.
+            // Reward block sits above mascot in top zone; rake sits above
+            // stat cards in bottom zone. Back nodes off-canvas.
+            backLink:        { x: -2000, y: -2000, w: 1, h: 1, type: 'label' },
+            backBtn:         { x: -2000, y: -2000, w: 1, h: 1, type: 'btnGhost' },
+            earned:          { x: 0, y: 115,  w: 400, h: 22,  type: 'label' },
+            payoutLabel:     { x: 0, y: 55,   w: 620, h: 110, type: 'label' },
+            breakdownPill:   { x: 0, y: -72,  w: 540, h: 36,  type: 'sprite' },
             shareButton:     { x: 0, y: -540, w: 280, h: 44,  type: 'btnPrimary' },
-            mascotContainer: { x: 0, y: 200,  w: 280, h: 280, type: 'mascot' },
+            mascotContainer: { x: 0, y: 310,  w: 340, h: 340, type: 'mascot' },
+            sameSquadBtn:    { x: -178, y: -474, w: 340, h: 84, type: 'btnPrimary' },
+            againBtn:        { x:  178, y: -474, w: 340, h: 84, type: 'btnPrimary' },
         },
         allowedOverlaps: [
             ['MascotGlow', 'PostMatchMascotContainer'],
