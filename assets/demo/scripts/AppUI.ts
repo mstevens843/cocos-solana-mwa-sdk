@@ -2742,6 +2742,12 @@ export class AppUI extends Component {
                 if (joinBtn) {
                     try { addPressPop(joinBtn); } catch (_) { /* ignore */ }
                     try { addIdlePulse(joinBtn.node, 1.04, 1.4); } catch (_) { /* ignore */ }
+                    // Constrain inside card: card spans ±330; right edge target = +314
+                    // (16px padding from card right). 150 → 128 width is ~15% narrower
+                    // (height preserved); pos.x = 314 − 64 = 250.
+                    const _btnUt = joinBtn.node.getComponent(UITransform);
+                    if (_btnUt) _btnUt.setContentSize(128, 80);
+                    joinBtn.node.setPosition(250, 0, 0);
                 }
                 // Card touch-glow — fade glow alpha in on touch-start, return to
                 // baseline on touch-end/cancel. 2026-04-28 polish — Phase C: baseline
@@ -2793,6 +2799,19 @@ export class AppUI extends Component {
             this._findMatchFilterCard       = this._findMatchPanel.getChildByName('FilterCard') ?? null;
             this._findMatchTabUnderline     = this._findMatchPanel.getChildByName('TabActiveUnderline') ?? null;
             this._findMatchLiveCountPulseDot = this._findMatchPanel.getChildByName('FindMatchLiveCountPulseDot') ?? null;
+            // Pin the dot LEFT of the count label with a fixed 6–8px gap. Re-anchor
+            // the label LEFT and align text LEFT so the text-start x is deterministic
+            // regardless of count string length, then pin the dot just left of it.
+            const _countLbl = this._findMatchCountLabel;
+            if (_countLbl) {
+                const _lblUt = _countLbl.node.getComponent(UITransform);
+                if (_lblUt) _lblUt.setAnchorPoint(0, 0.5);
+                _countLbl.horizontalAlign = Label.HorizontalAlign.LEFT;
+                _countLbl.node.setPosition(-220, 665, 0);
+            }
+            if (this._findMatchLiveCountPulseDot) {
+                this._findMatchLiveCountPulseDot.setPosition(-232, 665, 0);
+            }
             // 2026-04-28 final pass — tail-hint labels (shown when 1-2 matches present).
             this._findMatchTailHintTitle    = this._findMatchPanel.getChildByName('FindMatchTailHintTitle')?.getComponent(Label) ?? null;
             this._findMatchTailHintSubtitle = this._findMatchPanel.getChildByName('FindMatchTailHintSubtitle')?.getComponent(Label) ?? null;
@@ -4494,8 +4513,9 @@ export class AppUI extends Component {
         const fmPanel = this._findMatchPanel ?? this.node.getChildByName('FindMatchPanel');
         if (fmPanel) {
             const chipIcons: Array<{ name: string; icon: IconName }> = [
-                { name: 'FindMatchTab_Open',   icon: 'sword' },
-                { name: 'FindMatchTab_Live',   icon: 'eye' },
+                // Tabs are wide pills with centered labels; an icon at offsetX=-42
+                // overlaps the label text. Active state is already conveyed by
+                // color/glow/underline, so the icons are removed (text-only pills).
                 { name: 'FilterMode_all',      icon: 'cog' },
                 { name: 'FilterMode_oneVone',  icon: 'sword' },
                 { name: 'FilterMode_trio',     icon: 'user' },
@@ -14466,7 +14486,8 @@ export class AppUI extends Component {
     private _onHubTabClick(tab: 'portfolio' | 'leaderboard'): void {
         if (this._hubActiveTab === tab) return;
         this._hubActiveTab = tab;
-        console.log(`${TAG} _onHubTabClick | tab=${tab}`);
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _onHubTabClick hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         if (tab === 'portfolio') {
             if (this._leaderboardPanel) this._leaderboardPanel.active = false;
             this._openPortfolioInternal();
@@ -14895,7 +14916,8 @@ export class AppUI extends Component {
 
     private async _openLeaderboardInternal(): Promise<void> {
         if (!this._leaderboardPanel) return;
-        console.log(`${TAG} _openLeaderboardInternal | OPEN mode=${this._lbFilterMode}`);
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _openLeaderboardInternal hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         // betting-duel polish: force-hide every other top-level panel so no
         // stale text (e.g. "Token Duel" title) bleeds behind the leaderboard
         // rows on device. `_setActivePanel` only knows about landing/home/
@@ -14922,8 +14944,9 @@ export class AppUI extends Component {
      */
     private async _onLeaderboardTabClick(modeU8: number, tabKey: string): Promise<void> {
         if (this._lbFilterMode === modeU8) return;
-        console.log(`${TAG} _onLeaderboardTabClick | mode=${modeU8} key=${tabKey}`);
         this._lbFilterMode = modeU8;
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _onLeaderboardTabClick key=${tabKey} hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         this._refreshLeaderboardTabTints();
         if (modeU8 === 4) {
             await this._refreshSeasonTab();
@@ -16038,7 +16061,8 @@ export class AppUI extends Component {
     private _onPortfolioTabClick(tab: 'paper' | 'real'): void {
         if (this._pfActiveTab === tab) return;
         this._pfActiveTab = tab;
-        console.log(`${TAG} _onPortfolioTabClick | tab=${tab}`);
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _onPortfolioTabClick hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         this._refreshPortfolioTab();
         // History follows the same Paper/Real toggle as Stats.
         if (this._pfTopLevelTab === 'history') this._refreshMatchHistory(true);
@@ -16167,7 +16191,8 @@ export class AppUI extends Component {
     private _onPortfolioTopLevelTab(tab: 'stats' | 'history' | 'trophies'): void {
         if (this._pfTopLevelTab === tab) return;
         this._pfTopLevelTab = tab;
-        console.log(`${TAG} _onPortfolioTopLevelTab | tab=${tab}`);
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _onPortfolioTopLevelTab hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         if (tab === 'trophies') this._refreshTrophies();
         this._refreshPortfolioTopLevel();
         if (tab === 'stats') this._refreshPortfolioTab();
@@ -16217,6 +16242,22 @@ export class AppUI extends Component {
         // Part 11 B: trophies view.
         const trophiesView = this._portfolioPanel?.getChildByName('PortfolioTrophiesView');
         if (trophiesView) trophiesView.active = tab === 'trophies';
+
+        // 2026-04-28 corruption fix: defensively reset UIOpacity on every
+        // now-inactive view. _animateViewIn sets opacity 0 → 255 over 180ms;
+        // if a tab swap interrupts that tween mid-flight, the deactivated
+        // view could be left at <255 and reappear faded next time it shows.
+        const resetOp = (n: Node | null | undefined): void => {
+            if (!n) return;
+            const op = n.getComponent(UIOpacity);
+            if (op) {
+                Tween.stopAllByTarget(op);
+                op.opacity = 255;
+            }
+        };
+        if (!statsActive) for (const n of this._pfStatsViewNodes) resetOp(n);
+        if (tab !== 'history') resetOp(this._pfHistoryView);
+        if (tab !== 'trophies') resetOp(trophiesView);
 
         // Fade the now-active view in. Stats is a list of nodes (no single
         // container), so iterate; History and Trophies are single containers.
