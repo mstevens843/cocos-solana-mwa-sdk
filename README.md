@@ -5,8 +5,10 @@
 <h1 align="center">Cocos Creator MWA SDK for Solana</h1>
 
 <p align="center">
-  The first Solana Mobile Wallet Adapter SDK for Cocos Creator. Built for Asia's dominant mobile game engine.<br/>
-  Hardware-verified on Solana Seeker. MIT-licensed. Open source.
+  <strong>The first production-ready bridge between Cocos Creator and Solana.</strong><br/><br/>
+  Cocos powers 1.7M developers and a massive share of Asia's mobile games.<br/>
+  Until now, none of them could build on Solana.<br/><br/>
+  This SDK changes that. Hardware-verified on Solana Seeker. MIT-licensed. Open source.
 </p>
 
 <p align="center">
@@ -31,6 +33,14 @@ The SDK lives at `assets/scripts/walletService/` and is **identical on both bran
 > 🏆 **Colosseum Frontier 2026 hackathon submission**: the [`betting-duel`](../../tree/betting-duel) branch. SDK is the product, Token Duel is the proof.
 
 A complete Solana Mobile Wallet Adapter (MWA) 2.0 SDK for Cocos Creator 3.8+, bringing full MWA API parity to the dominant mobile game engine in Asia (1.7M+ developers, zero prior Solana integration). Built and tested on Solana Seeker hardware with Phantom, Solflare, Backpack, Jupiter, and Seed Vault. See [`PITCH.md`](PITCH.md) for the market thesis.
+
+---
+
+## Why this matters
+
+Cocos is the dominant mobile game engine in Asia: 40 percent of China's mobile games, 60 percent of Korea's top 10, $5.56B of WeChat mini-games. Until this SDK shipped, those 1.7M developers had no path to Solana.
+
+This SDK opens Solana to an entirely new developer ecosystem. Token Duel, on the [`betting-duel`](../../tree/betting-duel) branch, is what that future looks like: a real on-chain game built on top of the SDK. Proof, not promise.
 
 ---
 
