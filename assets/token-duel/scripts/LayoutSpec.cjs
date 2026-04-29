@@ -280,7 +280,7 @@ const portfolio = {
     BACK_Y:               720,
     TITLE_Y:              680,
     SUBTITLE_Y:           644,
-    PUBKEY_Y:             612,
+    PUBKEY_Y:             632,
 
     // Sub-tab strip + mode toggle.
     TABS_Y:               560,   // Stats / History / Trophies

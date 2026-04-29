@@ -25,6 +25,12 @@ export const Palette = {
         // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
         gradientTop: '#1A0B2E',  // deep purple at top
         gradientBot: '#050810',  // near-black at bottom
+        // 2026-04-28 Hub-tab visibility upgrade — segmented-pill containers
+        // need edge contrast against the panel surface. pillTray sits ~6%
+        // brighter than `surface`; pillTrayHi gives the primary (violet) hub
+        // pill an extra step of contrast over secondary (teal) sub-pills.
+        pillTray:   '#1F2438',
+        pillTrayHi: '#262C44',
     },
     accent: {
         violet:    '#9945FF',  // Solana violet

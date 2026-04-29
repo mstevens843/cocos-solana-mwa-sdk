@@ -19,6 +19,9 @@ const Palette = {
         // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
         gradientTop: '#1A0B2E',  // deep purple at top
         gradientBot: '#050810',  // near-black at bottom
+        // 2026-04-28 Hub-tab visibility upgrade — see Theme.ts for rationale.
+        pillTray:   '#1F2438',
+        pillTrayHi: '#262C44',
     },
     accent: {
         violet:    '#9945FF',
