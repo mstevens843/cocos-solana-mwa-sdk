@@ -67,3 +67,25 @@ mascot-animations/out/
 *.swp
 *.swo
 *~
+
+#//////////////////////////
+# Restore betting-duel patterns lost in the gitignore overwrite
+#//////////////////////////
+
+# JetBrains (broader)
+.idea/
+
+# Anchor / Rust (Token Duel)
+.anchor/
+test-ledger/
+**/*.rs.bk
+
+# Yarn
+.yarn/
+yarn.lock
+
+# Anchor program keypair (dot variant)
+*.keypair.json
+
+# Test player keypairs
+scripts/.test-player-*.json
