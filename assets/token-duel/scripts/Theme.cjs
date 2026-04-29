@@ -122,7 +122,34 @@ const Palette = {
 };
 
 const Spacing = { xs: 4, sm: 8, md: 12, lg: 20, xl: 32, xxl: 48 };
-const Radius  = { sm: 6, md: 12, lg: 20, pill: 999 };
+// 2026-04-29 (Prompt 1) hierarchy lock-in: every button uses the same corner
+// radius so shape variation can never drift between tiers.
+const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 };
+
+// 2026-04-29 (Prompt 1) — unified card chrome. Mirrors Theme.ts Card block.
+// One canonical body color, one 9-slice corner radius, three padding
+// buckets, three elevation tiers. Edge color stays per-card semantic.
+const Card = {
+    bgHex: Palette.bg.card,            // '#1E2438'
+    bgAlpha: 230,                      // ~90%
+    radiusPx: 16,
+    padding: {
+        dense:   12,
+        default: 16,
+        feature: 20,
+    },
+    gap: {
+        headerToContent: 16,
+        contentToMeta:   16,
+        intra:           12,
+    },
+    elevation: {
+        base:        { glowAlpha: 0,   glowSpreadPx: 0  },
+        elevated:    { glowAlpha: 60,  glowSpreadPx: 12 },
+        interactive: { glowAlpha: 110, glowSpreadPx: 16 },
+    },
+    edgeThicknessPx: 4,
+};
 const FontSize = { h1: 48, h2: 36, h3: 28, h4: 22, body: 18, small: 14, micro: 11, button: 26, badge: 16 };
 const Motion = { fast: 0.12, base: 0.22, slow: 0.40, bg: 0.60 };
 
@@ -193,13 +220,43 @@ const ButtonVariants = {
     },
 };
 
+// 2026-04-29 (Prompt 1) — global button hierarchy. Every button resolves to
+// one tier; the tier dictates structural properties (size, glow, effects).
+// Variant (color) is still chosen at the call site via ButtonVariants —
+// tier is hierarchy, variant is brand. Mirrors ButtonTierSpec in Theme.ts.
+//   primary    → hero CTA. Find Match, Start Match, Connect, Play Again.
+//   secondary  → major nav. Matches In Progress, Reconnect.
+//   tertiary   → inline / minor controls. Refresh, Reset, Settings rows.
+//   danger     → destructive actions. Delete account.
+const ButtonTierSpec = {
+    primary:   { height: 132, fontSize: 32, iconSize: 32, glowAlpha: 110, glowPad: 14, paddingX: 24, pressPop: true, idlePulse: true,  ripple: true,  shimmer: false, strongPress: true  },
+    secondary: { height: 100, fontSize: 24, iconSize: 26, glowAlpha:  70, glowPad: 10, paddingX: 22, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: true  },
+    tertiary:  { height:  48, fontSize: 18, iconSize: 20, glowAlpha:   0, glowPad:  0, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
+    danger:    { height:  48, fontSize: 18, iconSize: 20, glowAlpha:  50, glowPad:  6, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
+};
+
+// 2026-04-29 (Prompt 2) — global tab hierarchy. _buildSegmentedPill in
+// AppUI.ts pulls all visual properties from TabTierSpec[tier]. Inactive
+// label alpha locked at 180 (~70%) — never fade below readability.
+//   hub  → primary navigation (Portfolio / Leaderboard) — violet, tallest.
+//   mode → mode switching (1v1 / Trio / 4p / 8p, Open / Live) — teal, mid.
+//   sub  → content filtering (Stats / History / Trophies) — teal, smallest.
+const TabTierSpec = {
+    hub:  { height: 56, fontSize: 20, activeFillHex: Palette.accent.violet, trayBgHex: Palette.bg.pillTrayHi, glowOuterAlpha: 60, glowInnerAlpha: 140, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+    mode: { height: 48, fontSize: 18, activeFillHex: Palette.accent.teal,   trayBgHex: Palette.bg.pillTray,   glowOuterAlpha: 60, glowInnerAlpha: 140, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+    sub:  { height: 40, fontSize: 16, activeFillHex: Palette.accent.teal,   trayBgHex: Palette.bg.pillTray,   glowOuterAlpha: 50, glowInnerAlpha: 110, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+};
+
 module.exports = {
     Palette,
     Spacing,
     Radius,
+    Card,
     FontSize,
     Motion,
     ButtonVariants,
+    ButtonTierSpec,
+    TabTierSpec,
     rgba,
     shift,
 };

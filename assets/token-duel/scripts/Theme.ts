@@ -136,7 +136,40 @@ export const Palette = {
 /* ── Spacing / Radii ──────────────────────────────────────────────────── */
 
 export const Spacing = { xs: 4, sm: 8, md: 12, lg: 20, xl: 32, xxl: 48 } as const;
-export const Radius  = { sm: 6, md: 12, lg: 20, pill: 999 } as const;
+// 2026-04-29 (Prompt 1) hierarchy lock-in: every button uses the same corner
+// radius so shape variation can never drift between tiers. Tabs keep the pill
+// (h/2) since they're a different component family.
+export const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 } as const;
+
+/* ── Card system ─────────────────────────────────────────────────────── */
+
+// 2026-04-29 (Prompt 1) — unified card chrome. Every card built via
+// generate-scenes.js mkCard() reads from this block. Body color is one
+// canonical surface (Palette.bg.card); corners are a single 16 px 9-slice
+// SpriteFrame (asset: assets/demo/resources/ui/card_bg_r16.png); padding is
+// bucketed dense/default/feature; elevation is bucketed base/elevated/
+// interactive. Edge accent color stays per-card-semantic (Palette.cardEdge.*).
+export const Card = {
+    bgHex: Palette.bg.card,            // '#1E2438'
+    bgAlpha: 230,                      // ~90% — replaces 130/255 drift
+    radiusPx: 16,                      // asset-driven; tokenized for docs
+    padding: {
+        dense:   12,                   // leaderboard rows, history rows
+        default: 16,                   // most cards
+        feature: 20,                   // hero / CTA cards
+    },
+    gap: {
+        headerToContent: 16,
+        contentToMeta:   16,
+        intra:           12,
+    },
+    elevation: {
+        base:        { glowAlpha: 0,   glowSpreadPx: 0  },
+        elevated:    { glowAlpha: 60,  glowSpreadPx: 12 },
+        interactive: { glowAlpha: 110, glowSpreadPx: 16 },
+    },
+    edgeThicknessPx: 4,                // mirrors Palette.cardEdge.edgeThicknessPx
+} as const;
 
 /* ── Typography ──────────────────────────────────────────────────────── */
 
@@ -167,6 +200,66 @@ export const Easing = {
     smooth:  'sineInOut',
     leave:   'cubicIn',
 } as const;
+
+/* ── Button hierarchy ────────────────────────────────────────────────── */
+
+// 2026-04-29 (Prompt 1) — global button hierarchy. Every button in the app
+// resolves to one of four tiers; ButtonTierSpec[tier] dictates structural
+// properties (size, glow, effects). Color/variant is still chosen at the
+// call site via ButtonVariants — tier is hierarchy, variant is brand.
+//
+//   primary    → hero CTA. Find Match, Start Match, Connect, Play Again.
+//   secondary  → major nav. Matches In Progress, Reconnect.
+//   tertiary   → inline / minor controls. Refresh, Reset, Settings rows.
+//   danger     → destructive actions. Delete account.
+export type ButtonTier = 'primary' | 'secondary' | 'tertiary' | 'danger';
+
+export const ButtonTierSpec: Record<ButtonTier, {
+    height: number;
+    fontSize: number;
+    iconSize: number;
+    glowAlpha: number;
+    glowPad: number;
+    paddingX: number;
+    pressPop: boolean;
+    idlePulse: boolean;
+    ripple: boolean;
+    shimmer: boolean;
+    strongPress: boolean;
+}> = {
+    primary:   { height: 132, fontSize: 32, iconSize: 32, glowAlpha: 110, glowPad: 14, paddingX: 24, pressPop: true, idlePulse: true,  ripple: true,  shimmer: false, strongPress: true  },
+    secondary: { height: 100, fontSize: 24, iconSize: 26, glowAlpha:  70, glowPad: 10, paddingX: 22, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: true  },
+    tertiary:  { height:  48, fontSize: 18, iconSize: 20, glowAlpha:   0, glowPad:  0, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
+    danger:    { height:  48, fontSize: 18, iconSize: 20, glowAlpha:  50, glowPad:  6, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
+};
+
+/* ── Tab hierarchy ───────────────────────────────────────────────────── */
+
+// 2026-04-29 (Prompt 2) — global tab hierarchy. _buildSegmentedPill in
+// AppUI.ts pulls all visual properties from TabTierSpec[tier]. Three tiers:
+//   hub  → primary navigation (Portfolio / Leaderboard) — violet, tallest.
+//   mode → mode switching (1v1 / Trio / 4p / 8p, Open / Live) — teal, mid.
+//   sub  → content filtering (Stats / History / Trophies) — teal, smallest.
+//
+// Inactive label alpha is locked at 180 (~70%) per Prompt 2 spec — never
+// fade below readability.
+export type TabTier = 'hub' | 'mode' | 'sub';
+
+export const TabTierSpec: Record<TabTier, {
+    height: number;
+    fontSize: number;
+    activeFillHex: string;
+    trayBgHex: string;
+    glowOuterAlpha: number;
+    glowInnerAlpha: number;
+    activeLabelAlpha: number;
+    inactiveLabelAlpha: number;
+    slideMs: number;
+}> = {
+    hub:  { height: 56, fontSize: 20, activeFillHex: Palette.accent.violet, trayBgHex: Palette.bg.pillTrayHi, glowOuterAlpha: 60, glowInnerAlpha: 140, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+    mode: { height: 48, fontSize: 18, activeFillHex: Palette.accent.teal,   trayBgHex: Palette.bg.pillTray,   glowOuterAlpha: 60, glowInnerAlpha: 140, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+    sub:  { height: 40, fontSize: 16, activeFillHex: Palette.accent.teal,   trayBgHex: Palette.bg.pillTray,   glowOuterAlpha: 50, glowInnerAlpha: 110, activeLabelAlpha: 255, inactiveLabelAlpha: 180, slideMs: 200 },
+};
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 

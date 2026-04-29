@@ -42,6 +42,49 @@ const UNIFORM_TEXT = {
     EYEBROW_FONT_SIZE: 12,
 };
 
+// 2026-04-29 — UNIFORM spacing scale. Every sibling-to-sibling y delta in
+// a panel must come from this set. No literal 36/40/56/72 etc. Compose
+// SPACE_32 + SPACE_16 to get 48; SPACE_32 + SPACE_24 for 56; etc.
+const UNIFORM_SPACE = {
+    SPACE_8:  8,
+    SPACE_12: 12,
+    SPACE_16: 16,
+    SPACE_24: 24,
+    SPACE_32: 32,
+};
+
+// 2026-04-29 — UNIFORM centered content column. Cards / CTAs / list rows
+// snap to CONTENT_W. Subtitles use BODY_W (narrower for line-length).
+// Chips use CHIP_W. Full-canvas backgrounds use CANVAS_W. SAFE_L/R define
+// the column edges for left-anchored content.
+const UNIFORM_LAYOUT = {
+    CONTENT_W: 680,
+    BODY_W:    600,
+    CHIP_W:    200,
+    CANVAS_W:  720,
+
+    SAFE_L:   -340,
+    SAFE_R:    340,
+
+    SECTION_GAP_LARGE: 32,   // SPACE_32 — between major sections
+    SECTION_GAP:       24,   // SPACE_24 — between row-stacks of cards
+    GROUP_GAP:         16,   // SPACE_16 — between sibling cards/rows
+    INTRA_GAP:         12,   // SPACE_12 — between elements inside a card
+    TIGHT_GAP:          8,   // SPACE_8  — glyph + label, chip + chip
+};
+
+// 2026-04-29 (Prompt 1) — UNIFORM card geometry. Every card built via
+// generate-scenes.js mkCard() uses one of these heights. Row stride =
+// h + ROW_GAP. NOTIFICATION_H is a one-off — toast row chrome (left
+// ColorStripe) is intentionally not in the unified card system.
+const UNIFORM_CARD = {
+    ROW_DENSE_H:     56,    // leaderboard rank rows, history rows
+    ROW_DEFAULT_H:   88,    // stat cards, daily challenge rows
+    ROW_FEATURE_H:  160,    // hero P&L, top player, post-match result
+    ROW_GAP:          8,    // inter-row spacing
+    NOTIFICATION_H:  92,    // notification toast / panel rows (one-off)
+};
+
 // 2026-04-27 v2 — Token Duel page deterministic Y anchors.
 // Source-of-truth for every Y on TokenDuelPanel. NEVER hand-tune element
 // Y values on this page; always derive from these. Canvas y-up,
@@ -256,7 +299,7 @@ const race = {
     // Group sits in the band below the central duel bar. Row1 cards centered
     // at gridY=+60 (panel y=-130), row2 at gridY=-60 (panel y=-250).
     MULTI_GRID_Y:        -190,
-    MULTI_GRID_W:         696,
+    MULTI_GRID_W:         680,
     MULTI_GRID_H:         260,
     // "← Back" button — only visible when an opponent card is expanded.
     MULTI_BACK_BTN_X:    -260,
@@ -433,6 +476,9 @@ const LayoutSpec = {
     // 2026-04-29 — exposed for generator helpers (mkBackHeader, etc.).
     UNIFORM_HEADER,
     UNIFORM_TEXT,
+    UNIFORM_SPACE,
+    UNIFORM_LAYOUT,
+    UNIFORM_CARD,
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
     // for structural patterns that legitimately recur app-wide.
@@ -592,16 +638,16 @@ const LayoutSpec = {
             // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
             mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 520, h: 520, type: 'sprite',     notes: '2026-04-28 hackathon UX: w/h 440→520 (+18%); violet radial halo grows with mascot; alpha-pulsed by LandingFX.addGlowPulse' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
-            ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
+            ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
-            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: 660, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
+            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
             connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
             trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card; green-tinted for reassurance' },
             // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
             liveSignalLabel:     { x: 0,    y: landing.LIVE_SIGNAL_Y,     w: 640, h: 20, type: 'label',     notes: '"Live now · Join in seconds" — energy cue under Connect; teal-tinted' },
             liveSignalDot:       { x: -118, y: landing.LIVE_SIGNAL_Y + 1, w: 8,   h: 8,  type: 'sprite',    notes: '2026-04-28 polish — leading green dot pulsed by LandingFX.addGlowPulse' },
-            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 640, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
-            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 620, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
+            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
         },
         allowedOverlaps: [
@@ -901,7 +947,7 @@ const LayoutSpec = {
             heroDelta:        { x: 240,  y: race.TOP_HEADER_Y, w: 220, h: 80,  type: 'label' },
 
             // Player token row container — 3 horizontal cards (tightened spacing)
-            playerTokenRow:   { x: 0,    y: race.PLAYER_TOKEN_ROW_Y, w: 696, h: 110, type: 'group' },
+            playerTokenRow:   { x: 0,    y: race.PLAYER_TOKEN_ROW_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'group' },
 
             // Lead-state copy ("YOU LEAD / YOU TRAIL / DEAD HEAT") — promoted
             // from a tiny subtitle to a 2-line emphasis line above the bar.
@@ -927,13 +973,13 @@ const LayoutSpec = {
             opponentIdentityCard:  { x: 0,   y: race.OPP_IDENTITY_Y, w: 280, h: 44, type: 'sprite' },
 
             // Opponent token row container — 3 horizontal cards (mirror player)
-            opponentTokenRow: { x: 0,    y: race.OPP_TOKEN_ROW_Y, w: 696, h: 110, type: 'group' },
+            opponentTokenRow: { x: 0,    y: race.OPP_TOKEN_ROW_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'group' },
 
             // Legacy 1v1 opponent card (HIDDEN in duel layout — gated in AppUI).
             opponentCard:     { x: 0,    y: race.OPP_CARD_Y,  w: 640, h: 110, type: 'sprite' },
             // 4p/8p multi-bot strip — 2026-04-27 KILLED (force-hidden in scene-gen + AppUI).
             // Replaced by multiOppGrid + 7 MultiOppCard_* with tap-to-expand.
-            opponentStrip:    { x: 0,    y: race.OPP_STRIP_Y, w: 640, h: 260, type: 'group' },
+            opponentStrip:    { x: 0,    y: race.OPP_STRIP_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
 
             // 2026-04-27 — Multi-player condensed-card grid (Trio / 4p / 8p).
             // Hidden by default; AppUI activates when requiredPlayers > 2.
@@ -1149,7 +1195,7 @@ const LayoutSpec = {
             // Layout: header row (status dot + secondary "Connected · MWA"),
             // pubkey row (mono, prominent, with copy icon), divider, balance row.
             // Violet glow border (4 perimeter strokes) replaces top hairline.
-            walletCard:      { x: 0,    y: settings.WALLET_CARD_Y, w: 688, h: 124, type: 'group',
+            walletCard:      { x: 0,    y: settings.WALLET_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 124, type: 'group',
                 children: {
                     header:        { x: -220, y: 42,  w: 200, h: 16, type: 'label',
                         notes: 'micro-header "WALLET" — 2026-04-27 x -304→-220 to clear card-left edge' },
@@ -1175,7 +1221,7 @@ const LayoutSpec = {
             // two subtrees on tap so committing a username feels intentional
             // rather than "stop typing and pray". Username label gets a soft
             // trophy glyph + faded helper line tying it to leaderboard identity.
-            profileCard:     { x: 0,    y: settings.PROFILE_CARD_Y, w: 688, h: 148, type: 'group',
+            profileCard:     { x: 0,    y: settings.PROFILE_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group',
                 children: {
                     header:           { x: -220, y: 56,  w: 200, h: 16, type: 'label' },
                     usernameLabel:    { x: -220, y: 36,  w: 200, h: 16, type: 'label',
@@ -1203,7 +1249,7 @@ const LayoutSpec = {
             // Phase 29 — "DEFAULT MATCH SETTINGS". Phase 30 — drops ▾ glyph
             // from value labels and adds a › chevron child to each row for
             // stronger affordance. Trading-mode toggle gains a teal glow halo.
-            quickPlayCard:   { x: 0,    y: settings.QP_CARD_Y, w: 688, h: 260, type: 'group',
+            quickPlayCard:   { x: 0,    y: settings.QP_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group',
                 children: {
                     header: { x: -120, y: 116, w: 400, h: 18, type: 'label' },
                     qpModeRow:   { x: 0, y: 76,  w: 620, h: 40, type: 'btnGhost',
@@ -1247,7 +1293,7 @@ const LayoutSpec = {
             // PREFERENCES — Phase 30: real toggle switches (track + sliding knob)
             // replace the ON/OFF pills. Pill nodes preserved (deactivated) so
             // verifier allowedOverlaps and binding stability stay intact.
-            audioCard:       { x: 0,    y: settings.AUDIO_CARD_Y, w: 688, h: 148, type: 'group',
+            audioCard:       { x: 0,    y: settings.AUDIO_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group',
                 children: {
                     header:        { x: -120, y: 60,  w: 400, h: 16, type: 'label' },
                     soundRow:      { x: 0,    y: 22,  w: 620, h: 48, type: 'btnGhost',
@@ -1281,7 +1327,7 @@ const LayoutSpec = {
             // ACCOUNT — Phase 30: explicit GENERAL / SESSION group labels with a
             // hairline divider between, plus a row divider between Reconnect and
             // Disconnect. Card grows 200 → 232 to accommodate the headers.
-            accountCard:     { x: 0,    y: settings.ACCOUNT_CARD_Y, w: 688, h: 232, type: 'group',
+            accountCard:     { x: 0,    y: settings.ACCOUNT_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 232, type: 'group',
                 children: {
                     header:           { x: -120, y: 100, w: 400, h: 16, type: 'label' },
                     generalGroupLabel:{ x: -220, y: 78,  w: 200, h: 14, type: 'label',
@@ -1554,7 +1600,7 @@ const LayoutSpec = {
             // lives as direct panel children but the generator still expects
             // scroll.x/y/w/h to exist. Compatibility shim until generator is
             // updated to the new no-scrollview architecture.
-            scroll:    { x: 0, y: 60, w: 660, h: 1000, type: 'scrollview' },
+            scroll:    { x: 0, y: 60, w: UNIFORM_LAYOUT.CONTENT_W, h: 1000, type: 'scrollview' },
             // Status footer.
             status:    { x: 0, y: mip.STATUS_Y, w: 600, h: 22, type: 'label' },
         },
@@ -1621,7 +1667,7 @@ const LayoutSpec = {
             // Node name kept as LBTab_season (modeU8=4) so the existing handler still binds.
             thisWeekChip:    { x: 240,  y: leaderboard.MODE_TABS_Y,  w: 130, h: 42,  type: 'btnGhost' },
             // Hero card for rank #1. AppUI fills entries[0] here and skips LBRow_0.
-            topPlayerCard:   { x: 0,    y: leaderboard.TOP_PLAYER_Y, w: 660, h: 110, type: 'group',
+            topPlayerCard:   { x: 0,    y: leaderboard.TOP_PLAYER_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'group',
                 children: {
                     crown:   { x: -290, y: 22,  w: 40,  h: 40, type: 'label' },
                     rank:    { x: -240, y: 22,  w: 60,  h: 28, type: 'label' },
@@ -1631,7 +1677,7 @@ const LayoutSpec = {
                 },
             },
             // Empty-state cluster (icon + title + subtitle + CTA). _active toggled by AppUI.
-            emptyState:      { x: 0,    y: leaderboard.EMPTY_STATE_Y, w: 660, h: 300, type: 'group',
+            emptyState:      { x: 0,    y: leaderboard.EMPTY_STATE_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 300, type: 'group',
                 children: {
                     icon:    { x: 0,    y: 100,  w: 120, h: 120, type: 'label' },
                     title:   { x: 0,    y: -8,   w: 600, h: 32,  type: 'label' },
@@ -1640,7 +1686,7 @@ const LayoutSpec = {
                 },
             },
             // Sticky-bottom YOU card — y=-440 keeps it inside the panel after SAFE_AREA_TOP=110 shift.
-            personalRankCard: { x: 0,   y: leaderboard.PERSONAL_RANK_Y, w: 660, h: 130, type: 'group',
+            personalRankCard: { x: 0,   y: leaderboard.PERSONAL_RANK_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 130, type: 'group',
                 children: {
                     header: { x: -290, y: 46,  w: 120, h: 18, type: 'label' },
                     rank:   { x: -90,  y: 22,  w: 440, h: 28, type: 'label' },
@@ -1663,7 +1709,7 @@ const LayoutSpec = {
             // 9 rank rows. Rank-1 promoted to TopPlayerCard, so this loop fills
             // ranks 2..10 (LBRow_1..LBRow_9). HeightLabel renamed to ScoreLabel.
             lbRow: {
-                count: 9, w: 660, h: 56,
+                count: 9, w: UNIFORM_LAYOUT.CONTENT_W, h: 56,
                 baseY: leaderboard.ROWS_BASE_Y, gapY: leaderboard.ROWS_GAP_Y,
                 rank:    { x: -300, y: 0,   w: 50,  h: 30 },
                 player:  { x: -110, y: 6,   w: 280, h: 24 },
@@ -1710,7 +1756,7 @@ const LayoutSpec = {
             // 2026-04-28 final pass — unified FilterCard now contains EVERYTHING:
             // tabs (top), 3 chip rows (with row labels left), and Hide-full footer.
             // Card grew to h=240 to encapsulate all sub-elements.
-            filterCard:         { x: 0, y: 510, w: 700, h: 240, type: 'sprite', notes: 'violet edge — encapsulates tabs + Mode/Window/Wager rows + Hide-full footer' },
+            filterCard:         { x: 0, y: 510, w: UNIFORM_LAYOUT.CONTENT_W, h: 240, type: 'sprite', notes: 'violet edge — encapsulates tabs + Mode/Window/Wager rows + Hide-full footer' },
             filterDivider1:     { x: 0, y: 520, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Mode and Window rows' },
             filterDivider2:     { x: 0, y: 480, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Window and Wager rows' },
             filterDivider3:     { x: 0, y: 438, w: 620, h: 1,   type: 'sprite', notes: 'hairline between Wager row and Hide-full footer' },
@@ -1777,10 +1823,10 @@ const LayoutSpec = {
             // 8 match cards. 2026-04-28 final pass: bumped h 90 → 108, gapY −100 → −118,
             // baseY 360 → 320, capacity bar 5 → 8 thick, Resume btn 120×64 → 150×80.
             matchRow: {
-                count: 8, w: 660, h: 108,
+                count: 8, w: UNIFORM_LAYOUT.CONTENT_W, h: 108,
                 baseY: 320, gapY: -118,
                 edgeStripe: { x: -325, y: 0,   w: 14,  h: 96 },  // mode-color accent (taller)
-                gradient:   { x: 0,    y: 22,  w: 660, h: 54 },  // top-half sheen overlay
+                gradient:   { x: 0,    y: 22,  w: UNIFORM_LAYOUT.CONTENT_W, h: 54 },  // top-half sheen overlay
                 glow:       { x: 0,    y: 0,   w: 668, h: 116 }, // border glow (alpha 0 default)
                 mode:       { x: -260, y: 28,  w: 100, h: 26 },
                 wager:      { x: -90,  y: 28,  w: 160, h: 32 },  // bold gold hero
@@ -1948,12 +1994,12 @@ const LayoutSpec = {
             // Mode tag (top-left) + Squad/Stake (mid) + Hint (bottom) live INSIDE.
             // 2026-04-27 v2: h 124 → 93 (25% shorter so the rest of the layout
             // can pull upward).
-            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: 712, h: 93, type: 'group',
+            matchSetupCard:     { x: 0,    y: td.MATCHSETUP_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 93, type: 'group',
                 notes: 'Match summary card; 4 child labels (mode/squad/stake/hint) populated by AppUI._refreshSquadActionButtons.' },
             // 2026-04-27 UI overhaul — thin glowing underline at bottom of matchSetupCard.
             // AppUI tints teal+breathes when squad full, mid-grey when picking. Sits at
             // matchSetupCard.y - matchSetupCard.h/2 + 1 = 480 - 46.5 + 1 ≈ 434.
-            matchSetupReadyGlow:{ x: 0,    y: 434, w: 700, h: 2, type: 'sprite',
+            matchSetupReadyGlow:{ x: 0,    y: 434, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite',
                 notes: 'ready-state underline; tinted by AppUI on squad full' },
             // FeedFrameCard — wraps in-card UI. Bottom shrinks with cut feed h.
             feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
@@ -1966,13 +2012,13 @@ const LayoutSpec = {
             liveIndicator:      { x: 314,  y: td.SEARCH_Y, w: 80,  h: 24, type: 'label' },
             minLiqDropdown:     { x: -16,  y: td.CHIPS_Y, w: 110, h: 32, type: 'chip' },
             columnsBtn:         { x: 270,  y: td.CHIPS_Y, w: 96,  h: 32, type: 'chip' },
-            feedColumnHeaders:  { x: 0,    y: td.COL_HEADERS_Y, w: 696, h: 24, type: 'group' },
+            feedColumnHeaders:  { x: 0,    y: td.COL_HEADERS_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 24, type: 'group' },
             // FeedScrollView — 2026-04-27 v2: h 388→272 (30% cut). Top y=239.
-            feedScrollView:     { x: 0,    y: td.FEED_SCROLL_Y, w: 696, h: td.FEED_SCROLL_H, type: 'scrollview',
+            feedScrollView:     { x: 0,    y: td.FEED_SCROLL_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: td.FEED_SCROLL_H, type: 'scrollview',
                 notes: 'h cut 30% (388→272). ~3 visible rows at h=85.' },
             // SquadPanel restored to bottom; same internal layout as legacy (header →
             // 3 slots → wager row), shifted up so the gap to feed bottom matches legacy.
-            squadPanel:         { x: 0,    y: td.SQUAD_PANEL_Y, w: 700, h: td.SQUAD_PANEL_H, type: 'group',
+            squadPanel:         { x: 0,    y: td.SQUAD_PANEL_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: td.SQUAD_PANEL_H, type: 'group',
                 notes: 'sticky bottom card wrapping squadHeaderLabel + 3 squadSlots + wager row.' },
             squadHeaderLabel:   { x: 0,    y: td.SQUAD_HEADER_Y, w: 420, h: 24, type: 'label',
                 notes: 'YOUR SQUAD label.' },
@@ -2100,7 +2146,7 @@ const LayoutSpec = {
                 // y=0; gapY adjusted to preserve the 4-px between-row gap.
                 // Child y values inside the row are unchanged — extra 60
                 // units distribute as padding above + below the content.
-                count: 20, w: 688, h: 300,
+                count: 20, w: UNIFORM_LAYOUT.CONTENT_W, h: 300,
                 baseY: -150, gapY: -304,
                 selectedEdge: { x: -334, y: 0,   w: 5,   h: 292, notes: 'left teal stripe — h scales with row' },
                 checkbox:     { x: -320, y: 0,   w: 22,  h: 22,  notes: 'watchlist mode — hidden by default' },
@@ -2297,7 +2343,7 @@ const LayoutSpec = {
             status: { x: 0, y: portfolio.STATUS_Y, w: 640, h: 22, type: 'label' },
             // History view internals.
             historyEmpty:    { x: 0, y: 0, w: 0,   h: 22, type: 'label' },
-            historyScroll:   { x: 0, y: portfolio.HISTORY_SCROLL_Y,    w: 660, h: portfolio.HISTORY_SCROLL_H, type: 'scrollview' },
+            historyScroll:   { x: 0, y: portfolio.HISTORY_SCROLL_Y,    w: UNIFORM_LAYOUT.CONTENT_W, h: portfolio.HISTORY_SCROLL_H, type: 'scrollview' },
             historyLoadMore: { x: 0, y: portfolio.HISTORY_LOAD_MORE_Y, w: 400, h: 48, type: 'btnGhost' },
             // Trophies view container + empty label.
             trophiesView:    { x: 0, y: 0, w: 720, h: 1280, type: 'group' },
@@ -2539,7 +2585,7 @@ const LayoutSpec = {
     TournamentPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            roster:  { x: 0, y: 150, w: 640, h: 440, type: 'group' },
+            roster:  { x: 0, y: 150, w: UNIFORM_LAYOUT.CONTENT_W, h: 440, type: 'group' },
             // 2026-04-29 — uniform back/title header, mirrors MIP.
             backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
@@ -2549,7 +2595,7 @@ const LayoutSpec = {
             matchLabel:  { x: 0,    y: 488, w: 500, h: 20, type: 'label' },
             statusLabel: { x: 0,    y: 458, w: 500, h: 22, type: 'label' },
             prizeLabel:  { x: 0,    y: 425, w: 600, h: 22, type: 'label' },
-            joinBtn:     { x: 0,    y: -460, w: 620, h: 58, type: 'btnPrimary',
+            joinBtn:     { x: 0,    y: -460, w: UNIFORM_LAYOUT.CONTENT_W, h: 58, type: 'btnPrimary',
                 notes: 'shown only when status=Waiting AND slot free AND not already in' },
         },
         templates: {
@@ -2600,7 +2646,7 @@ const LayoutSpec = {
             chartCard:       { x:    0, y: 130, w: 680, h: 380, type: 'group' },
             chartHeader:     { x: -160, y: 168, w: 320, h: 16, type: 'label',
                 notes: 'rel ChartCard center; left-aligned dim caption, top-left inside card with 20px left / 14px top padding' },
-            chartArea:       { x:    0, y: -18, w: 656, h: 332, type: 'group',
+            chartArea:       { x:    0, y: -18, w: UNIFORM_LAYOUT.CONTENT_W, h: 332, type: 'group',
                 notes: 'rel ChartCard center; cc.Graphics surface; sits below 24px header band, 12px symmetric inside-card padding' },
             chartLoadLabel:  { x:    0, y:   0, w: 300, h: 22, type: 'label',
                 notes: 'rel to ChartArea center; shown while loading' },
@@ -2727,10 +2773,10 @@ const LayoutSpec = {
             // shifted DOWN ~50 to clear the new MIP-style title row.
             matchLabel:      { x: 0, y: 488, w: 500, h: 20, type: 'label' },
             statusLabel:     { x: 0, y: 458, w: 500, h: 22, type: 'label' },
-            playerList:      { x: 0, y: 240, w: 620, h: 380, type: 'group' },
-            eventList:       { x: 0, y: -170, w: 620, h: 260, type: 'group' },
+            playerList:      { x: 0, y: 240, w: UNIFORM_LAYOUT.CONTENT_W, h: 380, type: 'group' },
+            eventList:       { x: 0, y: -170, w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
             eventListHeader: { x: -270, y: 110, w: 300, h: 18, type: 'label' },
-            joinBtn:         { x: 0, y: -440, w: 620, h: 56, type: 'btnPrimary' },
+            joinBtn:         { x: 0, y: -440, w: UNIFORM_LAYOUT.CONTENT_W, h: 56, type: 'btnPrimary' },
         },
         templates: {
             // 10 spectator player rows in SpectatorPlayerList.

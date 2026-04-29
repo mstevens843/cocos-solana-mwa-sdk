@@ -9,9 +9,14 @@ const path = require('path');
 // UX overhaul: shared theme constants (see assets/token-duel/scripts/Theme.cjs).
 // Mirror file lives at assets/token-duel/scripts/Theme.ts for runtime use.
 const Theme = require('./assets/token-duel/scripts/Theme.cjs');
-const { Palette: P, ButtonVariants: BV, rgba } = Theme;
+const { Palette: P, ButtonVariants: BV, ButtonTierSpec: BTS, rgba } = Theme;
 // rgb-tuple helpers — pull from a Theme variant.
 const VAR = (name) => BV[name]?.normal ?? BV.primary.normal;
+
+// 2026-04-29 (Prompt 1) — global button hierarchy. Resolves a tier name to
+// its locked structural spec (height, fontSize, glow). Returns null when no
+// tier is requested so legacy positional args remain authoritative.
+const tierSpec = (opts) => (opts && opts.tier && BTS[opts.tier]) ? BTS[opts.tier] : null;
 
 // ─── LAYOUT POLICY ────────────────────────────────────────────────────
 // Every UI element's (x, y, w, h) MUST come from
@@ -125,6 +130,99 @@ const lobbyMount = (panelKey) => {
     console.log(`[LayoutDiag][build] ${panelKey} topEdge=${topEdge} source=${srcDesc} mount.y=${mountY}`);
     return v3(0, mountY, 0);
 };
+
+// 2026-04-29 — UNIFORM spacing diagnostic. One-pass audit at startup
+// over every panel's elements; flags any CARD or CTA width that isn't a
+// token (CONTENT_W=680, etc.) and any neighbor y-gap between top-level
+// CARDS / CTAs / scrollviews that isn't a token (or a sum of tokens).
+// Labels, dividers, status footers, halos, and chrome bits are exempt
+// — the column rule is about the structural rhythm (cards + CTAs),
+// not every text element.
+//
+// ALLOWED_WIDTHS: column widths (CONTENT_W=680, BODY_W=600, CHIP_W=200,
+// CANVAS_W=720). 0 covers collapsed/auto-sized.
+// ALLOWED_GAPS: SPACE_8/12/16/24/32 + composable sums.
+const ALLOWED_WIDTHS = new Set([0, 200, 600, 680, 720]);
+const ALLOWED_GAPS = new Set([0, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 56, 60, 64, 72, 80]);
+// Audit only types that anchor the structural column rhythm. CARDS
+// (groups) and scrollviews must align with the column. Buttons split
+// the column in many legitimate ways (icon chrome, tab pairs, "host /
+// bot" 50/50 splits) so we don't audit btn widths here. Full-width
+// CTAs that drift from CONTENT_W are best caught visually.
+const COLUMN_TYPES = new Set(['group', 'scrollview']);
+// Popover / modal / dropdown sub-elements don't sit in the main column
+// — they're contextual surfaces sized to their trigger or content.
+const SUB_SURFACE_RE = /Popover|Modal|Dropdown|Sheet|Drawer|Tooltip|TrophyTree/;
+// Max edge-gap that counts as "drift" — anything larger is intentional
+// vertical fill between a top section and a bottom CTA, not card-to-card
+// drift.
+const MAX_AUDITABLE_GAP = 200;
+
+function logSpacingDrift(panelKey, name, spec) {
+    if (!spec || typeof spec.w !== 'number') return false;
+    if (!COLUMN_TYPES.has(spec.type)) return false;
+    if (SUB_SURFACE_RE.test(name)) return false;
+    if (ALLOWED_WIDTHS.has(spec.w)) return false;
+    console.log(`[LayoutDiag][space] ${panelKey} ${name} (${spec.type}) w=${spec.w} (not a UNIFORM_LAYOUT width)`);
+    return true;
+}
+
+// Edge-gap audit: distance from previous card's bottom edge to next
+// card's top edge (not center-to-center, which is meaningless when
+// the two cards have different heights).
+function logGapDrift(panelKey, prev, cur) {
+    if (SUB_SURFACE_RE.test(prev.name) || SUB_SURFACE_RE.test(cur.name)) return false;
+    const prevBottom = prev.spec.y - prev.spec.h / 2;
+    const curTop     = cur.spec.y  + cur.spec.h  / 2;
+    const gap = Math.abs(prevBottom - curTop);
+    if (gap === 0) return false;
+    if (gap > MAX_AUDITABLE_GAP) return false;
+    if (ALLOWED_GAPS.has(gap)) return false;
+    console.log(`[LayoutDiag][space] ${panelKey} gap ${prev.name}→${cur.name} = ${gap} (not a UNIFORM_SPACE token or sum)`);
+    return true;
+}
+
+function auditLayoutSpacing() {
+    // Skip overlays / drawer panels with their own narrower column.
+    const NON_COLUMN = /^(BackgroundFX|JoinMatchConfirmOverlay|NotificationToastOverlay|NotificationToastSlot|NotificationPanel|CountdownOverlay|SigningOverlay|LoadingOverlay|LevelUpOverlay)$/;
+    let issues = 0;
+    for (const panelKey of Object.keys(LAYOUT)) {
+        if (panelKey.startsWith('_')) continue;             // _GLOBAL_, etc.
+        if (NON_COLUMN.test(panelKey)) continue;
+        const panel = LAYOUT[panelKey];
+        if (!panel || typeof panel !== 'object') continue;
+        const els = panel.elements;
+        if (!els || typeof els !== 'object') continue;
+
+        // Width audit — cards / CTAs / scrollviews only.
+        for (const name of Object.keys(els)) {
+            if (logSpacingDrift(panelKey, name, els[name])) issues++;
+        }
+
+        // Gap audit — only top-level CENTER-anchored cards / CTAs / scrollviews.
+        // Title/subtitle/status labels and chrome bits are exempt.
+        const stack = Object.keys(els)
+            .map((n) => ({ name: n, spec: els[n] }))
+            .filter(({ spec }) =>
+                spec &&
+                typeof spec.x === 'number' && spec.x === 0 &&
+                typeof spec.y === 'number' &&
+                typeof spec.h === 'number' &&
+                COLUMN_TYPES.has(spec.type))
+            .sort((a, b) => b.spec.y - a.spec.y);
+        for (let i = 1; i < stack.length; i++) {
+            const prev = stack[i - 1];
+            const cur  = stack[i];
+            if (logGapDrift(panelKey, prev, cur)) issues++;
+        }
+    }
+    if (issues === 0) {
+        console.log(`[LayoutDiag][space] OK — every audited card/CTA width and column gap is a UNIFORM token (or token sum).`);
+    } else {
+        console.log(`[LayoutDiag][space] ${issues} drift warning(s) above. Snap to UNIFORM_LAYOUT / UNIFORM_SPACE tokens.`);
+    }
+}
+auditLayoutSpacing();
 
 const UUIDS = {
     MWAManager: '409dciqDmlP9rvNGXKC80Rx',
@@ -300,16 +398,31 @@ function mkBackHeader(sb, parent, opts = {}) {
     return { linkN, btnN };
 }
 
-function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200) {
+// 2026-04-29 (Prompt 1) — body sprite for buttons. Uses the 9-slice rounded
+// asset (radius 16) when UUID_CARD_BG_R16 is populated; falls back to the
+// flat white square otherwise. Both branches keep the same call shape so
+// callers don't need to know which mode is active.
+function btnBodySpr(sb, n, r, g, b) {
+    const useRounded = !!UUID_CARD_BG_R16;
+    return sb.spr(n, r, g, b, useRounded ? UUID_CARD_BG_R16 : UUID_WHITE_SPRITE, 1);
+}
+
+function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200, opts) {
+    // 2026-04-29 (Prompt 1) — when a tier is supplied via opts, ButtonTierSpec
+    // dictates height + label fontSize (the locked hierarchy values). Width
+    // stays caller-controlled (panels lay out their own widths). Old callers
+    // without a tier keep their explicit positional args.
+    const ts = tierSpec(opts);
+    if (ts) h = ts.height;
     const bn=sb.e.length;
     const tHN=bn+1, bSN=bn+2, ln=bn+3, bu=bn+4, sp=bn+5, bt=bn+6;
     const tHUt=bn+7, tHSp=bn+8, bSUt=bn+9, bSSp=bn+10, lUt=bn+11, ll=bn+12;
-    const fontSize = Math.max(26, Math.round(h*0.34));
+    const fontSize = ts ? ts.fontSize : Math.max(26, Math.round(h*0.34));
     sb.node(name, parent, [tHN, bSN, ln], [bu, sp, bt], v3(0, y, 0));
     sb.node('TopHighlight', bn, [], [tHUt, tHSp], v3(0, h * 0.30, 0));
     sb.node('BottomShadow', bn, [], [bSUt, bSSp], v3(0, -h * 0.42, 0));
     sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
-    sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
+    sb.ut(bn, w, h); btnBodySpr(sb, bn, br, bg, bb); sb.btn(bn, br, bg, bb);
     sb.ut(tHN, w - 4, h * 0.40); sb.spr(tHN, 255, 255, 255);
     sb.e[tHSp]._color = cl(255, 255, 255, 52); // 20% white — top lift
     sb.ut(bSN, w - 4, h * 0.16); sb.spr(bSN, 0, 0, 0);
@@ -322,16 +435,19 @@ function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200) {
     return bn;
 }
 
-function mkBtnXY(sb, name, parent, text, x, y, w=500, h=75, br=60, bg=120, bb=200) {
+function mkBtnXY(sb, name, parent, text, x, y, w=500, h=75, br=60, bg=120, bb=200, opts) {
+    // 2026-04-29 (Prompt 1) — see mkBtn for tier rationale.
+    const ts = tierSpec(opts);
+    if (ts) h = ts.height;
     const bn=sb.e.length;
     const tHN=bn+1, bSN=bn+2, ln=bn+3, bu=bn+4, sp=bn+5, bt=bn+6;
     const tHUt=bn+7, tHSp=bn+8, bSUt=bn+9, bSSp=bn+10, lUt=bn+11, ll=bn+12;
-    const fontSize = Math.max(22, Math.round(h*0.34));
+    const fontSize = ts ? ts.fontSize : Math.max(22, Math.round(h*0.34));
     sb.node(name, parent, [tHN, bSN, ln], [bu, sp, bt], v3(x, y, 0));
     sb.node('TopHighlight', bn, [], [tHUt, tHSp], v3(0, h * 0.30, 0));
     sb.node('BottomShadow', bn, [], [bSUt, bSSp], v3(0, -h * 0.42, 0));
     sb.node('Label', bn, [], [lUt, ll], v3(0, 0, 0));
-    sb.ut(bn, w, h); sb.spr(bn, br, bg, bb); sb.btn(bn, br, bg, bb);
+    sb.ut(bn, w, h); btnBodySpr(sb, bn, br, bg, bb); sb.btn(bn, br, bg, bb);
     sb.ut(tHN, w - 4, h * 0.40); sb.spr(tHN, 255, 255, 255);
     sb.e[tHSp]._color = cl(255, 255, 255, 52);
     sb.ut(bSN, w - 4, h * 0.16); sb.spr(bSN, 0, 0, 0);
@@ -347,10 +463,23 @@ function mkBtnXY(sb, name, parent, text, x, y, w=500, h=75, br=60, bg=120, bb=20
 // behind. Default 12-px bleed on every side, alpha 80, tinted the button's
 // own brand color. V2: callers can pass `opts.glowAlpha` and `opts.glowPad`
 // to tier the glow intensity per CTA hierarchy (Start > Find > Bot).
+// 2026-04-29 (Prompt 1): when `opts.tier` is supplied, ButtonTierSpec[tier]
+// supplies height, glowAlpha, and glowPad — overriding `h` and the per-call
+// glow values so the hierarchy is locked. Width is still caller-controlled.
 // Returns { glow, btn, ripple }.
 function mkBtnHero(sb, name, parent, text, x, y, w, h, br, bg, bb, opts) {
-    const glowAlpha = (opts && typeof opts.glowAlpha === 'number') ? opts.glowAlpha : 80;
-    const glowPad   = (opts && typeof opts.glowPad   === 'number') ? opts.glowPad   : 12;
+    const ts = tierSpec(opts);
+    if (ts) h = ts.height;
+    const glowAlpha = ts ? ts.glowAlpha
+        : (opts && typeof opts.glowAlpha === 'number') ? opts.glowAlpha : 80;
+    const glowPad   = ts ? ts.glowPad
+        : (opts && typeof opts.glowPad   === 'number') ? opts.glowPad   : 12;
+    if (glowAlpha <= 0) {
+        // Tertiary tier (no halo) — just delegate straight to mkBtnXY and
+        // skip building the BtnGlow_/Ripple_ siblings.
+        const btnN = mkBtnXY(sb, name, parent, text, x, y, w, h, br, bg, bb, opts);
+        return { glow: -1, btn: btnN, ripple: -1 };
+    }
     // Halo sibling — w+pad*2, h+pad*2, brand-color at the chosen alpha.
     const glowN = sb.e.length;
     sb.node(`BtnGlow_${name}`, parent, [], [], v3(x, y, 0));
@@ -367,8 +496,9 @@ function mkBtnHero(sb, name, parent, text, x, y, w, h, br, bg, bb, opts) {
         _id: gid(),
     });
     sb.e[glowN]._components = [rf(glowUT), rf(glowSpr)];
-    // Actual button.
-    const btnN = mkBtnXY(sb, name, parent, text, x, y, w, h, br, bg, bb);
+    // Actual button — pass opts so tier-derived height + rounded body sprite
+    // propagate down to the inner factory.
+    const btnN = mkBtnXY(sb, name, parent, text, x, y, w, h, br, bg, bb, opts);
     // Phase 18 — ripple-on-click child sprite. AppUI's ButtonFX.addRipple
     // activates + tweens scale/opacity on CLICK. Initially _active=false +
     // alpha 0 so it's invisible until tapped. Sized = button size; sits
@@ -404,21 +534,30 @@ function mkBtnHero(sb, name, parent, text, x, y, w, h, br, bg, bb, opts) {
 // that shouldn't compete visually with the primary CTA. Ghost variants get
 // no glow halo. Returns { glow, btn, ripple } — glow=-1 when ghost.
 function mkBtnHeroLayered(sb, name, parent, title, subtitle, x, y, w, h, br, bg, bb, opts = {}) {
+    // 2026-04-29 (Prompt 1) — when a tier is supplied, ButtonTierSpec[tier]
+    // dictates height and halo strength. Title fontSize follows tier.fontSize;
+    // subtitle stays a proportional ratio so two-line layout doesn't squash.
+    const ts = tierSpec(opts);
+    if (ts) h = ts.height;
     const ghost = opts.ghost === true;
-    const haloAlpha = opts.haloAlpha ?? 80;
+    const haloAlpha = ts ? ts.glowAlpha : (opts.haloAlpha ?? 80);
     const hasGradient = opts.gradient === true;
     const bodyR = ghost ? 21 : br, bodyG = ghost ? 25 : bg, bodyB = ghost ? 41 : bb;
     const titleR = ghost ? br : 255, titleG = ghost ? bg : 255, titleB = ghost ? bb : 255;
     const subAlpha = 220;
-    const titleFs = Math.max(24, Math.round(h * 0.28));
-    const subFs   = Math.max(14, Math.round(h * 0.16));
+    const titleFs = ts ? ts.fontSize : Math.max(24, Math.round(h * 0.28));
+    const subFs   = ts ? Math.max(14, Math.round(ts.fontSize * 0.55))
+                       : Math.max(14, Math.round(h * 0.16));
 
     // Glow halo sibling — added BEFORE button body so it renders behind.
+    // Skipped for ghost (secondary surface) and for any tier whose glowAlpha
+    // resolves to <=0 (tertiary).
     let glowN = -1;
-    if (!ghost) {
+    if (!ghost && haloAlpha > 0) {
+        const glowPad = ts ? ts.glowPad : 12;
         glowN = sb.e.length;
         sb.node(`BtnGlow_${name}`, parent, [], [], v3(x, y, 0));
-        const glowUT  = sb.ut(glowN, w + 24, h + 24);
+        const glowUT  = sb.ut(glowN, w + glowPad * 2, h + glowPad * 2);
         const glowSpr = sb.add({
             __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
             node: rf(glowN), _enabled: true, __prefab: null,
@@ -461,7 +600,7 @@ function mkBtnHeroLayered(sb, name, parent, title, subtitle, x, y, w, h, br, bg,
     sb.node('TitleLabel',    bn, [], [tlUt, tlLbl], v3(0,  h * 0.14, 0));
     sb.node('SubtitleLabel', bn, [], [slUt, slLbl], v3(0, -h * 0.20, 0));
 
-    sb.ut(bn, w, h); sb.spr(bn, bodyR, bodyG, bodyB); sb.btn(bn, bodyR, bodyG, bodyB);
+    sb.ut(bn, w, h); btnBodySpr(sb, bn, bodyR, bodyG, bodyB); sb.btn(bn, bodyR, bodyG, bodyB);
     sb.ut(tHN, w - 4, h * 0.40); sb.spr(tHN, 255, 255, 255);
     sb.e[tHSp]._color = cl(255, 255, 255, ghost ? 24 : 52);
     sb.ut(bSN, w - 4, h * 0.16); sb.spr(bSN, 0, 0, 0);
@@ -579,6 +718,95 @@ function mkCardEdge(sb, cardN, w, h, r, g, b, alpha=255) {
     return eN;
 }
 
+// 2026-04-29 (Prompt 1) — unified card chrome.
+//
+// Builds one card surface: container Node + body Sprite (9-slice rounded
+// when UUID_CARD_BG_R16 is populated, square otherwise) + optional colored
+// top-edge accent + optional sibling elevation glow.
+//
+// Replaces the ad-hoc sb.node + sb.spr + cl(...) + mkCardEdge sequence
+// duplicated 22+ times in this file. Caller wires children/components on
+// the returned cardN exactly as before.
+//
+// opts:
+//   tier:      'base' | 'elevated' | 'interactive'   (default 'base')
+//   edge:      [r, g, b] tuple from Palette.cardEdge.* (or null/undefined for no edge)
+//   edgeAlpha: 0..255 (default 255). Mirrors mkCardEdge alpha arg.
+//   bodyAlpha: 0..255 (default 230 = Card.bgAlpha)
+//   name:      Node name (default 'Card')
+//
+// Returns: { cardN, bodySpr, edgeN, glowN } where edgeN/glowN may be null.
+function mkCard(sb, parent, x, y, w, h, opts) {
+    opts = opts || {};
+    const tier      = opts.tier || 'base';
+    const edge      = opts.edge || null;
+    const edgeAlpha = (opts.edgeAlpha != null) ? opts.edgeAlpha : 255;
+    const bodyAlpha = (opts.bodyAlpha != null) ? opts.bodyAlpha : 230;
+    const name      = opts.name || 'Card';
+
+    // Optional elevation glow — sibling to the card body so the glow extends
+    // beyond the card bounds. Mirrors the existing homeRecentCardElevation
+    // pattern. Tier 'base' returns null; no glow node is created.
+    let glowN = null;
+    if (tier === 'elevated' || tier === 'interactive') {
+        const isInteractive = (tier === 'interactive');
+        const glowSpread = isInteractive ? 16 : 12;
+        const glowAlpha  = isInteractive ? 110 : 60;
+        glowN = mkCardGlow(sb, parent, x, y,
+            w + glowSpread * 2, h + glowSpread * 2, glowAlpha);
+    }
+
+    const cardN = sb.e.length;
+    sb.node(name, parent, [], [], v3(x, y, 0));
+    const cardUT = sb.ut(cardN, w, h);
+
+    // 9-slice rounded body when asset is present, square fallback otherwise.
+    // _type: 1 (SLICED) reads the SpriteFrame's 9-slice insets — the import
+    // settings on card_bg_r16.png must have border = 16 on all sides for the
+    // corners to render correctly at any (w, h).
+    const useRounded = !!UUID_CARD_BG_R16;
+    const bodySpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(cardN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(30, 36, 56, bodyAlpha),  // Palette.bg.card RGB (#1E2438)
+        _spriteFrame: { __uuid__: useRounded ? UUID_CARD_BG_R16 : UUID_WHITE_SPRITE },
+        _type: useRounded ? 1 : 0,           // 1=SLICED, 0=SIMPLE
+        _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[cardN]._components = [rf(cardUT), rf(bodySpr)];
+
+    // Optional colored top-edge accent — preserves per-card semantic colors
+    // (Violet/Teal/Gold/Slate/Blue/Rose) by routing through the existing
+    // mkCardEdge helper. Caller may still call mkCardEdge directly if they
+    // want a non-default placement.
+    let edgeN = null;
+    if (edge) {
+        edgeN = mkCardEdge(sb, cardN, w, h, edge[0], edge[1], edge[2], edgeAlpha);
+        sb.e[cardN]._children = [rf(edgeN)];
+    }
+
+    return { cardN: cardN, bodySpr: bodySpr, edgeN: edgeN, glowN: glowN };
+}
+
+// 2026-04-29 (Prompt 1) — companion glow Sprite for elevated/interactive
+// cards. Sits at the same (x, y) as the card but is a sibling under
+// `parent` so it can extend beyond the card's bounds. Caller appends the
+// returned index to parent's _children BEFORE the card itself so the glow
+// renders behind the body sprite.
+function mkCardGlow(sb, parent, x, y, w, h, alpha) {
+    const gN = sb.e.length;
+    sb.node('CardGlow', parent, [], [], v3(x, y, 0));
+    const gUT = sb.ut(gN, w, h);
+    const gSprIdx = sb.spr(gN, 153, 69, 255);  // violet halo by default
+    sb.e[gSprIdx]._color = cl(153, 69, 255, alpha);
+    sb.e[gN]._components = [rf(gUT), rf(gSprIdx)];
+    return gN;
+}
+
 // 2026-04-26: lobby-status chip group — small Key (uppercase tiny, lo-tier)
 // stacked above Val (bigger, hi-tier bold). Used by Home MatchStatus +
 // ChallengeSeason cards. Container is transparent (cc.UITransform only) so
@@ -609,6 +837,14 @@ const UUID_EDITBOX_BG     = 'bd1bcaba-bd7d-4a71-b143-997c882383e4@f9941';
 const UUID_SLIDER_RAIL    = '28765e2f-040a-4c65-8e8c-f9d0bb79d863@f9941';
 const UUID_SLIDER_HANDLE  = 'f12a23c4-b924-4322-a260-3d982428f1e8@f9941';
 const UUID_BUILTIN_SPRITE_MAT = 'fda095cb-831d-4601-ad94-846013963de8';
+
+// 2026-04-29 (Prompt 1) — single 9-slice rounded card SpriteFrame. Asset
+// lives at assets/demo/resources/ui/card_bg_r16.png with corner insets of
+// 16 px on all sides. UUID is minted by Cocos editor on first import; paste
+// it here and clear library/temp before the next scene-gen run. Until the
+// asset is imported, mkCard() falls back to UUID_WHITE_SPRITE (square
+// corners) so existing call sites can be migrated without visual regression.
+const UUID_CARD_BG_R16 = ''; // ← paste asset UUID here after Cocos import
 
 // UX Phase 2c: custom fonts bundled at assets/demo/resources/fonts/.
 // Inter-Regular = body/default, Sora-Bold = display (applied via style({bold:true})).
@@ -1093,7 +1329,7 @@ function generate() {
         'Enter the Duel', 'Stake SOL · Win SOL',
         LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
         255, 210, 74,
-        { gradient: true, haloAlpha: 100 });
+        { tier: 'primary', gradient: true });
 
     // Right-aligned chevron — directional cue. Child of ConnectButton.
     const chevronN = sb.e.length;
@@ -1142,7 +1378,7 @@ function generate() {
         '⟳  Reconnect', 'Continue with saved wallet',
         LE.reconnBtn.x, LE.reconnBtn.y, LE.reconnBtn.w, LE.reconnBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { ghost: true });
+        { tier: 'secondary', ghost: true });
     sb.e[reconnBtn]._active = false;
 
     // TERTIARY — Play as Guest (teal, DIM halo so it visibly defers).
@@ -1151,7 +1387,7 @@ function generate() {
         '👤  Play as Guest', 'Practice with bots · no wallet needed',
         LE.playAsGuestBtn.x, LE.playAsGuestBtn.y, LE.playAsGuestBtn.w, LE.playAsGuestBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { haloAlpha: 40 });
+        { tier: 'tertiary' });
 
     // ── Footer ──────────────────────────────────────────────────────
     const statusPill = mkPill(sb, 'ConnectionStatusPill', lpN, '● Disconnected',
