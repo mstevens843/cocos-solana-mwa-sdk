@@ -13,7 +13,7 @@ import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransi
 import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
 import { Palette, themeColor, colorFromHex } from '../../token-duel/scripts/Theme';
 import { enhancePrimaryCTA, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
-import { addFloat, addGlowPulse, addParticleDrift, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
+import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -508,6 +508,17 @@ export class AppUI extends Component {
     private _lbModeSetActive: ((key: string) => void) | null = null;
     private _pfTopLevelSetActive: ((key: string) => void) | null = null;
     private _pfModeSetActive: ((key: string) => void) | null = null;
+    // 2026-04-28 Graphics-buffer fix: Cocos's UI batcher can drop a Graphics
+    // component's geometry buffer when its parent panel deactivates → reactivates,
+    // leaving pill backgrounds/glows/dividers blank while Labels (which Cocos
+    // re-renders on onEnable) keep painting. Each pill exposes a `redraw()`
+    // closure that calls g.clear() + replays every roundRect/fill — invoked from
+    // _assertHubPills on every panel-open path so re-entry is idempotent.
+    private _lbHubRedraw: (() => void) | null = null;
+    private _pfHubRedraw: (() => void) | null = null;
+    private _lbModeRedraw: (() => void) | null = null;
+    private _pfTopLevelRedraw: (() => void) | null = null;
+    private _pfModeRedraw: (() => void) | null = null;
     // Strip nodes — used to show/hide the mode pill when leaving Stats sub-tab.
     private _pfModePillStrip: Node | null = null;
     private _pfTopLevelPillStrip: Node | null = null;
@@ -618,9 +629,6 @@ export class AppUI extends Component {
     // the "Xm ago" freshness refresh on the Last Result strip).
     private _tickerPollTimer: number | null = null;
     private _tickerRotateTimer: number | null = null;
-    /** V5 — once-flag so we don't double-spawn home panel ambient particles. */
-    private _homeParticlesAdded: boolean = false;
-
     // Part 13: rake surfacing. Caches the last-fetched level for quick UI
     // updates without re-polling UserStats on every panel transition.
     // 2026-04-26 lobby restructure: HomeRakeChip removed; rake now lives in
@@ -1984,6 +1992,7 @@ export class AppUI extends Component {
                 },
             });
             this._lbModeSetActive = lbModePill.setActive;
+            this._lbModeRedraw = lbModePill.redraw;
             // Empty-state CTA → close leaderboard, open FindMatchPanel.
             const emptyCta = this._leaderboardPanel.getChildByName('EmptyStateGroup')
                 ?.getChildByName('EmptyStartMatchButton')?.getComponent(Button);
@@ -2256,6 +2265,7 @@ export class AppUI extends Component {
                 onClick: (key) => this._onPortfolioTopLevelTab(key as 'stats' | 'history' | 'trophies'),
             });
             this._pfTopLevelSetActive = pfTopPill.setActive;
+            this._pfTopLevelRedraw = pfTopPill.redraw;
             this._pfTopLevelPillStrip = pfTopPill.strip;
             // Runtime chip — Paper / Real. 2026-04-28 tab-system redesign:
             // demoted from a 260×56 sub-label pill to a 200×36 chip, lifted
@@ -2282,6 +2292,7 @@ export class AppUI extends Component {
                 onClick: (key) => this._onPortfolioTabClick(key as 'paper' | 'real'),
             });
             this._pfModeSetActive = pfModePill.setActive;
+            this._pfModeRedraw = pfModePill.redraw;
             this._pfModePillStrip = pfModePill.strip;
             // Part 11 B: cache the 6 trophy tile nodes for reuse.
             const trophiesView = this._portfolioPanel.getChildByName('PortfolioTrophiesView');
@@ -3368,12 +3379,12 @@ export class AppUI extends Component {
         // freshness refresh of the user's Last Result snapshot.
         this._startMatchTicker();
 
-        // V5 — top-heavy ambient particle drift on home panel. Once-flagged
-        // so re-entries don't double-spawn the layer.
-        if (!this._homeParticlesAdded && this._homePanel) {
+        // 2026-04-28 — top-heavy ambient particle drift on home panel.
+        // ensureParticleDrift re-spawns on every entry so navigating away
+        // from Home (Find Match, etc.) and returning still shows the layer.
+        if (this._homePanel) {
             try {
-                addParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' });
-                this._homeParticlesAdded = true;
+                ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' });
             } catch (_) { /* tween/Graphics may not be loaded yet */ }
         }
 
@@ -3655,6 +3666,12 @@ export class AppUI extends Component {
         if (which === 'home') {
             this._rebuildMipDisplay();
             void this._refreshMipMatches();
+        }
+        // 2026-04-28 — re-spawn ambient particle drift on every Landing entry
+        // so disconnect → return-to-Landing keeps the layer alive. Home owns
+        // its own re-spawn in _showHome (alongside other home-specific work).
+        if (which === 'landing' && this._landingPanel) {
+            try { ensureParticleDrift(this._landingPanel, 6); } catch (_) { /* tween/Graphics may not be loaded yet */ }
         }
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
     }
@@ -4798,9 +4815,9 @@ export class AppUI extends Component {
             op.opacity = 140;
         }
 
-        // 2026-04-28 polish — particle density 8 → 6 (~25% reduction). Existing
-        // helper handles size variance + horizontal drift; just lower count.
-        addParticleDrift(lp, 6);
+        // 2026-04-28 — particle drift now spawned in _setActivePanel('landing')
+        // so it re-fires on every Landing entry (disconnect → return etc.),
+        // not just once at start().
 
         console.log(`${TAG} _polishLandingPanel | applied`);
     }
@@ -14687,25 +14704,35 @@ export class AppUI extends Component {
             hubStrip.setSiblingIndex(-1);
         }
         if (panel === this._portfolioPanel) {
+            // 2026-04-28 Graphics-buffer fix: replay every captured Graphics
+            // draw closure so pill bg/glow/highlight/divider geometry is rebuilt
+            // after Cocos's UI batcher dropped it during the deactivate cycle.
+            // Order: redraw before setActive so the slide tween targets a
+            // freshly-painted strip.
+            this._pfHubRedraw?.();
             this._pfHubSetActive?.(this._hubActiveTab);
             if (this._pfTopLevelPillStrip) {
                 this._pfTopLevelPillStrip.active = true;
                 this._pfTopLevelPillStrip.setSiblingIndex(-1);
             }
+            this._pfTopLevelRedraw?.();
             this._pfTopLevelSetActive?.(this._pfTopLevelTab);
+            const showMode = (this._pfTopLevelTab === 'stats' || this._pfTopLevelTab === 'history');
             if (this._pfModePillStrip) {
-                const showMode = (this._pfTopLevelTab === 'stats' || this._pfTopLevelTab === 'history');
                 this._pfModePillStrip.active = showMode;
                 if (showMode) this._pfModePillStrip.setSiblingIndex(-1);
             }
+            if (showMode) this._pfModeRedraw?.();
             this._pfModeSetActive?.(this._pfActiveTab);
         } else if (panel === this._leaderboardPanel) {
+            this._lbHubRedraw?.();
             this._lbHubSetActive?.(this._hubActiveTab);
             const lbModeStrip = panel.getChildByName('LBModePill');
             if (lbModeStrip) {
                 lbModeStrip.active = true;
                 lbModeStrip.setSiblingIndex(-1);
             }
+            this._lbModeRedraw?.();
             const seasonActive = this._lbFilterMode === 4;
             const modeKey = ['1v1', 'trio', '4p', '8p'][this._lbFilterMode];
             this._lbModeSetActive?.(seasonActive ? '__none__' : (modeKey ?? '1v1'));
@@ -14744,8 +14771,10 @@ export class AppUI extends Component {
         });
         if (parent === this._leaderboardPanel) {
             this._lbHubSetActive = pill.setActive;
+            this._lbHubRedraw = pill.redraw;
         } else {
             this._pfHubSetActive = pill.setActive;
+            this._pfHubRedraw = pill.redraw;
         }
         return {
             portfolio:   pill.buttons.get('portfolio')!,
@@ -14786,6 +14815,7 @@ export class AppUI extends Component {
         strip: Node;
         setActive: (key: string) => void;
         buttons: Map<string, Button>;
+        redraw: () => void;
     } {
         const STRIP_W = opts.width;
         const STRIP_H = opts.height;
@@ -14823,14 +14853,21 @@ export class AppUI extends Component {
         strip.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
         strip.setPosition(new Vec3(opts.x ?? 0, opts.y, 0));
 
+        // 2026-04-28 Graphics-buffer fix: each Graphics draw block is captured
+        // as a named function so `redraw()` (returned below) can replay them
+        // verbatim after Cocos drops the buffer on a deactivate→activate cycle.
         // Pill background — fully rounded.
         const bg = new Node('PillBg');
         strip.addChild(bg);
         bg.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
         const bgG = bg.addComponent(Graphics);
-        bgG.fillColor = bgC;
-        bgG.roundRect(-STRIP_W / 2, -STRIP_H / 2, STRIP_W, STRIP_H, STRIP_H / 2);
-        bgG.fill();
+        const drawBg = (): void => {
+            bgG.clear();
+            bgG.fillColor = bgC;
+            bgG.roundRect(-STRIP_W / 2, -STRIP_H / 2, STRIP_W, STRIP_H, STRIP_H / 2);
+            bgG.fill();
+        };
+        drawBg();
 
         // Outer glow — soft ambient halo, slides with active segment.
         const glowOuterW = TAB_W + 24, glowOuterH = TAB_H + 18;
@@ -14839,9 +14876,13 @@ export class AppUI extends Component {
         glowOuter.addComponent(UITransform).setContentSize(glowOuterW, glowOuterH);
         glowOuter.setPosition(new Vec3(initialX, 0, 0));
         const goG = glowOuter.addComponent(Graphics);
-        goG.fillColor = glowOuterC;
-        goG.roundRect(-glowOuterW / 2, -glowOuterH / 2, glowOuterW, glowOuterH, glowOuterH / 2);
-        goG.fill();
+        const drawGlowOuter = (): void => {
+            goG.clear();
+            goG.fillColor = glowOuterC;
+            goG.roundRect(-glowOuterW / 2, -glowOuterH / 2, glowOuterW, glowOuterH, glowOuterH / 2);
+            goG.fill();
+        };
+        drawGlowOuter();
 
         // Inner glow — tight ring with breathing alpha pulse + active scale-up.
         const glowInnerW = TAB_W + 8, glowInnerH = TAB_H + 4;
@@ -14851,9 +14892,13 @@ export class AppUI extends Component {
         glowInner.setPosition(new Vec3(initialX, 0, 0));
         glowInner.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
         const giG = glowInner.addComponent(Graphics);
-        giG.fillColor = glowInnerC;
-        giG.roundRect(-glowInnerW / 2, -glowInnerH / 2, glowInnerW, glowInnerH, glowInnerH / 2);
-        giG.fill();
+        const drawGlowInner = (): void => {
+            giG.clear();
+            giG.fillColor = glowInnerC;
+            giG.roundRect(-glowInnerW / 2, -glowInnerH / 2, glowInnerW, glowInnerH, glowInnerH / 2);
+            giG.fill();
+        };
+        drawGlowInner();
         const glowInnerOp = glowInner.addComponent(UIOpacity);
         glowInnerOp.opacity = 200;
         // Breathing pulse loop — same pattern as `_mountTopPlayerHalo`. The
@@ -14878,29 +14923,38 @@ export class AppUI extends Component {
         highlight.setPosition(new Vec3(initialX, 0, 0));
         highlight.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
         const hlG = highlight.addComponent(Graphics);
-        hlG.fillColor = fillC;
-        hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
-        hlG.fill();
-        hlG.strokeColor = new Color(255, 255, 255, 120);
-        hlG.lineWidth = 1;
-        hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
-        hlG.stroke();
+        const drawHighlight = (): void => {
+            hlG.clear();
+            hlG.fillColor = fillC;
+            hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
+            hlG.fill();
+            hlG.strokeColor = new Color(255, 255, 255, 120);
+            hlG.lineWidth = 1;
+            hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
+            hlG.stroke();
+        };
+        drawHighlight();
 
         // Optional vertical dividers between adjacent segments.
+        let drawDivider: (() => void) | null = null;
         if (opts.showDivider && N > 1) {
             const divider = new Node('PillDivider');
             strip.addChild(divider);
             divider.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
             const divG = divider.addComponent(Graphics);
-            divG.strokeColor = new Color(255, 255, 255, 30);
-            divG.lineWidth = 1;
-            const inset = Math.min(14, TAB_H / 3);
-            for (let i = 1; i < N; i++) {
-                const x = startX + i * TAB_W - TAB_W / 2;
-                divG.moveTo(x, -(TAB_H / 2 - inset));
-                divG.lineTo(x, +(TAB_H / 2 - inset));
-            }
-            divG.stroke();
+            drawDivider = (): void => {
+                divG.clear();
+                divG.strokeColor = new Color(255, 255, 255, 30);
+                divG.lineWidth = 1;
+                const inset = Math.min(14, TAB_H / 3);
+                for (let i = 1; i < N; i++) {
+                    const x = startX + i * TAB_W - TAB_W / 2;
+                    divG.moveTo(x, -(TAB_H / 2 - inset));
+                    divG.lineTo(x, +(TAB_H / 2 - inset));
+                }
+                divG.stroke();
+            };
+            drawDivider();
         }
 
         // Invisible-hitbox button per segment (visual is the Graphics layers
@@ -15001,7 +15055,17 @@ export class AppUI extends Component {
             }
         };
 
-        return { strip, setActive, buttons };
+        // 2026-04-28 Graphics-buffer fix: replays every captured draw closure.
+        // Safe to call any number of times — each closure starts with g.clear().
+        const redraw = (): void => {
+            drawBg();
+            drawGlowOuter();
+            drawGlowInner();
+            drawHighlight();
+            drawDivider?.();
+        };
+
+        return { strip, setActive, buttons, redraw };
     }
 
     /**

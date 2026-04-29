@@ -183,6 +183,35 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
 }
 
 /**
+ * Re-spawnable variant of `addParticleDrift`. Tears down any existing particle
+ * children (named `LandingParticle_*`) and their tweens, drops `parent` from
+ * the per-parent WeakSet, then re-runs `addParticleDrift` to spawn a fresh
+ * layer.
+ *
+ * Use this on every panel-show path where the particles must be visible on
+ * re-entry (Landing after disconnect, Home after navigating away). Cocos 3.8
+ * doesn't reliably retain Graphics buffers across `node.active = false` →
+ * `true` cycles when the parent's UIOpacity cross-fades, so persisting the
+ * old children isn't enough.
+ *
+ * No-op if `parent` is null. Safe to call repeatedly.
+ */
+export function ensureParticleDrift(parent: Node, count = 8, opts: { densityCurve?: 'uniform' | 'topHeavy' } = {}): void {
+    if (!parent) return;
+
+    const stale = parent.children.filter((c) => c.name.startsWith('LandingParticle_'));
+    for (const node of stale) {
+        const op = node.getComponent(UIOpacity);
+        Tween.stopAllByTarget(node);
+        if (op) Tween.stopAllByTarget(op);
+        node.destroy();
+    }
+    driftSet.delete(parent);
+
+    addParticleDrift(parent, count, opts);
+}
+
+/**
  * 2026-04-28 home UX polish — portal-style micro-transition for hero CTA
  * destinations (Find Match / Start Match). Run *after* the panel is set
  * active. Three layered effects:

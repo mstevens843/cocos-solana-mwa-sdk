@@ -85,17 +85,20 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         elements: {
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite' },
             // Header band (V3 — h 64→44, ≈-30%).
-            notificationBell:    { x: -296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            notificationBadge:   { x: -278, y: 656,  w: 22,  h: 22,  type: 'badge' },
-            walletPill:          { x: 0,    y: 640,  w: 360, h: 60,  type: 'chip' },
-            walletPillGlow:      { x: 0,    y: 640,  w: 380, h: 80,  type: 'sprite' },
+            // 2026-04-28 — header lifted to shared HEADER_BAND_Y=660 for
+            // cross-screen parity. Badge tracks (HEADER_BAND_Y + 16 = 676).
+            // Underline trails 40 px below (HEADER_BAND_Y - 40 = 620).
+            notificationBell:    { x: -296, y: 660,  w: 44,  h: 44,  type: 'btnGhost' },
+            notificationBadge:   { x: -278, y: 676,  w: 22,  h: 22,  type: 'badge' },
+            walletPill:          { x: 0,    y: 660,  w: 360, h: 60,  type: 'chip' },
+            walletPillGlow:      { x: 0,    y: 660,  w: 380, h: 80,  type: 'sprite' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge' },
             pubkeyLabel:         { x: -50,  y: 0,    w: 220, h: 26,  type: 'label' },
             walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label' },
-            openLeaderboardBtn:  { x: -224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            openSettingsBtn:     { x:  224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            disconnectBtn:       { x:  296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            homeHeaderUnderline: { x: 0,    y: 600,  w: 640, h: 1,   type: 'sprite' },
+            openLeaderboardBtn:  { x: -224, y: 660,  w: 44,  h: 44,  type: 'btnGhost' },
+            openSettingsBtn:     { x:  224, y: 660,  w: 44,  h: 44,  type: 'btnGhost' },
+            disconnectBtn:       { x:  296, y: 660,  w: 44,  h: 44,  type: 'btnGhost' },
+            homeHeaderUnderline: { x: 0,    y: 620,  w: 640, h: 1,   type: 'sprite' },
             // V4 — level chip h 80→72 (8h tighter).
             homeLevelChip:       { x: 0,    y: 556,  w: 680, h: 72,  type: 'chip' },
             homeXpProgressLabel: { x: 310,  y: 14,   w: 280, h: 18,  type: 'label' },
@@ -234,9 +237,10 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         elements: {
             // Phase 30 — premium settings redesign. KEEP IN SYNC with LayoutSpec.cjs.
             sheetBg:       { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite' },
-            backLink:      { x: -280, y: 620,  w: 110, h: 28, type: 'label' },
-            backBtn:       { x: -280, y: 620,  w: 140, h: 36, type: 'btnGhost' },
-            title:         { x: 0,    y: 614,  w: 400, h: 40, type: 'label' },
+            // 2026-04-28 — Settings header pinned to shared HEADER_BAND_Y=660.
+            backLink:      { x: -280, y: 660,  w: 110, h: 28, type: 'label' },
+            backBtn:       { x: -280, y: 660,  w: 140, h: 36, type: 'btnGhost' },
+            title:         { x: 0,    y: 660,  w: 400, h: 40, type: 'label' },
             walletCard:    { x: 0,    y: 530,  w: 688, h: 124, type: 'group' },
             profileCard:   { x: 0,    y: 376,  w: 688, h: 148, type: 'group' },
             quickPlayCard: { x: 0,    y: 138,  w: 688, h: 260, type: 'group' },
@@ -262,9 +266,10 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:         { x: -280, y: 720,  w: 110, h: 28,  type: 'label' },
-            backBtn:          { x: -280, y: 720,  w: 140, h: 36,  type: 'btnGhost' },
-            title:            { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
+            // 2026-04-28 — header collapsed to single-row at HEADER_BAND_Y=660.
+            backLink:         { x: -280, y: 660,  w: 110, h: 28,  type: 'label' },
+            backBtn:          { x: -280, y: 660,  w: 140, h: 36,  type: 'btnGhost' },
+            title:            { x: 0,    y: 660,  w: 400, h: 44,  type: 'label' },
             personalRankCard: { x: 0,    y: -130, w: 660, h: 100, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
         },
@@ -273,14 +278,16 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn:        { x: -280, y: 700,  w: 160, h: 44, type: 'btnGhost' },
-            title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
-            refreshBtn:     { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost' },
-            countLabel:     { x: 0,    y: 665,  w: 600, h: 18, type: 'label' },
+            // 2026-04-28 — header lifted to shared HEADER_BAND_Y=660; count
+            // label tracks 35 px below.
+            backBtn:        { x: -280, y: 660,  w: 160, h: 44, type: 'btnGhost' },
+            title:          { x: 0,    y: 660,  w: 400, h: 36, type: 'label' },
+            refreshBtn:     { x: 280,  y: 660,  w: 56,  h: 44, type: 'btnGhost' },
+            countLabel:     { x: 0,    y: 625,  w: 600, h: 18, type: 'label' },
             // 2026-04-28 final pass — Hide-full INSIDE FilterCard footer.
             hideFullToggle: { x: 0,    y: 418,  w: 160, h: 24, type: 'btnPrimary' },
             // 2026-04-28 final pass — unified FilterCard encapsulates tabs + chip rows + hide-full.
-            liveCountPulseDot:  { x: -90, y: 665, w: 10,  h: 10,  type: 'sprite' },
+            liveCountPulseDot:  { x: -90, y: 625, w: 10,  h: 10,  type: 'sprite' },
             filterCard:         { x: 0,   y: 510, w: 700, h: 240, type: 'sprite' },
             filterDivider1:     { x: 0,   y: 520, w: 620, h: 1,   type: 'sprite' },
             filterDivider2:     { x: 0,   y: 480, w: 620, h: 1,   type: 'sprite' },
@@ -305,13 +312,15 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30% (388→272). Mirrors `td`
             // constants block in LayoutSpec.cjs.
-            backLink:        { x: -288, y: 620,  w: 100, h: 28, type: 'label' },
-            backBtn:         { x: -288, y: 620,  w: 120, h: 40, type: 'btnGhost' },
-            title:           { x: 0,    y: 570,  w: 320, h: 36, type: 'label' },
+            // 2026-04-28 — header lifted to HEADER_BAND_Y=660; title trails 50 below
+            // (610); underline 12 below title bottom (580).
+            backLink:        { x: -288, y: 660,  w: 100, h: 28, type: 'label' },
+            backBtn:         { x: -288, y: 660,  w: 120, h: 40, type: 'btnGhost' },
+            title:           { x: 0,    y: 610,  w: 320, h: 36, type: 'label' },
             // 2026-04-27 UI overhaul — anchors header band.
-            headerUnderline: { x: 0,    y: 540,  w: 712, h: 2,  type: 'sprite' },
-            levelPill:       { x: 85,   y: 620,  w: 140, h: 44, type: 'chip' },
-            solPill:         { x: 255,  y: 620,  w: 140, h: 44, type: 'chip' },
+            headerUnderline: { x: 0,    y: 580,  w: 712, h: 2,  type: 'sprite' },
+            levelPill:       { x: 85,   y: 660,  w: 140, h: 44, type: 'chip' },
+            solPill:         { x: 255,  y: 660,  w: 140, h: 44, type: 'chip' },
             matchSetupCard:  { x: 0,    y: 480,  w: 712, h: 93, type: 'group' },
             // 2026-04-27 UI overhaul — ready-state underline at matchSetupCard bottom.
             matchSetupReadyGlow: { x: 0, y: 434, w: 700, h: 2, type: 'sprite' },
@@ -362,10 +371,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     PortfolioPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
+            // 2026-04-28 — header collapsed to single-row at HEADER_BAND_Y=660.
             historyView: { x: 0,    y: 0,   w: 720, h: 1280, type: 'group' },
-            backLink:    { x: -280, y: 720, w: 110, h: 28,   type: 'label' },
-            backBtn:     { x: -280, y: 720, w: 140, h: 36,   type: 'btnGhost' },
-            title:       { x: 0,    y: 680, w: 400, h: 44,   type: 'label' },
+            backLink:    { x: -280, y: 660, w: 110, h: 28,   type: 'label' },
+            backBtn:     { x: -280, y: 660, w: 140, h: 36,   type: 'btnGhost' },
+            title:       { x: 0,    y: 660, w: 400, h: 44,   type: 'label' },
         },
         allowedOverlaps: [['BackLinkLabel', 'BackButton']],
     },
@@ -399,20 +409,23 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     TournamentPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
+            // 2026-04-28 — chrome lifted to HEADER_BAND_Y=660.
             roster:  { x: 0,    y: 150, w: 640, h: 440, type: 'group' },
-            backBtn: { x: -260, y: 600, w: 160, h: 44,  type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40,  type: 'label' },
+            backBtn: { x: -260, y: 660, w: 160, h: 44,  type: 'btnGhost' },
+            title:   { x: 0,    y: 660, w: 300, h: 40,  type: 'label' },
         },
         allowedOverlaps: [],
     },
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -300, y: 612,  w: 100, h: 26, type: 'label' },
-            backBtn:         { x: -300, y: 612,  w: 130, h: 34, type: 'btnGhost' },
-            symbolLabel:     { x:    0, y: 614,  w: 320, h: 34, type: 'label' },
-            nameLabel:       { x:    0, y: 588,  w: 320, h: 18, type: 'label' },
-            mintChip:        { x:  255, y: 612,  w: 130, h: 26, type: 'btnGhost' },
+            // 2026-04-28 — identity band lifted to HEADER_BAND_Y=660; nameLabel
+            // keeps its 26-px offset below symbolLabel (588 → 634).
+            backLink:        { x: -300, y: 660,  w: 100, h: 26, type: 'label' },
+            backBtn:         { x: -300, y: 660,  w: 130, h: 34, type: 'btnGhost' },
+            symbolLabel:     { x:    0, y: 660,  w: 320, h: 34, type: 'label' },
+            nameLabel:       { x:    0, y: 634,  w: 320, h: 18, type: 'label' },
+            mintChip:        { x:  255, y: 660,  w: 130, h: 26, type: 'btnGhost' },
             pickBtn:         { x:    0, y: 552,  w: 560, h: 42, type: 'btnPrimary' },
             safetyHeader:    { x: -290, y: 506,  w: 200, h: 14, type: 'label' },
             rangeHeader:     { x: -290, y: 446,  w: 200, h: 14, type: 'label' },
@@ -431,9 +444,10 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     DailyChallengePanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -280, y: 618, w: 110, h: 28, type: 'label' },
-            backBtn:         { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
-            title:           { x: 0,    y: 600, w: 400, h: 40, type: 'label' },
+            // 2026-04-28 — chrome lifted to HEADER_BAND_Y=660.
+            backLink:        { x: -280, y: 660, w: 110, h: 28, type: 'label' },
+            backBtn:         { x: -280, y: 660, w: 140, h: 36, type: 'btnGhost' },
+            title:           { x: 0,    y: 660, w: 400, h: 40, type: 'label' },
             streakDayLabel:  { x: 0,    y: 2,   w: 560, h: 38, type: 'label' },
             streakBestLabel: { x: 0,    y: -28, w: 560, h: 22, type: 'label' },
         },
@@ -442,8 +456,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     SpectatorPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label' },
+            // 2026-04-28 — chrome lifted to HEADER_BAND_Y=660.
+            backBtn: { x: -260, y: 660, w: 160, h: 44, type: 'btnGhost' },
+            title:   { x: 0,    y: 660, w: 300, h: 40, type: 'label' },
         },
         allowedOverlaps: [],
     },
