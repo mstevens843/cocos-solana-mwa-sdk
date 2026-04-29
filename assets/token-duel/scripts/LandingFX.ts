@@ -85,16 +85,23 @@ export function addGlowPulse(node: Node, peakAlpha = 130, periodSec = 2.6): void
  * together. Renders as the FIRST child of `parent` so it sits behind
  * everything else (including mascot glow).
  */
-export function addParticleDrift(parent: Node, count = 8): void {
+export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?: 'uniform' | 'topHeavy' } = {}): void {
     if (!parent || driftSet.has(parent)) return;
     driftSet.add(parent);
+
+    const densityCurve = opts.densityCurve ?? 'uniform';
 
     // Bottom-of-canvas / top-of-canvas anchors. Landing canvas is 1280h
     // centered at 0; particles travel from y=-440 (well below CTA card)
     // up to y=+560 (above the title). The wide travel makes the drift
     // feel continuous rather than start/stop.
-    const Y_START = -440;
-    const Y_END   =  560;
+    //
+    // 2026-04-28 home UX — `densityCurve='topHeavy'` shifts the spawn band
+    // upward and shortens the fade tail so the home panel reads as
+    // "energy flowing into actions" near the top, fading out before
+    // reaching the cards stacked at the bottom.
+    const Y_START = densityCurve === 'topHeavy' ? -120 : -440;
+    const Y_END   = densityCurve === 'topHeavy' ?  640 :  560;
 
     // Violet (#9945FF) and teal (#14F195) — Theme.accent.violet/teal.
     const tints: [number, number, number][] = [
@@ -126,9 +133,14 @@ export function addParticleDrift(parent: Node, count = 8): void {
         const delaySec  = (i / count) * periodSec * 0.8;  // staggered start
         const xJitter   = (Math.random() - 0.5) * 380;    // ±190 px
 
-        // Initial position: somewhere between Y_START and Y_END, biased
-        // toward the bottom so the first wave drifts up naturally.
-        const startY = Y_START + Math.random() * 200;
+        // Initial position: somewhere between Y_START and Y_END.
+        // 'uniform' biases toward the bottom (200px wave from start) so the
+        // first wave drifts up. 'topHeavy' biases upward (70% in upper half
+        // of the spawn band) so density visibly clusters near top of panel.
+        const Y_SPREAD = Y_END - Y_START;
+        const startY = densityCurve === 'topHeavy'
+            ? Y_START + Y_SPREAD * (0.3 + Math.random() * 0.7)  // 30-100% (top-biased)
+            : Y_START + Math.random() * 200;                     // legacy: bottom-biased
         p.setPosition(xJitter, startY, 0);
 
         particles.push({ node: p, op, periodSec, delaySec, xJitter });
@@ -168,5 +180,62 @@ export function addParticleDrift(parent: Node, count = 8): void {
     }
 
     console.log(`${TAG} addParticleDrift | parent=${parent.name} count=${count}`);
+}
+
+/**
+ * 2026-04-28 home UX polish — portal-style micro-transition for hero CTA
+ * destinations (Find Match / Start Match). Run *after* the panel is set
+ * active. Three layered effects:
+ *
+ *   1. Panel root: scale 0.96 → 1.0 + opacity 0 → 255 over 220ms (backOut).
+ *      Reads as "the panel arriving from a deeper layer."
+ *   2. One-shot radial glow sprite: centered, scale 0.4 → 2.6 + alpha
+ *      180 → 0 over 320ms in `accentColor`. Auto-destroys when tween
+ *      completes.
+ *
+ * No-op if `panelRoot` is null. Safe to call even when the panel was
+ * already visible — the scale tween will run again, which still reads
+ * as a small "re-affirmation" flash.
+ */
+export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): void {
+    if (!panelRoot) return;
+
+    // Step 1 — panel scale + opacity entrance.
+    panelRoot.setScale(0.96, 0.96, 1);
+    const panelOp = panelRoot.getComponent(UIOpacity) ?? panelRoot.addComponent(UIOpacity);
+    panelOp.opacity = 0;
+    Tween.stopAllByTarget(panelRoot);
+    Tween.stopAllByTarget(panelOp);
+    tween(panelRoot)
+        .to(0.22, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+        .start();
+    tween(panelOp)
+        .to(0.22, { opacity: 255 }, { easing: 'sineOut' })
+        .start();
+
+    // Step 2 — one-shot radial glow burst at panel center. Uses Graphics
+    // (filled circle) rather than Sprite to avoid needing a SpriteFrame
+    // UUID — same pattern as addParticleDrift's drifting dots.
+    const burst = new Node('PanelEnterFlourish');
+    panelRoot.addChild(burst);
+    const ut = burst.addComponent(UITransform);
+    ut.setContentSize(420, 420);
+    const g = burst.addComponent(Graphics);
+    g.fillColor = new Color(accentColor.r, accentColor.g, accentColor.b, 255);
+    g.circle(0, 0, 80);
+    g.fill();
+    burst.setScale(0.4, 0.4, 1);
+    burst.setPosition(0, 0, 0);
+    const burstOp = burst.addComponent(UIOpacity);
+    burstOp.opacity = 180;
+    tween(burst)
+        .to(0.32, { scale: new Vec3(2.6, 2.6, 1) }, { easing: 'cubicOut' })
+        .start();
+    tween(burstOp)
+        .to(0.32, { opacity: 0 }, { easing: 'cubicOut' })
+        .call(() => { try { burst.destroy(); } catch (_) { /* already destroyed */ } })
+        .start();
+
+    console.log(`${TAG} panelEnterFlourish | ${panelRoot.name} accent=(${accentColor.r},${accentColor.g},${accentColor.b})`);
 }
 

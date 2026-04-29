@@ -100,6 +100,13 @@ export function runPaperBotMatch(opts: {
     const pnl = payoutLamports - opts.wagerTierLamports;
     const playerWon = payoutLamports > 0;
     Stats.record('paper', playerWon, pnl);
+    Stats.recordLastMatch({
+        outcome: playerWon ? 'win' : 'loss',
+        deltaSol: pnl / 1e9,
+        modeLabel: mode.shortLabel,
+        stakeSol: opts.wagerTierLamports / 1e9,
+        atSec: Math.floor(Date.now() / 1000),
+    });
 
     // Best opponent = highest-scoring bot (not the sorted-slot neighbor —
     // we want the strongest competitor for the reveal's BEST OPP card).

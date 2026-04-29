@@ -47,6 +47,7 @@ export async function registerPaperMatchActive(args: RegisterArgs): Promise<bool
             console.log(`${TAG} register | HTTP ${res.status} body="${txt.slice(0, 120)}"`);
             return false;
         }
+        console.log(`${TAG} register | OK id=${args.id.slice(0, 18)}… pk=${args.pubkey.slice(0, 8)}… mode=${args.modeU8} window=${args.timeWindow} dur=${args.durationMs}ms track=${args.track}`);
         return true;
     } catch (e) {
         console.log(`${TAG} register | NET_ERR ${e}`);

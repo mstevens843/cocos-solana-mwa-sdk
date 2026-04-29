@@ -111,13 +111,14 @@ export const WATCHLIST_LS_KEY = 'tokenduel:watchlist';
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * URL of the receipt-signing backend. Overridable at runtime via
- * `globalThis.TD_RECEIPT_URL` for dev; production builds bake the
- * Railway / Fly URL in. For local dev, point at `http://<host-ip>:3000`
- * (Android emulator uses 10.0.2.2, device-on-LAN uses your laptop IP).
+ * URL of the receipt-signing backend. Default is the Render production
+ * service. Override at runtime via `globalThis.TD_RECEIPT_URL` (must be
+ * set BEFORE this module is first imported — e.g., from index.html
+ * before the Cocos bundle loads). DemoAppConfig.onLoad runs after this
+ * const evaluates, so its globalThis assignment is a no-op now.
  */
 export const RECEIPT_BACKEND_URL: string =
-    (globalThis as any).TD_RECEIPT_URL ?? 'http://10.0.2.2:3000';
+    (globalThis as any).TD_RECEIPT_URL ?? 'https://token-duel-backend.onrender.com';
 console.log(`[constants] BOOT RECEIPT_BACKEND_URL=${RECEIPT_BACKEND_URL}`);
 
 /** Solana Ed25519 native program address — required when building the

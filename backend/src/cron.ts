@@ -25,6 +25,7 @@ import { AnchorBackend } from '../../assets/token-duel/scripts/AnchorBackend';
 import { RPC_URL } from '../../assets/token-duel/scripts/constants';
 import { loadAdminKeypair, sendAdminTx } from './admin_signer';
 import { createUmiForMint, mintTrophy } from './nft';
+import { query, dbConfigured } from './db';
 
 const TAG = '[cron]';
 const DAY_MS = 86_400_000;
@@ -192,11 +193,40 @@ async function tickPayout(connection: Connection, admin: ReturnType<typeof loadA
     console.log(`${TAG} tickPayout | trophy mint phase complete for season ${prevSeasonId}`);
 }
 
+/**
+ * Round 3 — cluster-wide sweep that prunes paper_match_active rows whose
+ * window expired more than 1 day ago. Mirrors the per-user opportunistic
+ * prune in paper_match_active.ts:listActiveForUser, but covers users who
+ * never log back in. The 1-day buffer avoids racing a user opening the app
+ * exactly at expiry.
+ */
+async function tickPrunePaperMatchActive(dryRun: boolean): Promise<void> {
+    if (!dbConfigured()) {
+        console.log(`${TAG} tickPrunePaperMatchActive | SKIP db not configured`);
+        return;
+    }
+    if (dryRun) {
+        const rows = await query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM paper_match_active
+              WHERE started_at + (duration_ms * INTERVAL '1 millisecond') < now() - INTERVAL '1 day'`,
+        );
+        console.log(`${TAG} tickPrunePaperMatchActive | DRY_RUN would_delete=${rows[0]?.count ?? '?'}`);
+        return;
+    }
+    const deleted = await query<{ id: string }>(
+        `DELETE FROM paper_match_active
+          WHERE started_at + (duration_ms * INTERVAL '1 millisecond') < now() - INTERVAL '1 day'
+          RETURNING id`,
+    );
+    console.log(`${TAG} tickPrunePaperMatchActive | deleted=${deleted.length}`);
+}
+
 async function runScheduledTicks(connection: Connection, admin: ReturnType<typeof loadAdminKeypair>, rotation: Rotation, dryRun: boolean): Promise<void> {
     const dayId = todayDayId();
     const weekday = utcWeekdayFromDayId(dayId); // 0=Thu, 1=Fri, 2=Sat, 3=Sun, 4=Mon, 5=Tue, 6=Wed
     console.log(`${TAG} runScheduledTicks | day_id=${dayId} weekday=${weekday} (0=Thu..6=Wed) dry_run=${dryRun}`);
     await tickDaily(connection, admin, rotation, dryRun);
+    await tickPrunePaperMatchActive(dryRun);
     if (weekday === 3) { // Sunday
         await tickWeekly(connection, admin, dryRun);
     }
@@ -230,7 +260,8 @@ export async function startCron(): Promise<void> {
         if (runNow === 'daily')   await tickDaily(connection, admin, rotation, dryRun);
         else if (runNow === 'weekly')  await tickWeekly(connection, admin, dryRun);
         else if (runNow === 'payout')  await tickPayout(connection, admin, dryRun);
-        else console.warn(`${TAG} startCron | unknown RUN_NOW="${runNow}" (expected daily|weekly|payout)`);
+        else if (runNow === 'prune')   await tickPrunePaperMatchActive(dryRun);
+        else console.warn(`${TAG} startCron | unknown RUN_NOW="${runNow}" (expected daily|weekly|payout|prune)`);
     }
 
     const wait = msUntilNextUtcMidnight();

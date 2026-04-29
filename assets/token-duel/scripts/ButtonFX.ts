@@ -7,10 +7,13 @@
  *                         1.5s). Draws the eye to the action without noise.
  *                         Cancelable via stopPulse().
  *
- *   addPressPop(button) — on CLICK, plays a scale pop (1.0 → 1.12 → 1.0 over
- *                         0.2s, backOut/cubicIn). Layers atop cc.Button's
- *                         _zoomScale for a meatier "thunk" tactile response.
- *                         Also briefly brightens the base Sprite color.
+ *   addPressPop(button) — on CLICK, plays a subtle scale dip (1.0 → 0.97 →
+ *                         1.0 over ~140ms, cubicIn/backOut) plus a brief
+ *                         flash of the sibling BtnGlow_<name> halo. No
+ *                         overshoot — the dip + flash combo reads as
+ *                         "intentional press" without competing with idle
+ *                         pulses. Also brightens the base sprite by ~+28
+ *                         on each channel for 100ms.
  *
  *   setStrongPress(btn) — one-shot: bumps cc.Button._zoomScale to 1.08 (from
  *                         the default 1.05) so tap-down feedback is
@@ -25,7 +28,7 @@
  *     }
  */
 
-import { Button, Color, Node, Sprite, tween, Tween, UIOpacity, Vec3 } from 'cc';
+import { Button, Color, Node, Sprite, tween, Tween, UIOpacity, UITransform, Vec3 } from 'cc';
 
 const TAG = '[ButtonFX]';
 
@@ -48,6 +51,23 @@ export function addIdlePulse(node: Node, peak = 1.03, durationSec = 1.5): void {
         .start();
 }
 
+/**
+ * Subtler pulse for the "almost ready" state (squad 2/3). Smaller scale band
+ * (1.0 ↔ 1.015) and slower cycle (2.5s) so it reads as anticipation rather
+ * than a call-to-action. Same registry as addIdlePulse — only one pulse can
+ * be active at a time.
+ */
+export function addAlmostReadyPulse(node: Node): void {
+    if (pulseSet.has(node)) return;
+    pulseSet.add(node);
+    tween(node)
+        .to(1.25, { scale: new Vec3(1.015, 1.015, 1) }, { easing: 'sineInOut' })
+        .to(1.25, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+        .union()
+        .repeatForever()
+        .start();
+}
+
 /** Stop any active pulse on the node and reset scale to 1. */
 export function stopPulse(node: Node): void {
     if (!pulseSet.has(node)) return;
@@ -57,14 +77,23 @@ export function stopPulse(node: Node): void {
 }
 
 /**
- * Hook a one-shot scale+color pop to the button's CLICK event. Cancels any
- * active idle-pulse for the duration of the pop, then restarts it.
+ * Hook a one-shot scale dip + glow flash to the button's CLICK event. Cancels
+ * any active idle-pulse for the duration of the press, then restarts it.
+ *
+ * 2026-04-28 home-UX polish: replaced the previous overshoot pop
+ * (1.0 → 1.12 → 1.0) with a subtle dip (1.0 → 0.97 → 1.0) per spec. The
+ * dip + glow flash combo reads as "intentional press" without competing
+ * with idle pulses or shimmer sweeps. Affects every CTA app-wide for
+ * cohesion (Find Match, Start Match, Trade, Settings, etc.).
  *
  * Press sequence:
  *   1. Pulse (if running) is halted and scale reset.
- *   2. Scale tweens 1.0 → 1.12 (backOut, 100ms) → 1.0 (cubicIn, 100ms).
- *   3. Base sprite color briefly brightens +40 on each channel for 150ms.
- *   4. After 500ms, idle pulse is resumed if it was active before.
+ *   2. Scale tweens 1.0 → 0.97 (cubicIn, 70ms) → 1.0 (backOut, 70ms).
+ *   3. Sibling BtnGlow_<name> (if present) UIOpacity briefly raised
+ *      +60 over 90ms, faded back over 220ms.
+ *   4. Base sprite color briefly brightens +28 (~30% softer than the
+ *      old +40) for 100ms so it doesn't overshadow the glow flash.
+ *   5. After 400ms, idle pulse is resumed if it was active before.
  */
 export function addPressPop(button: Button): void {
     const node = button.node;
@@ -76,32 +105,44 @@ export function addPressPop(button: Button): void {
         }
         node.setScale(1, 1, 1);
 
-        // Scale pop
+        // Scale dip — subtle inward press, no overshoot.
         tween(node)
-            .to(0.10, { scale: new Vec3(1.12, 1.12, 1) }, { easing: 'backOut' })
-            .to(0.10, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicIn' })
+            .to(0.07, { scale: new Vec3(0.97, 0.97, 1) }, { easing: 'cubicIn' })
+            .to(0.07, { scale: new Vec3(1, 1, 1) },       { easing: 'backOut' })
             .call(() => {
                 if (wasPulsing) {
-                    // Resume pulse after a brief settle.
                     setTimeout(() => addIdlePulse(node), 400);
                 }
             })
             .start();
 
-        // Color flash on the base sprite (not children — keep it simple).
+        // Glow flash on sibling BtnGlow_<name> halo (created by mkBtnHero).
+        // Silent no-op for ghost buttons that have no halo.
+        const halo = node.parent ? node.parent.getChildByName(`BtnGlow_${node.name}`) : null;
+        if (halo) {
+            const haloOp = halo.getComponent(UIOpacity) ?? halo.addComponent(UIOpacity);
+            const baseOpacity = haloOp.opacity;
+            const peakOpacity = Math.min(255, baseOpacity + 60);
+            Tween.stopAllByTarget(haloOp);
+            tween(haloOp)
+                .to(0.09, { opacity: peakOpacity }, { easing: 'cubicOut' })
+                .to(0.22, { opacity: baseOpacity }, { easing: 'cubicIn' })
+                .start();
+        }
+
+        // Color flash on the base sprite — softer than before so it layers
+        // under the glow flash rather than competing with it.
         const spr = node.getComponent(Sprite);
         if (spr) {
             const orig = spr.color.clone();
             const brighter = new Color(
-                Math.min(255, orig.r + 40),
-                Math.min(255, orig.g + 40),
-                Math.min(255, orig.b + 40),
+                Math.min(255, orig.r + 28),
+                Math.min(255, orig.g + 28),
+                Math.min(255, orig.b + 28),
                 orig.a,
             );
-            // Direct color flash — no tween on Sprite.color because Cocos
-            // doesn't interpolate it reliably via tween. Simple setTimeout flicker.
             spr.color = brighter;
-            setTimeout(() => { spr.color = orig; }, 150);
+            setTimeout(() => { spr.color = orig; }, 100);
         }
     }, null);
 }
@@ -140,6 +181,73 @@ export function addRipple(button: Button): void {
             .call(() => { ripple.active = false; })
             .start();
     });
+}
+
+/** Registry of active shimmer tweens — keyed by the Shimmer_ child node. */
+const shimmerSet = new WeakSet<Node>();
+
+/**
+ * 2026-04-28 polish — periodic shimmer pass across a hero CTA. Looks for a
+ * `Shimmer_<button.name>` child sprite (90px-wide vertical band, additive
+ * blend) created by mkBtnHeroLayered. Tweens it from off-button-left to
+ * off-button-right over `sweepSec`, idles for `idleSec`, repeats forever.
+ *
+ * Idempotent. Silent no-op if no Shimmer_ child exists. Layers atop
+ * idle-pulse + glow-pulse without competing for the eye — the band is
+ * white-alpha 80 and only crosses the button briefly.
+ */
+export function addShimmerSweep(node: Node | null, sweepSec = 0.9, idleSec = 3.5): void {
+    if (!node) return;
+    const shimmer = node.getChildByName(`Shimmer_${node.name}`);
+    if (!shimmer) return;
+    if (shimmerSet.has(shimmer)) return;
+    shimmerSet.add(shimmer);
+
+    const btnUT = node.getComponent(UITransform);
+    const shimmerUT = shimmer.getComponent(UITransform);
+    if (!btnUT || !shimmerUT) return;
+
+    const startX = -(btnUT.width / 2 + shimmerUT.width / 2);
+    const endX   =  (btnUT.width / 2 + shimmerUT.width / 2);
+
+    shimmer.active = true;
+    shimmer.setPosition(startX, 0, 0);
+
+    tween(shimmer)
+        .delay(idleSec)
+        .call(() => shimmer.setPosition(startX, 0, 0))
+        .to(sweepSec, { position: new Vec3(endX, 0, 0) }, { easing: 'sineInOut' })
+        .union()
+        .repeatForever()
+        .start();
+}
+
+/** Registry of active signal-flicker tweens — keyed by the flickering node. */
+const flickerSet = new WeakSet<Node>();
+
+/**
+ * 2026-04-28 home UX polish — slow opacity flicker on the FindMatch live-
+ * count badge so it reads as a "signal pulse" rather than a static chip.
+ * Idempotent. Apply when the badge is visible (count > 0); leave alone
+ * when hidden.
+ *
+ * Cycle: brief dim to `dimAlpha` (180ms) → restore to 255 (180ms) → hold
+ * `holdSec` seconds → repeat. Total period is `holdSec + 0.36`. Use a
+ * `holdSec` of ~2.4s so the flicker reads as ambient, not nervous.
+ */
+export function addSignalFlicker(node: Node | null, dimAlpha = 200, holdSec = 2.4): void {
+    if (!node) return;
+    if (flickerSet.has(node)) return;
+    flickerSet.add(node);
+    const op = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+    const peak = op.opacity || 255;
+    tween(op)
+        .to(0.18, { opacity: dimAlpha }, { easing: 'sineInOut' })
+        .to(0.18, { opacity: peak },     { easing: 'sineInOut' })
+        .delay(holdSec)
+        .union()
+        .repeatForever()
+        .start();
 }
 
 /** Convenience: apply all four effects to a button. */

@@ -219,14 +219,11 @@ const race = {
 // re-order: Connect (top) → Play as Guest → Reconnect (bottom). Every Y on
 // the page derives from this block; do NOT hand-tune element y values.
 const landing = {
-    // Hero band — branded title / subtitle / mascot / tagline / support line.
-    // 2026-04-28 hackathon UX pass: hero cluster tightened so title + mascot
-    // read as one unit; mascot grows ~14% to dominate.
-    TITLE_Y:          480,    // 2026-04-28: 510 → 480 (drop 30 toward mascot)
-    SUBTITLE_Y:       422,    // 2026-04-28: 445 → 422 (follow title; gap stays ~58)
-    MASCOT_Y:         300,    // 2026-04-28: 280 → 300 (raise 20 toward subtitle)
-    TAGLINE_Y:        130,    // 2026-04-28: 110 → 130 (follow mascot up)
-    SUPPORT_Y:        98,     // 2026-04-28: 78 → 98 (follow tagline up)
+    // Hero band — title + subtitle + mascot. 2026-04-28 polish pass dropped
+    // the redundant tagline + support line (down to one dominant idea).
+    TITLE_Y:          480,
+    SUBTITLE_Y:       422,
+    MASCOT_Y:         250,    // 2026-04-28 polish: 300 → 250 (anchor toward CTA)
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
     CTA_CARD_Y:       -178,   // 2026-04-27 UX upgrade: pulled up 7 (was -185)
@@ -238,7 +235,7 @@ const landing = {
     // trust and Guest, so Guest + Reconnect drop to make room.
     CONNECT_Y:        -18,    // PRIMARY — Connect Wallet (h=110)
     TRUST_Y:          -78,    // 2026-04-28: -88 → -78 (tighter to Connect)
-    LIVE_SIGNAL_Y:    -114,   // 2026-04-28 NEW — "Live now · Join in seconds"
+    LIVE_SIGNAL_Y:    -100,   // 2026-04-28 polish: -114 → -100 (closer to CTA)
     GUEST_Y:          -178,   // 2026-04-28: -158 → -178 (room for live signal)
     RECONNECT_Y:      -278,   // 2026-04-28: -262 → -278 (follow Guest down)
 
@@ -441,14 +438,15 @@ const LayoutSpec = {
             // WalletPill houses pubkey + walletName + a secure-dot indicator
             // sitting on the left edge — overlap with PubkeyLabel by design.
             ['PubkeyLabel',  'WalletPillSecureDot'],
-            // HomeMatchTicker card has a "RECENT MATCHES" header label that
-            // spans the full card width and 5 chip groups below it. The
-            // header bbox marginally crosses the chip group bboxes.
-            ['HomeMatchTickerHeader', 'HomeMatchChip_mode'],
-            ['HomeMatchTickerHeader', 'HomeMatchChip_players'],
-            ['HomeMatchTickerHeader', 'HomeMatchChip_stake'],
-            ['HomeMatchTickerHeader', 'HomeMatchChip_duration'],
-            ['HomeMatchTickerHeader', 'HomeMatchChip_created'],
+            // V5 — Last Result card overlaps: tiny "LAST MATCH" label sits
+            // above the OUTCOME / DELTA labels and meta line; halo glow
+            // sibling sits behind the card.
+            ['HomeLastResultLabel',   'HomeLastResultOutcome'],
+            ['HomeLastResultOutcome', 'HomeLastResultDelta'],
+            ['HomeLastResultGlow',    'HomeLastResultLabel'],
+            ['HomeLastResultGlow',    'HomeLastResultOutcome'],
+            ['HomeLastResultGlow',    'HomeLastResultDelta'],
+            ['HomeLastResultGlow',    'HomeLastResultMeta'],
         ],
     },
 
@@ -536,8 +534,6 @@ const LayoutSpec = {
             mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 170, w: 240, h: 28, type: 'sprite', notes: '2026-04-28 hackathon UX: shadow w 200→240, drop 20 to follow taller mascot; cl(0,0,0,90)' },
             // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
             mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 520, h: 520, type: 'sprite',     notes: '2026-04-28 hackathon UX: w/h 440→520 (+18%); violet radial halo grows with mascot; alpha-pulsed by LandingFX.addGlowPulse' },
-            tagline:             { x: 0,   y: landing.TAGLINE_Y,  w: 680, h: 40,  type: 'label',      notes: 'SINGLE-line tagline: "Build. Battle. Outperform."' },
-            supportLine:         { x: 0,   y: landing.SUPPORT_Y,  w: 660, h: 22,  type: 'label',      notes: 'Connect your wallet or start practicing instantly — 13pt lo (down from 16)' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
             ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: 700, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
@@ -545,7 +541,8 @@ const LayoutSpec = {
             connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
             trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card; green-tinted for reassurance' },
             // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
-            liveSignalLabel:     { x: 0,   y: landing.LIVE_SIGNAL_Y, w: 640, h: 20, type: 'label',     notes: '"🟢 Live now · Join in seconds" — energy cue under Connect; teal-tinted dot' },
+            liveSignalLabel:     { x: 0,    y: landing.LIVE_SIGNAL_Y,     w: 640, h: 20, type: 'label',     notes: '"Live now · Join in seconds" — energy cue under Connect; teal-tinted' },
+            liveSignalDot:       { x: -118, y: landing.LIVE_SIGNAL_Y + 1, w: 8,   h: 8,  type: 'sprite',    notes: '2026-04-28 polish — leading green dot pulsed by LandingFX.addGlowPulse' },
             playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: 640, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
             reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 620, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
@@ -556,6 +553,8 @@ const LayoutSpec = {
             ['CTACardBg', 'ConnectChevron'],
             ['CTACardBg', 'TrustLineLabel'],
             ['CTACardBg', 'LiveSignalLabel'],
+            ['CTACardBg', 'LiveSignalDot'],
+            ['LiveSignalLabel', 'LiveSignalDot'],
             ['CTACardBg', 'ReconnectButton'],
             ['CTACardBg', 'PlayAsGuestButton'],
             ['CTACardBg', 'BtnGlow_ConnectButton'],
@@ -575,10 +574,8 @@ const LayoutSpec = {
             ['TitleGlow', 'SubtitleLabel'],
             ['MascotGlow', 'LandingMascotContainer'],
             ['MascotGlow', 'MascotShadow'],
-            ['MascotGlow', 'TaglineLabel'],
             ['MascotGlow', 'SubtitleLabel'],
             ['MascotShadow', 'LandingMascotContainer'],
-            ['MascotShadow', 'TaglineLabel'],
         ],
     },
 
@@ -627,24 +624,23 @@ const LayoutSpec = {
             homeXpProgressLabel: { x: 310,  y: 14,   w: 280, h: 18,  type: 'label',    notes: '"X / Y XP" anchor-right (relative to card)' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite',   notes: 'rounded track 640x14 (relative to card)' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite',   notes: 'gold fill, left-anchored, width tweens on load (relative to track)' },
-            // ── RECENT MATCH CARD — V4 single-row (daily-challenge row dropped) ──
-            // V4 — RecentMatch collapsed back to 5-chip single block; daily-
-            // challenge data lives in DailyChallengePanel (Trophy header
-            // button) instead of being mirrored on Home.
-            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 96, type: 'chip',     notes: 'V4 — single-row RECENT MATCH card (h 184→96); tap → SpectatorPanel' },
-            homeMatchTickerHeader: { x: 0,  y: 32,   w: 660, h: 18,  type: 'label',    notes: '"RECENT MATCH" header (relative to card)' },
-            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 104, type: 'sprite',   notes: 'V4 — drop-shadow sprite shrinks with card (h 192→104)' },
-            homeMatchChipDivider: { x: 0,   y: -2,   w: 620, h: 1,   type: 'sprite',   notes: 'V3 — 1-px divider between row 1 and row 2 (relative to card)' },
-            homeMatchChip:       { keys: ['mode', 'players', 'stake', 'duration', 'created'],
-                                   labels: ['MODE', 'PLAYERS', 'STAKE', 'DURATION', 'CREATED'],
-                                   xs: [-220, 0, 220, -160, 160],
-                                   ys: [10, 10, 10, -22, -22],
-                                   ws: [200, 200, 200, 280, 280],
-                                   h: 44,
-                                   keyFs: 11, valFs: 16,
-                                   notes: 'V4 — 5 chips, tighter h 52→44; row1 mode/players/stake @y=10, row2 duration/created split full width @y=-22' },
+            // ── LAST RESULT CARD — V5 (2026-04-28 home UX polish) ──
+            // V5 — Repurposed from network-feed "RECENT MATCH" to user-
+            // specific "LAST MATCH" anchor: outcome (WON/LOST) + delta SOL
+            // + compact meta line ("1v1 · 0.10 stake · 12m ago"). Sourced
+            // from Stats.loadLastMatch() — persists across sessions, works
+            // for guests + connected wallets. h 96→108 for more presence;
+            // outcome/delta colored teal (win) or rose (loss); halo glow
+            // sibling pulses subtly when a result is present.
+            homeMatchTicker:     { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 108, type: 'chip',     notes: 'V5 — Last Result anchor; tap → Portfolio history' },
+            homeLastResultGlow:  { x: 0,    y: home.RECENT_CARD_Y, w: 704, h: 132, type: 'sprite',   notes: 'V5 — outcome-tinted halo sibling, alpha 0 by default; pulses on win/loss' },
+            homeLastResultLabel: { x: -298, y: 38,   w: 200, h: 16,  type: 'label',    notes: 'V5 — "LAST MATCH" 11pt muted (replaces RECENT MATCH header)' },
+            homeLastResultOutcome: { x: -180, y: 6,  w: 280, h: 38,  type: 'label',    notes: 'V5 — "WON" / "LOST" / "—" 22pt bold; color set at runtime' },
+            homeLastResultDelta: { x: 200,  y: 6,    w: 240, h: 38,  type: 'label',    notes: 'V5 — "+0.10 SOL" / "-0.05 SOL" / "—" 22pt bold; matches outcome color' },
+            homeLastResultMeta:  { x: 0,    y: -34,  w: 620, h: 18,  type: 'label',    notes: 'V5 — "1v1 · 0.10 stake · 12m ago" 12pt muted' },
+            homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 116, type: 'sprite',   notes: 'V5 — drop-shadow sprite tracks card h (104→116)' },
             // Tournament alternate — same slot as ticker, mutually exclusive.
-            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 96, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches V4 single-row card)' },
+            homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 108, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches V5 Last Result card)' },
             // Off-flow placeholders — superseded by SettingsPanel + DailyChallengePanel.
             homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
             disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 44,  h: 44,  type: 'btnGhost',  notes: 'V3 — w/h 64→44' },
@@ -658,7 +654,7 @@ const LayoutSpec = {
             findMatchBtn:        { x: 0,    y: home.FIND_CTA_Y,   w: 680, h: 128, type: 'btnSuccess', notes: 'V4 HERO teal — h 92→128; gets idle pulse + ripple + strong-press' },
             findMatchSubtitle:   { x: 0,    y: -32,               w: 620, h: 18,  type: 'label',      notes: 'CHILD of FindMatchButton (y -22→-32 for taller hero); copy reflects live lobby count' },
             findMatchChevron:    { x: 310,  y: 0,                 w: 24,  h: 24,  type: 'label',      notes: '"›" glyph child of button, anchored right' },
-            findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 76,  h: 28,  type: 'badge',      notes: 'V4 — live count pill repositioned for taller hero (was 142)' },
+            findMatchCountBadge: { x: 244,  y: home.FIND_BADGE_Y, w: 88,  h: 32,  type: 'badge',      notes: 'V5 — bumped 76×28 → 88×32, label 14→16 bold for stronger hero emphasis' },
             findMatchActivityDot:{ x: -296, y: home.FIND_DOT_Y,   w: 10,  h: 10,  type: 'badge',      notes: 'V4 NEW — pulsing teal dot, upper-left of hero, visible when lobbies > 0' },
             startMatchBtn:       { x: 0,    y: home.START_CTA_Y,  w: 680, h: 96,  type: 'btnPrimary', notes: 'V4 secondary purple — h 120→96 (lost hero status to FindMatch)' },
             startMatchSubtitle:  { x: 0,    y: -22,               w: 620, h: 18,  type: 'label',      notes: 'CHILD of StartMatchButton' },
@@ -734,14 +730,15 @@ const LayoutSpec = {
             ['HomeLevelChip',           'HomeXpProgressLabel'],
             ['HomeLevelChip',           'HomeXpBarTrack'],
             ['HomeXpBarTrack',          'HomeXpBarFill'],
-            // RecentMatch divider + elevation sit inside card.
-            ['HomeMatchTicker',         'HomeMatchChipDivider'],
+            // V5 — Last Result card has elevation shadow + halo glow.
             ['HomeMatchTicker',         'HomeRecentCardElevation'],
             ['HomeRecentCardElevation', 'HomeMatchTicker'],
-            ['HomeRecentCardElevation', 'HomeMatchChipDivider'],
-            // V4 — single divider crosses the row1/row2 chip boundary.
-            ['HomeMatchChipDivider',    'HomeMatchChip_duration'],
-            ['HomeMatchChipDivider',    'HomeMatchChip_created'],
+            ['HomeMatchTicker',         'HomeLastResultGlow'],
+            ['HomeLastResultGlow',      'HomeMatchTicker'],
+            ['HomeMatchTicker',         'HomeLastResultLabel'],
+            ['HomeMatchTicker',         'HomeLastResultOutcome'],
+            ['HomeMatchTicker',         'HomeLastResultDelta'],
+            ['HomeMatchTicker',         'HomeLastResultMeta'],
         ],
     },
 
@@ -1116,19 +1113,34 @@ const LayoutSpec = {
                     glowRight:     { x: 343,  y: 0,   w: 2,   h: 122, type: 'sprite' },
                 },
             },
-            // Profile — adds explicit "Username" label above the input + a
-            // focus ring that fades in on edit.
+            // Profile — Phase 31 dual-mode: a display row (label + edit pencil)
+            // and a hidden edit row (input + Cancel + Confirm). AppUI flips the
+            // two subtrees on tap so committing a username feels intentional
+            // rather than "stop typing and pray". Username label gets a soft
+            // trophy glyph + faded helper line tying it to leaderboard identity.
             profileCard:     { x: 0,    y: settings.PROFILE_CARD_Y, w: 688, h: 148, type: 'group',
                 children: {
-                    header:       { x: -220, y: 56,  w: 200, h: 16, type: 'label' },
-                    usernameLabel:{ x: -220, y: 36,  w: 200, h: 16, type: 'label',
+                    header:           { x: -220, y: 56,  w: 200, h: 16, type: 'label' },
+                    usernameLabel:    { x: -220, y: 36,  w: 200, h: 16, type: 'label',
                         notes: '"Username" 11px mid-text above the input' },
-                    focusRing:    { x: 0,    y: 8,   w: 624, h: 48, type: 'sprite',
+                    // Display-mode subtree (default visible).
+                    usernameDisplay:  { x: -10,  y: 6,   w: 520, h: 32, type: 'label',
+                        notes: 'username readout (22px hi-text); replaced by EditBox in edit mode' },
+                    editUsernameBtn:  { x: 290,  y: 6,   w: 44,  h: 44, type: 'btnGhost',
+                        notes: 'pencil glyph, opens edit subtree on tap' },
+                    // Edit-mode subtree (hidden by default).
+                    focusRing:        { x: 0,    y: 6,   w: 624, h: 48, type: 'sprite',
                         notes: 'violet stroke around EditBox, alpha 0 → 80 on focus' },
-                    username:     { x: 0,    y: 8,   w: 620, h: 44, type: 'editbox' },
-                    usernameSaved:{ x: 0,    y: -22, w: 620, h: 18, type: 'label' },
-                    usernameHelp: { x: 0,    y: -46, w: 620, h: 16, type: 'label' },
-                    topBorder:    { x: 0,    y: 73,  w: 686, h: 1,  type: 'sprite' },
+                    username:         { x: 0,    y: 6,   w: 620, h: 44, type: 'editbox' },
+                    usernameCancelBtn:{ x: -110, y: -28, w: 140, h: 34, type: 'btnGhost',
+                        notes: 'edit-mode Cancel; hidden in display mode' },
+                    usernameConfirmBtn:{x:  110, y: -28, w: 140, h: 34, type: 'btnPrimary',
+                        notes: 'edit-mode Confirm; disabled until input differs from saved value' },
+                    // Status band — error string in edit mode, "saved ✓" flash in display mode.
+                    usernameSaved:    { x: 0,    y: -52, w: 620, h: 18, type: 'label' },
+                    usernameHelp:     { x: 0,    y: -52, w: 620, h: 16, type: 'label',
+                        notes: 'display-mode helper "🏆 Displayed on leaderboard & matches"; hidden when usernameSaved is non-empty' },
+                    topBorder:        { x: 0,    y: 73,  w: 686, h: 1,  type: 'sprite' },
                 },
             },
             // Phase 29 — "DEFAULT MATCH SETTINGS". Phase 30 — drops ▾ glyph
@@ -1252,10 +1264,15 @@ const LayoutSpec = {
                     topBorder:        { x: 0, y: 115, w: 686, h: 1, type: 'sprite' },
                 },
             },
-            // Phase 30 — Delete Account moved further down with a 54px buffer
-            // above (intentional friction for a destructive action).
-            deleteBtn:       { x: 0,    y: settings.DELETE_BTN_Y, w: 220, h: 32, type: 'btnGhost',
-                notes: 'small red text — rose label, NOT bold. Sits ~54px below account card.' },
+            // Phase 31 — DANGER ZONE eyebrow framing the destructive Delete
+            // Account action. Reads as a deliberate subsection rather than a
+            // floating red label.
+            dangerZoneLabel: { x: 0,    y: settings.DELETE_BTN_Y + 32, w: 200, h: 14, type: 'label',
+                notes: '"DANGER ZONE" 11px lo-text eyebrow, sits 32px above the delete button' },
+            // Phase 30 / 31 — Delete Account. Card-style background tinted muted
+            // rose (NOT glowing). 2-tap arming flow lives in AppUI._onDelete*.
+            deleteBtn:       { x: 0,    y: settings.DELETE_BTN_Y, w: 320, h: 44, type: 'btnGhost',
+                notes: 'rose-tinted card row; first tap arms 2-tap confirm in AppUI' },
             status:          { x: 0,    y: settings.STATUS_Y, w: 640, h: 20, type: 'label' },
             // QP popovers — direct children of SettingsPanel for z-order. Y values
             // ride along with the cards (cards shifted +30 in 2026-04-27 refactor).
@@ -1298,6 +1315,7 @@ const LayoutSpec = {
             ['SettingsSheetBg', 'AudioSettingsCard'],
             ['SettingsSheetBg', 'AccountSettingsCard'],
             ['SettingsSheetBg', 'DeleteAccountSettingsButton'],
+            ['SettingsSheetBg', 'DangerZoneLabel'],
             ['SettingsSheetBg', 'SettingsStatusLabel'],
             ['SettingsSheetBg', 'SettingsTitleLabel'],
             ['SettingsSheetBg', 'BackLinkLabel'],
@@ -1398,11 +1416,12 @@ const LayoutSpec = {
         ],
     },
 
-    // Phase 30 — Profile card. The violet focus ring shares the same
-    // bounding box as the EditBox (it's the ring around it). The "Username"
-    // label sits in the gutter to the left of the input but its left padding
-    // overlaps the EditBox bbox by a few px. Save / help labels sit just
-    // below the input and the focus ring's bottom edge dips into them.
+    // Phase 30 / 31 — Profile card. The violet focus ring shares the same
+    // bounding box as the EditBox (it's the ring around it). The display-mode
+    // username label sits in the same band as the EditBox/focus ring; AppUI
+    // toggles _active so only one subtree is visible at a time. The edit
+    // pencil button overlaps the right edge of the display label. Help and
+    // saved labels share the same Y band (mutually exclusive content).
     ProfileCard: {
         allowedOverlaps: [
             ['UsernameFocusRing', 'UsernameEditBox'],
@@ -1410,6 +1429,20 @@ const LayoutSpec = {
             ['UsernameLabel',     'UsernameEditBox'],
             ['UsernameFocusRing', 'UsernameSaveLabel'],
             ['UsernameEditBox',   'UsernameSaveLabel'],
+            // Phase 31 — display-mode label co-locates with the editbox band.
+            ['UsernameDisplayLabel',  'UsernameFocusRing'],
+            ['UsernameDisplayLabel',  'UsernameEditBox'],
+            ['UsernameDisplayLabel',  'EditUsernameButton'],
+            ['UsernameLabel',         'UsernameDisplayLabel'],
+            ['EditUsernameButton',    'UsernameFocusRing'],
+            ['EditUsernameButton',    'UsernameEditBox'],
+            // Phase 31 — Cancel/Confirm row overlaps focus ring's bottom edge.
+            ['UsernameFocusRing',     'UsernameCancelButton'],
+            ['UsernameFocusRing',     'UsernameConfirmButton'],
+            ['UsernameEditBox',       'UsernameCancelButton'],
+            ['UsernameEditBox',       'UsernameConfirmButton'],
+            // Phase 31 — saved + help share the same Y band.
+            ['UsernameSaveLabel',     'UsernameHelpLabel'],
         ],
     },
 
@@ -1662,7 +1695,7 @@ const LayoutSpec = {
             // → 240 in Stage 2 to match the new Home + TokenDuel pattern).
             lvxpChip:        { x: 240,  y: 750,  w: 200, h: 32, type: 'chip',     notes: '"Lv N · X/Y"; gold-on-dim; hidden when not connected' },
             // 2026-04-28 final pass — Hide-full now lives INSIDE FilterCard footer.
-            hideFullToggle:  { x: 0,    y: 418,  w: 200, h: 28, type: 'btnPrimary', notes: 'inside FilterCard footer (below Wager row + filterDivider3)' },
+            hideFullToggle:  { x: 0,    y: 418,  w: 160, h: 24, type: 'btnPrimary', notes: '2026-04-28 polish — utility tone, smaller + lower contrast (Phase F)' },
             // 2026-04-27 FindMatch redesign — pulse dot left of count label.
             // AppUI tints rose/teal per active tab and runs addIdlePulse on it.
             liveCountPulseDot:  { x: -90, y: 665, w: 10, h: 10, type: 'sprite', notes: 'addIdlePulse — rose on Live, teal on Open' },
@@ -1683,8 +1716,12 @@ const LayoutSpec = {
             tabActiveUnderline: { x: -122, y: 575, w: 200, h: 4, type: 'sprite', notes: 'violet — slides under active tab (now inside FilterCard)' },
             // 2026-04-28 final pass — tail hint shown below match list when 1-2 matches present.
             // AppUI repositions y at runtime; values here cover the visibleCount=1 case.
-            tailHintTitle:      { x: 0, y: 200, w: 600, h: 24, type: 'label', notes: '"No more matches right now" — shown below 1-2 visible matches' },
-            tailHintSubtitle:   { x: 0, y: 172, w: 600, h: 20, type: 'label', notes: '"Try adjusting filters" — sub-hint, dim' },
+            tailHintTitle:      { x: 0, y: 200, w: 600, h: 24, type: 'label', notes: '"No matches right now" — shown below 1-2 visible matches' },
+            tailHintSubtitle:   { x: 0, y: 172, w: 600, h: 20, type: 'label', notes: '"Adjust filters or start your own duel" — sub-hint, dim' },
+            // 2026-04-28 polish — Reset/Start CTAs sit ~40px below subtitle when tail visible.
+            // AppUI repositions per-render based on lastCardY.
+            tailResetBtn:       { x: -90,  y: 130, w: 160, h: 40, type: 'btnGhost', notes: 'Reset filters — only when tail visible' },
+            tailStartBtn:       { x: 90,   y: 130, w: 160, h: 40, type: 'btnGhost', notes: 'Start a duel — only in Open Lobbies + tail visible' },
             // Phase A2 empty state — mascot + 2 CTAs replace the bare "no lobbies" label.
             emptyMascot:     { x: 0,    y: -50,  w: 200, h: 220, type: 'mascot',  notes: '3rd MascotController; think state on entry' },
             emptyTitle:      { x: 0,    y: -210, w: 600, h: 40,  type: 'label',   notes: 'gold bold "No matches yet"' },

@@ -34,6 +34,21 @@ interface KVStorage {
 const TAG = '[Stats]';
 const EMPTY: StatsRecord = { games: 0, wins: 0, losses: 0, profitLamports: 0, xp: 0 };
 const PAPER_KEY = 'tokenduel:paper-stats';
+const LAST_MATCH_KEY = 'tokenduel:last-match';
+
+/**
+ * 2026-04-28 home UX polish — single-row snapshot of the user's most-recent
+ * settled match. Drives the HomeMatchTicker "Last Result" strip. Persists
+ * across sessions in localStorage (paper) so guests + signed-in users see
+ * the same anchor on Home.
+ */
+export interface LastMatchRecord {
+    outcome: 'win' | 'loss';
+    deltaSol: number;        // signed: +0.10 win, -0.05 loss
+    modeLabel: string;       // "1v1", "Trio", "4p", "8p"
+    stakeSol: number;        // wager amount, e.g. 0.10
+    atSec: number;           // unix seconds when settled
+}
 
 // Cocos sys.localStorage is SQLite-backed on native (Android/iOS) and
 // LocalStorage on Web. Plain `localStorage` is undefined on native, which
@@ -123,5 +138,43 @@ export const Stats = {
         if (!ls) return;
         ls.removeItem(PAPER_KEY);
         console.log(`${TAG} clear | PAPER_CLEARED`);
+    },
+
+    /**
+     * Persist a snapshot of the most-recent settled match for the home
+     * "Last Result" strip. Overwrites any prior snapshot — single-slot.
+     */
+    recordLastMatch(rec: LastMatchRecord): void {
+        const ls = safeStorage();
+        if (!ls) return;
+        try {
+            ls.setItem(LAST_MATCH_KEY, JSON.stringify(rec));
+            console.log(`${TAG} recordLastMatch | outcome=${rec.outcome} delta=${rec.deltaSol.toFixed(3)} mode=${rec.modeLabel} stake=${rec.stakeSol}`);
+        } catch (e) {
+            console.log(`${TAG} recordLastMatch | WRITE_ERROR ${e}`);
+        }
+    },
+
+    /** Read the last-match snapshot. Null if never recorded or storage empty. */
+    loadLastMatch(): LastMatchRecord | null {
+        const ls = safeStorage();
+        if (!ls) return null;
+        try {
+            const raw = ls.getItem(LAST_MATCH_KEY);
+            if (!raw) return null;
+            const p = JSON.parse(raw);
+            const outcome = p?.outcome === 'win' ? 'win' : p?.outcome === 'loss' ? 'loss' : null;
+            if (!outcome) return null;
+            return {
+                outcome,
+                deltaSol: Number(p.deltaSol) || 0,
+                modeLabel: String(p.modeLabel ?? ''),
+                stakeSol: Number(p.stakeSol) || 0,
+                atSec: Number(p.atSec) || 0,
+            };
+        } catch (e) {
+            console.log(`${TAG} loadLastMatch | PARSE_ERROR ${e}`);
+            return null;
+        }
     },
 };

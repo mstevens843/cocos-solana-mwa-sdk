@@ -67,9 +67,52 @@ export function parseLeaderboardEntries(raw: Uint8Array): LeaderboardEntry[] {
 }
 
 /**
- * Read the mode-specific Leaderboard PDA. Returns an empty array if
- * uninitialized (admin hasn't run init-leaderboards yet) or if every slot is
- * empty.
+ * 2026-04-28 — Always-on mock fixture so the Leaderboard panel stays fully
+ * populated during UX iteration even when the on-chain PDA only has the
+ * signed-in user. Heights span the u8 range to demonstrate ordering and
+ * settledAt timestamps stagger across the past week. The real entries from
+ * `fetchLeaderboard` are merged on top and re-ranked, so the user always
+ * appears in the right slot relative to these synthetic rivals.
+ */
+const MOCK_PLAYERS: Array<{ player: string; height: number; settledAtSec: number }> = (() => {
+    const now = Math.floor(Date.now() / 1000);
+    return [
+        { player: '9zQ8mP2VxRyT6wBbF5qLmNzAXcUgHd3kJtR2vY4hWeS6', height: 240, settledAtSec: now - 1 * 3600 },
+        { player: '7nP9mK2VxRyQ8wTbF5qLmNzAXcUgHd3kJtR2vY4hWeP1', height: 215, settledAtSec: now - 2 * 3600 },
+        { player: 'Lm2wQt8XvBpKf9NsRjGdHzCXcUgHd3kJtR2vY4hWeT2', height: 198, settledAtSec: now - 4 * 3600 },
+        { player: 'xJ4P7Lk3VqRm8wBtF5sNgHzCXdUiKe2pAr4vY6hWeU3', height: 180, settledAtSec: now - 6 * 3600 },
+        { player: 'A3pQ9mZ2KxRy7wBbF5tLnNcAXdUgHd3kJtR2vY4hWeV4', height: 165, settledAtSec: now - 9 * 3600 },
+        { player: 'D6sLm8XvBpKf9NsRjGdHzAXcUgHd3kJtR2vY4hWeW5xQ', height: 142, settledAtSec: now - 12 * 3600 },
+        { player: 'F2vRyQ8wTbF5qLmNzAXcUgHd3kJtR2vY4hWeX6mP2VxR', height: 120, settledAtSec: now - 18 * 3600 },
+        { player: 'H4wBbF5qLmNzAXcUgHd3kJtR2vY4hWeY7mP2VxRyT6n9', height: 95, settledAtSec: now - 24 * 3600 },
+        { player: 'K8jR2vY4hWeZ8mP2VxRyT6wBbF5qLmNzAXcUgHd3kJtA', height: 70, settledAtSec: now - 36 * 3600 },
+    ];
+})();
+
+export function mockLeaderboard(): LeaderboardEntry[] {
+    return MOCK_PLAYERS.map((p, i) => ({
+        player: p.player,
+        height: p.height,
+        settledAt: BigInt(p.settledAtSec),
+        rank: i + 1,
+    }));
+}
+
+function rerankMerged(entries: LeaderboardEntry[]): LeaderboardEntry[] {
+    const sorted = entries.slice().sort((a, b) => {
+        if (b.height !== a.height) return b.height - a.height;
+        // Earlier settle wins ties (lower settledAt = ranked higher).
+        const at = a.settledAt < b.settledAt ? -1 : a.settledAt > b.settledAt ? 1 : 0;
+        return at;
+    });
+    return sorted.slice(0, 10).map((e, i) => ({ ...e, rank: i + 1 }));
+}
+
+/**
+ * Read the mode-specific Leaderboard PDA. Always merges the live PDA rows
+ * with `mockLeaderboard()` so the panel is fully populated during UX
+ * iteration even when only the signed-in user is on-chain. Real rows take
+ * priority; mocks fill the rest of the top-10 by descending height.
  */
 export async function fetchLeaderboard(
     rpc: TokenDuelRpc,
@@ -77,13 +120,22 @@ export async function fetchLeaderboard(
 ): Promise<LeaderboardEntry[]> {
     const pda = AnchorBackend.deriveModeLeaderboardPda(modeU8);
     console.log(`${TAG} fetchLeaderboard | START mode=${modeU8} pda=${pda}`);
-    const info = await rpc.getAccountInfo(pda);
-    if (!info || !info.dataBase64) {
-        console.log(`${TAG} fetchLeaderboard | NULL mode=${modeU8} pda=${pda}`);
-        return [];
+    let real: LeaderboardEntry[] = [];
+    try {
+        const info = await rpc.getAccountInfo(pda);
+        if (info?.dataBase64) {
+            const raw = b64ToBytes(info.dataBase64);
+            real = parseLeaderboardEntries(raw);
+        } else {
+            console.log(`${TAG} fetchLeaderboard | NULL mode=${modeU8} pda=${pda}`);
+        }
+    } catch (e) {
+        console.log(`${TAG} fetchLeaderboard | ERROR ${e}`);
     }
-    const raw = b64ToBytes(info.dataBase64);
-    const entries = parseLeaderboardEntries(raw);
-    console.log(`${TAG} fetchLeaderboard | DONE mode=${modeU8} rows=${entries.length}`);
-    return entries;
+    // Dedupe by player so a real entry never collides with a mock one.
+    const seen = new Set(real.map((e) => e.player));
+    const filler = mockLeaderboard().filter((e) => !seen.has(e.player));
+    const merged = rerankMerged(real.concat(filler));
+    console.log(`${TAG} fetchLeaderboard | DONE mode=${modeU8} real=${real.length} mocks=${merged.length - real.length} total=${merged.length}`);
+    return merged;
 }

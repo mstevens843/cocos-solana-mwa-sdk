@@ -322,6 +322,11 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'FindMatchTab_Open',            components: ['cc.Button'] },
     { name: 'FindMatchTab_Live',            components: ['cc.Button'] },
 
+    // ── 2026-04-28 polish — tail hint dual CTAs + ambient particle layer ──
+    { name: 'FindMatchTailResetButton',     components: ['cc.Button'] },
+    { name: 'FindMatchTailStartButton',     components: ['cc.Button'] },
+    { name: 'FindMatchAmbientLayer',        components: ['cc.UITransform'] },
+
     // ── Phase E — bot difficulty toggle on ModePickerOverlay ──
     { name: 'PickerDifficultyEasy',         components: ['cc.Button'] },
     { name: 'PickerDifficultyMedium',       components: ['cc.Button'] },
