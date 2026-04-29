@@ -4,7 +4,7 @@ Strip the white background + tinted halo from Seedance-generated mascot
 frame PNGs, leaving only the mascot silhouette with full transparency
 elsewhere.
 
-Algorithm (two-pass):
+Algorithm (four-pass):
 
   Pass 1 — Corner flood-fill, thresh=40.
     Catches the off-white background and the bright outer ring of the halo.
@@ -19,6 +19,18 @@ Algorithm (two-pass):
     hits a saturated mascot pixel. Internal whites (e.g. eye highlights
     inside dark sunglasses frames) are preserved because they are not
     connected to the outside transparency mask.
+
+  Pass 3 — Largest-component keep.
+    Keeps only the biggest connected opaque component on alpha. Removes
+    floating speckles disconnected from the mascot body.
+
+  Pass 4 — Radial edge taper.
+    Multiplies alpha by a smooth quadratic falloff in the outermost
+    EDGE_FADE_PX of the canvas, forcing alpha to 0 at the border. This
+    eliminates the rectangular bounding-box artifact that otherwise shows
+    up when a colored halo (think/lose) or full-canvas white wash (idle)
+    survives passes 1-3 and runs into the canvas edge. Idempotent on
+    already-clean pixels — alpha=0 stays alpha=0.
 
 Usage:
     python3 scripts/strip-mascot-bg.py
@@ -48,6 +60,10 @@ FRAMES_DIR = Path(__file__).resolve().parent.parent / "assets" / "demo" / "resou
 FLOOD_THRESH = 40         # Pass 1 RGB tolerance for corner flood-fill
 HALO_V_MIN = 0.85         # Pass 2: minimum luminance (V in HSV) to qualify as halo
 HALO_S_MAX = 0.30         # Pass 2: maximum saturation to qualify as halo
+EDGE_FADE_PX = 28         # Pass 4: pixels within this distance of the canvas
+                          # edge are smoothly faded toward alpha=0. Eliminates
+                          # the rectangular bounding-box artifact when source
+                          # halo / wash runs to the canvas border.
 TRANSPARENT = (0, 0, 0, 0)
 
 
@@ -164,6 +180,24 @@ def strip_one(path: Path):
             arr[kill_mask, 1] = 0
             arr[kill_mask, 2] = 0
             arr[kill_mask, 3] = 0
+
+    # Pass 4 — Radial edge taper.
+    # Multiply alpha by a smooth quadratic falloff in the outermost
+    # EDGE_FADE_PX of the canvas. Distance is to nearest edge (Chebyshev
+    # against the rectangle), so the taper hugs the rectangle uniformly.
+    # smoothstep: t*t*(3 - 2*t). Idempotent: alpha=0 stays 0.
+    if EDGE_FADE_PX > 0:
+        ys = np.arange(h).reshape(h, 1)
+        xs = np.arange(w).reshape(1, w)
+        d_left   = xs
+        d_right  = (w - 1) - xs
+        d_top    = ys
+        d_bottom = (h - 1) - ys
+        d = np.minimum(np.minimum(d_left, d_right), np.minimum(d_top, d_bottom))
+        t = np.clip(d.astype(np.float32) / float(EDGE_FADE_PX), 0.0, 1.0)
+        falloff = t * t * (3.0 - 2.0 * t)  # smoothstep
+        new_alpha = (arr[:, :, 3].astype(np.float32) * falloff).round().astype(np.uint8)
+        arr[:, :, 3] = new_alpha
 
     # Save
     Image.fromarray(arr, "RGBA").save(path, "PNG")

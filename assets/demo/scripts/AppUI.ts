@@ -15,6 +15,7 @@ import { Palette, themeColor, colorFromHex, TabTier, TabTierSpec } from '../../t
 import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, DashboardLayoutSpec } from '../../token-duel/scripts/LayoutSpec';
 import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
 import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
+import { installGraphicsCreationWatcher } from '../../token-duel/scripts/safeGraphics';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -578,6 +579,18 @@ export class AppUI extends Component {
     private _pfTrophiesTab: Button | null = null;
     private _pfTrophyTiles: Node[] = [];
     private _pfTrophyEntries: import('../../token-duel/scripts/TrophyRpc').Trophy[] = [];
+    // Trophies redesign — header/footer/pagination chrome + page state. Page
+    // size matches the existing 6-tile pool; chevrons + page label only show
+    // when entries.length > 6.
+    private _pfTrophyPage: number = 0;
+    private _pfTrophyPageLabel: Label | null = null;
+    private _pfTrophyPagePrevBtn: Button | null = null;
+    private _pfTrophyPageNextBtn: Button | null = null;
+    private _pfTrophyShareBtn: Button | null = null;
+    // Cached after the first dynamic-import of TrophyRpc so _renderTrophyPage
+    // (called both on fresh fetch and on prev/next without re-importing) can
+    // resolve rank icons synchronously.
+    private _rankIconFn: ((rank: number) => import('../../token-duel/scripts/TrophyRpc').RankIconName) | null = null;
     private _matchHistoryEntries: HistoryRowEntry[] = [];
     private _matchHistoryCursor: string | null = null;
     private _matchHistoryCache: Map<string, MatchState | null> = new Map();
@@ -1140,7 +1153,12 @@ export class AppUI extends Component {
     private _rpc!: SolanaRpc;
 
     start(): void {
-        console.log(`${TAG} BUILD_STAMP v=2026-04-25-T0330-mascot-4state — Landing+Race mascots, instant-ref reveal, CC strip`);
+        console.log(`${TAG} BUILD_STAMP v=2026-04-29-T1700-fix10B-stagger — LandingFX install* + LoadingOverlay re-enabled, queued through safeGraphics.enqueuePostDraw with PER_TICK_BUDGET=6`);
+        // Boot-phase watcher: logs every Graphics component creation during
+        // the first 8 ticks with phase context. If the engine SIGSEGVs, the
+        // last `[SafeGraphics] addComponent` log line names the trigger Node.
+        // Auto-uninstalls after 8 ticks, zero runtime cost post-boot.
+        installGraphicsCreationWatcher();
         // 2026-04-29 — runtime layout diagnostics. Prints once at start() so we
         // can see what Cocos actually thinks the viewport / canvas / camera are.
         try { this._dumpViewInfo(); } catch (e: any) { console.log(`[LayoutDiag][view] DUMP_THREW ${e?.message ?? e}`); }
@@ -2352,13 +2370,21 @@ export class AppUI extends Component {
             this._pfModeSetActive = pfModePill.setActive;
             this._pfModeRedraw = pfModePill.redraw;
             this._pfModePillStrip = pfModePill.strip;
-            // Part 11 B: cache the 6 trophy tile nodes for reuse.
+            // Part 11 B: cache the 6 trophy tile nodes for reuse, plus the
+            // header/footer/pagination chrome added in the Trophies redesign.
             const trophiesView = this._portfolioPanel.getChildByName('PortfolioTrophiesView');
             if (trophiesView) {
                 for (let i = 0; i < 6; i++) {
                     const tile = trophiesView.getChildByName(`TrophyTile_${i}`);
                     if (tile) this._pfTrophyTiles.push(tile);
                 }
+                this._pfTrophyPageLabel = trophiesView.getChildByName('PortfolioTrophiesPageLabel')?.getComponent(Label) ?? null;
+                this._pfTrophyPagePrevBtn = trophiesView.getChildByName('PortfolioTrophiesPagePrev')?.getComponent(Button) ?? null;
+                this._pfTrophyPageNextBtn = trophiesView.getChildByName('PortfolioTrophiesPageNext')?.getComponent(Button) ?? null;
+                this._pfTrophyShareBtn = trophiesView.getChildByName('PortfolioTrophiesShareButton')?.getComponent(Button) ?? null;
+                this._pfTrophyPagePrevBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyPagePrev(), this);
+                this._pfTrophyPageNextBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyPageNext(), this);
+                this._pfTrophyShareBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyShareClick(), this);
             }
             this._pfHistoryView = this._portfolioPanel.getChildByName('PortfolioHistoryView') ?? null;
             if (this._pfHistoryView) {
@@ -3419,8 +3445,10 @@ export class AppUI extends Component {
         // FRAME-LEVEL PROBE — schedule via cc.director's frame loop.
         // Will only fire if the render thread is alive. Last frame log before
         // silence = the frame on which the engine native-crashed.
+        // Uses the ES6-imported `director` / `Director` (top of file). The
+        // earlier CommonJS `require('cc')` returned undefined on the native
+        // runtime, threw on destructure, and silently disabled this probe.
         try {
-            const { director, Director } = require('cc');
             let frameNum = 0;
             const frameHandler = () => {
                 frameNum++;
@@ -3463,10 +3491,19 @@ export class AppUI extends Component {
             const result = await mwa.reauthorize();
             console.log(`${TAG} _attemptAutoSignIn | AFTER_AWAIT_REAUTHORIZE hasResult=${!!result} pubkey=${result?.pubkey?.slice(0, 8) ?? '(none)'}`);
             if (result) {
-                console.log(`${TAG} _attemptAutoSignIn | SUCCESS pubkey=${result.pubkey} — showing Home`);
+                console.log(`${TAG} _attemptAutoSignIn | SUCCESS pubkey=${result.pubkey} — deferring _showHome past next DRAW`);
                 showToast('Extensible auth cache — session restored', true);
-                this._showHome();
-                console.log(`${TAG} _attemptAutoSignIn | AFTER_SHOW_HOME`);
+                // Engine SIGSEGVs (UIModelProxy 0x28) if HomePanel is activated
+                // inside the same AFTER_DRAW handler chain that built LandingFX
+                // and Mascot — tick 2's DRAW then walks too many freshly-active
+                // render entities at once. Defer the panel switch by one full
+                // DRAW so HomePanel activates during tick 2's AFTER_DRAW window
+                // and tick 3's DRAW walks it cleanly.
+                director.once(Director.EVENT_AFTER_DRAW, () => {
+                    if (!this.node?.isValid) return;
+                    this._showHome();
+                    console.log(`${TAG} _attemptAutoSignIn | AFTER_SHOW_HOME (deferred)`);
+                });
             } else {
                 console.log(`${TAG} _attemptAutoSignIn | FAIL reauthorize returned null — showing Landing`);
                 this._showLanding();
@@ -5069,6 +5106,10 @@ export class AppUI extends Component {
         const titleGlow  = lp.getChildByName('TitleGlow');
         const mascotGlow = lp.getChildByName('MascotGlow');
         const mascotShdw = lp.getChildByName('MascotShadow');
+        // FIX 10B (2026-04-29) — re-enabled. LandingFX now routes Graphics
+        // attachment through safeGraphics.enqueuePostDraw with a per-tick
+        // budget of 6, spreading these adds across multiple AFTER_DRAW ticks
+        // so the engine never sees > ~18 Graphics in any single tick.
         if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
         if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 130 });
         if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
@@ -5092,6 +5133,7 @@ export class AppUI extends Component {
 
         // Edge vignette overlay — sits between gradient stack and content.
         // Subtle corner darken focuses the eye on the center hero.
+        // FIX 10B — re-enabled, routed through enqueuePostDraw queue.
         installLandingVignette(lp);
 
         if (mascotGlow) addGlowPulse(mascotGlow, 110, 2.6);
@@ -5115,14 +5157,19 @@ export class AppUI extends Component {
         const reconn = lp.getChildByName('ReconnectButton');
         if (reconn) {
             const op = reconn.getComponent(UIOpacity) ?? reconn.addComponent(UIOpacity);
-            op.opacity = 150;  // 2026-04-28 polish: 200 → 150 (~59%) — Reconnect is the quietest CTA
+            // 2026-04-29 dominance pass: 150 → 110 (~43%). Reconnect is now
+            // narrower (560), shorter (64h), AND dimmer — three legibility
+            // cues that together kill the visual competition with Guest.
+            op.opacity = 110;
         }
         // 2026-04-28 hackathon UX — Guest also dims (lighter than Reconnect).
         // Visible secondary, but visibly secondary. Connect alone is the hero.
         const guest = lp.getChildByName('PlayAsGuestButton');
         if (guest) {
             const op = guest.getComponent(UIOpacity) ?? guest.addComponent(UIOpacity);
-            op.opacity = 235;  // ~92% — primary-tier weight without competing with Connect
+            // 2026-04-29 dominance pass: 235 → 210 (~82%). Guest stays clearly
+            // secondary so Connect reads as the one bright surface.
+            op.opacity = 210;
         }
 
         // 2026-04-28 polish — bottom "Disconnected" pill drops to footnote
@@ -7900,6 +7947,7 @@ export class AppUI extends Component {
             this._raceAdvantageHaloOpacity = this._raceAdvantageHaloNode.getComponent(UIOpacity)
                 ?? this._raceAdvantageHaloNode.addComponent(UIOpacity);
             this._raceAdvantageHaloOpacity.opacity = 130;
+            // FIX 10B — re-enabled, routed through enqueuePostDraw queue.
             installSoftGlow(this._raceAdvantageHaloNode, {
                 color: new Color(168, 174, 201),
                 peakAlpha: 110,
@@ -8435,6 +8483,11 @@ export class AppUI extends Component {
         const MIN_DISPLAY_MS = 600;
         const MAX_TIMEOUT_MS = 3000;
 
+        // FIX 10B (2026-04-29) — re-enabled. LoadingMascotContainer's
+        // _buildMascot still dumps 12 unbudgeted Graphics in its AFTER_DRAW
+        // tick, but with the LandingFX flood now budgeted (PER_TICK_BUDGET=6
+        // in safeGraphics), tick 1 total stays at ~18 (12 LandingMascot +
+        // 6 queued) which is the empirically-safe number.
         this._showLoadingOverlay('Preparing your dashboard…');
 
         // Race: phase3 done OR 3s timeout. .catch() prevents promise
@@ -12787,7 +12840,7 @@ export class AppUI extends Component {
         if (this._modePickerOverlay) this._modePickerOverlay.active = false;
     }
 
-    private _onPickerStart(): void {
+    private async _onPickerStart(): Promise<void> {
         this._dumpAppState('picker_start_enter');
         const join = this._isJoinMode();
         const joinTarget = this._pickerJoinTarget;
@@ -12956,6 +13009,15 @@ export class AppUI extends Component {
         // fully determined by squad + wager + mode + window + track and starts
         // as soon as the picker closes. `_onStartGame` handles countdown →
         // PortfolioRace → settlement.
+
+        // Demo: showcase MWAManager.signTransaction() before launching the bot
+        // match. Sign-only memo, no broadcast — bot matches are free.
+        const signed = await this._signBotMatchDemo();
+        if (!signed) {
+            console.log(`${TAG} _onPickerStart | paper_bot ABORT user_did_not_sign`);
+            return;
+        }
+
         if (this._modePickerOverlay) this._modePickerOverlay.active = false;
         this._dumpAppState('picker_start_paper_picker_closed');
         this._selectedStakeLamports = BigInt(wager);
@@ -12980,6 +13042,40 @@ export class AppUI extends Component {
             console.log(`${TAG} _onPickerStart | PAPER_LAUNCH squad_filled=${this._squad.filled} wager=${solVal}`);
             this._onStartGame();
         }, 600);
+    }
+
+    private async _signBotMatchDemo(): Promise<boolean> {
+        const mwa = MWAManager.instance;
+        if (!mwa || !mwa.isConnected || !mwa.connectedPubkey) {
+            console.log(`${TAG} _signBotMatchDemo | SKIP not_connected (guest mode)`);
+            return true;
+        }
+        console.log(`${TAG} _signBotMatchDemo | START fetching blockhash`);
+        const bh = await this._rpc.getLatestBlockhash();
+        if (!bh) {
+            console.log(`${TAG} _signBotMatchDemo | FAIL blockhash=null`);
+            showToast('Could not fetch blockhash, check connection');
+            return false;
+        }
+        const tx = buildMemoTransaction(
+            mwa.connectedPubkey,
+            'Token Duel · Bot Match Entry',
+            bh.blockhash,
+        );
+        console.log(`${TAG} _signBotMatchDemo | built_tx_bytes=${tx.length} requesting signature`);
+        const signed = await mwa.signTransaction(tx);
+        const ok = signed.length > 0;
+        console.log(`${TAG} _signBotMatchDemo | RESULT signed_bytes=${signed.length} ok=${ok} lastError=${mwa.lastError?.code ?? '(none)'}`);
+        if (!ok) {
+            if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+                showToast('Wrong wallet, disconnect and reconnect', true);
+            } else if (mwa.lastError?.code === 'USER_REJECTED') {
+                showToast('Sign cancelled');
+            } else {
+                showToast('Sign failed, match not started');
+            }
+        }
+        return ok;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -15599,7 +15695,7 @@ export class AppUI extends Component {
         const bg = new Node('PillBg');
         strip.addChild(bg);
         bg.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
-        const bgG = bg.addComponent(Graphics);
+        const bgG = bg.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
         const drawBg = (): void => {
             bgG.clear();
             bgG.fillColor = bgC;
@@ -15618,7 +15714,7 @@ export class AppUI extends Component {
         strip.addChild(glowOuter);
         glowOuter.addComponent(UITransform).setContentSize(glowOuterW, glowOuterH);
         glowOuter.setPosition(new Vec3(initialX, 0, 0));
-        const goG = glowOuter.addComponent(Graphics);
+        const goG = glowOuter.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
         const drawGlowOuter = (): void => {
             goG.clear();
             goG.fillColor = glowOuterC;
@@ -15634,7 +15730,7 @@ export class AppUI extends Component {
         glowInner.addComponent(UITransform).setContentSize(glowInnerW, glowInnerH);
         glowInner.setPosition(new Vec3(initialX, 0, 0));
         glowInner.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
-        const giG = glowInner.addComponent(Graphics);
+        const giG = glowInner.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
         const drawGlowInner = (): void => {
             giG.clear();
             giG.fillColor = glowInnerC;
@@ -15665,7 +15761,7 @@ export class AppUI extends Component {
         highlight.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
         highlight.setPosition(new Vec3(initialX, 0, 0));
         highlight.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
-        const hlG = highlight.addComponent(Graphics);
+        const hlG = highlight.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
         const drawHighlight = (): void => {
             hlG.clear();
             hlG.fillColor = fillC;
@@ -15684,7 +15780,7 @@ export class AppUI extends Component {
             const divider = new Node('PillDivider');
             strip.addChild(divider);
             divider.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
-            const divG = divider.addComponent(Graphics);
+            const divG = divider.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
             drawDivider = (): void => {
                 divG.clear();
                 divG.strokeColor = new Color(255, 255, 255, 30);
@@ -15831,7 +15927,7 @@ export class AppUI extends Component {
             parent.insertChild(badge, 0); // behind labels
             badge.addComponent(UITransform).setContentSize(w, h);
             badge.setPosition(new Vec3(x, 0, 0));
-            badge.addComponent(Graphics);
+            badge.addComponent(Graphics); // safe: rank-badge mounter runs when leaderboard rows render (post-boot)
         }
         const g = badge.getComponent(Graphics)!;
         g.clear();
@@ -15870,7 +15966,7 @@ export class AppUI extends Component {
         card.addChild(border);
         border.addComponent(UITransform).setContentSize(cardW, 2);
         border.setPosition(new Vec3(0, cardH / 2 - 1, 0));
-        const g = border.addComponent(Graphics);
+        const g = border.addComponent(Graphics); // safe: _mountPersonalRankBorder runs when leaderboard panel activates (post-boot)
         const teal = colorFromHex(Palette.accent.teal);
         g.fillColor = new Color(teal.r, teal.g, teal.b, 110);
         g.rect(-cardW / 2, -1, cardW, 2);
@@ -17462,8 +17558,10 @@ export class AppUI extends Component {
     }
 
     /**
-     * Part 11 B: fetch + render trophies via Helius DAS API.
-     * Empty state shown when no trophies (or Helius unreachable).
+     * Part 11 B: fetch + merge trophies via Helius DAS API, then hand off to
+     * `_renderTrophyPage` for paginated tile rendering. Empty state shown
+     * when no trophies (or Helius unreachable). The full merged list is
+     * stored on `_pfTrophyEntries`; page state is reset to 0 on every fetch.
      */
     private async _refreshTrophies(): Promise<void> {
         const mwa = MWAManager.instance;
@@ -17473,34 +17571,115 @@ export class AppUI extends Component {
         const empty = trophiesView.getChildByName('PortfolioTrophiesEmptyLabel');
         if (!pubkey) {
             if (empty) empty.active = true;
-            for (const tile of this._pfTrophyTiles) tile.active = false;
+            this._pfTrophyEntries = [];
+            this._pfTrophyPage = 0;
+            this._renderTrophyPage();
             return;
         }
         const { getPlayerTrophies, mockTrophies, rankIcon } = await import('../../token-duel/scripts/TrophyRpc');
+        this._rankIconFn = rankIcon;
         const live = await getPlayerTrophies(pubkey);
         // 2026-04-28 — Always merge mock trophies on top of real ones so the
-        // tab is never empty during UX iteration. Real trophies take the lead
-        // tiles; mocks fill the remaining slots up to `_pfTrophyTiles.length`.
-        const target = this._pfTrophyTiles.length || 6;
+        // tab is never empty during UX iteration. Real trophies take the
+        // lead tiles; mocks fill the rest. Pagination handles overflow when
+        // the merged total exceeds 6.
         const seen = new Set(live.map((t) => t.mint));
         const filler = mockTrophies().filter((t) => !seen.has(t.mint));
-        const display = live.concat(filler).slice(0, target);
-        this._pfTrophyEntries = display;
-        console.log(`${TAG} _refreshTrophies | DONE live=${live.length} mocks=${Math.max(0, display.length - live.length)} total=${display.length}`);
-        if (empty) empty.active = display.length === 0;
+        const merged = live.concat(filler);
+        this._pfTrophyEntries = merged;
+        this._pfTrophyPage = 0;
+        console.log(`${TAG} _refreshTrophies | DONE live=${live.length} mocks=${filler.length} total=${merged.length}`);
+        if (empty) empty.active = merged.length === 0;
+        this._renderTrophyPage();
+    }
+
+    /**
+     * Trophies redesign — render the current page slice into the 6-tile
+     * pool. Each tile gets:
+     *   - WEEK eyebrow caption
+     *   - 90-pt rank icon (medalGold / medalSilver / medalBronze / starBurst)
+     *   - big WinsValue ("12") + "wins" label
+     *   - top-edge stripe re-tinted gold/silver/bronze for ranks 1-3 and
+     *     purple for rank 4+
+     * Pagination chrome (prev / label / next) only shows when the merged
+     * list overflows a single page.
+     */
+    private _renderTrophyPage(): void {
+        const PAGE = 6;
+        const entries = this._pfTrophyEntries;
+        const totalPages = Math.max(1, Math.ceil(entries.length / PAGE));
+        if (this._pfTrophyPage < 0) this._pfTrophyPage = 0;
+        if (this._pfTrophyPage > totalPages - 1) this._pfTrophyPage = totalPages - 1;
+        const start = this._pfTrophyPage * PAGE;
+        const slice = entries.slice(start, start + PAGE);
+
         for (let i = 0; i < this._pfTrophyTiles.length; i++) {
             const tile = this._pfTrophyTiles[i];
-            const t = display[i];
+            const t = slice[i];
             if (!t) { tile.active = false; continue; }
             tile.active = true;
-            // UX Phase 2b: procedural medal/trophy on the 'Emoji' node instead of glyph.
+            const eyebrow = tile.getChildByName('WeekEyebrow')?.getComponent(Label);
             const emojiN = tile.getChildByName('Emoji');
-            const titleLbl = tile.getChildByName('Title')?.getComponent(Label);
-            const winsLbl = tile.getChildByName('Wins')?.getComponent(Label);
-            if (emojiN) IconLibrary.attach(emojiN, rankIcon(t.rank), { size: 64 });
-            if (titleLbl) titleLbl.string = `Week #${t.weekId}`;
-            if (winsLbl) winsLbl.string = t.wins > 0 ? `${t.wins} wins` : '';
+            const winsValue = tile.getChildByName('WinsValue')?.getComponent(Label);
+            const winsLabel = tile.getChildByName('WinsLabel')?.getComponent(Label);
+            const edgeSpr = tile.getChildByName('CardEdgeAccent')?.getComponent(Sprite);
+            if (eyebrow) eyebrow.string = `WEEK #${t.weekId}`;
+            if (emojiN && this._rankIconFn) {
+                // rankIcon already maps rank 4+ to 'starBurst'. The function
+                // ref is cached during the dynamic import in _refreshTrophies
+                // so prev/next clicks render without re-importing.
+                IconLibrary.attach(emojiN, this._rankIconFn(t.rank), { size: 90 });
+            }
+            if (winsValue) winsValue.string = `${Math.max(0, t.wins)}`;
+            if (winsLabel) winsLabel.string = t.wins === 1 ? 'win' : 'wins';
+            if (edgeSpr) {
+                // Per-rank stripe: gold / silver / bronze / purple (rank 4+).
+                const c = t.rank === 1 ? new Color(255, 210,  74, 255)
+                        : t.rank === 2 ? new Color(216, 221, 240, 255)
+                        : t.rank === 3 ? new Color(224, 138,  74, 255)
+                        :                new Color(170, 120, 255, 255);
+                edgeSpr.color = c;
+            }
         }
+
+        // Pagination chrome — show only when more than one page exists.
+        const showPager = entries.length > PAGE;
+        if (this._pfTrophyPageLabel) {
+            this._pfTrophyPageLabel.node.active = showPager;
+            this._pfTrophyPageLabel.string = `Page ${this._pfTrophyPage + 1} / ${totalPages}`;
+        }
+        if (this._pfTrophyPagePrevBtn) {
+            this._pfTrophyPagePrevBtn.node.active = showPager;
+            this._pfTrophyPagePrevBtn.interactable = this._pfTrophyPage > 0;
+            const op = this._pfTrophyPagePrevBtn.node.getComponent(UIOpacity)
+                ?? this._pfTrophyPagePrevBtn.node.addComponent(UIOpacity);
+            op.opacity = this._pfTrophyPage > 0 ? 255 : 90;
+        }
+        if (this._pfTrophyPageNextBtn) {
+            this._pfTrophyPageNextBtn.node.active = showPager;
+            this._pfTrophyPageNextBtn.interactable = this._pfTrophyPage < totalPages - 1;
+            const op = this._pfTrophyPageNextBtn.node.getComponent(UIOpacity)
+                ?? this._pfTrophyPageNextBtn.node.addComponent(UIOpacity);
+            op.opacity = this._pfTrophyPage < totalPages - 1 ? 255 : 90;
+        }
+    }
+
+    private _onTrophyPagePrev(): void {
+        if (this._pfTrophyPage <= 0) return;
+        this._pfTrophyPage -= 1;
+        this._renderTrophyPage();
+    }
+
+    private _onTrophyPageNext(): void {
+        const totalPages = Math.max(1, Math.ceil(this._pfTrophyEntries.length / 6));
+        if (this._pfTrophyPage >= totalPages - 1) return;
+        this._pfTrophyPage += 1;
+        this._renderTrophyPage();
+    }
+
+    private _onTrophyShareClick(): void {
+        console.log(`${TAG} _onTrophyShareClick | page=${this._pfTrophyPage} total=${this._pfTrophyEntries.length}`);
+        showToast('Share coming soon');
     }
 
     /**
@@ -17620,9 +17799,11 @@ export class AppUI extends Component {
             const entry = entries[i];
             if (!entry) { row.active = false; continue; }
             row.active = true;
+            const iconN = row.getChildByName('Icon');
+            const chipN = row.getChildByName('Chip');
             const dateL = row.getChildByName('Date')?.getComponent(Label);
             const modeL = row.getChildByName('Mode')?.getComponent(Label);
-            const wagerL = row.getChildByName('Wager')?.getComponent(Label);
+            const opponentL = row.getChildByName('Opponent')?.getComponent(Label);
             const placeL = row.getChildByName('Placement')?.getComponent(Label);
             const payoutL = row.getChildByName('Payout')?.getComponent(Label);
             if (dateL) dateL.string = this._fmtHistoryDate(entry.at);
@@ -17633,11 +17814,11 @@ export class AppUI extends Component {
                 modeL.string = `${modeName} · ${windowLabel}${entry.wasForceSettled ? ' · AFK' : ''}`;
             }
             const isPaper = entry.track === 'paper-real' || entry.track === 'bot';
-            if (wagerL) {
+            if (opponentL) {
                 if (isPaper) {
-                    wagerL.string = entry.track === 'bot' ? 'Bot' : 'Paper';
+                    opponentL.string = entry.track === 'bot' ? 'Bot' : 'Paper';
                 } else {
-                    wagerL.string = `${(Number(entry.wagerLamports) / 1e9).toFixed(3)} SOL`;
+                    opponentL.string = `${(Number(entry.wagerLamports) / 1e9).toFixed(3)} SOL`;
                 }
             }
             if (placeL) {
@@ -17666,7 +17847,42 @@ export class AppUI extends Component {
                     payoutL.color = red;
                 }
             }
+            // Medal icon — gold/silver/bronze tier from mode + placement.
+            // Hide the node when the placement doesn't earn a medal so the
+            // column reads as empty rather than showing a stale tier.
+            if (iconN) {
+                const medal = this._medalForHistoryEntry(entry.mode, entry.placement);
+                if (medal) {
+                    iconN.active = true;
+                    IconLibrary.attach(iconN, medal, { size: 56 });
+                } else {
+                    iconN.active = false;
+                }
+            }
+            // Chip icon — robot for Bot, chart for Paper, coin for real SOL.
+            if (chipN) {
+                const chipName: IconName = entry.track === 'bot' ? 'robot'
+                    : entry.track === 'paper-real' ? 'chart'
+                    : 'coin';
+                chipN.active = true;
+                IconLibrary.attach(chipN, chipName, { size: 22 });
+            }
         }
+    }
+
+    /**
+     * Medal tier for a History row: gold for the winner of every mode,
+     * silver for 2nd in 4p / BR8, bronze for 3rd in BR8. Anything else
+     * (lower placements, force-settled, or n/a) returns null so the row
+     * shows no medal at all.
+     */
+    private _medalForHistoryEntry(mode: number, placement: number): IconName | null {
+        if (placement < 0) return null;
+        if (placement === 0) return 'medalGold';
+        // mode index → required players: 0=1v1(2), 1=Trio(3), 2=4p(4), 3=BR8(8).
+        if (placement === 1 && (mode === 2 || mode === 3)) return 'medalSilver';
+        if (placement === 2 && mode === 3) return 'medalBronze';
+        return null;
     }
 
     private _fmtHistoryDate(unixSec: number): string {

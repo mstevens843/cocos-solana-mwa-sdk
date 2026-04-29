@@ -114,13 +114,17 @@ export function rankEmoji(rank: number): string {
     return '🏆';
 }
 
-/** UX overhaul: IconLibrary key for rank → procedural medal/trophy icon. */
-export type RankIconName = 'medalGold' | 'medalSilver' | 'medalBronze' | 'trophy';
+/** UX overhaul: IconLibrary key for rank → procedural medal/trophy icon.
+ *  Rank 4+ now resolves to 'starBurst' so participation cards read distinctly
+ *  from the gold/silver/bronze podium tier rather than reusing the generic
+ *  trophy glyph (which competed visually with the rank-1 medal).
+ */
+export type RankIconName = 'medalGold' | 'medalSilver' | 'medalBronze' | 'starBurst';
 export function rankIcon(rank: number): RankIconName {
     if (rank === 1) return 'medalGold';
     if (rank === 2) return 'medalSilver';
     if (rank === 3) return 'medalBronze';
-    return 'trophy';
+    return 'starBurst';
 }
 
 // Dev-only fixture for the Trophies tab so design work can proceed before any

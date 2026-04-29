@@ -14,14 +14,16 @@ DST=assets/demo/resources/mascot/frames
 mkdir -p "$DST"
 
 extract() {
-    local state="$1" fps="$2"
-    echo "→ $state @ ${fps}fps"
-    ffmpeg -y -loglevel error -i "$SRC/$state.mp4" \
+    local state="$1"
+    local fps="$2"
+    local src="${3:-$state.mp4}"
+    echo "→ $state @ ${fps}fps (src=$src)"
+    ffmpeg -y -loglevel error -i "$SRC/$src" \
         -vf "fps=$fps,scale=384:384:flags=lanczos,colorkey=color=0xFFFFFF:similarity=0.03:blend=0.30" \
         "$DST/${state}_%03d.png"
 }
 
-extract idle 12
+extract idle 12 idle_5s.mp4
 extract think 12
 extract celebrate 24
 extract lose 24

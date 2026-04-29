@@ -449,8 +449,10 @@ const race = {
 const landing = {
     // Hero band — title + subtitle + mascot. 2026-04-28 polish pass dropped
     // the redundant tagline + support line (down to one dominant idea).
+    // 2026-04-29 dominance pass: subtitle pulled tighter to title (422 → 432)
+    // so they read as one unit.
     TITLE_Y:          480,
-    SUBTITLE_Y:       422,
+    SUBTITLE_Y:       432,    // 2026-04-29 dominance pass: 422 → 432 (closer to title)
     MASCOT_Y:         250,    // 2026-04-28 polish: 300 → 250 (anchor toward CTA)
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
@@ -461,11 +463,14 @@ const landing = {
     // stack feels "decided" instead of spread. 2026-04-28: trust line
     // pulled tighter to Connect; new LiveSignal sub-cue inserted between
     // trust and Guest, so Guest + Reconnect drop to make room.
-    CONNECT_Y:        -18,    // PRIMARY — Connect Wallet (h=110)
-    TRUST_Y:          -78,    // 2026-04-28: -88 → -78 (tighter to Connect)
-    LIVE_SIGNAL_Y:    -100,   // 2026-04-28 polish: -114 → -100 (closer to CTA)
-    GUEST_Y:          -178,   // 2026-04-28: -158 → -178 (room for live signal)
-    RECONNECT_Y:      -278,   // 2026-04-28: -262 → -278 (follow Guest down)
+    // 2026-04-29 dominance pass: ConnectButton h 110 → 126, so its bottom
+    // edge dropped 8px. Cascade everything below 8px down to clear collision;
+    // LIVE_SIGNAL gets +12 (extra 4px of breathing between trust + live).
+    CONNECT_Y:        -18,    // PRIMARY — Enter the Duel (h=126, was 110)
+    TRUST_Y:          -86,    // 2026-04-29: -78 → -86 (cascade)
+    LIVE_SIGNAL_Y:    -112,   // 2026-04-29: -100 → -112 (cascade + breathing)
+    GUEST_Y:          -186,   // 2026-04-29: -178 → -186 (cascade)
+    RECONNECT_Y:      -282,   // 2026-04-29: -278 → -282 (cascade, h drop 72→64)
 
     // Bottom status footer.
     STATUS_PILL_Y:    -555,
@@ -555,8 +560,8 @@ const portfolio = {
     // History view — scrollview fills CONTENT zone.
     HISTORY_SCROLL_Y:     _PZ.content.centerY,                    // -4
     HISTORY_SCROLL_H:     _PZ.content.height - 16,                // 936
-    HISTORY_BASE_Y:       -36,
-    HISTORY_GAP_Y:        -72,
+    HISTORY_BASE_Y:       -66,
+    HISTORY_GAP_Y:        -124,
     HISTORY_LOAD_MORE_Y:  -260,
 
     // Trophies view — 3×2 grid of TrophyTile with header band above + footer
@@ -811,26 +816,26 @@ const LayoutSpec = {
             bgGradientBotMid:    { x: 0,   y: -560, w: 720, h: 200, type: 'sprite',     notes: 'near-black bottom band, mid alpha (≈55)' },
             bgGradientBotInner:  { x: 0,   y: -620, w: 720, h: 80,  type: 'sprite',     notes: 'near-black bottom band, peak alpha (≈110) at very bottom' },
             // Hero band (compressed — was y=500/432/220/45/-10 in v1)
-            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 72,  type: 'label',      notes: 'Token Duel — 64pt display, gold + letter-spacing 2 + halo behind' },
+            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 78,  type: 'label',      notes: '2026-04-29 dominance pass: 64pt → 68pt; bbox h 72→78. Token Duel — display, gold + letter-spacing 2 + halo behind' },
             // 2026-04-27 UX upgrade — gold halo behind title for shimmer.
             titleGlow:           { x: 0,   y: landing.TITLE_Y,    w: 720, h: 140, type: 'sprite',     notes: 'gold radial halo behind TitleLabel; alpha-pulsed by LandingFX.addGlowPulse' },
             subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: '"Outperform. Or get outperformed." — 22pt body, mid, dimmed' },
             mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 320, h: 320, type: 'mascot',     notes: '2026-04-28 hackathon UX: w/h 280→320 (+14%); mascot is the centerpiece' },
             // 2026-04-27 UX upgrade — soft drop-shadow ellipse below mascot.
-            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 170, w: 240, h: 28, type: 'sprite', notes: '2026-04-28 hackathon UX: shadow w 200→240, drop 20 to follow taller mascot; cl(0,0,0,90)' },
+            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 170, w: 280, h: 28, type: 'sprite', notes: '2026-04-29 dominance pass: w 240→280 + alpha 90→130 to ground the mascot subtly (no platform/ring per user veto); cl(0,0,0,130)' },
             // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
             mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 520, h: 520, type: 'sprite',     notes: '2026-04-28 hackathon UX: w/h 440→520 (+18%); violet radial halo grows with mascot; alpha-pulsed by LandingFX.addGlowPulse' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
-            ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 440, type: 'group',      notes: 'visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
+            ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 400, type: 'group',      notes: '2026-04-29 dominance pass: h 440→400 to trim the dead backdrop below Reconnect. visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
-            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'btnPrimary', notes: 'PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
-            connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: 'right-aligned › inside ConnectButton — directional cue' },
-            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '"Secure · Non-custodial · You control your wallet" — sits directly under Connect inside card; green-tinted for reassurance' },
+            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 126, type: 'btnPrimary', notes: '2026-04-29 dominance pass: h 110→126 (+15%, within primary tier 136 cap). PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
+            connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 28,  h: 32,  type: 'label',      notes: '2026-04-29 dominance pass: › 38→42pt, alpha 230→255 (bbox 24/28 → 28/32). right-aligned inside ConnectButton — directional cue' },
+            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '2026-04-29 dominance pass: copy shortened to "🔒 Secure · Non-custodial" (dropped redundant "You control your wallet"); font 12 → 11 to read as microcopy. Green-tinted for reassurance.' },
             // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
             liveSignalLabel:     { x: 0,    y: landing.LIVE_SIGNAL_Y,     w: 640, h: 20, type: 'label',     notes: '"Live now · Join in seconds" — energy cue under Connect; teal-tinted' },
             liveSignalDot:       { x: -118, y: landing.LIVE_SIGNAL_Y + 1, w: 8,   h: 8,  type: 'sprite',    notes: '2026-04-28 polish — leading green dot pulsed by LandingFX.addGlowPulse' },
-            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary' },
-            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 72,  type: 'btnGhost',   notes: '2026-04-27 UX upgrade: w/h 660/80→620/72 — minimal weight; only active when AuthCache.hasCachedAuth' },
+            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary. Body sprite alpha softened to ~210 in AppUI._polishLandingPanel for stronger primary contrast (2026-04-29).' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 560,                      h: 64,  type: 'btnGhost',   notes: '2026-04-29 dominance pass: w 620→560, h 72→64, runtime label alpha 180→140. Visibly narrower + shorter + dimmer than Guest. Only active when AuthCache.hasCachedAuth.' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
         },
         allowedOverlaps: [
@@ -2607,9 +2612,21 @@ const LayoutSpec = {
             historyEmpty:    { x: 0, y: 0, w: 0,   h: 22, type: 'label' },
             historyScroll:   { x: 0, y: portfolio.HISTORY_SCROLL_Y,    w: UNIFORM_LAYOUT.CONTENT_W, h: portfolio.HISTORY_SCROLL_H, type: 'scrollview' },
             historyLoadMore: { x: 0, y: portfolio.HISTORY_LOAD_MORE_Y, w: 400, h: 48, type: 'btnGhost' },
-            // Trophies view container + empty label.
-            trophiesView:    { x: 0, y: 0, w: 720, h: 1280, type: 'group' },
-            trophiesEmpty:   { x: 0, y: portfolio.TROPHY_EMPTY_Y, w: 0, h: 24, type: 'label' },
+            // Trophies view container + empty label + header/footer/pagination.
+            // Header: title + subtitle band; pagination chevrons + page label
+            // sit on the right edge of the title row. Footer: two-line caption
+            // + ghost Share button. All children parented to trophiesView so
+            // the entire subtree toggles with the Trophies tab.
+            trophiesView:           { x: 0, y: 0, w: 720, h: 1280, type: 'group' },
+            trophiesEmpty:          { x: 0, y: portfolio.TROPHY_EMPTY_Y, w: 0, h: 24, type: 'label' },
+            trophiesHeaderTitle:    { x: 0,    y: portfolio.TROPHY_HEADER_TITLE_Y,    w: 360, h: 28, type: 'label' },
+            trophiesHeaderSubtitle: { x: 0,    y: portfolio.TROPHY_HEADER_SUBTITLE_Y, w: 480, h: 18, type: 'label' },
+            trophiesPagePrev:       { x: 232,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 32,  h: 32, type: 'btnGhost' },
+            trophiesPageLabel:      { x: 280,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 80,  h: 18, type: 'label' },
+            trophiesPageNext:       { x: 328,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 32,  h: 32, type: 'btnGhost' },
+            trophiesFooterLine1:    { x: 0,    y: portfolio.TROPHY_FOOTER_LINE1_Y,    w: 600, h: 16, type: 'label' },
+            trophiesFooterLine2:    { x: 0,    y: portfolio.TROPHY_FOOTER_LINE2_Y,    w: 600, h: 16, type: 'label' },
+            trophiesShareBtn:       { x: 0,    y: portfolio.TROPHY_SHARE_BTN_Y,       w: 160, h: 40, type: 'btnGhost' },
         },
         templates: {
             // Hero P/L card — focal point. Big colored value + edge accent
@@ -2642,36 +2659,50 @@ const LayoutSpec = {
                 track:  { x:    0, y: -10, w: 250, h: 8  },
                 footer: { x:    0, y: -28, w: 270, h: 16 },
             },
-            // 11 — 6 trophy tiles in a 3×2 grid (200×200, 20-px gap).
+            // 11 — 6 trophy tiles in a 3×2 grid (220×260, 16-px gap).
+            // Tile internals (top→bottom): WEEK eyebrow at +108 (small caps,
+            // dim), 120-px Emoji icon (rendered at IconLibrary size 90) at +30,
+            // big WinsValue label at -60 (28-pt bold white "12"), small
+            // WinsLabel at -94 ("wins"). Top-edge stripe is recolored per-rank
+            // at runtime in AppUI._renderTrophyPage (gold/silver/bronze/purple).
             trophyTile: {
-                count: 6, w: 200, h: 200, gap: 20,
+                count: 6, w: 220, h: 260, gap: 16,
                 cols: 3, rows: 2,
-                gridXOffset: -1, // (col - 1) * (w + gap) — cols [-220, 0, 220]
+                gridXOffset: -1, // (col - 1) * (w + gap) — cols [-236, 0, 236]
                 gridYBase:   portfolio.TROPHY_GRID_BASE_Y,
                 gridYStride: portfolio.TROPHY_GRID_STRIDE_Y,
-                emoji: { x: 0, y: 50,  w: 200, h: 70 },
-                title: { x: 0, y: -10, w: 200, h: 20 },
-                wins:  { x: 0, y: -40, w: 200, h: 18 },
+                weekEyebrow: { x: 0, y: 108, w: 200, h: 14 },
+                emoji:       { x: 0, y: 30,  w: 120, h: 120 },
+                winsValue:   { x: 0, y: -60, w: 200, h: 36 },
+                winsLabel:   { x: 0, y: -94, w: 200, h: 16 },
             },
             // 30-row pool inside PortfolioHistoryView's ScrollView. AppUI
-            // toggles _active per row + writes 5 labels (Date/Mode/Wager/
-            // Placement/Payout) per MatchHistoryEntry (AppUI.ts:9310).
+            // toggles _active per row + writes labels (Date/Mode/Placement/
+            // Opponent/Payout) per MatchHistoryEntry (AppUI._renderMatchHistoryRows).
             //
             // baseY/gapY: rows cascade top-down beneath content anchor
-            // (0.5, 1). First row centered at y=-36 (rowH/2 below top),
-            // each subsequent row 72 px lower (rowH 64 + 8 gap).
+            // (0.5, 1). First row centered at y=-66 (top inset 8 + rowH/2),
+            // each subsequent row 124 px lower (rowH 116 + 8 gap).
             //
-            // Phase 9a: each label's w shrunk from a catch-all 560 to its
-            // actual column slot — eliminates 4 internal overlaps per row
-            // × 30 rows = 120 overlaps cleared. Centers (x,y) unchanged.
+            // 2026-04-29 redesign — 116-tall card with 4 columns separated by
+            // hairline dividers: [medal+date | mode/place | chip+opponent |
+            // payout]. Medal node (Icon) is empty at scene time; AppUI
+            // calls IconLibrary.attach with medalGold/medalSilver/medalBronze
+            // depending on placement + mode. Chip node holds the per-track
+            // mini-icon (robot/chart/coin).
             matchHistoryRow: {
-                count: 30, w: 600, h: 64,
+                count: 30, w: 660, h: 116,
                 baseY: portfolio.HISTORY_BASE_Y, gapY: portfolio.HISTORY_GAP_Y,
-                date:      { x: -270, y: 16,  w: 120, h: 18, color: [160, 170, 190] },
-                mode:      { x: -90,  y: 16,  w: 160, h: 18, color: [255, 255, 255] },
-                wager:     { x: 90,   y: 16,  w: 140, h: 18, color: [200, 210, 220] },
-                placement: { x: -90,  y: -14, w: 240, h: 18, color: [255, 255, 255] },
-                payout:    { x: 200,  y: -14, w: 160, h: 20, color: [48, 198, 155] },
+                icon:      { x: -270, y:  16, size: 56 },
+                date:      { x: -270, y: -32, w: 120, h: 16, color: [160, 170, 190] },
+                dividerA:  { x: -180, y:   0, w: 1,   h: 84, color: [60, 70, 95, 180] },
+                mode:      { x:  -90, y:  18, w: 180, h: 28, color: [255, 255, 255] },
+                placement: { x:  -90, y: -18, w: 180, h: 22, color: [180, 190, 210] },
+                dividerB:  { x:    0, y:   0, w: 1,   h: 84, color: [60, 70, 95, 180] },
+                chip:      { x:   30, y:   0, size: 22 },
+                opponent:  { x:  110, y:   0, w: 140, h: 28, color: [220, 226, 240] },
+                dividerC:  { x:  180, y:   0, w: 1,   h: 84, color: [60, 70, 95, 180] },
+                payout:    { x:  255, y:   0, w: 150, h: 32, color: [48, 198, 155] },
             },
         },
         allowedOverlaps: [
@@ -2686,6 +2717,23 @@ const LayoutSpec = {
         allowedOverlaps: [
             // Progress fill is layered on top of the track sprite by design.
             ['PFXpProgressBar', 'PFXpProgressBarFill'],
+        ],
+    },
+
+    // 2026-04-29 redesign — 4-column card with hairline dividers between
+    // each section. Dividers sit at the column boundary by design, so they
+    // touch (1-px) the labels in adjacent columns. Chip + Opponent share
+    // column 3 with a small horizontal overlap at the chip's right edge.
+    // Verifier strips trailing _N so this entry covers MatchHistoryRow_0..29.
+    MatchHistoryRow: {
+        allowedOverlaps: [
+            ['Divider0', 'Mode'],
+            ['Divider0', 'Placement'],
+            ['Mode',     'Divider1'],
+            ['Placement','Divider1'],
+            ['Chip',     'Opponent'],
+            ['Opponent', 'Divider2'],
+            ['Divider2', 'Payout'],
         ],
     },
 

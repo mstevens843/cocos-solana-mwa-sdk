@@ -1332,8 +1332,10 @@ function generate() {
     sb.e[titleGlowSpr]._color = cl(255, 210, 74, 64);
     sb.e[titleGlow]._components = [rf(titleGlowUT), rf(titleGlowSpr)];
 
+    // 2026-04-29 dominance pass — title 64 → 68pt for slightly more presence
+    // (still solid gold + halo; user explicitly liked the simple yellow look).
     const title = mkLabel(sb, 'TitleLabel', lpN, 'Token Duel',
-        64, LE.title.y, LE.title.w, LE.title.h);
+        68, LE.title.y, LE.title.w, LE.title.h);
     // 2026-04-27 UX upgrade — letter-spacing for more "decided" feel.
     style(sb, title, { bold: true, color: GOLD(), spacing: 2 });
 
@@ -1351,11 +1353,14 @@ function generate() {
     sb.e[mascotGlow]._components = [rf(mascotGlowUT), rf(mascotGlowSpr)];
 
     // 2026-04-27 UX upgrade — flat dark ellipse below mascot for grounding.
+    // 2026-04-29 dominance pass: alpha 90 → 130 + width 240 → 280 (in
+    // LayoutSpec) so the mascot reads as "placed" instead of floating.
+    // No platform / ring / second halo — user explicitly vetoed the staged look.
     const mascotShadow = sb.e.length;
     sb.node('MascotShadow', lpN, [], [], v3(LE.mascotShadow.x, LE.mascotShadow.y, 0));
     const mascotShadowUT  = sb.ut(mascotShadow, LE.mascotShadow.w, LE.mascotShadow.h);
     const mascotShadowSpr = sb.spr(mascotShadow, 0, 0, 0);
-    sb.e[mascotShadowSpr]._color = cl(0, 0, 0, 90);
+    sb.e[mascotShadowSpr]._color = cl(0, 0, 0, 130);
     sb.e[mascotShadow]._components = [rf(mascotShadowUT), rf(mascotShadowSpr)];
 
     // Mascot container — Empty Node; AppUI.start() adds MascotController
@@ -1398,8 +1403,10 @@ function generate() {
     sb.node('ConnectChevron', connectBtn, [], [chevronN+1, chevronN+2],
         v3(LE.connectChevron.x, 0, 0));
     sb.ut(chevronN, LE.connectChevron.w, LE.connectChevron.h);
-    sb.lbl(chevronN, '›', 38, 255, 255, 255);
-    sb.e[chevronN+2]._color = cl(255, 255, 255, 230);
+    // 2026-04-29 dominance pass — chevron 38 → 42, alpha 230 → 255 so the
+    // directional cue reads as boldly as the rest of the primary CTA.
+    sb.lbl(chevronN, '›', 42, 255, 255, 255);
+    sb.e[chevronN+2]._color = cl(255, 255, 255, 255);
     style(sb, chevronN, { bold: true });
     sb.e[connectBtn]._children = [...(sb.e[connectBtn]._children ?? []), rf(chevronN)];
 
@@ -1408,9 +1415,11 @@ function generate() {
     // reassurance accent (was neutral text.mid 168/174/201).
     // 2026-04-28 hackathon UX — font 14 → 12 to reduce visual weight (now
     // shares space with new LiveSignal label below).
+    // 2026-04-29 dominance pass — copy shortened ("You control your wallet"
+    // duplicated "Non-custodial") and font 12 → 11 to read as microcopy.
     const trustLine = mkLabel(sb, 'TrustLineLabel', lpN,
-        '🔒  Secure · Non-custodial · You control your wallet',
-        12, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
+        '🔒  Secure · Non-custodial',
+        11, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
 
     // 2026-04-28 hackathon UX — "live system" sub-CTA cue between trust line
     // and Guest button. Teal-tinted (20, 241, 149 ≈ Theme.accent.teal). Static —
@@ -1418,9 +1427,10 @@ function generate() {
     // live, populated game.
     // 2026-04-28 polish — emoji replaced with a live Sprite dot whose alpha
     // pulses at runtime via LandingFX.addGlowPulse for "alive" cue.
+    // 2026-04-29 dominance pass — font 12 → 11 to match shortened trust line.
     const liveSignal = mkLabel(sb, 'LiveSignalLabel', lpN,
         'Live now · Join in seconds',
-        12, LE.liveSignalLabel.y, LE.liveSignalLabel.w, LE.liveSignalLabel.h, 20, 241, 149);
+        11, LE.liveSignalLabel.y, LE.liveSignalLabel.w, LE.liveSignalLabel.h, 20, 241, 149);
 
     // Sibling green dot (8×8, teal #14F195) parked left of the label text.
     // The label is horizontally centered; "Live now · Join in seconds" at
@@ -5267,33 +5277,69 @@ function generate() {
     const pfHistorySV = mkScrollView(sb, 'PortfolioHistoryScroll', pfHistoryViewN,
         PFE.historyScroll.x, PFE.historyScroll.y, PFE.historyScroll.w, PFE.historyScroll.h);
     // 30-row pool from LAYOUT.PortfolioPanel.templates.matchHistoryRow.
-    // AppUI toggles _active per row + writes 5 labels (Date/Mode/Wager/
-    // Placement/Payout) as MatchHistoryRpc entries arrive (AppUI.ts:9310).
+    // 2026-04-29 redesign — taller card (660×116) split into 4 columns by
+    // 1×84 hairline dividers. Column 1: Icon (medal, attached at runtime
+    // via IconLibrary) + Date below. Column 2: Mode + Placement stacked.
+    // Column 3: Chip (track icon) + Opponent label. Column 4: Payout.
+    // AppUI toggles _active per row + writes labels + attaches icons per
+    // entry (AppUI._renderMatchHistoryRows).
     const MHR = LAYOUT.PortfolioPanel.templates.matchHistoryRow;
     const pfHistoryRows = [];
+    const mkDivider = (parentN, name, cfg) => {
+        const dn = sb.e.length;
+        sb.node(name, parentN, [], [], v3(cfg.x, cfg.y, 0));
+        const dut = sb.ut(dn, cfg.w, cfg.h);
+        const dspr = sb.spr(dn, cfg.color[0], cfg.color[1], cfg.color[2], UUID_WHITE_SPRITE, 1);
+        sb.e[dspr]._color = cl(cfg.color[0], cfg.color[1], cfg.color[2], cfg.color[3] ?? 255);
+        sb.e[dn]._components = [rf(dut), rf(dspr)];
+        return dn;
+    };
+    const mkIconNode = (parentN, name, x, y, size) => {
+        const inN = sb.e.length;
+        sb.node(name, parentN, [], [], v3(x, y, 0));
+        const inUT = sb.ut(inN, size, size);
+        sb.e[inN]._components = [rf(inUT)];
+        return inN;
+    };
     for (let i = 0; i < MHR.count; i++) {
         const ry = MHR.baseY + i * MHR.gapY;
         const rowN = sb.e.length;
         sb.node(`MatchHistoryRow_${i}`, pfHistorySV.content, [], [], v3(0, ry, 0));
         const rowUT = sb.ut(rowN, MHR.w, MHR.h);
         const rowSpr = sb.spr(rowN, 22, 28, 44);
-        const dateL = mkLabel(sb, 'Date', rowN, '—', 12, 0, MHR.date.w, MHR.date.h,
+        const iconN = mkIconNode(rowN, 'Icon', MHR.icon.x, MHR.icon.y, MHR.icon.size);
+        const dateL = mkLabel(sb, 'Date', rowN, '—', 14, 0, MHR.date.w, MHR.date.h,
             MHR.date.color[0], MHR.date.color[1], MHR.date.color[2]);
         sb.e[dateL]._lpos = v3(MHR.date.x, MHR.date.y, 0);
-        const modeL = mkLabel(sb, 'Mode', rowN, '—', 12, 0, MHR.mode.w, MHR.mode.h,
+        const dividerA = mkDivider(rowN, 'Divider0', MHR.dividerA);
+        const modeL = mkLabel(sb, 'Mode', rowN, '—', 22, 0, MHR.mode.w, MHR.mode.h,
             MHR.mode.color[0], MHR.mode.color[1], MHR.mode.color[2]);
         sb.e[modeL]._lpos = v3(MHR.mode.x, MHR.mode.y, 0);
-        const wagerL = mkLabel(sb, 'Wager', rowN, '—', 12, 0, MHR.wager.w, MHR.wager.h,
-            MHR.wager.color[0], MHR.wager.color[1], MHR.wager.color[2]);
-        sb.e[wagerL]._lpos = v3(MHR.wager.x, MHR.wager.y, 0);
-        const placeL = mkLabel(sb, 'Placement', rowN, '—', 12, 0, MHR.placement.w, MHR.placement.h,
+        style(sb, modeL, { bold: true });
+        const placeL = mkLabel(sb, 'Placement', rowN, '—', 16, 0, MHR.placement.w, MHR.placement.h,
             MHR.placement.color[0], MHR.placement.color[1], MHR.placement.color[2]);
         sb.e[placeL]._lpos = v3(MHR.placement.x, MHR.placement.y, 0);
-        const payoutL = mkLabel(sb, 'Payout', rowN, '—', 14, 0, MHR.payout.w, MHR.payout.h,
+        const dividerB = mkDivider(rowN, 'Divider1', MHR.dividerB);
+        const chipN = mkIconNode(rowN, 'Chip', MHR.chip.x, MHR.chip.y, MHR.chip.size);
+        const oppL = mkLabel(sb, 'Opponent', rowN, '—', 22, 0, MHR.opponent.w, MHR.opponent.h,
+            MHR.opponent.color[0], MHR.opponent.color[1], MHR.opponent.color[2]);
+        sb.e[oppL]._lpos = v3(MHR.opponent.x, MHR.opponent.y, 0);
+        style(sb, oppL, { bold: true });
+        const dividerC = mkDivider(rowN, 'Divider2', MHR.dividerC);
+        const payoutL = mkLabel(sb, 'Payout', rowN, '—', 26, 0, MHR.payout.w, MHR.payout.h,
             MHR.payout.color[0], MHR.payout.color[1], MHR.payout.color[2]);
         sb.e[payoutL]._lpos = v3(MHR.payout.x, MHR.payout.y, 0);
+        style(sb, payoutL, { bold: true });
         sb.e[rowN]._components = [rf(rowUT), rf(rowSpr)];
-        sb.e[rowN]._children = [rf(dateL), rf(modeL), rf(wagerL), rf(placeL), rf(payoutL)];
+        sb.e[rowN]._children = [
+            rf(iconN), rf(dateL),
+            rf(dividerA),
+            rf(modeL), rf(placeL),
+            rf(dividerB),
+            rf(chipN), rf(oppL),
+            rf(dividerC),
+            rf(payoutL),
+        ];
         sb.e[rowN]._active = false;
         pfHistoryRows.push(rowN);
     }
@@ -5307,14 +5353,40 @@ function generate() {
     sb.e[pfHistoryViewN]._children = [rf(pfHistoryEmpty), rf(pfHistorySV.root), rf(pfHistoryLoadMore)];
     sb.e[pfHistoryViewN]._active = false;
 
-    // Part 11 B: Trophies view — 3×2 grid of cNFT tiles from
-    // LAYOUT.PortfolioPanel.templates.trophyTile.
+    // Part 11 B: Trophies view — header band + 3×2 cNFT tile grid + footer
+    // band, all parented to PortfolioTrophiesView so the entire subtree
+    // toggles with the Trophies tab. Tile spec lives in
+    // LAYOUT.PortfolioPanel.templates.trophyTile (220×260, 16-px gap).
     const pfTrophiesViewN = sb.e.length;
     sb.node('PortfolioTrophiesView', pfN, [], [], v3(PFE.trophiesView.x, PFE.trophiesView.y, 0));
     sb.ut(pfTrophiesViewN, PFE.trophiesView.w, PFE.trophiesView.h);
     const pfTrophiesEmpty = mkLabel(sb, 'PortfolioTrophiesEmptyLabel', pfTrophiesViewN,
         'No trophies yet — win a weekly season to earn your first',
         14, PFE.trophiesEmpty.y, PFE.trophiesEmpty.w, PFE.trophiesEmpty.h, 168, 174, 201);
+
+    // Header band — title + subtitle + (right-aligned) pagination row.
+    const pfTrophiesHeaderTitle = mkLabel(sb, 'PortfolioTrophiesHeaderTitle', pfTrophiesViewN,
+        'Weekly Trophies', 22, PFE.trophiesHeaderTitle.y,
+        PFE.trophiesHeaderTitle.w, PFE.trophiesHeaderTitle.h, 220, 200, 140);
+    const pfTrophiesHeaderSubtitle = mkLabel(sb, 'PortfolioTrophiesHeaderSubtitle', pfTrophiesViewN,
+        'Your best performances by week', 12, PFE.trophiesHeaderSubtitle.y,
+        PFE.trophiesHeaderSubtitle.w, PFE.trophiesHeaderSubtitle.h, 168, 174, 201);
+    const pfTrophiesPagePrev = mkBtnXY(sb, 'PortfolioTrophiesPagePrev', pfTrophiesViewN, '‹',
+        PFE.trophiesPagePrev.x, PFE.trophiesPagePrev.y,
+        PFE.trophiesPagePrev.w, PFE.trophiesPagePrev.h, 16, 70, 90, { tier: 'tertiary' });
+    const pfTrophiesPageLabel = mkLabel(sb, 'PortfolioTrophiesPageLabel', pfTrophiesViewN,
+        'Page 1 / 1', 12, PFE.trophiesPageLabel.y,
+        PFE.trophiesPageLabel.w, PFE.trophiesPageLabel.h, 168, 174, 201);
+    sb.e[pfTrophiesPageLabel]._lpos = v3(PFE.trophiesPageLabel.x, PFE.trophiesPageLabel.y, 0);
+    const pfTrophiesPageNext = mkBtnXY(sb, 'PortfolioTrophiesPageNext', pfTrophiesViewN, '›',
+        PFE.trophiesPageNext.x, PFE.trophiesPageNext.y,
+        PFE.trophiesPageNext.w, PFE.trophiesPageNext.h, 16, 70, 90, { tier: 'tertiary' });
+    // Pagination row hidden when total trophies fit in a single page; AppUI
+    // toggles per render in _renderTrophyPage.
+    sb.e[pfTrophiesPagePrev]._active = false;
+    sb.e[pfTrophiesPageLabel]._active = false;
+    sb.e[pfTrophiesPageNext]._active = false;
+
     const PTT = LAYOUT.PortfolioPanel.templates.trophyTile;
     const pfTrophyTileIndices = [];
     for (let row = 0; row < PTT.rows; row++) {
@@ -5326,21 +5398,48 @@ function generate() {
             sb.node(`TrophyTile_${i}`, pfTrophiesViewN, [], [], v3(tx, ty, 0));
             const tUT = sb.ut(tN, PTT.w, PTT.h);
             const tSpr = cardBodySpr(sb, tN);
+            // WEEK eyebrow — small dim caps above the icon ("WEEK #6").
+            const eyebrowLbl = mkLabel(sb, 'WeekEyebrow', tN, 'WEEK #0', 11,
+                PTT.weekEyebrow.y, PTT.weekEyebrow.w, PTT.weekEyebrow.h, 168, 174, 201);
+            // Emoji node — IconLibrary.attach swaps in a 90-pt medal/star
+            // sprite at runtime (size set in AppUI._renderTrophyPage).
             const emojiLbl = mkLabel(sb, 'Emoji', tN, '', 56,
                 PTT.emoji.y, PTT.emoji.w, PTT.emoji.h, 255, 255, 255);
-            const titleLbl = mkLabel(sb, 'Title', tN, 'Week #0', 14,
-                PTT.title.y, PTT.title.w, PTT.title.h, 220, 200, 140);
-            const winsLbl = mkLabel(sb, 'Wins', tN, '0 wins', 12,
-                PTT.wins.y, PTT.wins.w, PTT.wins.h, 168, 174, 201);
-            // Phase 14 (B4): gold edge accent — rank tile.
+            // Big number ("12") — bold white, replaces the prior "Title" slot.
+            const winsValueLbl = mkLabel(sb, 'WinsValue', tN, '0', 28,
+                PTT.winsValue.y, PTT.winsValue.w, PTT.winsValue.h, 255, 255, 255);
+            // Small label ("wins") under the big number.
+            const winsLbl = mkLabel(sb, 'WinsLabel', tN, 'wins', 12,
+                PTT.winsLabel.y, PTT.winsLabel.w, PTT.winsLabel.h, 168, 174, 201);
+            // Top-edge stripe — placeholder gold; AppUI re-tints per rank
+            // (gold/silver/bronze/purple) in _renderTrophyPage.
             const tEdge = mkCardEdge(sb, tN, PTT.w, PTT.h, 255, 210, 74);
             sb.e[tN]._components = [rf(tUT), rf(tSpr)];
-            sb.e[tN]._children = [rf(emojiLbl), rf(titleLbl), rf(winsLbl), rf(tEdge)];
+            sb.e[tN]._children = [rf(eyebrowLbl), rf(emojiLbl), rf(winsValueLbl), rf(winsLbl), rf(tEdge)];
             sb.e[tN]._active = false;
             pfTrophyTileIndices.push(tN);
         }
     }
-    sb.e[pfTrophiesViewN]._children = [rf(pfTrophiesEmpty), ...pfTrophyTileIndices.map(rf)];
+
+    // Footer band — two-line caption explaining reset cadence + ghost Share
+    // button. AppUI._onTrophyShareClick stubs out the action with a toast.
+    const pfTrophiesFooterLine1 = mkLabel(sb, 'PortfolioTrophiesFooterLine1', pfTrophiesViewN,
+        'Trophies are based on your weekly performance', 11, PFE.trophiesFooterLine1.y,
+        PFE.trophiesFooterLine1.w, PFE.trophiesFooterLine1.h, 168, 174, 201);
+    const pfTrophiesFooterLine2 = mkLabel(sb, 'PortfolioTrophiesFooterLine2', pfTrophiesViewN,
+        'New week starts every Monday 00:00 UTC', 11, PFE.trophiesFooterLine2.y,
+        PFE.trophiesFooterLine2.w, PFE.trophiesFooterLine2.h, 168, 174, 201);
+    const pfTrophiesShareBtn = mkBtn(sb, 'PortfolioTrophiesShareButton', pfTrophiesViewN, 'Share',
+        PFE.trophiesShareBtn.y, PFE.trophiesShareBtn.w, PFE.trophiesShareBtn.h, 20, 70, 90, { tier: 'tertiary' });
+
+    sb.e[pfTrophiesViewN]._children = [
+        rf(pfTrophiesEmpty),
+        rf(pfTrophiesHeaderTitle), rf(pfTrophiesHeaderSubtitle),
+        rf(pfTrophiesPagePrev), rf(pfTrophiesPageLabel), rf(pfTrophiesPageNext),
+        ...pfTrophyTileIndices.map(rf),
+        rf(pfTrophiesFooterLine1), rf(pfTrophiesFooterLine2),
+        rf(pfTrophiesShareBtn),
+    ];
     sb.e[pfTrophiesViewN]._active = false;
 
     sb.e[pfN]._children = [

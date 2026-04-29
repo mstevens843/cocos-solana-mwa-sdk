@@ -21,6 +21,7 @@
 
 import {
     Component,
+    Director,
     Graphics,
     Node,
     Sprite,
@@ -30,9 +31,11 @@ import {
     UITransform,
     Vec3,
     _decorator,
+    director,
     tween,
 } from 'cc';
 import { Palette, colorFromHex, Motion } from './Theme';
+import { enqueuePostDraw } from './safeGraphics';
 
 const { ccclass } = _decorator;
 const TAG = '[Mascot]';
@@ -63,7 +66,7 @@ export class MascotController extends Component {
     };
 
     onLoad(): void {
-        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'} — deferring _buildMascot to next tick`);
+        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'} — deferring _buildMascot to AFTER_DRAW`);
         // FIX: defer runtime Node + Graphics creation off the first-frame draw
         // walk. If we addComponent(Graphics) on dynamically-created Nodes inside
         // onLoad, the engine's render-entity (UIModelProxy._renderDrawInfos)
@@ -71,18 +74,25 @@ export class MascotController extends Component {
         // scene. Crash signature: SIGSEGV at offset 0x28 in
         // std::vector<RenderDrawInfo*>::size() called from
         // js_cc_UIModelProxy_activeSubModels (jsb_2d_auto.cpp:2923).
-        this.scheduleOnce(() => {
+        //
+        // 2026-04-29 — `scheduleOnce(0)` was NOT enough. It fires in the next
+        // tick's UPDATE phase, before that tick's DRAW; the engine still walked
+        // the half-attached render entities and SIGSEGV'd. `director.once(
+        // EVENT_AFTER_DRAW)` fires at the end of the just-completed draw walk,
+        // when the entity tree is stable. Same pattern that fixed LandingFX.
+        director.once(Director.EVENT_AFTER_DRAW, () => {
+            if (!this.node?.isValid) return;
             console.log(`${TAG} onLoad | DEFERRED_BUILD start`);
             this._buildMascot();
             console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
             // Do NOT call setState('idle') here. _state is already 'idle' from
             // field init, and panels that start inactive (PostMatchPanel,
-            // RacePanel) hold this scheduleOnce paused until they activate —
-            // by then AppUI may have already set the outcome state on the same
-            // frame, and a deferred reset to 'idle' on the next tick would
-            // clobber it (the bug that pinned the Game Results mascot to idle).
+            // RacePanel) hold this defer paused until they activate — by then
+            // AppUI may have already set the outcome state on the same frame,
+            // and a deferred reset to 'idle' on the next tick would clobber it
+            // (the bug that pinned the Game Results mascot to idle).
             console.log(`${TAG} onLoad | DEFERRED_BUILD done`);
-        }, 0);
+        });
     }
 
     onDestroy(): void {
@@ -100,10 +110,14 @@ export class MascotController extends Component {
             return;
         }
         if (this._state !== 'idle') return;
+        // The deferred _buildMascot (scheduleOnce in onLoad) hasn't fired on
+        // tick 1 yet, so the body/wand refs are still null. Bail until built —
+        // otherwise _twirl reads `null.angle` and throws every frame.
+        if (!this._wandNode) return;
         this._idleTimer += dt;
         this._idleWandCooldown -= dt;
         if (this._idleWandCooldown <= 0) {
-            this._twirl(this._wandNode!, 1, 0.8);
+            this._twirl(this._wandNode, 1, 0.8);
             this._idleWandCooldown = 5 + Math.random() * 4;
         }
     }
@@ -228,17 +242,23 @@ export class MascotController extends Component {
         this._eyeL    = this._mkChild('MascotEyeL', new Vec3(-20, 30, 0));
         this._eyeR    = this._mkChild('MascotEyeR', new Vec3(20, 30, 0));
 
-        this._drawBody(this._bodyNode);
-        this._drawWand(this._wandNode);
-        this._drawEye(this._eyeL);
-        this._drawEye(this._eyeR);
+        // Queue each Graphics attachment via the budgeted post-draw queue
+        // (PER_TICK_BUDGET in safeGraphics). Without this, all 12 mascot
+        // Graphics adds would land in the same AFTER_DRAW tick alongside the
+        // LandingFX queue + a second LoadingMascot, overflowing the engine's
+        // ~20-Graphics-per-tick ceiling and SIGSEGV'ing tick 2 DRAW at 0x28.
+        const body = this._bodyNode, wand = this._wandNode, eyeL = this._eyeL, eyeR = this._eyeR;
+        enqueuePostDraw(() => { if (body.isValid)  this._drawBody(body); });
+        enqueuePostDraw(() => { if (wand.isValid)  this._drawWand(wand); });
+        enqueuePostDraw(() => { if (eyeL.isValid)  this._drawEye(eyeL); });
+        enqueuePostDraw(() => { if (eyeR.isValid)  this._drawEye(eyeR); });
 
         // Sparkle pool (8 nodes for celebrate burst, hidden by default).
         for (let i = 0; i < 8; i++) {
             const s = this._mkChild(`MascotSparkle_${i}`, new Vec3(0, 0, 0));
-            this._drawSparkle(s);
             s.active = false;
             this._sparkleNodes.push(s);
+            enqueuePostDraw(() => { if (s.isValid) this._drawSparkle(s); });
         }
         // Default state: procedural HIDDEN. Made visible only by explicit
         // showProceduralFallback() call when Seedance loading fails. This
@@ -279,7 +299,7 @@ export class MascotController extends Component {
     }
 
     private _drawBody(n: Node): void {
-        const g = n.addComponent(Graphics);
+        const g = n.addComponent(Graphics); // safe: called from enqueuePostDraw queue work unit (one Graphics per tick budget slot)
         const violet = colorFromHex(Palette.accent.violet);
         const teal   = colorFromHex(Palette.accent.teal);
         // Body — rounded square (head)
@@ -305,7 +325,7 @@ export class MascotController extends Component {
     }
 
     private _drawWand(n: Node): void {
-        const g = n.addComponent(Graphics);
+        const g = n.addComponent(Graphics); // safe: called from enqueuePostDraw queue work unit (one Graphics per tick budget slot)
         g.fillColor = colorFromHex(Palette.text.hi);
         // Stick (rotated rect)
         g.moveTo(-26, 6); g.lineTo(-20, 12); g.lineTo(20, -28); g.lineTo(14, -34); g.close();
@@ -320,7 +340,7 @@ export class MascotController extends Component {
     }
 
     private _drawEye(n: Node): void {
-        const g = n.addComponent(Graphics);
+        const g = n.addComponent(Graphics); // safe: called from enqueuePostDraw queue work unit (one Graphics per tick budget slot)
         g.fillColor = colorFromHex(Palette.bg.primary);
         g.circle(0, 0, 8); g.fill();
         g.fillColor = colorFromHex(Palette.text.hi);
@@ -328,7 +348,7 @@ export class MascotController extends Component {
     }
 
     private _drawSparkle(n: Node): void {
-        const g = n.addComponent(Graphics);
+        const g = n.addComponent(Graphics); // safe: called from enqueuePostDraw queue work unit (one Graphics per tick budget slot)
         g.fillColor = colorFromHex(Palette.accent.amber);
         const pts = nStar(0, 0, 4, 12, 3, -90);
         g.moveTo(pts[0][0], pts[0][1]);
@@ -445,7 +465,8 @@ export class MascotController extends Component {
         }
     }
 
-    private _twirl(n: Node, turns: number, dur: number): void {
+    private _twirl(n: Node | null, turns: number, dur: number): void {
+        if (!n || !n.isValid) return;
         const startAngle = n.angle;
         tween(n)
             .by(dur, { angle: -360 * turns }, { easing: 'cubicInOut' })

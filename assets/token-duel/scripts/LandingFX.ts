@@ -17,6 +17,7 @@
  */
 
 import { Color, Graphics, Node, Sprite, UIOpacity, UITransform, tween, Tween, Vec3 } from 'cc';
+import { enqueuePostDraw } from './safeGraphics';
 
 const TAG = '[LandingFX]';
 
@@ -93,6 +94,12 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
     if (!parent || driftSet.has(parent)) return;
     driftSet.add(parent);
 
+    // 2026-04-29 — route Node + Graphics allocation through the budgeted
+    // post-draw queue. Each particle becomes one queued work unit so the
+    // queue spreads them across multiple AFTER_DRAW ticks (engine SIGSEGVs
+    // at 0x28 in js_cc_UIModelProxy_activeSubModels when too many
+    // addComponent(Graphics) land in a single tick — empirical ceiling ~20).
+
     const densityCurve = opts.densityCurve ?? 'uniform';
 
     // Bottom-of-canvas / top-of-canvas anchors. Landing canvas is 1280h
@@ -111,74 +118,60 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
         [ 20, 241, 149],  // teal
     ];
 
-    // Build all Graphics + UIOpacity components in one synchronous pass
-    // before kicking off any tween (Cocos 3.8 Android renderer crash
-    // safeguard — see _bindPostMatchConfetti header).
-    type Particle = { node: Node; op: UIOpacity; periodSec: number; delaySec: number; xJitter: number };
-    const particles: Particle[] = [];
-
     for (let i = 0; i < count; i++) {
-        const p = new Node(`LandingParticle_${i}`);
-        parent.addChild(p);
-        const ut = p.addComponent(UITransform);
-        ut.setContentSize(12, 12);
-        const g = p.addComponent(Graphics);
+        // Capture loop-local randoms outside the closure so each particle's
+        // visual params stay deterministic regardless of when the queue pumps.
         const tint = tints[i % tints.length];
-        const radius = 3 + Math.random() * 3;  // 3-6 px
-        g.fillColor = new Color(tint[0], tint[1], tint[2], 255);
-        g.circle(0, 0, radius);
-        g.fill();
-        const op = p.addComponent(UIOpacity);
-        op.opacity = 0;  // start hidden until first tween cycle ramps it in
-
+        const radius = 3 + Math.random() * 3;             // 3-6 px
         const periodSec = 6 + Math.random() * 4;          // 6-10s
         const delaySec  = (i / count) * periodSec * 0.8;  // staggered start
         const xJitter   = (Math.random() - 0.5) * 380;    // ±190 px
-
-        // Initial position: spawn within a 200px band just above Y_START
-        // (the bottom edge of the canvas) so particles always rise from
-        // the bottom and float up through the panel. The 200px jitter
-        // staggers the first wave so they don't all enter simultaneously.
-        const startY = Y_START + Math.random() * 200;
-        p.setPosition(xJitter, startY, 0);
-
-        particles.push({ node: p, op, periodSec, delaySec, xJitter });
-    }
-
-    // Now start tweens — Graphics already attached.
-    for (const { node, op, periodSec, delaySec, xJitter } of particles) {
+        const startY    = Y_START + Math.random() * 200;
         const peakAlpha = 80 + Math.round(Math.random() * 100);  // 80-180
+        const driftEndX = xJitter + (Math.random() - 0.5) * 60;
+        const particleIndex = i;
 
-        // Position drift: y -440 → +560 with side-to-side sway via x jitter
-        // delta. Linear easing — gentle, ambient, no bounce.
-        tween(node)
-            .delay(delaySec)
-            .to(periodSec, { position: new Vec3(xJitter + (Math.random() - 0.5) * 60, Y_END, 0) }, { easing: 'linear' })
-            .call(() => {
-                const newX = (Math.random() - 0.5) * 380;
-                node.setPosition(newX, Y_START, 0);
-            })
-            .union()
-            .repeatForever()
-            .start();
+        enqueuePostDraw(() => {
+            if (!parent.isValid) return;
+            const p = new Node(`LandingParticle_${particleIndex}`);
+            parent.addChild(p);
+            const ut = p.addComponent(UITransform);
+            ut.setContentSize(12, 12);
+            const g = p.addComponent(Graphics);
+            g.fillColor = new Color(tint[0], tint[1], tint[2], 255);
+            g.circle(0, 0, radius);
+            g.fill();
+            const op = p.addComponent(UIOpacity);
+            op.opacity = 0;  // start hidden until first tween cycle ramps it in
+            p.setPosition(xJitter, startY, 0);
 
-        // Opacity envelope: ramp in over first 20%, hold, fade out over
-        // last 20%. Manual three-step tween rather than sine so the
-        // particle visibly *enters* and *leaves* the screen rather than
-        // popping at the edges.
-        const fade = periodSec * 0.2;
-        const hold = periodSec * 0.6;
-        tween(op)
-            .delay(delaySec)
-            .to(fade, { opacity: peakAlpha }, { easing: 'sineOut' })
-            .to(hold, { opacity: peakAlpha }, { easing: 'linear' })
-            .to(fade, { opacity: 0 },         { easing: 'sineIn' })
-            .union()
-            .repeatForever()
-            .start();
+            // Position drift: linear easing, side-to-side sway via x jitter.
+            tween(p)
+                .delay(delaySec)
+                .to(periodSec, { position: new Vec3(driftEndX, Y_END, 0) }, { easing: 'linear' })
+                .call(() => {
+                    const newX = (Math.random() - 0.5) * 380;
+                    p.setPosition(newX, Y_START, 0);
+                })
+                .union()
+                .repeatForever()
+                .start();
+
+            // Opacity envelope: ramp in 20%, hold 60%, fade out 20%.
+            const fade = periodSec * 0.2;
+            const hold = periodSec * 0.6;
+            tween(op)
+                .delay(delaySec)
+                .to(fade, { opacity: peakAlpha }, { easing: 'sineOut' })
+                .to(hold, { opacity: peakAlpha }, { easing: 'linear' })
+                .to(fade, { opacity: 0 },         { easing: 'sineIn' })
+                .union()
+                .repeatForever()
+                .start();
+        });
     }
 
-    console.log(`${TAG} addParticleDrift | parent=${parent.name} count=${count}`);
+    console.log(`${TAG} addParticleDrift | parent=${parent.name} count=${count} (queued)`);
 }
 
 /**
@@ -244,6 +237,10 @@ export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): 
     // Step 2 — one-shot radial glow burst at panel center. Uses Graphics
     // (filled circle) rather than Sprite to avoid needing a SpriteFrame
     // UUID — same pattern as addParticleDrift's drifting dots.
+    // Routed through the budgeted post-draw queue (UIModelProxy SIGSEGV at
+    // 0x28). See safeGraphics.enqueuePostDraw.
+    enqueuePostDraw(() => {
+        if (!panelRoot.isValid) return;
     const burst = new Node('PanelEnterFlourish');
     panelRoot.addChild(burst);
     const ut = burst.addComponent(UITransform);
@@ -264,7 +261,8 @@ export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): 
         .call(() => { try { burst.destroy(); } catch (_) { /* already destroyed */ } })
         .start();
 
-    console.log(`${TAG} panelEnterFlourish | ${panelRoot.name} accent=(${accentColor.r},${accentColor.g},${accentColor.b})`);
+        console.log(`${TAG} panelEnterFlourish | ${panelRoot.name} accent=(${accentColor.r},${accentColor.g},${accentColor.b})`);
+    });
 }
 
 /**
@@ -295,6 +293,12 @@ export function installSoftGlow(node: Node | null, opts: { color: Color; peakAlp
     const peakAlpha = opts.peakAlpha ?? 130;
     const rings     = opts.rings ?? 14;
 
+    // 2026-04-29 — defer Graphics allocation past the first DRAW via the
+    // budgeted post-draw queue. Engine SIGSEGVs at 0x28 in
+    // js_cc_UIModelProxy_activeSubModels when too many addComponent(Graphics)
+    // land in a single AFTER_DRAW tick (empirical ceiling ~20).
+    enqueuePostDraw(() => {
+        if (!node.isValid) return;
     // Strip the rectangular Sprite frame — that's the artifact source.
     const oldSprite = node.getComponent(Sprite);
     if (oldSprite) oldSprite.destroy();
@@ -316,7 +320,8 @@ export function installSoftGlow(node: Node | null, opts: { color: Color; peakAlp
     // Preserve / install UIOpacity so addGlowPulse can animate the breathing.
     if (!node.getComponent(UIOpacity)) node.addComponent(UIOpacity);
 
-    console.log(`${TAG} installSoftGlow | ${node.name} peak=${peakAlpha} rings=${rings} maxR=${maxR}`);
+        console.log(`${TAG} installSoftGlow | ${node.name} peak=${peakAlpha} rings=${rings} maxR=${maxR}`);
+    });
 }
 
 /**
@@ -334,6 +339,10 @@ export function installSoftEllipse(node: Node | null, opts: { color: Color; peak
     const peakAlpha = opts.peakAlpha ?? 80;
     const rings     = opts.rings ?? 8;
 
+    // 2026-04-29 — defer Graphics allocation via the budgeted post-draw queue
+    // (UIModelProxy SIGSEGV at 0x28). See safeGraphics.enqueuePostDraw.
+    enqueuePostDraw(() => {
+        if (!node.isValid) return;
     const oldSprite = node.getComponent(Sprite);
     if (oldSprite) oldSprite.destroy();
 
@@ -354,7 +363,8 @@ export function installSoftEllipse(node: Node | null, opts: { color: Color; peak
 
     if (!node.getComponent(UIOpacity)) node.addComponent(UIOpacity);
 
-    console.log(`${TAG} installSoftEllipse | ${node.name} peak=${peakAlpha} rings=${rings}`);
+        console.log(`${TAG} installSoftEllipse | ${node.name} peak=${peakAlpha} rings=${rings}`);
+    });
 }
 
 /**
@@ -378,6 +388,10 @@ export function installLandingVignette(panel: Node | null): void {
     }
     vignetteSet.add(panel);
 
+    // 2026-04-29 — defer Node + Graphics allocation via the budgeted post-draw
+    // queue (UIModelProxy SIGSEGV at 0x28). See safeGraphics.enqueuePostDraw.
+    enqueuePostDraw(() => {
+        if (!panel.isValid) return;
     const panelUT = panel.getComponent(UITransform);
     const w = panelUT?.contentSize.width  ?? 720;
     const h = panelUT?.contentSize.height ?? 1280;
@@ -408,6 +422,7 @@ export function installLandingVignette(panel: Node | null): void {
     // After bg gradients (index 0-5), before TitleGlow.
     overlay.setSiblingIndex(6);
 
-    console.log(`${TAG} installLandingVignette | ${panel.name} size=${w}x${h}`);
+        console.log(`${TAG} installLandingVignette | ${panel.name} size=${w}x${h}`);
+    });
 }
 

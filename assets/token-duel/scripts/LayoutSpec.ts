@@ -235,17 +235,24 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         bg: { color: '#000000' },
         elements: {
-            title:                { x: 0,   y: 480,  w: 680, h: 72,  type: 'label' },
-            subtitle:             { x: 0,   y: 422,  w: 680, h: 30,  type: 'label' },
+            // 2026-04-29 dominance pass: title h 72→78 (font 64→68), subtitle y
+            // 422→432 (tighter to title), connectBtn h 110→126 (+15%), chevron
+            // bbox 24/28→28/32 (font 38→42), mascotShadow added (w 280),
+            // ctaCardBg h 440→400 (trim dead backdrop), trustLine y -78→-86,
+            // liveSignal y -100→-112 (cascade + extra breathing), playAsGuest
+            // y -178→-186, reconnBtn -278→-282 / w 680→560 / h 72→64 (visibly
+            // weakest in stack).
+            title:                { x: 0,   y: 480,  w: 680, h: 78,  type: 'label' },
+            subtitle:             { x: 0,   y: 432,  w: 680, h: 30,  type: 'label' },
             mascot:               { x: 0,   y: 250,  w: 320, h: 320, type: 'mascot' },
-            ctaCardBg:            { x: 0,   y: -178, w: UNIFORM_LAYOUT.CONTENT_W, h: 440, type: 'group' },
-            connectBtn:           { x: 0,   y: -18,  w: UNIFORM_LAYOUT.CONTENT_W, h: 110, type: 'btnPrimary' },
-            connectChevron:       { x: 290, y: -18,  w: 24,  h: 28,  type: 'label' },
-            trustLine:            { x: 0,   y: -78,  w: 640, h: 20,  type: 'label' },
-            liveSignalLabel:      { x: 0,    y: -100, w: 640, h: 20,  type: 'label' },
-            liveSignalDot:        { x: -118, y: -99,  w: 8,   h: 8,   type: 'sprite' },
-            playAsGuestBtn:       { x: 0,   y: -178, w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess' },
-            reconnBtn:            { x: 0,   y: -278, w: UNIFORM_LAYOUT.CONTENT_W, h: 72,  type: 'btnGhost' },
+            ctaCardBg:            { x: 0,   y: -178, w: UNIFORM_LAYOUT.CONTENT_W, h: 400, type: 'group' },
+            connectBtn:           { x: 0,   y: -18,  w: UNIFORM_LAYOUT.CONTENT_W, h: 126, type: 'btnPrimary' },
+            connectChevron:       { x: 290, y: -18,  w: 28,  h: 32,  type: 'label' },
+            trustLine:            { x: 0,   y: -86,  w: 640, h: 20,  type: 'label' },
+            liveSignalLabel:      { x: 0,    y: -112, w: 640, h: 20,  type: 'label' },
+            liveSignalDot:        { x: -118, y: -111, w: 8,   h: 8,   type: 'sprite' },
+            playAsGuestBtn:       { x: 0,   y: -186, w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess' },
+            reconnBtn:            { x: 0,   y: -282, w: 560, h: 64,  type: 'btnGhost' },
             connectionStatusPill: { x: 0,   y: -555, w: 200, h: 40,  type: 'chip' },
         },
         allowedOverlaps: [
