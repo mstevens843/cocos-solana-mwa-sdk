@@ -78,43 +78,59 @@ const td = {
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
-// Source-of-truth for every Y on PostMatchPanel. Panel root is offset by
-// (0, -SAFE_AREA_TOP, 0) so panel-local y maps to world y - 110. Canvas
-// range -640..640 → visible panel-local range [-530, 750].
+// 2026-04-28 spatial pass — full-height takeover. Panel canvas grows
+// 1280→1800 (mirror RacePanel) so the dark wash covers tall devices and
+// the app/Home gradient no longer bleeds through above "YOU WON". All
+// child Y values shift UP by ~60–95 to (a) reclaim the freed top space,
+// (b) anchor CTAs 24 px above world-bottom -640 (was clipping by 4 px),
+// and (c) widen the gap between XP bar and CTA glow. SUBTITLE_Y now
+// carries ONLY the "Won by X.XX%" headline; the per-token breakdown
+// moves to a new BREAKDOWN_Y dimmed line.
+//
+// Panel root is offset by (0, -SAFE_AREA_TOP, 0) so panel-local y maps
+// to world y - 110. Canvas range -640..640 → visible panel-local range
+// [-530, 750].
 const pm = {
-    // Header band — Back btn aligned with HomePanel.notificationBell.y=620
-    // (Home parity). Pink (outcomeBg) world top = 530 ≡ panel-local 640;
-    // back at 620 sits 20 px below the pink top, fully inside tinted area.
-    BACK_Y:           620,
-    TROPHY_Y:         620,   // right of title row; same baseline as back
-    TITLE_Y:          540,   // below back row
-    TRACK_Y:          485,
+    // Oversized canvas — mirrors RacePanel (720×1800 at Main.scene:103900).
+    // Without this the root background sprite stops at 1280 logical px and
+    // taller devices (e.g. 1183×2562 → fit-width yields ~2103 visible h)
+    // show the underlying app gradient through the top void.
+    PANEL_W:          720,
+    PANEL_H:          1800,
 
-    // Mascot zone — staging pass: bigger mascot, raised center, glow grows
-    // with it. Glow at y=240, h=380 → top 430, bottom 50.
-    MASCOT_Y:         240,
-    MASCOT_GLOW_WH:   380,   // glow circle (was 320)
-    MASCOT_BOX_WH:    340,   // mascot container box (was 280)
+    // Header band — back button drops INTO the title row (panel-y 564) so
+    // the top-left corner stops competing with the YOU WON glow.
+    BACK_Y:           564,   // was 620 — aligns with title baseline; left x=-260
+    TROPHY_Y:         564,   // mirror back baseline; right x=+280
+    TITLE_Y:          564,   // was 540 — pushed up to claim top space
+    TRACK_Y:          502,   // was 485 — 12 px below title bottom
 
-    // Payout / subtitle / rake — below the glow now.
-    PAYOUT_Y:         -50,   // h=96 → top -2, bottom -98 (52 below glow bottom 50)
-    SUBTITLE_Y:       -124,  // h=44 → top -102, bottom -146 (clears payout bottom -98)
-    RAKE_Y:           -176,  // h=40 → top -156, bottom -196 (10 below subtitle bottom)
+    // Mascot zone — center raised to free room for header above. Rings are
+    // procedurally drawn from mascot._lpos.y (AppUI:10770) so glow follows.
+    MASCOT_Y:         310,   // was 240 — center world 200; ~24 px above payout
+    MASCOT_GLOW_WH:   380,   // unchanged
+    MASCOT_BOX_WH:    340,   // unchanged
 
-    // Stat cards 2×2 grid.
-    CARD_H:           128,   // was 116; grew 12 to host valueSub line
-    CARDS_ROW1_Y:     -266,  // YOUR DELTA / BEST OPP (cards top -202, clears rake -196)
-    CARDS_ROW2_Y:     -404,  // XP EARNED / LEVEL (138 stride; cards bottom -468)
+    // Reward punch — payout now sits near canvas vertical center.
+    PAYOUT_Y:         55,    // was -50 — paired with font 64→72 in generate-scenes
+    SUBTITLE_Y:       -38,   // was -124 — ONLY carries "Won by X.XX%" headline
+    BREAKDOWN_Y:      -72,   // NEW — token row "BIO +.. PUMP -.. Goblin -..", opacity 0.7
+    RAKE_Y:           -104,  // was -176 — smallest dim line above stat grid
 
-    // XP bar — sits below row-2 cards (cards bottom -468; bar at -488 → bar top -480).
-    XP_BAR_Y:         -488,
+    // Stat cards 2×2 grid — stride 138 preserved; whole grid pulled up.
+    CARD_H:           128,   // unchanged
+    CARDS_ROW1_Y:     -196,  // was -266 — YOUR DELTA / BEST OPP
+    CARDS_ROW2_Y:     -334,  // was -404 — XP EARNED / LEVEL
 
-    // CTAs — Play Again + Pick New Squad. World bottom y=-627 (within canvas).
-    CTA_Y:            -534,  // bottom -566; share strip below
+    // Progression bar — clearly separated from CTA layer (no glow overlap).
+    XP_BAR_Y:         -430,  // was -488 — 24 px below row-2 cards, 20 px above CTA top
 
-    // Tertiary affordances (mostly hidden by default; clip slightly at bottom).
-    SHARE_Y:          -595,  // top -573 → 7 below CTA bottom -566
-    STATUS_Y:         -635,  // tiny debug text, mostly hidden; sits below share bottom -617
+    // CTAs — anchored 24 px above canvas bottom (no longer clipped).
+    CTA_Y:            -474,  // was -534 — center world -584, bottom -616 (24 from -640)
+
+    // Tertiary affordances (hidden in default flow; pushed off-screen).
+    SHARE_Y:          -540,  // was -595
+    STATUS_Y:         -580,  // was -635
 };
 
 // 2026-04-27 — HomePanel deterministic Y anchors.
@@ -2712,25 +2728,27 @@ const LayoutSpec = {
     //   2×2 grid below; XP bar; CTAs (Play Again primary teal / Pick New
     //   Squad secondary blue); Share + Status as small bottom-row affordances.
     PostMatchPanel: {
-        canvas: { w: 720, h: 1280 },
+        canvas: { w: pm.PANEL_W, h: pm.PANEL_H },
         elements: {
             // 2026-04-27 — every Y on this page is derived from the `pm`
             // constants block at the top of this file. NEVER hand-tune y.
-            outcomeBg:       { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics',
+            outcomeBg:       { x: 0,    y: 0,    w: pm.PANEL_W, h: pm.PANEL_H, type: 'graphics',
                 notes: 'full-canvas Graphics rect; AppUI fills + fades alpha on show' },
             backBtn:         { x: -260, y: pm.BACK_Y,  w: 160, h: 44,  type: 'btnGhost' },
             title:           { x: 0,    y: pm.TITLE_Y, w: 620, h: 80,  type: 'label',
-                notes: '56pt bold, color-coded green/rose by outcome' },
+                notes: '60pt bold, color-coded green/rose by outcome (was 56)' },
             track:           { x: 0,    y: pm.TRACK_Y, w: 600, h: 44,  type: 'label' },
             // Mascot glow halo — shrunk 480→320 so payout label clears it.
             mascotGlow:      { x: 0,    y: pm.MASCOT_Y, w: pm.MASCOT_GLOW_WH, h: pm.MASCOT_GLOW_WH, type: 'graphics',
                 notes: 'circle fill alpha 0; AppUI tweens to 140 (~0.55) tinted by outcome. 2026-04-27 — shrunk 480→320.' },
             mascotContainer: { x: 0,    y: pm.MASCOT_Y, w: pm.MASCOT_BOX_WH, h: pm.MASCOT_BOX_WH, type: 'mascot',
                 notes: '2026-04-27 — shrunk 360→280 (proportional to glow).' },
-            payoutLabel:     { x: 0,    y: pm.PAYOUT_Y, w: 620, h: 96, type: 'label',
-                notes: '64pt mono, scale-in + ticker on win. 2026-04-27 — moved below glow circle.' },
-            subtitle:        { x: 0,    y: pm.SUBTITLE_Y, w: 600, h: 44, type: 'label',
-                notes: '18pt 2-line; "You won by X pp" / "They beat you by X pp" + per-token breakdown' },
+            payoutLabel:     { x: 0,    y: pm.PAYOUT_Y, w: 620, h: 110, type: 'label',
+                notes: '72pt mono (was 64; +12.5% per spec), scale-in + ticker on win.' },
+            subtitle:        { x: 0,    y: pm.SUBTITLE_Y, w: 600, h: 32, type: 'label',
+                notes: '22pt headline only ("Won by X.XX%"); breakdown moved to its own dimmed label below.' },
+            breakdown:       { x: 0,    y: pm.BREAKDOWN_Y, w: 640, h: 26, type: 'label',
+                notes: 'NEW 2026-04-28 — per-token row "BIO +X% · PUMP -X% · ...", 18pt, opacity ~0.7, color text.mid.' },
             rake:            { x: 0,    y: pm.RAKE_Y, w: 600, h: 40, type: 'label' },
             xpBarLabelLeft:  { x: -240, y: pm.XP_BAR_Y, w: 200, h: 22, type: 'label',
                 notes: '"Lv N → Lv N+1" 14pt mid-grey' },
