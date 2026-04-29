@@ -769,6 +769,14 @@ export class AppUI extends Component {
     private _notifCloseButton: Button | null = null;
     private _notifMarkAllReadButton: Button | null = null;
     private _notifMarkAllReadLabel: Label | null = null;
+    /** 2026-04-28 — selection-mode CTA in the new header 50/50 row. Label morphs
+     *  "Mark as Read" → "Mark N Read - Confirm" based on _notifSelectedIds size. */
+    private _notifMarkAsReadButton: Button | null = null;
+    private _notifMarkAsReadLabel: Label | null = null;
+    private _notifSelectionMode: boolean = false;
+    private _notifSelectedIds: Set<string> = new Set();
+    private _notifRowCheckboxes: (Node | null)[] = [];
+    private _notifRowCheckmarks: (Node | null)[] = [];
     private _notifEmptyGroup: Node | null = null;
     private _notifEmptyIcon: Node | null = null;
     private _notifGroupLabelNow: Node | null = null;
@@ -1929,15 +1937,13 @@ export class AppUI extends Component {
                 const rN = this._leaderboardPanel.getChildByName(`LBRow_${r}`);
                 if (rN) this._lbRowNodes.push(rN);
             }
-            // 4 mode tabs (segmented control) at y=560 + standalone season chip
-            // (LBTab_season) at y=504 below the segmented set. 2026-04-27 UX
-            // overhaul: the four mode tabs are replaced by a runtime pill so
-            // the leaderboard sub-tabs share the same visual system as the
-            // primary hub toggle. Scene-bound LBTab_1v1/trio/4p/8p nodes are
-            // deactivated; their click handlers are not used. The season chip
-            // remains scene-bound (separate visual). 2026-04-28: y dropped
-            // 590 → 560 to align with Portfolio's secondary strip; chip
-            // tracked from 534 → 504 to keep the gap.
+            // 4 mode tabs (segmented control) at LayoutSpec.leaderboard.MODE_TABS_Y
+            // + standalone season chip (LBTab_season) at SEASON_CHIP_Y below
+            // the segmented set. 2026-04-27 UX overhaul: the four mode tabs
+            // are replaced by a runtime pill so the leaderboard sub-tabs share
+            // the same visual system as the primary hub toggle. Scene-bound
+            // LBTab_1v1/trio/4p/8p nodes are deactivated; their click handlers
+            // are not used. The season chip remains scene-bound.
             const tabKeys: { key: string; modeU8: number }[] = [
                 { key: '1v1', modeU8: 0 },
                 { key: 'trio', modeU8: 1 },
@@ -1950,14 +1956,13 @@ export class AppUI extends Component {
                 const btn = btnN?.getComponent(Button);
                 if (t.key === 'season') {
                     // Standalone "This Week" chip — keep scene visual + click
-                    // wiring + reposition. 2026-04-28: y 534 → 504 to match
-                    // the 30px drop of the LBModePill (590 → 560) so the gap
-                    // between the segmented strip and the chip stays the same.
+                    // wiring + reposition to LayoutSpec.leaderboard.SEASON_CHIP_Y
+                    // (460), centered below the mode-tabs strip.
                     if (btn) {
                         this._lbTabButtons.set(t.key, btn);
                         btn.node.on(Button.EventType.CLICK, () => this._onLeaderboardTabClick(t.modeU8, t.key), this);
                     }
-                    if (btnN) btnN.setPosition(new Vec3(0, 504, 0));
+                    if (btnN) btnN.setPosition(new Vec3(0, 460, 0));
                 } else {
                     // Mode tab — hide the scene-bound visual; the runtime pill
                     // built below owns the new look + click hits.
@@ -1965,14 +1970,15 @@ export class AppUI extends Component {
                 }
             }
             // Runtime segmented pill — replaces the four scene-bound mode tabs.
-            // 2026-04-28 tab-system redesign: y dropped 590 → 560 to mirror
-            // Portfolio's secondary-strip y, keeping the hierarchy aligned
-            // across the hub. Inactive label floor bumped to 70% white.
+            // 2026-04-28 round-2: y=514 (LayoutSpec.leaderboard.MODE_TABS_Y).
+            // Mirrors Portfolio's Paper/Real chip y for visual rhythm across
+            // the hub; clears the gold #1 TopPlayerCard (y=380) by ≥36px
+            // including outer-glow padding. Inactive label floor at 70% white.
             const lbModePill = this._buildSegmentedPill(this._leaderboardPanel, {
                 name: 'LBModePill',
                 width: 420,
                 height: 48,
-                y: 560,
+                y: 514,
                 segments: [
                     { key: '1v1',  label: '1v1' },
                     { key: 'trio', label: 'Trio' },
@@ -2242,15 +2248,15 @@ export class AppUI extends Component {
             const legacyModeLabelN = this._portfolioPanel.getChildByName('PortfolioModeLabel');
             if (legacyModeLabelN) legacyModeLabelN.active = false;
             // Runtime pill — Stats / History / Trophies.
-            // 2026-04-28 visibility upgrade: y dropped 590 → 560 to clear the
-            // pubkey label (now lifted to y=660 in `_openPortfolioInternal`),
-            // and `bgHex` switches to the new pillTray surface so the strip
-            // has a visible edge against the panel.
+            // 2026-04-28 round-2: y=428 (LayoutSpec.portfolio.TABS_Y). Sits below
+            // the Paper/Real chip (y=514) with glow padding on both sides; well
+            // clear of the pubkey row (y=568). `bgHex` uses pillTray so the
+            // strip has a visible edge against the panel.
             const pfTopPill = this._buildSegmentedPill(this._portfolioPanel, {
                 name: 'PFTopLevelPill',
                 width: 420,
                 height: 48,
-                y: 560,
+                y: 428,
                 segments: [
                     { key: 'stats',    label: 'Stats' },
                     { key: 'history',  label: 'History' },
@@ -2267,18 +2273,17 @@ export class AppUI extends Component {
             this._pfTopLevelSetActive = pfTopPill.setActive;
             this._pfTopLevelRedraw = pfTopPill.redraw;
             this._pfTopLevelPillStrip = pfTopPill.strip;
-            // Runtime chip — Paper / Real. 2026-04-28 tab-system redesign:
-            // demoted from a 260×56 sub-label pill to a 200×36 chip, lifted
-            // above the secondary tabs (y=605) so it reads as "section
-            // context" instead of a third tab row. Sub-labels dropped — the
-            // labels alone read at this size, and the explanatory copy was
-            // adding visual noise the user flagged. Glow drops to tealDim
-            // so the chip never out-shines the secondary strip below it.
+            // Runtime chip — Paper / Real. 2026-04-28 round-2: y=514
+            // (LayoutSpec.portfolio.MODE_TOGGLE_Y). Demoted from a 260×56
+            // sub-label pill to a 200×36 chip, sits above the secondary tabs
+            // so it reads as "section context" instead of a third tab row.
+            // Glow drops to tealDim so the chip never out-shines the
+            // secondary strip below it.
             const pfModePill = this._buildSegmentedPill(this._portfolioPanel, {
                 name: 'PFModePill',
                 width: 200,
                 height: 36,
-                y: 605,
+                y: 514,
                 segments: [
                     { key: 'paper', label: 'Paper' },
                     { key: 'real',  label: 'Real' },
@@ -3023,6 +3028,8 @@ export class AppUI extends Component {
             this._notifCloseButton = this._notifPanelCard?.getChildByName('NotifCloseButton')?.getComponent(Button) ?? null;
             this._notifMarkAllReadButton = this._notifPanelCard?.getChildByName('NotifMarkAllReadButton')?.getComponent(Button) ?? null;
             this._notifMarkAllReadLabel = this._notifMarkAllReadButton?.node.getChildByName('Label')?.getComponent(Label) ?? null;
+            this._notifMarkAsReadButton = this._notifPanelCard?.getChildByName('NotifMarkAsReadButton')?.getComponent(Button) ?? null;
+            this._notifMarkAsReadLabel = this._notifMarkAsReadButton?.node.getChildByName('Label')?.getComponent(Label) ?? null;
             const emptyN = this._notifPanelCard?.getChildByName('NotifEmptyGroup');
             this._notifEmptyGroup = emptyN ?? null;
             this._notifEmptyIcon = emptyN?.getChildByName('NotifEmptyIcon') ?? null;
@@ -3041,6 +3048,9 @@ export class AppUI extends Component {
                     if (!row) continue;
                     this._notifRows.push(row);
                     this._notifRowIds.push(null);
+                    const cbNode = row.getChildByName(`NotifRowCheckbox_${i}`) ?? null;
+                    this._notifRowCheckboxes.push(cbNode);
+                    this._notifRowCheckmarks.push(cbNode?.getChildByName(`NotifRowCheckmark_${i}`) ?? null);
                     const rb = row.getComponent(Button);
                     rb?.node.on(Button.EventType.CLICK, () => this._onNotifRowTap(i), this);
                 }
@@ -3050,6 +3060,7 @@ export class AppUI extends Component {
             npRoot?.node.on(Button.EventType.CLICK, () => this._hideNotificationPanel(), this);
             this._notifCloseButton?.node.on(Button.EventType.CLICK, () => this._hideNotificationPanel(), this);
             this._notifMarkAllReadButton?.node.on(Button.EventType.CLICK, () => this._onNotifMarkAllReadTap(), this);
+            this._notifMarkAsReadButton?.node.on(Button.EventType.CLICK, () => this._onNotifMarkAsReadTap(), this);
             console.log(`${TAG} start | NotificationPanel wired=true rows=${this._notifRows.length}/8`);
         } else {
             console.log(`${TAG} start | WARN NotificationPanel missing`);
@@ -12652,6 +12663,8 @@ export class AppUI extends Component {
     private _hideNotificationPanel(): void {
         if (!this._notifPanel) return;
         console.log(`${TAG} _hideNotificationPanel | HIDE`);
+        // Always exit selection mode on hide so the next open starts clean.
+        if (this._notifSelectionMode) this._setNotifSelectionMode(false);
         const restingX = AppUI.NOTIF_REST_X;
         const offX = AppUI.NOTIF_OFF_X;
         if (this._notifPanelCard) {
@@ -12676,10 +12689,13 @@ export class AppUI extends Component {
         const marked = NotificationStore.instance.markAllRead();
         console.log(`${TAG} _onNotifMarkAllReadTap | marked=${marked}`);
         if (marked === 0) return;
+        // Bulk action obsoletes any in-flight selection.
+        if (this._notifSelectionMode) this._setNotifSelectionMode(false);
         // Force-paint immediately so the user sees rows dim within <100ms;
         // the store's _fanout will re-render again, which is harmless.
+        // _renderNotificationList now reconciles MarkAllRead enabled state
+        // from getUnreadCount() — no need to disable here separately.
         this._renderNotificationList();
-        this._setMarkAllReadEnabled(false);
         // Transient confirmation toast — emitted via a synthetic notification
         // straight to the toast queue so it surfaces but never persists.
         const queue = this._notifToastQueue;
@@ -12711,9 +12727,66 @@ export class AppUI extends Component {
         }
     }
 
+    /**
+     * 2026-04-28 — selection-mode dispatcher for the new "Mark as Read"
+     * button. Three-state toggle that mirrors the TokenSquad CTA pattern:
+     *   idle           → enter selection mode
+     *   mode + 0 sel   → exit selection mode
+     *   mode + N sel   → confirm (markRead each, exit mode)
+     */
+    private _onNotifMarkAsReadTap(): void {
+        if (!this._notifSelectionMode) {
+            this._setNotifSelectionMode(true);
+            return;
+        }
+        if (this._notifSelectedIds.size === 0) {
+            this._setNotifSelectionMode(false);
+            return;
+        }
+        this._confirmMarkAsRead();
+    }
+
+    private _setNotifSelectionMode(on: boolean): void {
+        this._notifSelectionMode = on;
+        if (!on) this._notifSelectedIds.clear();
+        for (let i = 0; i < this._notifRows.length; i++) {
+            const row = this._notifRows[i];
+            const cb = this._notifRowCheckboxes[i];
+            const cm = this._notifRowCheckmarks[i];
+            if (cb) cb.active = on && !!row?.active;
+            if (cm) cm.active = false;
+        }
+        this._updateMarkAsReadLabel();
+    }
+
+    private _updateMarkAsReadLabel(): void {
+        const n = this._notifSelectedIds.size;
+        const txt = (!this._notifSelectionMode || n === 0)
+            ? 'Mark as Read'
+            : `Mark ${n} Read - Confirm`;
+        if (this._notifMarkAsReadLabel) this._notifMarkAsReadLabel.string = txt;
+    }
+
+    private _confirmMarkAsRead(): void {
+        const ids = Array.from(this._notifSelectedIds);
+        for (const id of ids) NotificationStore.instance.markRead(id);
+        console.log(`${TAG} _confirmMarkAsRead | count=${ids.length}`);
+        this._setNotifSelectionMode(false);
+        this._renderNotificationList();
+    }
+
     private _onNotifRowTap(rowIdx: number): void {
         const id = this._notifRowIds[rowIdx];
         if (!id) return;
+        // Selection mode — tap toggles the checkbox instead of deep-linking.
+        if (this._notifSelectionMode) {
+            if (this._notifSelectedIds.has(id)) this._notifSelectedIds.delete(id);
+            else this._notifSelectedIds.add(id);
+            const cm = this._notifRowCheckmarks[rowIdx];
+            if (cm) cm.active = this._notifSelectedIds.has(id);
+            this._updateMarkAsReadLabel();
+            return;
+        }
         const list = NotificationStore.instance.getRecent(50);
         const n = list.find((x) => x.id === id);
         if (!n) return;
@@ -12821,7 +12894,17 @@ export class AppUI extends Component {
             // Unread dot.
             const dot = row.getChildByName(`NotifRowUnreadDot_${i}`);
             if (dot) dot.active = n.readAt === null;
+            // Selection-mode checkbox visibility + per-row checkmark state.
+            const cb = this._notifRowCheckboxes[i];
+            const cm = this._notifRowCheckmarks[i];
+            if (cb) cb.active = this._notifSelectionMode;
+            if (cm) cm.active = this._notifSelectionMode && this._notifSelectedIds.has(n.id);
         }
+        // Reconcile MarkAllRead enabled state with current unread count.
+        // Why: previously _setMarkAllReadEnabled(false) was sticky across
+        // panel re-opens — so once the user tapped it, the button stayed
+        // greyed forever even when new unreads arrived.
+        this._setMarkAllReadEnabled(NotificationStore.instance.getUnreadCount() > 0);
     }
 
     private _refreshNotificationBadge(): void {
@@ -14740,8 +14823,10 @@ export class AppUI extends Component {
     }
 
     /** Phase N4: build the hub-tab strip (Portfolio | Leaderboard) on a panel.
-     *  Pill container at y=740 (above the panel title). 2026-04-27 UX overhaul:
-     *  delegates to the shared `_buildSegmentedPill` helper with violet active
+     *  2026-04-28 round-2: pill y=720 (LayoutSpec.{portfolio,leaderboard}.HUB_TABS_Y).
+     *  Active-pill outer glow extends ±18px above and below the row bounds — any
+     *  stacked row must sit ≥36px away (verified via verify-layout.py).
+     *  Delegates to the shared `_buildSegmentedPill` helper with violet active
      *  fill so the primary mode-switch reads as nav (purple) while sub-tabs
      *  use teal selection. */
     private _buildHubTabs(parent: Node): { portfolio: Button; leaderboard: Button } {
@@ -14749,7 +14834,7 @@ export class AppUI extends Component {
             name: 'HubTabStrip',
             width: 360,
             height: 56,
-            y: 740,
+            y: 720,
             segments: [
                 { key: 'portfolio',   label: 'Portfolio' },
                 { key: 'leaderboard', label: 'Leaderboard' },
@@ -16251,12 +16336,6 @@ export class AppUI extends Component {
         if (this._pfPubkeyLabel) {
             const pk = MWAManager.instance?.connectedPubkey;
             this._pfPubkeyLabel.string = pk ? this._fmtMintShort(pk) : 'not connected';
-            // 2026-04-28 wallet-row polish: y=632 sits exactly between the
-            // title (y=680) and the top edge of the Stats/History/Trophies
-            // pill (y=584). Previous y=660 clipped the title baseline on
-            // tall-screen devices; y=612 (LayoutSpec default) overlapped
-            // the pill. y=632 is the deterministic mid-point.
-            this._pfPubkeyLabel.node.setPosition(0, 632, 0);
         }
         this._refreshPortfolioTopLevel();
         // 2026-04-28 corruption fix: refresh ONLY the data for the active

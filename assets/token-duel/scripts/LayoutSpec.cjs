@@ -315,26 +315,30 @@ const settings = {
 // Layout is locked — every page-level Y derives from this block. Card-internal
 // child y values stay inline. Panel root is offset by (0, -SAFE_AREA_TOP, 0).
 const portfolio = {
-    // Header band — back link / title / subtitle / pubkey.
-    // 2026-04-28 — collapsed to single-row header at shared HEADER_BAND_Y;
-    // subtitle/pubkey trail relative offsets preserved from the legacy stack.
-    BACK_Y:               HEADER_BAND_Y,         // (was 720)
-    TITLE_Y:              HEADER_BAND_Y,         // (was 680, single row with back)
-    SUBTITLE_Y:           HEADER_BAND_Y - 36,    // 36 px below title (was 644)
-    PUBKEY_Y:             HEADER_BAND_Y - 48,    // 48 px below title (was 632)
+    // 2026-04-28 round-2 — vertical-zone reset. Hub'd pages get their own
+    // top band: Back left + HubTabStrip centered share y=720 (decoupled
+    // from the global HEADER_BAND_Y because non-hub'd pages don't carry a
+    // hub strip). Title block drops to y=640 to clear the hub-tab outer
+    // glow (~y=692). Every secondary control + content row shifts down so
+    // glow halos never leak into the next zone.
+    HUB_TABS_Y:           720,   // Portfolio | Leaderboard hub strip (was inline 740 in AppUI.ts)
+    BACK_Y:               720,   // shares the hub band (was HEADER_BAND_Y=660)
+    TITLE_Y:              640,   // (was HEADER_BAND_Y=660)
+    SUBTITLE_Y:           596,   // 12-px gap from title bottom (was 624)
+    PUBKEY_Y:             568,   //  8-px gap from subtitle bottom (was 612 spec / 632 runtime override)
 
     // Sub-tab strip + mode toggle.
-    TABS_Y:               560,   // Stats / History / Trophies
-    MODE_LABEL_Y:         510,   // "MODE" eyebrow
-    MODE_TOGGLE_Y:        482,   // Paper / Real
+    TABS_Y:               428,   // Stats / History / Trophies (was 560)
+    MODE_LABEL_Y:         540,   // legacy "MODE" eyebrow — hidden at runtime
+    MODE_TOGGLE_Y:        514,   // Paper / Real chip ABOVE secondary tabs (was 482 spec / 605 runtime override)
 
-    // Stats view — content stack.
-    HERO_CARD_Y:          380,   // Total Profit hero card
-    GROUP_PERF_Y:         230,   // "PERFORMANCE" eyebrow
-    PERF_CARDS_Y:         168,   // Wins / Losses cards
-    WINRATE_CARD_Y:       78,    // Win % full-width card
-    GROUP_ACTIVITY_Y:     -50,   // "ACTIVITY" eyebrow
-    ACTIVITY_CARDS_Y:     -120,  // Games / XP-Level cards
+    // Stats view — content stack. Cascaded down ~90px in lockstep with TABS_Y.
+    HERO_CARD_Y:          290,   // Total Profit hero card (was 380)
+    GROUP_PERF_Y:         140,   // "PERFORMANCE" eyebrow (was 230)
+    PERF_CARDS_Y:         78,    // Wins / Losses cards (was 168)
+    WINRATE_CARD_Y:       -12,   // Win % full-width card (was 78)
+    GROUP_ACTIVITY_Y:     -140,  // "ACTIVITY" eyebrow (was -50)
+    ACTIVITY_CARDS_Y:     -210,  // Games / XP-Level cards (was -120)
 
     // Empty state (when zero games).
     EMPTY_STATE_Y:        200,
@@ -361,27 +365,30 @@ const portfolio = {
 // Layout is locked — every page-level Y derives from this block. Card-internal
 // child y values stay inline. Panel root is offset by (0, -SAFE_AREA_TOP, 0).
 const leaderboard = {
-    // Header band — back / title / subtitle.
-    // 2026-04-28 — collapsed to single-row header at shared HEADER_BAND_Y.
-    // Title moved DOWN 20 (680→660); cascade content below title down 20 to
-    // preserve original 90-px title→tabs spacing (subtitle keeps 42 gap, all
-    // downstream rows shift to keep their original rhythm).
-    BACK_Y:           HEADER_BAND_Y,         // (was 720)
-    TITLE_Y:          HEADER_BAND_Y,         // (was 680, single row with back)
-    SUBTITLE_Y:       HEADER_BAND_Y - 42,    // 42 px below title — original gap (was 638)
+    // 2026-04-28 round-2 — vertical-zone reset (mirrors portfolio block).
+    // Hub'd pages get their own top band: Back left + HubTabStrip centered
+    // share y=720. Title block drops to y=640 to clear hub-tab outer glow.
+    // Mode tabs drop to y=514 to give the gold #1 card its own row with
+    // glow-padding clearance. Every downstream row cascades to absorb the
+    // ~90px shift.
+    HUB_TABS_Y:       720,    // Portfolio | Leaderboard hub strip (was inline 740 in AppUI.ts)
+    BACK_Y:           720,    // shares the hub band (was HEADER_BAND_Y=660)
+    TITLE_Y:          640,    // (was HEADER_BAND_Y=660)
+    SUBTITLE_Y:       594,    // 12-px gap from title bottom (was 618)
 
-    // Mode-tabs row + this-week chip (segmented control). Cascaded down 20.
-    MODE_TABS_Y:      570,    // (was 590)
+    // Mode-tabs row + this-week chip (segmented control).
+    MODE_TABS_Y:      514,    // 1v1 / Trio / 4p / 8p (was 570 spec / 560 runtime override)
+    SEASON_CHIP_Y:    460,    // standalone "This Week" chip (was inline 504 in AppUI.ts)
 
-    // Hero rank-#1 card. Cascaded down 20.
-    TOP_PLAYER_Y:     490,    // (was 510)
+    // Hero rank-#1 card. 32-px gap below mode-tabs glow.
+    TOP_PLAYER_Y:     380,    // (was 490)
 
-    // Rank rows 2–10 (lbRow template). Cascaded down 20.
-    ROWS_BASE_Y:      380,    // (was 400)
+    // Rank rows 2–10 (lbRow template). 24-px gap below TopPlayerCard.
+    ROWS_BASE_Y:      270,    // (was 380)
     ROWS_GAP_Y:       -64,
 
-    // Empty state (when zero matches in mode/timeframe). Cascaded down 20.
-    EMPTY_STATE_Y:    130,    // (was 150)
+    // Empty state (when zero matches in mode/timeframe).
+    EMPTY_STATE_Y:    130,
 
     // Sticky-bottom personal rank card ("YOU" footer).
     PERSONAL_RANK_Y:  -440,
@@ -2551,13 +2558,18 @@ const LayoutSpec = {
         card: { w: 400, h: 1280, restingX: 160, offX: 600 },
         elements: {
             // List area sits below header divider; w 360 matches card content width.
-            listContainer:        { x: 0,    y: -80, w: 360, h: 940, type: 'group' },
-            // Header row: title left, Mark-all-read right-of-title, close ✕ top-right corner.
-            cardHeaderLabel:      { x: -88,  y: 600, w: 180, h: 30, type: 'label' },
-            cardMarkAllReadButton:{ x: 84,   y: 600, w: 124, h: 30, type: 'btnGhost' },
-            cardCloseButton:      { x: 168,  y: 600, w: 36,  h: 36, type: 'btnGhost' },
+            // 2026-04-28 — y dropped -80 → -110, h shortened 940 → 900 to clear new
+            // 50/50 action row (MarkAsRead | MarkAllRead) below the title.
+            listContainer:        { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
+            // Header row 1 — title alone (top). Close ✕ stays top-right corner.
+            cardHeaderLabel:      { x: -170, y: 608, w: 200, h: 30, type: 'label' },
+            cardCloseButton:      { x: 168,  y: 608, w: 36,  h: 36, type: 'btnGhost' },
+            // Header row 2 — 50/50 action split: left = MarkAsRead (selection mode),
+            // right = MarkAllRead (existing bulk action). Both 170w with 4px gap.
+            cardMarkAsReadButton: { x: -90,  y: 556, w: 170, h: 36, type: 'btnGhost' },
+            cardMarkAllReadButton:{ x: 90,   y: 556, w: 170, h: 36, type: 'btnGhost' },
             // 1px low-alpha divider beneath the header row.
-            cardHeaderDivider:    { x: 0,    y: 572, w: 356, h: 1,  type: 'sprite' },
+            cardHeaderDivider:    { x: 0,    y: 530, w: 356, h: 1,  type: 'sprite' },
             // Group section headers ("Now" / "Today" / "Earlier"). Y is
             // computed at runtime; these specs lock width/height/x only.
             groupLabelNow:        { x: -78,  y: 0,   w: 200, h: 18, type: 'label' },
@@ -2572,15 +2584,18 @@ const LayoutSpec = {
             // 8 reusable rows in NotifListContainer. AppUI activates per
             // unread notification, writes Title/Body/Time labels, toggles
             // unread dot. Geometry tightened to fit 360-wide content area.
+            // 2026-04-28 — added checkbox slot (left of icon) for selection
+            // mode; icon/title/body slid right to clear it.
             notifRow: {
                 count: 8, w: 360, h: 92, gap: 8,
                 baseY: 460, gapY: -100,
-                stripe: { x: -177, y: 0,   w: 6,   h: 92 },
-                icon:   { x: -150, y: 0,   w: 40,  h: 40 },
-                title:  { x: -18,  y: 18,  w: 200, h: 22 },
-                body:   { x: -18,  y: -10, w: 200, h: 28 },
-                time:   { x: 130,  y: -32, w: 80,  h: 16 },
-                dot:    { x: 162,  y: 32,  w: 8,   h: 8 },
+                stripe:   { x: -177, y: 0,   w: 6,   h: 92 },
+                checkbox: { x: -156, y: 0,   w: 24,  h: 24 },
+                icon:     { x: -122, y: 0,   w: 40,  h: 40 },
+                title:    { x: 4,    y: 18,  w: 200, h: 22 },
+                body:     { x: 4,    y: -10, w: 200, h: 28 },
+                time:     { x: 130,  y: -32, w: 80,  h: 16 },
+                dot:      { x: 162,  y: 32,  w: 8,   h: 8 },
             },
         },
         allowedOverlaps: [],

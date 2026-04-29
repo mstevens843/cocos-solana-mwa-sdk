@@ -80,10 +80,11 @@ export function addGlowPulse(node: Node, peakAlpha = 130, periodSec = 2.6): void
  * Idempotent per-parent. Loops with `.repeatForever()`. No-op if `parent`
  * is null or already has particles.
  *
- * Visual: 4-6px violet/teal dots, alpha 80-180, drift bottom (-440) →
- * top (+560) over 6-10s with phase delays so they don't all start
- * together. Renders as the FIRST child of `parent` so it sits behind
- * everything else (including mascot glow).
+ * Visual: 4-6px violet/teal dots, alpha 80-180, drift bottom edge
+ * (y=-560) → top edge (y=+560 or +640 for topHeavy) over 6-10s with
+ * phase delays so they don't all start together. Renders as the FIRST
+ * child of `parent` so it sits behind everything else (including mascot
+ * glow).
  */
 export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?: 'uniform' | 'topHeavy' } = {}): void {
     if (!parent || driftSet.has(parent)) return;
@@ -92,16 +93,14 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
     const densityCurve = opts.densityCurve ?? 'uniform';
 
     // Bottom-of-canvas / top-of-canvas anchors. Landing canvas is 1280h
-    // centered at 0; particles travel from y=-440 (well below CTA card)
-    // up to y=+560 (above the title). The wide travel makes the drift
-    // feel continuous rather than start/stop.
+    // centered at 0 (-640 → +640 visible). Particles always spawn just
+    // below the bottom edge and travel up past the top edge so the drift
+    // reads as "rising from below" rather than appearing mid-screen.
     //
-    // 2026-04-28 home UX — `densityCurve='topHeavy'` shifts the spawn band
-    // upward and shortens the fade tail so the home panel reads as
-    // "energy flowing into actions" near the top, fading out before
-    // reaching the cards stacked at the bottom.
-    const Y_START = densityCurve === 'topHeavy' ? -120 : -440;
-    const Y_END   = densityCurve === 'topHeavy' ?  640 :  560;
+    // `densityCurve='topHeavy'` only extends the upper travel a bit further
+    // (Y_END=640 vs 560) — both modes still spawn from the bottom.
+    const Y_START = -560;
+    const Y_END   = densityCurve === 'topHeavy' ? 640 : 560;
 
     // Violet (#9945FF) and teal (#14F195) — Theme.accent.violet/teal.
     const tints: [number, number, number][] = [
@@ -133,14 +132,11 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
         const delaySec  = (i / count) * periodSec * 0.8;  // staggered start
         const xJitter   = (Math.random() - 0.5) * 380;    // ±190 px
 
-        // Initial position: somewhere between Y_START and Y_END.
-        // 'uniform' biases toward the bottom (200px wave from start) so the
-        // first wave drifts up. 'topHeavy' biases upward (70% in upper half
-        // of the spawn band) so density visibly clusters near top of panel.
-        const Y_SPREAD = Y_END - Y_START;
-        const startY = densityCurve === 'topHeavy'
-            ? Y_START + Y_SPREAD * (0.3 + Math.random() * 0.7)  // 30-100% (top-biased)
-            : Y_START + Math.random() * 200;                     // legacy: bottom-biased
+        // Initial position: spawn within a 200px band just above Y_START
+        // (the bottom edge of the canvas) so particles always rise from
+        // the bottom and float up through the panel. The 200px jitter
+        // staggers the first wave so they don't all enter simultaneously.
+        const startY = Y_START + Math.random() * 200;
         p.setPosition(xJitter, startY, 0);
 
         particles.push({ node: p, op, periodSec, delaySec, xJitter });
