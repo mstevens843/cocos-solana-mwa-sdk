@@ -1910,13 +1910,15 @@ export class AppUI extends Component {
                 const rN = this._leaderboardPanel.getChildByName(`LBRow_${r}`);
                 if (rN) this._lbRowNodes.push(rN);
             }
-            // 4 mode tabs (segmented control) at y=590 + standalone season chip
-            // (LBTab_season) at y=534 below the segmented set. 2026-04-27 UX
+            // 4 mode tabs (segmented control) at y=560 + standalone season chip
+            // (LBTab_season) at y=504 below the segmented set. 2026-04-27 UX
             // overhaul: the four mode tabs are replaced by a runtime pill so
             // the leaderboard sub-tabs share the same visual system as the
             // primary hub toggle. Scene-bound LBTab_1v1/trio/4p/8p nodes are
             // deactivated; their click handlers are not used. The season chip
-            // remains scene-bound (separate visual).
+            // remains scene-bound (separate visual). 2026-04-28: y dropped
+            // 590 → 560 to align with Portfolio's secondary strip; chip
+            // tracked from 534 → 504 to keep the gap.
             const tabKeys: { key: string; modeU8: number }[] = [
                 { key: '1v1', modeU8: 0 },
                 { key: 'trio', modeU8: 1 },
@@ -1929,12 +1931,14 @@ export class AppUI extends Component {
                 const btn = btnN?.getComponent(Button);
                 if (t.key === 'season') {
                     // Standalone "This Week" chip — keep scene visual + click
-                    // wiring + reposition.
+                    // wiring + reposition. 2026-04-28: y 534 → 504 to match
+                    // the 30px drop of the LBModePill (590 → 560) so the gap
+                    // between the segmented strip and the chip stays the same.
                     if (btn) {
                         this._lbTabButtons.set(t.key, btn);
                         btn.node.on(Button.EventType.CLICK, () => this._onLeaderboardTabClick(t.modeU8, t.key), this);
                     }
-                    if (btnN) btnN.setPosition(new Vec3(0, 534, 0));
+                    if (btnN) btnN.setPosition(new Vec3(0, 504, 0));
                 } else {
                     // Mode tab — hide the scene-bound visual; the runtime pill
                     // built below owns the new look + click hits.
@@ -1942,11 +1946,14 @@ export class AppUI extends Component {
                 }
             }
             // Runtime segmented pill — replaces the four scene-bound mode tabs.
+            // 2026-04-28 tab-system redesign: y dropped 590 → 560 to mirror
+            // Portfolio's secondary-strip y, keeping the hierarchy aligned
+            // across the hub. Inactive label floor bumped to 70% white.
             const lbModePill = this._buildSegmentedPill(this._leaderboardPanel, {
                 name: 'LBModePill',
                 width: 420,
                 height: 48,
-                y: 590,
+                y: 560,
                 segments: [
                     { key: '1v1',  label: '1v1' },
                     { key: 'trio', label: 'Trio' },
@@ -1957,7 +1964,7 @@ export class AppUI extends Component {
                 fillHex: Palette.accent.teal,
                 glowHex: Palette.accent.teal,
                 bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFF99',
+                inactiveLabelHex: '#FFFFFFB3',
                 fontSize: 18,
                 onClick: (key) => {
                     const modeU8 = ({ '1v1': 0, trio: 1, '4p': 2, '8p': 3 } as Record<string, number>)[key];
@@ -2233,32 +2240,34 @@ export class AppUI extends Component {
                 fillHex: Palette.accent.teal,
                 glowHex: Palette.accent.teal,
                 bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFF99',
+                inactiveLabelHex: '#FFFFFFB3',
                 fontSize: 18,
                 onClick: (key) => this._onPortfolioTopLevelTab(key as 'stats' | 'history' | 'trophies'),
             });
             this._pfTopLevelSetActive = pfTopPill.setActive;
             this._pfTopLevelPillStrip = pfTopPill.strip;
-            // Runtime pill — Paper / Real (tertiary mode chip with sub-labels).
-            // 2026-04-28 visibility upgrade: y 520 → 490 so the Stats/History/
-            // Trophies strip sits ~70px above; height 36 → 56 to fit the
-            // sub-label rows ("no real funds" / "uses SOL"). Width nudges
-            // 220 → 260 so the longer sub-label string isn't clipped.
+            // Runtime chip — Paper / Real. 2026-04-28 tab-system redesign:
+            // demoted from a 260×56 sub-label pill to a 200×36 chip, lifted
+            // above the secondary tabs (y=605) so it reads as "section
+            // context" instead of a third tab row. Sub-labels dropped — the
+            // labels alone read at this size, and the explanatory copy was
+            // adding visual noise the user flagged. Glow drops to tealDim
+            // so the chip never out-shines the secondary strip below it.
             const pfModePill = this._buildSegmentedPill(this._portfolioPanel, {
                 name: 'PFModePill',
-                width: 260,
-                height: 56,
-                y: 490,
+                width: 200,
+                height: 36,
+                y: 605,
                 segments: [
-                    { key: 'paper', label: 'Paper', subLabel: 'no real funds' },
-                    { key: 'real',  label: 'Real',  subLabel: 'uses SOL' },
+                    { key: 'paper', label: 'Paper' },
+                    { key: 'real',  label: 'Real' },
                 ],
                 activeKey: this._pfActiveTab,
                 fillHex: Palette.accent.teal,
-                glowHex: Palette.accent.teal,
+                glowHex: Palette.accent.tealDim,
                 bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFF80',
-                fontSize: 16,
+                inactiveLabelHex: '#FFFFFFB3',
+                fontSize: 13,
                 onClick: (key) => this._onPortfolioTabClick(key as 'paper' | 'real'),
             });
             this._pfModeSetActive = pfModePill.setActive;
@@ -3263,9 +3272,11 @@ export class AppUI extends Component {
     private _showHome(): void {
         console.log(`${TAG} _showHome | ENTRY`);
         console.log(`${TAG} _showHome | switching to home panel`);
-        // Clear any stale picker mode flags — back-out from a join confirm
-        // or bot match shouldn't leak into a fresh "Start Match" tap.
+        // Clear any stale picker mode flags — back-out from a join confirm,
+        // resume confirm, or bot match shouldn't leak into a fresh "Start
+        // Match" tap.
         this._pickerJoinTarget = null;
+        this._pickerResumeTarget = null;
         this._pickerBotMode = false;
         this._setActivePanel('home');
         console.log(`${TAG} _showHome | AFTER_setActivePanel`);
@@ -3452,7 +3463,8 @@ export class AppUI extends Component {
             `mode=${this._pickerSelectedMode} ` +
             `window=${this._pickerSelectedWindow} ` +
             `botMode=${this._pickerBotMode} ` +
-            `joinTarget=${this._pickerJoinTarget?.pda ?? 'null'}`
+            `joinTarget=${this._pickerJoinTarget?.pda ?? 'null'} ` +
+            `resumeTarget=${this._pickerResumeTarget?.pda ?? 'null'}`
         );
     }
 
@@ -5223,10 +5235,6 @@ export class AppUI extends Component {
         this._pickerBotMode = false;
         this._showTokenDuel();
         this._refreshWagerControlRow();
-        // V5 (2026-04-28 home UX) — portal flourish on Start Match destination.
-        // Tinted violet (Start = the "host" path). Run after _showTokenDuel
-        // so the panel is active.
-        try { panelEnterFlourish(this._tokenDuelPanel, themeColor.violet()); } catch (_) { /* tween not loaded */ }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -11855,22 +11863,25 @@ export class AppUI extends Component {
         this._dumpAppState('picker_start_enter');
         const join = this._isJoinMode();
         const joinTarget = this._pickerJoinTarget;
-        // In join-mode, mode + wager + window are dictated by the lobby, not
-        // the local picker selections (which haven't been touched on this
-        // path). Override them so all downstream copy + on-chain calls match.
-        if (join && joinTarget) {
+        const resume = this._isResumeMode();
+        const resumeTarget = this._pickerResumeTarget;
+        // In join/resume mode, mode + wager + window are dictated by the
+        // lobby, not the local picker selections. Override so all downstream
+        // copy + on-chain calls match.
+        const lobbyTarget = joinTarget ?? resumeTarget;
+        if ((join || resume) && lobbyTarget) {
             // Stage 3 modeU8: 0=1v1, 1=Trio, 2=4p, 3=8p.
             const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
-            this._pickerSelectedMode = modeIdMap[joinTarget.mode] ?? 'oneVone';
-            this._pickerSelectedWagerIndex = joinTarget.wagerTier;
+            this._pickerSelectedMode = modeIdMap[lobbyTarget.mode] ?? 'oneVone';
+            this._pickerSelectedWagerIndex = lobbyTarget.wagerTier;
             const winIdMap: Record<number, TimeWindowId> = { 0: '30s', 1: '1m', 2: '5m', 3: '1h', 4: '24h', 5: '7d' };
-            this._pickerSelectedWindow = winIdMap[joinTarget.timeWindow] ?? '30s';
+            this._pickerSelectedWindow = winIdMap[lobbyTarget.timeWindow] ?? '30s';
             this._pickerSelectedTrack = 'real';
         }
         const wager = WAGER_TIERS_LAMPORTS[this._pickerSelectedWagerIndex];
         const track = this._pickerSelectedTrack;
-        const hosting = this._pickerHostMode && !join;
-        console.log(`${TAG} _onPickerStart | mode=${this._pickerSelectedMode} wager_lamports=${wager} track=${track} hosting=${hosting} join=${join} target=${joinTarget?.pda ?? 'none'}`);
+        const hosting = this._pickerHostMode && !join && !resume;
+        console.log(`${TAG} _onPickerStart | mode=${this._pickerSelectedMode} wager_lamports=${wager} track=${track} hosting=${hosting} join=${join} resume=${resume} target=${lobbyTarget?.pda ?? 'none'}`);
 
         // Phase E — kick off Hard gainers refresh in parallel (no-op for easy/medium).
         if (track === 'paper') void this._refreshHardGainersSnapshot();
@@ -11883,7 +11894,9 @@ export class AppUI extends Component {
                 mode: modeDef.label,
                 wagerSol: wager / 1e9,
                 track: 'real',
-                status: join ? 'Joining lobby — sign tx…' : (hosting ? 'Hosting · waiting for opponents…' : 'Checking wallet…'),
+                status: resume
+                    ? 'Resuming lobby · waiting for opponents…'
+                    : (join ? 'Joining lobby — sign tx…' : (hosting ? 'Hosting · waiting for opponents…' : 'Checking wallet…')),
                 requiredPlayers: modeDef.requiredPlayers,
             });
             // Cache selections so settle flow knows what to do. Stage 3 modeU8 mapping.
@@ -11893,6 +11906,55 @@ export class AppUI extends Component {
             this._realMatchWagerLamports = wager;
             this._selectedStakeLamports = BigInt(wager);
             this._syncStakeValueLabel(wager / 1e9);
+
+            // Resume: match already exists on-chain — no join sign needed.
+            // Skip _ensureUserStatsInitialized + _submitRealJoinMatch, seed
+            // _activeRealMatchPda from the resume target, publish squad mints,
+            // and run the poll loop directly.
+            if (resume && resumeTarget) {
+                this._activeRealMatchPda = resumeTarget.pda;
+                this._pickerResumeTarget = null;
+                this._pickerHostMode = false;
+                if (this._waitingProgressLabel) {
+                    this._waitingProgressLabel.string = `${resumeTarget.playerCount}/${modeDef.requiredPlayers} players · 0:00 / 2:00`;
+                }
+                (async () => {
+                    const squadMints = this._squad.slots
+                        .map((s) => s?.address ?? '')
+                        .filter((m) => m.length >= 32);
+                    if (squadMints.length === 3 && MWAManager.instance?.connectedPubkey) {
+                        const { publishSquadToBackend } = await import('../../token-duel/scripts/SpectatorRpc');
+                        void publishSquadToBackend(resumeTarget.pda, MWAManager.instance.connectedPubkey, squadMints);
+                    }
+                    if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Match ${resumeTarget.pda.substring(0, 8)}… · waiting for opponents`;
+                    const outcome = await this._runRealPollLoop(resumeTarget.pda);
+                    if (outcome === 'active') {
+                        this._pendingRealMatch = true;
+                        this._hideWaitingPanel();
+                        this._setStakeClusterVisible(true);
+                        this._refreshSquadActionButtons();
+                        showToast('Opponent found — tap Commit to start');
+                    } else if (outcome === 'timeout') {
+                        if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No opponent in 2 min — Play Bot or Cancel+Refund';
+                        this._emitNotification('match_expired', 'Lobby timed out',
+                            'No opponent joined — tap Cancel to refund or Play vs Bot.',
+                            { payload: { matchPda: resumeTarget.pda }, dedupeKey: resumeTarget.pda });
+                    } else if (outcome === 'settled' || outcome === 'cancelled') {
+                        this._activeRealMatchPda = null;
+                        this._hideWaitingPanel();
+                        showToast(outcome === 'settled' ? 'Match already settled' : 'Match cancelled');
+                        if (outcome === 'cancelled') {
+                            this._emitNotification('lobby_cancelled', 'Lobby cancelled',
+                                'Refund landed in your wallet.',
+                                { payload: { matchPda: resumeTarget.pda }, dedupeKey: resumeTarget.pda });
+                        }
+                    }
+                })().catch((e) => {
+                    console.log(`${TAG} _onPickerStart | RESUME_FLOW_ERROR error=${e}`);
+                    if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Error: ${e?.message ?? e}`;
+                });
+                return;
+            }
 
             // Fire off the async join flow; WaitingPanel stays visible and updates as it progresses.
             (async () => {
@@ -13691,22 +13753,30 @@ export class AppUI extends Component {
     }
 
     /**
-     * User confirmed the join — lock the target, leave the lobby, and route
-     * to TokenDuelPanel in join-mode where they pick 3 tokens then commit
-     * via the relabeled Join Match button.
+     * User confirmed the join (or resume) — lock the target, leave the
+     * lobby, and route to TokenDuelPanel in join/resume mode where they
+     * pick 3 tokens then commit via the relabeled CTA. Resume skips the
+     * on-chain join sign in _onPickerStart since the match already exists.
      */
     private _onJoinConfirmGoTap(): void {
         const target = this._joinConfirmTarget;
+        const mode = this._joinConfirmMode;
         if (!target) {
-            console.log(`${TAG} _onJoinConfirmGoTap | NO_TARGET`);
+            console.log(`${TAG} _onJoinConfirmGoTap | NO_TARGET mode=${mode}`);
             this._hideJoinConfirmOverlay();
             return;
         }
-        console.log(`${TAG} _onJoinConfirmGoTap | match=${target.pda} mode=${target.mode} tier=${target.wagerTier}`);
-        this._pickerJoinTarget = target;
+        console.log(`${TAG} _onJoinConfirmGoTap | mode=${mode} match=${target.pda} game_mode=${target.mode} tier=${target.wagerTier}`);
+        if (mode === 'resume') {
+            this._pickerResumeTarget = target;
+            this._pickerJoinTarget = null;
+        } else {
+            this._pickerJoinTarget = target;
+            this._pickerResumeTarget = null;
+        }
         // Pre-cache the lobby's mode/wager/window onto _picker* fields so
-        // _refreshWagerControlRow + _showTokenDuel paint the join-mode state
-        // immediately on arrival (before _onPickerStart runs).
+        // _refreshWagerControlRow + _showTokenDuel paint the join/resume
+        // state immediately on arrival (before _onPickerStart runs).
         // Stage 3 mode rebalance: 0=1v1, 1=Trio, 2=4p, 3=8p.
         const modeIdMap: Record<number, string> = { 0: 'oneVone', 1: 'trio', 2: 'fourPlayer', 3: 'eightPlayer' };
         this._pickerSelectedMode = modeIdMap[target.mode] ?? 'oneVone';
@@ -13900,6 +13970,35 @@ export class AppUI extends Component {
         const ready = filled === 3;
         const join = this._isJoinMode();
         const bot = this._isBotMode();
+        const resume = this._isResumeMode();
+
+        if (resume && this._pickerResumeTarget) {
+            // ── RESUME MODE — own lobby; wager + mode pinned, no on-chain
+            // join sign needed (handled in _onPickerStart). CTA reads
+            // "Resume Match" once the user has picked 3 tokens.
+            const target = this._pickerResumeTarget;
+            const wagerLabel = WAGER_TIERS_LABELS[target.wagerTier] ?? '0.05 SOL';
+            if (this._wagerValueButton) this._wagerValueButton.node.active = false;
+            if (this._wagerDropdown) this._wagerDropdown.active = false;
+            if (this._wagerBotChip) this._wagerBotChip.active = false;
+            if (this._wagerLockChip) {
+                this._wagerLockChip.active = true;
+                if (this._wagerLockChipLabel) this._wagerLockChipLabel.string = `🔒 ${wagerLabel}`;
+            }
+            if (this._wagerStartButton) {
+                this._wagerStartButton.interactable = ready;
+                if (this._wagerStartLabel) {
+                    this._wagerStartLabel.string = ready ? 'Resume Match' : (filled === 0 ? 'Pick 3 tokens' : `Pick ${3 - filled} more`);
+                }
+            }
+            if (this._wagerHintLabel) {
+                this._wagerHintLabel.string = ready
+                    ? `Resuming your lobby · ${wagerLabel} · tap to re-enter`
+                    : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to resume`;
+            }
+            this._syncWagerStartPulse(ready);
+            return;
+        }
 
         if (join && this._pickerJoinTarget) {
             // ── JOIN MODE — wager + mode pinned to the host's match. ──
@@ -14071,6 +14170,11 @@ export class AppUI extends Component {
         this._syncBackdrop();
         if (this._isJoinMode()) {
             console.log(`${TAG} _onWagerStartTap | JOIN_MODE skip_modepicker target=${this._pickerJoinTarget?.pda}`);
+            this._onPickerStart();
+            return;
+        }
+        if (this._isResumeMode()) {
+            console.log(`${TAG} _onWagerStartTap | RESUME_MODE skip_modepicker target=${this._pickerResumeTarget?.pda}`);
             this._onPickerStart();
             return;
         }
@@ -14351,8 +14455,10 @@ export class AppUI extends Component {
     private _onOpenHub(): void {
         this._hubActiveTab = 'portfolio';
         this._openPortfolioInternal();
+        // _openPortfolioInternal calls _assertHubPills(portfolioPanel) which
+        // re-syncs the Portfolio hub pill. Sync the Leaderboard panel's
+        // mirror pill too so it lands on Portfolio when the user swaps.
         this._lbHubSetActive?.('portfolio');
-        this._pfHubSetActive?.('portfolio');
     }
 
     /** Phase N4: in-hub tab strip — swap between Portfolio and Leaderboard
@@ -14368,10 +14474,60 @@ export class AppUI extends Component {
             if (this._portfolioPanel) this._portfolioPanel.active = false;
             void this._openLeaderboardInternal();
         }
-        // Sync both panels' pill state in parallel so swaps land with the
-        // indicator already in place.
-        this._lbHubSetActive?.(tab);
-        this._pfHubSetActive?.(tab);
+        // Sync the inactive panel's hub-pill so it lands on the right
+        // segment when the user swings back. The active panel's pill is
+        // re-asserted by `_assertHubPills` inside the open path above.
+        if (tab === 'portfolio') {
+            this._lbHubSetActive?.(tab);
+        } else {
+            this._pfHubSetActive?.(tab);
+        }
+    }
+
+    /**
+     * 2026-04-28 tab-system desync fix: every panel-open path calls this to
+     * re-assert that the runtime pills on `panel` are visible, rendered on
+     * top of any sibling scene views, AND have their highlight slot synced
+     * to current state. Root-cause fix for the "tabs disappear / Hub pill
+     * stuck on the wrong segment after navigation" repro paths
+     * (Stats→Trophies→History, Leaderboard→Portfolio, back+re-enter from Home).
+     *
+     * The previous defensive `setSiblingIndex(-1)` calls in
+     * `_refreshPortfolioTopLevel` only fired on tab clicks, so re-entry
+     * paths could leave pills in a stale state. This helper makes panel
+     * opens idempotent — landing on a known-good pill arrangement every time.
+     */
+    private _assertHubPills(panel: Node | null): void {
+        if (!panel) return;
+        const hubStrip = panel.getChildByName('HubTabStrip');
+        if (hubStrip) {
+            hubStrip.active = true;
+            hubStrip.setSiblingIndex(-1);
+        }
+        if (panel === this._portfolioPanel) {
+            this._pfHubSetActive?.(this._hubActiveTab);
+            if (this._pfTopLevelPillStrip) {
+                this._pfTopLevelPillStrip.active = true;
+                this._pfTopLevelPillStrip.setSiblingIndex(-1);
+            }
+            this._pfTopLevelSetActive?.(this._pfTopLevelTab);
+            if (this._pfModePillStrip) {
+                const showMode = (this._pfTopLevelTab === 'stats' || this._pfTopLevelTab === 'history');
+                this._pfModePillStrip.active = showMode;
+                if (showMode) this._pfModePillStrip.setSiblingIndex(-1);
+            }
+            this._pfModeSetActive?.(this._pfActiveTab);
+        } else if (panel === this._leaderboardPanel) {
+            this._lbHubSetActive?.(this._hubActiveTab);
+            const lbModeStrip = panel.getChildByName('LBModePill');
+            if (lbModeStrip) {
+                lbModeStrip.active = true;
+                lbModeStrip.setSiblingIndex(-1);
+            }
+            const seasonActive = this._lbFilterMode === 4;
+            const modeKey = ['1v1', 'trio', '4p', '8p'][this._lbFilterMode];
+            this._lbModeSetActive?.(seasonActive ? '__none__' : (modeKey ?? '1v1'));
+        }
     }
 
     /** Phase N4: build the hub-tab strip (Portfolio | Leaderboard) on a panel.
@@ -14531,7 +14687,9 @@ export class AppUI extends Component {
 
         // Active-tab highlight — the visible "filled" indicator. Initial
         // scale matches the active scale so the pill renders correctly on
-        // first frame without an animation kick.
+        // first frame without an animation kick. The 1-px white inner stroke
+        // (alpha 120) gives the active fill a subtle edge so the pill reads
+        // as "locked in" rather than just colored.
         const highlight = new Node('PillHighlight');
         strip.addChild(highlight);
         highlight.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
@@ -14541,6 +14699,10 @@ export class AppUI extends Component {
         hlG.fillColor = fillC;
         hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
         hlG.fill();
+        hlG.strokeColor = new Color(255, 255, 255, 120);
+        hlG.lineWidth = 1;
+        hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
+        hlG.stroke();
 
         // Optional vertical dividers between adjacent segments.
         if (opts.showDivider && N > 1) {
@@ -14577,8 +14739,11 @@ export class AppUI extends Component {
             strip.addChild(n);
             n.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
             const btn = n.addComponent(Button);
-            btn.transition = Button.Transition.SCALE;
-            btn.zoomScale = opts.zoomScale ?? 0.96;
+            // 2026-04-28 tab-system upgrade: drop Cocos's built-in SCALE
+            // transition (it pre-empts our manual press-pop on click) and
+            // drive the 1 → 0.97 → 1 dip ourselves in the click handler so
+            // every tap gets the same tactile feedback.
+            btn.transition = Button.Transition.NONE;
             n.setPosition(new Vec3(slotX(i), 0, 0));
 
             const lblN = new Node('Label');
@@ -14612,7 +14777,19 @@ export class AppUI extends Component {
             buttons.set(seg.key, btn);
             labels.set(seg.key, lbl);
             const key = seg.key;
-            btn.node.on(Button.EventType.CLICK, () => opts.onClick(key), this);
+            const segNode = n;
+            btn.node.on(Button.EventType.CLICK, () => {
+                // Press micro-interaction: 1 → 0.97 → 1 dip on the segment
+                // node before firing the user-facing handler. Stops any prior
+                // press tween so rapid taps don't stack.
+                Tween.stopAllByTarget(segNode);
+                segNode.setScale(1, 1, 1);
+                tween(segNode)
+                    .to(0.06, { scale: new Vec3(0.97, 0.97, 1) }, { easing: 'cubicIn' })
+                    .to(0.08, { scale: new Vec3(1, 1, 1) },       { easing: 'backOut' })
+                    .start();
+                opts.onClick(key);
+            }, this);
         }
 
         const setActive = (key: string): void => {
@@ -14623,7 +14800,7 @@ export class AppUI extends Component {
             for (const n of [highlight, glowInner]) {
                 Tween.stopAllByTarget(n);
                 tween(n)
-                    .to(0.18, {
+                    .to(0.20, {
                         position: new Vec3(x, 0, 0),
                         scale: new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1),
                     }, { easing: 'cubicOut' })
@@ -14631,7 +14808,7 @@ export class AppUI extends Component {
             }
             Tween.stopAllByTarget(glowOuter);
             tween(glowOuter)
-                .to(0.18, { position: new Vec3(x, 0, 0) }, { easing: 'cubicOut' })
+                .to(0.20, { position: new Vec3(x, 0, 0) }, { easing: 'cubicOut' })
                 .start();
             for (const [k, lbl] of labels) {
                 lbl.color = (k === key) ? activeLblC : inactiveLblC;
@@ -14725,9 +14902,10 @@ export class AppUI extends Component {
         // tokenDuel; this covers the full set.
         this._hideAllTopLevelPanelsExcept('leaderboard');
         this._leaderboardPanel.active = true;
-        // Belt-and-suspenders: ensure the runtime hub-tab strip is visible.
-        const lbStrip = this._leaderboardPanel.getChildByName('HubTabStrip');
-        if (lbStrip) lbStrip.active = true;
+        // 2026-04-28 tab-system desync fix: re-assert every runtime pill on
+        // the panel into a known-good visible+synced state. Replaces the
+        // ad-hoc HubTabStrip visibility guard that lived here previously.
+        this._assertHubPills(this._leaderboardPanel);
         this._refreshLeaderboardTabTints();
         if (this._lbFilterMode === 4) {
             await this._refreshSeasonTab();
@@ -14753,6 +14931,13 @@ export class AppUI extends Component {
             await this._refreshLeaderboardPanelRows();
         }
         await this._refreshPersonalRankCard();
+        // 2026-04-28 tab-system content transition: fade the now-active row
+        // strip in so mode swaps feel like a swap, not a flash. Top player
+        // card + each rank row fade together. Personal rank card is
+        // user-anchored and not part of the swap.
+        const topCard = this._leaderboardPanel?.getChildByName('TopPlayerCard');
+        if (topCard) this._animateViewIn(topCard);
+        for (const n of this._lbRowNodes) this._animateViewIn(n);
     }
 
     /**
@@ -15807,12 +15992,14 @@ export class AppUI extends Component {
         // rule. Cheap belt-and-suspenders.
         if (!this._pfTopLevelTab) this._pfTopLevelTab = 'stats';
         if (!this._pfActiveTab)   this._pfActiveTab   = 'paper';
-        console.log(`${TAG} _openPortfolioInternal | OPEN top=${this._pfTopLevelTab} tab=${this._pfActiveTab}`);
+        // TabState DEBUG — remove once corruption confirmed fixed
+        console.log(`${TAG} TabState | _openPortfolioInternal hub=${this._hubActiveTab} pfTop=${this._pfTopLevelTab} pfMode=${this._pfActiveTab} lbMode=${this._lbFilterMode}`);
         this._hideAllTopLevelPanelsExcept('portfolio');
         this._portfolioPanel.active = true;
-        // Belt-and-suspenders: ensure the runtime hub-tab strip is visible.
-        const pfStrip = this._portfolioPanel.getChildByName('HubTabStrip');
-        if (pfStrip) pfStrip.active = true;
+        // 2026-04-28 tab-system desync fix: re-assert every runtime pill on
+        // the panel into a known-good visible+synced state. Replaces the
+        // ad-hoc HubTabStrip visibility guard that lived here previously.
+        this._assertHubPills(this._portfolioPanel);
         if (this._pfPubkeyLabel) {
             const pk = MWAManager.instance?.connectedPubkey;
             this._pfPubkeyLabel.string = pk ? this._fmtMintShort(pk) : 'not connected';
@@ -15824,8 +16011,19 @@ export class AppUI extends Component {
             this._pfPubkeyLabel.node.setPosition(0, 632, 0);
         }
         this._refreshPortfolioTopLevel();
-        this._refreshPortfolioTab();
-        if (this._pfTopLevelTab === 'history') this._refreshMatchHistory(true);
+        // 2026-04-28 corruption fix: refresh ONLY the data for the active
+        // top-level tab. The unconditional _refreshPortfolioTab() that lived
+        // here previously called _applyPortfolioRecord which reactivates
+        // _pfStatsViewNodes regardless of which tab is showing — that caused
+        // Stats cards to stack on top of Trophies tiles after Home → trophy
+        // icon re-entry. Mirrors the gating pattern in _onPortfolioTopLevelTab.
+        if (this._pfTopLevelTab === 'stats') {
+            this._refreshPortfolioTab();
+        } else if (this._pfTopLevelTab === 'history') {
+            void this._refreshMatchHistory(true);
+        } else if (this._pfTopLevelTab === 'trophies') {
+            void this._refreshTrophies();
+        }
     }
 
     private _onPortfolioBackClick(): void {
@@ -15891,6 +16089,11 @@ export class AppUI extends Component {
         games: number; wins: number; losses: number;
         profitLamports: number; xp: number; level: number; loaded: boolean;
     }): void {
+        // 2026-04-28 corruption fix: defense in depth. _pfStatsViewNodes are
+        // only meaningful when Stats is the active top-level tab. Any caller
+        // (current or future) that lands here from a History/Trophies context
+        // would otherwise pollute view state by reactivating Stats cards.
+        if (this._pfTopLevelTab !== 'stats') return;
         const isEmpty = (this._pfActiveTab === 'real' && !rec.loaded) || rec.games === 0;
         if (this._pfEmptyState) this._pfEmptyState.active = isEmpty;
         for (const n of this._pfStatsViewNodes) n.active = !isEmpty;
@@ -15971,6 +16174,20 @@ export class AppUI extends Component {
         if (tab === 'history') this._refreshMatchHistory(true);
     }
 
+    /**
+     * 2026-04-28 tab-system content transition: fade a view container in
+     * over 180ms (UIOpacity 0 → 255, cubicOut). Called on tab swap to give
+     * content a "modes" feel instead of an instant pop. Idempotent: stops
+     * any in-flight tween on the UIOpacity before starting the new one.
+     */
+    private _animateViewIn(view: Node | null): void {
+        if (!view || !view.activeInHierarchy) return;
+        const op = view.getComponent(UIOpacity) ?? view.addComponent(UIOpacity);
+        Tween.stopAllByTarget(op);
+        op.opacity = 0;
+        tween(op).to(0.18, { opacity: 255 }, { easing: 'cubicOut' }).start();
+    }
+
     /** Sync top-tab tints + toggle which view is visible. */
     private _refreshPortfolioTopLevel(): void {
         const tab = this._pfTopLevelTab;
@@ -16000,6 +16217,16 @@ export class AppUI extends Component {
         // Part 11 B: trophies view.
         const trophiesView = this._portfolioPanel?.getChildByName('PortfolioTrophiesView');
         if (trophiesView) trophiesView.active = tab === 'trophies';
+
+        // Fade the now-active view in. Stats is a list of nodes (no single
+        // container), so iterate; History and Trophies are single containers.
+        if (statsActive) {
+            for (const n of this._pfStatsViewNodes) this._animateViewIn(n);
+        } else if (tab === 'history') {
+            this._animateViewIn(this._pfHistoryView);
+        } else if (tab === 'trophies') {
+            this._animateViewIn(trophiesView);
+        }
     }
 
     /**
