@@ -4800,8 +4800,10 @@ function generate() {
     const tpcCrown = mkLabel(sb, 'CrownLabel', tpcN, '👑', 24,
         TPCC.crown.y, TPCC.crown.w, TPCC.crown.h, 255, 210, 74);
     sb.e[tpcCrown]._lpos = v3(TPCC.crown.x, TPCC.crown.y, 0);
+    // 2026-04-29 v2: rank label is white-bright (244,245,249) so it reads on top
+    // of the runtime gold rank badge mounted by AppUI._mountRankBadge.
     const tpcRank = mkLabel(sb, 'RankLabel', tpcN, '#1', 24,
-        TPCC.rank.y, TPCC.rank.w, TPCC.rank.h, 255, 210, 74);
+        TPCC.rank.y, TPCC.rank.w, TPCC.rank.h, 244, 245, 249);
     sb.e[tpcRank]._lpos = v3(TPCC.rank.x, TPCC.rank.y, 0);
     style(sb, tpcRank, { bold: true });
     const tpcPlayer = mkLabel(sb, 'PlayerLabel', tpcN, '—', 22,

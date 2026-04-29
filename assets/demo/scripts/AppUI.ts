@@ -5,7 +5,7 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen } from 'cc';
+import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen, Size } from 'cc';
 // UX overhaul: Phase 1+2 helpers — central theme, procedural icons, panel
 // transitions, mascot. All runtime-only; no asset deps.
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
@@ -595,6 +595,11 @@ export class AppUI extends Component {
     private _pfXpFooter: Label | null = null;
     private _pfEmptyState: Node | null = null;
     private _pfStatsViewNodes: Node[] = [];
+    // 2026-04-29 stats redesign — icon-left card layout + mode-aware hero
+    // header. _pfStatsCardsStyled is a one-shot guard so the layout reflow
+    // and IconBadge children only get created once per panel lifetime.
+    private _pfHeroHeaderLabel: Label | null = null;
+    private _pfStatsCardsStyled: boolean = false;
 
     // Part 9 / Phase 28: tutorial overlay (gamified card carousel).
     private _tutorialOverlay: Node | null = null;
@@ -2380,6 +2385,7 @@ export class AppUI extends Component {
             this._pfHeroPnLValue = heroCard?.getChildByName('Value')?.getComponent(Label) ?? null;
             this._pfHeroPnLSubtitle = heroCard?.getChildByName('Subtitle')?.getComponent(Label) ?? null;
             this._pfHeroPnLEdge = heroCard?.getChildByName('CardEdgeAccent')?.getComponent(Sprite) ?? null;
+            this._pfHeroHeaderLabel = heroCard?.getChildByName('Header')?.getComponent(Label) ?? null;
             // XP card progress-bar wiring.
             const xpCard = this._portfolioPanel.getChildByName('PFStatCard_xp');
             this._pfXpValueLabel = xpCard?.getChildByName('Value')?.getComponent(Label) ?? null;
@@ -2410,6 +2416,11 @@ export class AppUI extends Component {
             // Phase N4: build hub-tab strip mirror so Portfolio panel can swap
             // back to Leaderboard without leaving the hub.
             this._buildHubTabs(this._portfolioPanel);
+            // 2026-04-29 stats redesign: reflow each PFStatCard interior to
+            // an icon-left + stacked-text layout matching the reference mock.
+            // One-shot via _pfStatsCardsStyled — repeated panel re-entries are
+            // no-ops so we never duplicate IconBadge children.
+            this._styleStatsCardsOnce();
         }
         console.log(`${TAG} start | TokenDuel lb_panel=${!!this._leaderboardPanel} rows=${this._lbRowNodes.length}/9 pf_panel=${!!this._portfolioPanel} stats=${this._pfStatValues.size}/4 hero=${!!this._pfHeroPnLValue} xp_fill=${!!this._pfXpProgressFill} empty=${!!this._pfEmptyState}`);
 
@@ -17120,6 +17131,10 @@ export class AppUI extends Component {
         const edgeColor  = isPos ? green : isNeg ? red : dim;
         const sign = isPos ? '+' : isNeg ? '−' : '';
         const fmt = (v: number) => `${sign}${Math.abs(v).toFixed(3)} SOL`;
+        if (this._pfHeroHeaderLabel) {
+            this._pfHeroHeaderLabel.string =
+                this._pfActiveTab === 'real' ? 'TOTAL PROFIT (REAL)' : 'TOTAL PROFIT (PAPER)';
+        }
         if (this._pfHeroPnLValue) this._pfHeroPnLValue.color = valueColor;
         if (this._pfHeroPnLEdge)  this._pfHeroPnLEdge.color  = edgeColor;
         if (this._pfHeroPnLValue) {
@@ -17155,6 +17170,209 @@ export class AppUI extends Component {
             const lbl = this._pfStatValues.get(key);
             if (lbl) lbl.string = val;
         }
+    }
+
+    /**
+     * 2026-04-29 stats-card visual reflow — runs once after panel init.
+     *
+     * Each PFStatCard ships from Main.scene with centered Header/Label +
+     * centered Value text. The new dashboard look puts an icon at the left
+     * of every secondary card with the caption stacked above the value to
+     * its right. Hero card stays centered but gains a green dot to the
+     * left of the "Across N matches" subtitle. WIN RATE + LEVEL are
+     * full-width and re-anchor to left/right alignment respectively.
+     *
+     * Constraints: no scene edits, no new SpriteFrames, no runtime
+     * cc.Graphics.addComponent (Cocos 3.8.8 native renderer SIGSEGV — see
+     * IconLibrary.ts:96). Icon nodes use the same IconLibrary.attach path
+     * as the trophy tiles, so they paint the moment Phase 3 PNG sprites
+     * are registered and stay invisible (but layout-correct) until then.
+     */
+    private _styleStatsCardsOnce(): void {
+        if (this._pfStatsCardsStyled || !this._portfolioPanel) return;
+        this._pfStatsCardsStyled = true;
+
+        type CaptionAlign = 'icon-left' | 'left' | 'centered' | 'wide';
+        const restyle = (
+            cardName: string,
+            opts: {
+                caption?: string;
+                align: CaptionAlign;
+                icon?: IconName;
+                tintHex?: string;
+                captionFontSize?: number;
+                valueFontSize?: number;
+            },
+        ): void => {
+            const card = this._portfolioPanel?.getChildByName(cardName);
+            if (!card) return;
+            // Secondary cards use child name 'Label' for the caption; the
+            // hero card uses 'Header'. Try both so the same helper can
+            // address every card.
+            const captionLbl =
+                card.getChildByName('Label')?.getComponent(Label) ??
+                card.getChildByName('Header')?.getComponent(Label) ??
+                null;
+            const valueLbl = card.getChildByName('Value')?.getComponent(Label) ?? null;
+            if (opts.caption && captionLbl) captionLbl.string = opts.caption;
+            if (opts.captionFontSize && captionLbl) {
+                captionLbl.fontSize = opts.captionFontSize;
+                captionLbl.lineHeight = Math.round(opts.captionFontSize * 1.15);
+            }
+            if (opts.valueFontSize && valueLbl) {
+                valueLbl.fontSize = opts.valueFontSize;
+                valueLbl.lineHeight = Math.round(opts.valueFontSize * 1.1);
+            }
+            const captionUT = captionLbl?.node.getComponent(UITransform) ?? null;
+            const valueUT = valueLbl?.node.getComponent(UITransform) ?? null;
+            const cardUT = card.getComponent(UITransform);
+            const cardW = cardUT?.width ?? 0;
+
+            if (opts.align === 'icon-left') {
+                // Half-width card (~290w): icon at far left, caption + value
+                // stacked to its right. Caption sits above value.
+                const iconX = -cardW * 0.36;
+                const textX = -cardW * 0.05;
+                if (captionUT) {
+                    captionUT.anchorX = 0;
+                    captionUT.width = Math.round(cardW * 0.55);
+                }
+                if (valueUT) {
+                    valueUT.anchorX = 0;
+                    valueUT.width = Math.round(cardW * 0.55);
+                }
+                captionLbl?.node.setPosition(textX, 18, 0);
+                valueLbl?.node.setPosition(textX, -16, 0);
+                if (opts.icon) {
+                    this._ensureIconBadge(card, opts.icon, {
+                        size: 36,
+                        offsetX: iconX,
+                        offsetY: 0,
+                        tintHex: opts.tintHex,
+                    });
+                }
+            } else if (opts.align === 'left') {
+                // Full-width card with left-aligned text + optional right-side
+                // decoration slot (gauge etc — deferred). Caption above value.
+                const textX = -cardW * 0.42;
+                if (captionUT) {
+                    captionUT.anchorX = 0;
+                    captionUT.width = Math.round(cardW * 0.6);
+                }
+                if (valueUT) {
+                    valueUT.anchorX = 0;
+                    valueUT.width = Math.round(cardW * 0.6);
+                }
+                captionLbl?.node.setPosition(textX, 22, 0);
+                valueLbl?.node.setPosition(textX, -18, 0);
+                if (opts.icon) {
+                    this._ensureIconBadge(card, opts.icon, {
+                        size: 36,
+                        offsetX: cardW * 0.42,
+                        offsetY: 0,
+                        tintHex: opts.tintHex,
+                    });
+                }
+            } else if (opts.align === 'wide') {
+                // LEVEL card: icon left, caption centered, value right, then
+                // an XP fill bar below (already authored in scene). Don't
+                // touch the bar / footer — only re-anchor caption + value.
+                const iconX = -cardW * 0.42;
+                if (captionUT) captionUT.anchorX = 0.5;
+                captionLbl?.node.setPosition(0, 24, 0);
+                if (valueUT) {
+                    valueUT.anchorX = 1;
+                    valueUT.width = Math.round(cardW * 0.2);
+                }
+                valueLbl?.node.setPosition(cardW * 0.42, 24, 0);
+                if (opts.icon) {
+                    this._ensureIconBadge(card, opts.icon, {
+                        size: 32,
+                        offsetX: iconX,
+                        offsetY: 24,
+                        tintHex: opts.tintHex,
+                    });
+                }
+            }
+        };
+
+        // Hero card — keep centered layout, just refresh font sizing of the
+        // Header caption so it reads as a small uppercase label like the
+        // mock, and add the green dot to the left of the Subtitle text.
+        const heroCard = this._portfolioPanel.getChildByName('PFStatCard_pnl');
+        if (heroCard && this._pfHeroHeaderLabel) {
+            this._pfHeroHeaderLabel.fontSize = 18;
+            this._pfHeroHeaderLabel.lineHeight = 22;
+        }
+        if (heroCard && this._pfHeroPnLSubtitle) {
+            // Compact pill feel — slightly smaller subtitle, anchor left
+            // shifted right so the dot can sit just to its left.
+            this._pfHeroPnLSubtitle.fontSize = 18;
+            this._pfHeroPnLSubtitle.lineHeight = 22;
+            const subUT = this._pfHeroPnLSubtitle.node.getComponent(UITransform);
+            if (subUT) subUT.anchorX = 0;
+            this._pfHeroPnLSubtitle.node.setPosition(-90, this._pfHeroPnLSubtitle.node.position.y, 0);
+            // Green status dot (Label-based "●" — no Sprite/Graphics needed).
+            let dot = heroCard.getChildByName('PFHeroSubtitleDot');
+            if (!dot) {
+                dot = new Node('PFHeroSubtitleDot');
+                dot.parent = heroCard;
+                const dotUT = dot.addComponent(UITransform);
+                dotUT.contentSize = new Size(20, 20);
+                const dotLbl = dot.addComponent(Label);
+                dotLbl.string = '●';
+                dotLbl.fontSize = 18;
+                dotLbl.lineHeight = 22;
+                dotLbl.color = themeColor.win();
+            }
+            dot.setPosition(-110, this._pfHeroPnLSubtitle.node.position.y, 0);
+        }
+
+        // Performance row — half-width cards with icon on left.
+        restyle('PFStatCard_wins', {
+            caption: 'WINS',
+            align: 'icon-left',
+            icon: 'trophy',
+            tintHex: Palette.rank.gold,
+            captionFontSize: 16,
+            valueFontSize: 38,
+        });
+        restyle('PFStatCard_losses', {
+            caption: 'LOSSES',
+            align: 'icon-left',
+            icon: 'bolt',
+            tintHex: Palette.accent.rose,
+            captionFontSize: 16,
+            valueFontSize: 38,
+        });
+        // WIN RATE — full-width, left-aligned text. Gauge ring deferred.
+        restyle('PFStatCard_winrate', {
+            caption: 'WIN RATE',
+            align: 'left',
+            icon: 'target',
+            tintHex: Palette.accent.teal,
+            captionFontSize: 16,
+            valueFontSize: 44,
+        });
+        // Activity row.
+        restyle('PFStatCard_games', {
+            caption: 'GAMES PLAYED',
+            align: 'icon-left',
+            icon: 'wand',
+            tintHex: Palette.accent.violet,
+            captionFontSize: 16,
+            valueFontSize: 38,
+        });
+        restyle('PFStatCard_xp', {
+            caption: 'LEVEL',
+            align: 'wide',
+            icon: 'chart',
+            tintHex: Palette.accent.teal,
+            captionFontSize: 16,
+            valueFontSize: 26,
+        });
+
+        console.log(`${TAG} _styleStatsCardsOnce | DONE icons + reflow applied`);
     }
 
     // ═══════════════════════════════════════════════════════════════

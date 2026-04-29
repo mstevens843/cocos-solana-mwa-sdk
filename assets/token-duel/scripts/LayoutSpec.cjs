@@ -559,11 +559,22 @@ const portfolio = {
     HISTORY_GAP_Y:        -72,
     HISTORY_LOAD_MORE_Y:  -260,
 
-    // Trophies view — 3×2 grid of TrophyTile, centered inside CONTENT zone.
-    // Grid block height: 2 rows * 200 + 1 gap * 20 = 420 → top row centerY at zone.centerY + 110.
-    TROPHY_GRID_BASE_Y:   _PZ.content.centerY + 110,              // -4 + 110 = 106
-    TROPHY_GRID_STRIDE_Y: -220,
-    TROPHY_EMPTY_Y:       _PZ.content.centerY,                    // -4
+    // Trophies view — 3×2 grid of TrophyTile with header band above + footer
+    // band below. Tile w/h bumped to 220×260 (gap 16) so each card carries a
+    // WEEK eyebrow + 90-px medal/star icon + big win count + label without the
+    // empty-space feel of the prior 200×200 layout.
+    // Block height: 2*260 + 16 = 536. Top row centerY 150 → bottom -126 →
+    // block clears 280..-256 → leaves room for header (~360..420) and
+    // footer (-300..-380) inside the 936-tall CONTENT zone.
+    TROPHY_GRID_BASE_Y:        150,
+    TROPHY_GRID_STRIDE_Y:      -276,
+    TROPHY_EMPTY_Y:            _PZ.content.centerY,               // -4
+    TROPHY_HEADER_TITLE_Y:     420,
+    TROPHY_HEADER_SUBTITLE_Y:  392,
+    TROPHY_PAGE_ROW_Y:         420,
+    TROPHY_FOOTER_LINE1_Y:     -300,
+    TROPHY_FOOTER_LINE2_Y:     -324,
+    TROPHY_SHARE_BTN_Y:        -380,
 };
 
 // 2026-04-27 — LeaderboardPanel deterministic Y anchors.
