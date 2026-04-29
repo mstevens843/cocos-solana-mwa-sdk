@@ -31,6 +31,17 @@ const UNIFORM_HEADER = {
     BACK_BTN:   { x: -280, w: 140, h: 36 },             // invisible hit area, slightly larger
 };
 
+// 2026-04-29 — uniform text styling tokens. Title color = gold for action
+// panels (PostMatch keeps its 60pt white hero accent for "YOU WON"). Dim
+// text = one canonical RGB for subtitles, status labels, and section
+// eyebrows. Eyebrow font size = 12pt across panels.
+const UNIFORM_TEXT = {
+    TITLE_COLOR:       { r: 255, g: 210, b: 74 },       // gold (MIP reference)
+    TITLE_FONT_SIZE:   30,
+    DIM_COLOR:         { r: 168, g: 174, b: 201 },      // canonical "dim text" — subtitles, status, eyebrows
+    EYEBROW_FONT_SIZE: 12,
+};
+
 // 2026-04-27 v2 — Token Duel page deterministic Y anchors.
 // Source-of-truth for every Y on TokenDuelPanel. NEVER hand-tune element
 // Y values on this page; always derive from these. Canvas y-up,
@@ -421,6 +432,7 @@ const mip = {
 const LayoutSpec = {
     // 2026-04-29 — exposed for generator helpers (mkBackHeader, etc.).
     UNIFORM_HEADER,
+    UNIFORM_TEXT,
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
     // for structural patterns that legitimately recur app-wide.
@@ -1596,8 +1608,9 @@ const LayoutSpec = {
         // up RUNTIME_TOP_EDGE to align with other panels.
         RUNTIME_TOP_EDGE: 748,
         elements: {
-            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            // 2026-04-29: back y override → 720 to sit on par with HubTabStrip (built at runtime at y=720, h=56).
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: leaderboard.TITLE_Y,    w: 400, h: 44,  type: 'label' },
             // Subtitle line under title — "{mode} · This Week" / "All modes · This Week".
             subtitle:        { x: 0,    y: leaderboard.SUBTITLE_Y, w: 520, h: 24,  type: 'label' },
@@ -1680,8 +1693,9 @@ const LayoutSpec = {
             // 2026-04-29 — uniform back/title header, mirrors MIP. refreshBtn
             // sits to the right of the title (was sharing the back row at y=700);
             // moved to y=540 to flank the title.
-            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            // 2026-04-29: back y override → 750 to sit on par with lvxpChip (the panel's topmost solid element).
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 750, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 750, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label',    notes: 'gold bold; sword IconBadge attached at runtime via _attachStaticIconBadges' },
             refreshBtn:      { x: 280,  y: UNIFORM_HEADER.TITLE_Y, w: 56,  h: 44, type: 'btnGhost', notes: 'AppUI tween-spins the icon on tap for refresh feedback' },
             countLabel:      { x: 0,    y: UNIFORM_HEADER.SUBTITLE_Y, w: 600, h: 22, type: 'label',    notes: 'live count pill — pulses via addIdlePulse; sits in subtitle slot' },
@@ -1917,8 +1931,9 @@ const LayoutSpec = {
             // Chips 293 · ColHeaders 255 · FeedScrollView (103, h=272, ~3 visible
             // rows of h=85)} · SquadPanel (-184, h=220: header → 3 slots → wager+Start)
             // · Status (-362). Side padding 16 → cards w=688/696.
-            backLink:           { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:            { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            // 2026-04-29: back y override → 685 to sit on par with the top-right action icon cluster (templates.topRowActionBtn at y=685, h=56).
+            backLink:           { x: UNIFORM_HEADER.BACK_LINK.x, y: 685, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:            { x: UNIFORM_HEADER.BACK_BTN.x,  y: 685, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:              { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 320, h: 44, type: 'label' },
             // 2026-04-27 UI overhaul — thin violet glow line anchoring header band.
             // Sits 12 px below title baseline (TITLE_Y - title.h/2 - 12 = 540).
@@ -2254,8 +2269,9 @@ const LayoutSpec = {
         elements: {
             historyView: { x: 0, y: 0, w: 720, h: 1280, type: 'group',
                 notes: 'PortfolioHistoryView container; hidden until History tab active' },
-            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            // 2026-04-29: back y override → 720 to sit on par with HubTabStrip (built at runtime at y=720, h=56).
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:    { x: 0,    y: portfolio.TITLE_Y, w: 400, h: 44, type: 'label' },
             // Subtitle eyebrow under title.
             subtitle:    { x: 0,    y: portfolio.SUBTITLE_Y, w: 460, h: 18, type: 'label' },
@@ -2561,8 +2577,9 @@ const LayoutSpec = {
         canvas: { w: 720, h: 1280 },
         elements: {
             // Identity band — Back at left, Symbol/Name centered, MintChip at right.
-            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            // 2026-04-29: back y override → 614 to sit on par with symbolLabel (the panel's topmost solid element).
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 614, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 614, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             symbolLabel:     { x:    0, y: 614, w: 320, h: 34, type: 'label' },
             nameLabel:       { x:    0, y: 588, w: 320, h: 18, type: 'label' },
             mintChip:        { x:  255, y: 612, w: 130, h: 26, type: 'btnGhost' },

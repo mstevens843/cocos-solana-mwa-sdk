@@ -273,9 +273,9 @@ No. Solo project — every architectural decision, line of code, on-chain progra
 ### Is there anything else judges should know? (≤500 chars)
 
 ```
-The Solana Foundation previously funded MWA SDKs for Unity and Godot. Cocos was not on anyone's roadmap and was not requested by anyone — I identified the gap and built it on my own initiative. Same contributor, same scope as the funded grants, for the engine that actually dominates Asia. Shipped solo, MIT-licensed. Pursuing the public-good lane and a follow-on grant for maintenance, Mandarin docs, and Cocos developer-forum engagement.
+SolPulse, my Solana trading app, is live on the Solana dApp Store since April 6: 200+ downloads, 11 reviews, 4.1 stars. The MWA SDK work for Cocos, Godot, and Unity is informed by real production wallet flows on Seeker hardware. The Cocos SDK was self-directed gap-spotting: the engine had no Solana integration, I built one. MIT, public good. Pursuing a Solana Foundation grant for maintenance and Mandarin docs.
 ```
-*~445 chars. Reframed: this is self-directed gap-spotting, not "third in a series I was assigned." That's the load-bearing claim.*
+*~410 chars. Updated 2026-04-29: drops Unity/Godot grant-precedent framing per user's call. Adds SolPulse dApp Store traction as credibility signal. Reads as "shipping solo dev with live users" rather than "guy assigned third SDK in a series."*
 
 ### Are you applying for the Colosseum accelerator program?
 

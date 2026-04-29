@@ -245,6 +245,22 @@ const TEXT_LO  = () => cl(93,  100, 133, 255); // Palette.text.lo  — tertiary 
  *
  * Returns { linkN, btnN } so callers can wire click handlers / opacity tweens.
  */
+// 2026-04-29 — log-only helper for panels that build back buttons via the
+// older mkLabel('BackLinkLabel'...) + sb.node('BackButton'...) pattern
+// (Settings, MIP, Leaderboard, Portfolio, TokenDuel, TokenDetail, DailyChallenge).
+// Mirrors the [LayoutDiag][back] log produced by mkBackHeader.
+function logBackParity(panelKey, y) {
+    const top = computePanelTopEdge(panelKey);
+    // For static sources we know the center y directly (top.sourceY).
+    // For RUNTIME_TOP_EDGE (HubTabStrip h=56) the source's center is
+    // topEdge - 28; tolerate any element h up to 60 by using a 32-px window.
+    const topY = (top.sourceY != null) ? top.sourceY : (top.topEdge - 28);
+    const tolerance = (top.sourceY != null) ? 6 : 32;
+    const onPar = Math.abs(y - topY) <= tolerance;
+    const flag = onPar ? 'true ' : 'FALSE';
+    console.log(`[LayoutDiag][back] ${panelKey} back.y=${y} topY=${topY} (${top.source}) onPar=${flag}`);
+}
+
 function mkBackHeader(sb, parent, opts = {}) {
     const HDR = LAYOUT.UNIFORM_HEADER || {
         BACK_Y: 580,
@@ -274,6 +290,13 @@ function mkBackHeader(sb, parent, opts = {}) {
         _duration: 0.1, _zoomScale: 1.04, _target: rf(btnN), _id: gid(),
     });
     sb.e[btnN]._components = [rf(btnUT), rf(btnBtn)];
+    // 2026-04-29 — back-vs-top diagnostic. Compares back.y against the panel's
+    // auto-detected topmost solid element y. onPar=true means back sits at the
+    // same row as the highest element (matching the MIP reference). onPar=false
+    // means back is BELOW something else and needs an override.
+    if (opts && opts.panelKey) {
+        logBackParity(opts.panelKey, y);
+    }
     return { linkN, btnN };
 }
 
@@ -1865,6 +1888,7 @@ function generate() {
     const TDE = LAYOUT.TokenDuelPanel.elements;
     const TDT = LAYOUT.TokenDuelPanel.templates;
 
+    logBackParity('TokenDuelPanel', TDE.backLink.y);
     const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18,
         TDE.backLink.y, TDE.backLink.w, TDE.backLink.h, 200, 210, 230);
     sb.e[tdBackLink]._lpos = v3(TDE.backLink.x, TDE.backLink.y, 0);
@@ -1903,8 +1927,8 @@ function generate() {
     });
     sb.e[tdTitleBg]._components = [rf(tdTitleBgUT), rf(tdTitleBgSpr)];
 
-    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 32,
-        TDE.title.y, TDE.title.w, TDE.title.h, 218, 165, 32);
+    const tdTitle = mkLabel(sb, 'TitleLabel', tdN, 'Token Duel', 30,
+        TDE.title.y, TDE.title.w, TDE.title.h, 255, 210, 74);
     style(sb, tdTitle, { bold: true });
 
     // ── 2026-04-27 UI overhaul — header underline ──────────────────────
@@ -2634,7 +2658,7 @@ function generate() {
         const dltN = sb.e.length;
         sb.node('DeltaLabel', bn, [], [], v3(SS.delta.x, SS.delta.y, 0));
         const dltUT = sb.ut(dltN, SS.delta.w, SS.delta.h);
-        const dltL = sb.lbl(dltN, '', 28, 160, 170, 190);
+        const dltL = sb.lbl(dltN, '', 28, 168, 174, 201);
         sb.e[dltL]._horizontalAlign = 1; // center
         sb.e[dltL]._isBold = true;
         sb.e[dltN]._components = [rf(dltUT), rf(dltL)];
@@ -2713,7 +2737,7 @@ function generate() {
     sb.e[tdStakeHeader]._active = false;
 
     const tdStakeValueLabel = mkLabel(sb, 'StakeValueLabel', tdN, '0.010 SOL', 20,
-        TDE.stakeValueLabel.y, TDE.stakeValueLabel.w, TDE.stakeValueLabel.h, 218, 165, 32);
+        TDE.stakeValueLabel.y, TDE.stakeValueLabel.w, TDE.stakeValueLabel.h, 255, 210, 74);
     style(sb, tdStakeValueLabel, { mono: true, bold: true });  // Phase 15 (B5): hero numeric
     sb.e[tdStakeValueLabel]._active = false;
 
@@ -2737,7 +2761,7 @@ function generate() {
     sb.e[tdCommit]._active = false;
 
     const tdStartGame = mkBtn(sb, 'StartGameButton', tdN, 'Start Game',
-        TDE.startGameButton.y, TDE.startGameButton.w, TDE.startGameButton.h, 218, 165, 32);
+        TDE.startGameButton.y, TDE.startGameButton.w, TDE.startGameButton.h, 255, 210, 74);
     style(sb, tdStartGame, { bold: true });
     sb.e[tdStartGame]._active = false;
 
@@ -2823,7 +2847,7 @@ function generate() {
         _id: gid(),
     });
     const tdWagerLockLabel = mkLabel(sb, 'WagerLockChipLabel', tdWagerLockChip, '🔒 0.05 SOL', 16, 0,
-        TDE.wagerLockChip.w - 24, TDE.wagerLockChip.h - 12, 218, 165, 32);
+        TDE.wagerLockChip.w - 24, TDE.wagerLockChip.h - 12, 255, 210, 74);
     sb.e[sb.e[tdWagerLockLabel]._components[1].__id__]._isBold = true;
     sb.e[tdWagerLockChip]._components = [rf(tdWagerLockUT), rf(tdWagerLockSpr)];
     sb.e[tdWagerLockChip]._children = [rf(tdWagerLockLabel)];
@@ -2937,7 +2961,7 @@ function generate() {
     const tdBadge = sb.e.length;
     sb.node('TokenBadgeLabel', tdGameArea, [], [tdBadge+1, tdBadge+2], v3(220, 440, 0));
     sb.ut(tdBadge, 260, 60);
-    sb.lbl(tdBadge, 'SOL', 30, 218, 165, 32);
+    sb.lbl(tdBadge, 'SOL', 30, 255, 210, 74);
 
     const tdBlockTpl = sb.e.length;
     sb.node('BlockTemplate', tdGameArea, [], [tdBlockTpl+1, tdBlockTpl+2], v3(0, -600, 0));
@@ -2952,7 +2976,7 @@ function generate() {
     sb.node('GameOverLabel', tdN, [], [tdGameOver+1, tdGameOver+2],
         v3(TDE.gameOverLabel.x, TDE.gameOverLabel.y, 0));
     sb.ut(tdGameOver, TDE.gameOverLabel.w, TDE.gameOverLabel.h);
-    sb.lbl(tdGameOver, 'Game Over — Height: 0\n(Tier: Forfeit)', 44, 218, 165, 32);
+    sb.lbl(tdGameOver, 'Game Over — Height: 0\n(Tier: Forfeit)', 44, 255, 210, 74);
     sb.e[tdGameOver]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
@@ -3087,7 +3111,7 @@ function generate() {
     const raceOppGapN = sb.e.length;
     sb.node('OpponentGapLabel', raceOppCard, [], [raceOppGapN+1, raceOppGapN+2], v3(OCI.gap.x, OCI.gap.y, 0));
     sb.ut(raceOppGapN, OCI.gap.w, OCI.gap.h);
-    sb.lbl(raceOppGapN, '—', 14, 140, 150, 170);
+    sb.lbl(raceOppGapN, '—', 14, 168, 174, 201);
     // Stage 5N — monospace the opponent number columns.
     style(sb, raceOppDeltaN, { mono: true });
     style(sb, raceOppGapN, { mono: true });
@@ -3121,7 +3145,7 @@ function generate() {
         const smN = sb.e.length;
         sb.node('SymbolsLabel', rowN, [], [smN + 1, smN + 2], v3(ORW.symbols.x, ORW.symbols.y, 0));
         sb.ut(smN, ORW.symbols.w, ORW.symbols.h);
-        sb.lbl(smN, '— · — · —', 12, 160, 170, 190);
+        sb.lbl(smN, '— · — · —', 12, 168, 174, 201);
         const dtN = sb.e.length;
         sb.node('DeltaLabel', rowN, [], [dtN + 1, dtN + 2], v3(ORW.delta.x, ORW.delta.y, 0));
         sb.ut(dtN, ORW.delta.w, ORW.delta.h);
@@ -3130,7 +3154,7 @@ function generate() {
         const gpN = sb.e.length;
         sb.node('GapLabel', rowN, [], [gpN + 1, gpN + 2], v3(ORW.gap.x, ORW.gap.y, 0));
         sb.ut(gpN, ORW.gap.w, ORW.gap.h);
-        sb.lbl(gpN, '', 11, 140, 150, 170);
+        sb.lbl(gpN, '', 11, 168, 174, 201);
         style(sb, dtN, { mono: true });
         style(sb, gpN, { mono: true });
         sb.e[rowN]._children = [rf(avN), rf(nmN), rf(smN), rf(dtN), rf(gpN)];
@@ -3279,7 +3303,7 @@ function generate() {
         sb.node(`${name === 'PlayerIdentityCard' ? 'PlayerIdentityDot' : 'OpponentIdentityDot'}`,
             cardN, [], [dotN+1, dotN+2], v3(ICT.dot.x, ICT.dot.y, 0));
         sb.ut(dotN, ICT.dot.w, ICT.dot.h);
-        const dotCol = dimmed ? cl(140, 150, 170, 200) : cl(20, 241, 149, 255);
+        const dotCol = dimmed ? cl(168, 174, 201, 200) : cl(20, 241, 149, 255);
         sb.add({
             __type__: 'cc.Graphics', _name: '', _objFlags: 0, __editorExtras__: {},
             node: rf(dotN), _enabled: true, __prefab: null,
@@ -3561,13 +3585,13 @@ function generate() {
 
     // Section headers — title-case 13pt no-tracking; less shouty than Phase 23.
     const mpSecMode = mkLabel(sb, 'PickerSectionLabel_Mode', modePickerN, 'Mode', 13,
-        MPE.sectionMode.y, MPE.sectionMode.w, MPE.sectionMode.h, 140, 150, 170);
+        MPE.sectionMode.y, MPE.sectionMode.w, MPE.sectionMode.h, 168, 174, 201);
     const mpSecDuration = mkLabel(sb, 'PickerSectionLabel_Duration', modePickerN, 'Duration', 13,
-        MPE.sectionDuration.y, MPE.sectionDuration.w, MPE.sectionDuration.h, 140, 150, 170);
+        MPE.sectionDuration.y, MPE.sectionDuration.w, MPE.sectionDuration.h, 168, 174, 201);
     const mpSecTrack = mkLabel(sb, 'PickerSectionLabel_Track', modePickerN, 'Track', 13,
-        MPE.sectionTrack.y, MPE.sectionTrack.w, MPE.sectionTrack.h, 140, 150, 170);
+        MPE.sectionTrack.y, MPE.sectionTrack.w, MPE.sectionTrack.h, 168, 174, 201);
     const mpSecDifficulty = mkLabel(sb, 'PickerSectionLabel_Difficulty', modePickerN, 'Difficulty', 13,
-        MPE.sectionDifficulty.y, MPE.sectionDifficulty.w, MPE.sectionDifficulty.h, 140, 150, 170);
+        MPE.sectionDifficulty.y, MPE.sectionDifficulty.w, MPE.sectionDifficulty.h, 168, 174, 201);
 
     // 4 mode buttons in 2×2 grid (LAYOUT.templates.modeBtn).
     const mpModeIndices = [];
@@ -3649,7 +3673,7 @@ function generate() {
     const pickerCancelBtn = mkBtnXY(sb, 'PickerCancelButton', modePickerN, '✕',
         MPE.cancelBtn.x, MPE.cancelBtn.y, MPE.cancelBtn.w, MPE.cancelBtn.h, 55, 30, 30);
     const pickerStatus = mkLabel(sb, 'PickerStatusLabel', modePickerN, '', 12,
-        MPE.statusLbl.y, MPE.statusLbl.w, MPE.statusLbl.h, 140, 150, 170);
+        MPE.statusLbl.y, MPE.statusLbl.w, MPE.statusLbl.h, 168, 174, 201);
 
     sb.e[modePickerN]._components = [rf(mpUT), rf(mpSpr), rf(mpScrimBtn)];
     sb.e[modePickerN]._children = [
@@ -3695,7 +3719,7 @@ function generate() {
         TDE.squadDropTitle.y, TDE.squadDropTitle.w, TDE.squadDropTitle.h, 100, 110, 130);
     style(sb, dropModalHeaderN, { spacing: 1 });  // Phase 15 (B5)
     const dropModalHintN = mkLabel(sb, 'SquadDropHintLabel', dropOverlayN, 'Tap a token to remove · Tap outside to close', 11,
-        TDE.squadDropHint.y, TDE.squadDropHint.w, TDE.squadDropHint.h, 140, 150, 170);
+        TDE.squadDropHint.y, TDE.squadDropHint.w, TDE.squadDropHint.h, 168, 174, 201);
     const dropPillIndices = [];
     for (let d = 0; d < SDP.count; d++) {
         const pN = mkBtnXY(sb, `DropPill_${d}`, dropOverlayN, '—',
@@ -3739,10 +3763,10 @@ function generate() {
     // Zero-alpha button bg so the scrim sprite color stays dominant.
     sb.e[sb.e[presetsScrimBtn]._components[1].__id__]._color = cl(0, 0, 0, 0);
     const presetsTitle = mkLabel(sb, 'PresetsTitleLabel', presetsOvN, 'SQUAD PRESETS', 24,
-        TDE.presetsTitle.y, TDE.presetsTitle.w, TDE.presetsTitle.h, 218, 165, 32);
+        TDE.presetsTitle.y, TDE.presetsTitle.w, TDE.presetsTitle.h, 255, 210, 74);
     style(sb, presetsTitle, { spacing: 1 });  // Phase 15 (B5)
     const presetsHint = mkLabel(sb, 'PresetsHintLabel', presetsOvN, 'Tap a preset to load · swipe or tap delete to remove', 11,
-        TDE.presetsHint.y, TDE.presetsHint.w, TDE.presetsHint.h, 140, 150, 170);
+        TDE.presetsHint.y, TDE.presetsHint.w, TDE.presetsHint.h, 168, 174, 201);
 
     // 5 preset rows from templates.presetRow.
     const presetRowIndices = [];
@@ -3762,7 +3786,7 @@ function generate() {
         const nameL = mkLabel(sb, `PresetNameLabel_${i}`, rN, '—', 18, 0, PR.name.w, PR.name.h, 220, 230, 240);
         sb.e[nameL]._lpos = v3(PR.name.x, PR.name.y, 0);
         sb.e[sb.e[nameL]._components[1].__id__]._horizontalAlign = 0;
-        const symbolsL = mkLabel(sb, `PresetSymbolsLabel_${i}`, rN, '', 13, 0, PR.symbols.w, PR.symbols.h, 140, 150, 170);
+        const symbolsL = mkLabel(sb, `PresetSymbolsLabel_${i}`, rN, '', 13, 0, PR.symbols.w, PR.symbols.h, 168, 174, 201);
         sb.e[symbolsL]._lpos = v3(PR.symbols.x, PR.symbols.y, 0);
         sb.e[sb.e[symbolsL]._components[1].__id__]._horizontalAlign = 0;
         // UX Phase 2b: empty label; AppUI attaches IconBadge trash.
@@ -3775,7 +3799,7 @@ function generate() {
     }
     // Save button — opens the PresetNameModal. Disabled (grayed) when squad not full.
     const presetsSaveBtn = mkBtn(sb, 'PresetSaveButton', presetsOvN, 'Save current squad',
-        TDE.presetsSaveButton.y, TDE.presetsSaveButton.w, TDE.presetsSaveButton.h, 218, 165, 32);
+        TDE.presetsSaveButton.y, TDE.presetsSaveButton.w, TDE.presetsSaveButton.h, 255, 210, 74);
     style(sb, presetsSaveBtn, { bold: true });
     const presetsEmptyL = mkLabel(sb, 'PresetsEmptyLabel', presetsOvN, 'No saved presets yet — pick 3 tokens and tap Save', 13,
         TDE.presetsEmptyLabel.y, TDE.presetsEmptyLabel.w, TDE.presetsEmptyLabel.h, 130, 140, 160);
@@ -3911,7 +3935,7 @@ function generate() {
         const sPriceN = sb.e.length;
         sb.node('PriceLabel', sN, [], [], v3(SR.price.x, SR.price.y, 0));
         const sPriceUT = sb.ut(sPriceN, SR.price.w, SR.price.h);
-        const sPriceL  = sb.lbl(sPriceN, '', 14, 218, 165, 32);
+        const sPriceL  = sb.lbl(sPriceN, '', 14, 255, 210, 74);
         sb.e[sPriceN]._components = [rf(sPriceUT), rf(sPriceL)];
 
         const sVolN = sb.e.length;
@@ -3994,6 +4018,7 @@ function generate() {
     const TDETE = LAYOUT.TokenDetailPanel.elements;
 
     // ─── Identity band ───────────────────────────────────────────────
+    logBackParity('TokenDetailPanel', TDETE.backLink.y);
     const detBackLink = mkLabel(sb, 'BackLinkLabel', tdetN, '← Back', 18,
         TDETE.backLink.y, TDETE.backLink.w, TDETE.backLink.h, 200, 210, 230);
     sb.e[detBackLink]._lpos = v3(TDETE.backLink.x, TDETE.backLink.y, 0);
@@ -4140,7 +4165,7 @@ function generate() {
 
     // Chart placeholder label (shown while loading) — child of ChartArea.
     const chartLoadLbl = mkLabel(sb, 'ChartStatusLabel', chartN, 'Loading chart…', 14,
-        TDETE.chartLoadLabel.y, TDETE.chartLoadLabel.w, TDETE.chartLoadLabel.h, 140, 150, 170);
+        TDETE.chartLoadLabel.y, TDETE.chartLoadLabel.w, TDETE.chartLoadLabel.h, 168, 174, 201);
 
     sb.e[chartCardN]._children = [rf(chartCardEdge), rf(chartHeaderLbl), rf(chartN)];
 
@@ -4188,7 +4213,7 @@ function generate() {
     }
 
     const detStatus = mkLabel(sb, 'DetailStatusLabel', tdetN, '', 13,
-        TDETE.status.y, TDETE.status.w, TDETE.status.h, 140, 150, 170);
+        TDETE.status.y, TDETE.status.w, TDETE.status.h, 168, 174, 201);
 
     sb.e[tdetN]._children = [
         rf(detBackLink), rf(detBackBtn),
@@ -4218,6 +4243,7 @@ function generate() {
     sb.ut(lbN, LAYOUT.LeaderboardPanel.canvas.w, LAYOUT.LeaderboardPanel.canvas.h);
     sb.spr(lbN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind rank rows
 
+    logBackParity('LeaderboardPanel', LP.backLink.y);
     const lbBackLink = mkLabel(sb, 'BackLinkLabel', lbN, '← Back', 18,
         LP.backLink.y, LP.backLink.w, LP.backLink.h, 200, 210, 230);
     sb.e[lbBackLink]._lpos = v3(LP.backLink.x, LP.backLink.y, 0);
@@ -4236,7 +4262,7 @@ function generate() {
     });
     sb.e[lbBackBtn]._components = [rf(lbBackBtnUT), rf(lbBackBtnBtn)];
     const lbTitle = mkLabel(sb, 'LeaderboardTitleLabel', lbN, 'Leaderboard', 30,
-        LP.title.y, LP.title.w, LP.title.h, 218, 165, 32);
+        LP.title.y, LP.title.w, LP.title.h, 255, 210, 74);
     style(sb, lbTitle, { bold: true });
 
     // Subtitle ("1v1 Duel · This Week"). AppUI rewrites string per active mode/chip.
@@ -4368,7 +4394,7 @@ function generate() {
     sb.e[esN]._active = false;
 
     const lbStatus = mkLabel(sb, 'LeaderboardStatusLabel', lbN, '', 14,
-        LP.status.y, LP.status.w, LP.status.h, 140, 150, 170);
+        LP.status.y, LP.status.w, LP.status.h, 168, 174, 201);
 
     // Personal rank footer card (sticky-bottom YOU).
     const PRC = LP.personalRankCard.children;
@@ -4419,6 +4445,7 @@ function generate() {
     sb.spr(dcN, 10, 14, 22);
     // Chrome from LAYOUT.DailyChallengePanel.elements.
     const DCE = LAYOUT.DailyChallengePanel.elements;
+    logBackParity('DailyChallengePanel', DCE.backLink.y);
     const dcBackLink = mkLabel(sb, 'BackLinkLabel', dcN, '← Back', 18,
         DCE.backLink.y, DCE.backLink.w, DCE.backLink.h, 200, 210, 230);
     sb.e[dcBackLink]._lpos = v3(DCE.backLink.x, DCE.backLink.y, 0);
@@ -4437,8 +4464,8 @@ function generate() {
     sb.e[dcBackBtn]._components = [rf(dcBackBtnUT), rf(dcBackBtnBtn)];
     // UX Phase 2b: IconBadge flame attached by AppUI. Phase 2c: bold.
     // 9c: title w 600→400 to clear BackButton bbox right x=-210.
-    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "Today's Challenges", 26,
-        DCE.title.y, DCE.title.w, DCE.title.h, 218, 165, 32);
+    const dcTitle = mkLabel(sb, 'DailyChallengeTitleLabel', dcN, "Today's Challenges", 30,
+        DCE.title.y, DCE.title.w, DCE.title.h, 255, 210, 74);
     style(sb, dcTitle, { bold: true });
 
     // Streak card from LAYOUT.DailyChallengePanel.elements.streakCard + internals.
@@ -4447,7 +4474,7 @@ function generate() {
     const streakCardUT = sb.ut(streakCardN, DCE.streakCard.w, DCE.streakCard.h);
     const streakCardSpr = sb.spr(streakCardN, 22, 28, 42);
     const streakHeader = mkLabel(sb, 'HeaderLabel', streakCardN, 'STREAK', 11,
-        DCE.streakHeader.y, DCE.streakHeader.w, DCE.streakHeader.h, 140, 150, 170);
+        DCE.streakHeader.y, DCE.streakHeader.w, DCE.streakHeader.h, 168, 174, 201);
     sb.e[streakHeader]._lpos = v3(DCE.streakHeader.x, DCE.streakHeader.y, 0);
     sb.e[sb.e[streakHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, streakHeader, { spacing: 1 });  // Phase 15 (B5): tracked uppercase
@@ -4457,7 +4484,7 @@ function generate() {
     sb.e[streakDay]._lpos = v3(DCE.streakDayLabel.x, DCE.streakDayLabel.y, 0);
     style(sb, streakDay, { bold: true, mono: true });  // Phase 15 (B5): hero streak number
     const streakBest = mkLabel(sb, 'StreakBestLabel', streakCardN, 'Best: 0', 14,
-        -28, DCE.streakBestLabel.w, DCE.streakBestLabel.h, 160, 170, 190);
+        -28, DCE.streakBestLabel.w, DCE.streakBestLabel.h, 168, 174, 201);
     sb.e[streakBest]._lpos = v3(DCE.streakBestLabel.x, DCE.streakBestLabel.y, 0);
     // Phase 14 (B4): amber edge accent — warm achievement card.
     const streakEdge = mkCardEdge(sb, streakCardN, DCE.streakCard.w, DCE.streakCard.h, 255, 210, 74);
@@ -4475,10 +4502,10 @@ function generate() {
         const descL = mkLabel(sb, `ChallengeDescriptionLabel_${i}`, rN, '—', 17, 0, CR.description.w, CR.description.h, 220, 230, 240);
         sb.e[descL]._lpos = v3(CR.description.x, CR.description.y, 0);
         sb.e[sb.e[descL]._components[1].__id__]._horizontalAlign = 0;
-        const subL = mkLabel(sb, `ChallengeProgressLabel_${i}`, rN, '', 13, 0, CR.progress.w, CR.progress.h, 140, 150, 170);
+        const subL = mkLabel(sb, `ChallengeProgressLabel_${i}`, rN, '', 13, 0, CR.progress.w, CR.progress.h, 168, 174, 201);
         sb.e[subL]._lpos = v3(CR.progress.x, CR.progress.y, 0);
         sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
-        const rewardL = mkLabel(sb, `ChallengeRewardLabel_${i}`, rN, '+0 XP', 15, 0, CR.reward.w, CR.reward.h, 218, 165, 32);
+        const rewardL = mkLabel(sb, `ChallengeRewardLabel_${i}`, rN, '+0 XP', 15, 0, CR.reward.w, CR.reward.h, 255, 210, 74);
         sb.e[rewardL]._lpos = v3(CR.reward.x, CR.reward.y, 0);
         const checkL = mkLabel(sb, `ChallengeCheckmark_${i}`, rN, '·', 28, 0, CR.checkmark.w, CR.checkmark.h, 90, 100, 120);
         sb.e[checkL]._lpos = v3(CR.checkmark.x, CR.checkmark.y, 0);
@@ -4495,7 +4522,7 @@ function generate() {
     const seasonSumUT = sb.ut(seasonSumN, DCE.seasonCard.w, DCE.seasonCard.h);
     const seasonSumSpr = sb.spr(seasonSumN, 22, 28, 42);
     const seasonHeader = mkLabel(sb, 'SeasonHeaderLabel', seasonSumN, 'THIS WEEK', 11,
-        DCE.seasonHeader.y, DCE.seasonHeader.w, DCE.seasonHeader.h, 140, 150, 170);
+        DCE.seasonHeader.y, DCE.seasonHeader.w, DCE.seasonHeader.h, 168, 174, 201);
     sb.e[seasonHeader]._lpos = v3(DCE.seasonHeader.x, DCE.seasonHeader.y, 0);
     sb.e[sb.e[seasonHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, seasonHeader, { spacing: 1 });  // Phase 15 (B5)
@@ -4504,7 +4531,7 @@ function generate() {
     sb.e[seasonRank]._lpos = v3(DCE.seasonRank.x, DCE.seasonRank.y, 0);
     style(sb, seasonRank, { mono: true });  // Phase 15 (B5): live rank/wins
     const seasonPodium = mkLabel(sb, 'SeasonPodiumLabel', seasonSumN, 'Podium: —', 13,
-        DCE.seasonPodium.y, DCE.seasonPodium.w, DCE.seasonPodium.h, 160, 170, 190);
+        DCE.seasonPodium.y, DCE.seasonPodium.w, DCE.seasonPodium.h, 168, 174, 201);
     sb.e[seasonPodium]._lpos = v3(DCE.seasonPodium.x, DCE.seasonPodium.y, 0);
     const seasonPrize = mkLabel(sb, 'SeasonPrizeLabel', seasonSumN, '', 12,
         DCE.seasonPrize.y, DCE.seasonPrize.w, DCE.seasonPrize.h, 130, 140, 160);
@@ -4515,7 +4542,7 @@ function generate() {
     sb.e[seasonSumN]._children = [rf(seasonHeader), rf(seasonRank), rf(seasonPodium), rf(seasonPrize), rf(seasonEdge)];
 
     const dcStatus = mkLabel(sb, 'DailyChallengeStatusLabel', dcN, '', 13,
-        DCE.status.y, DCE.status.w, DCE.status.h, 140, 150, 170);
+        DCE.status.y, DCE.status.w, DCE.status.h, 168, 174, 201);
 
     sb.e[dcN]._children = [
         rf(dcBackLink), rf(dcBackBtn), rf(dcTitle),
@@ -4542,6 +4569,7 @@ function generate() {
     // [-620, +620] → [-760, +720] to use the full 1602px viewport on device.
     // Chrome from LAYOUT.PortfolioPanel.elements (9c addition).
     const PFE = LAYOUT.PortfolioPanel.elements;
+    logBackParity('PortfolioPanel', PFE.backLink.y);
     const pfBackLink = mkLabel(sb, 'BackLinkLabel', pfN, '← Back', 18,
         PFE.backLink.y, PFE.backLink.w, PFE.backLink.h, 200, 210, 230);
     sb.e[pfBackLink]._lpos = v3(PFE.backLink.x, PFE.backLink.y, 0);
@@ -4561,7 +4589,7 @@ function generate() {
     sb.e[pfBackBtn]._components = [rf(pfBackBtnUT), rf(pfBackBtnBtn)];
     // UX Phase 2b: IconBadge user attached by AppUI. Phase 2c: bold + gold.
     const pfTitle = mkLabel(sb, 'PortfolioTitleLabel', pfN, 'Portfolio', 30,
-        PFE.title.y, PFE.title.w, PFE.title.h, 255, 255, 255);
+        PFE.title.y, PFE.title.w, PFE.title.h, 255, 210, 74);
     style(sb, pfTitle, { bold: true, color: GOLD() });
     const pfPubkeyLabel = mkLabel(sb, 'PortfolioPubkeyLabel', pfN, 'not connected', 16,
         PFE.pubkeyLabel.y, PFE.pubkeyLabel.w, PFE.pubkeyLabel.h, 140, 220, 180);
@@ -4577,7 +4605,7 @@ function generate() {
         PFE.trophiesTab.x, PFE.trophiesTab.y, PFE.trophiesTab.w, PFE.trophiesTab.h, 28, 34, 48);
     // MODE eyebrow + smaller secondary Paper/Real toggle.
     const pfModeLabel = mkLabel(sb, 'PortfolioModeLabel', pfN, 'MODE', 11,
-        PFE.modeLabel.y, PFE.modeLabel.w, PFE.modeLabel.h, 140, 150, 170);
+        PFE.modeLabel.y, PFE.modeLabel.w, PFE.modeLabel.h, 168, 174, 201);
     style(sb, pfModeLabel, { spacing: 2 });
     const pfPaperTab = mkBtnXY(sb, 'PortfolioPaperTab', pfN, 'Paper',
         PFE.paperTab.x, PFE.paperTab.y, PFE.paperTab.w, PFE.paperTab.h, 48, 198, 155);
@@ -4606,10 +4634,10 @@ function generate() {
     const heroSubN = sb.e.length;
     sb.node('Subtitle', heroCardN, [], [], v3(PHC.subtitle.x, PHC.subtitle.y, 0));
     const heroSubUT = sb.ut(heroSubN, PHC.subtitle.w, PHC.subtitle.h);
-    const heroSubL = sb.lbl(heroSubN, 'Across all matches', 13, 140, 150, 170);
+    const heroSubL = sb.lbl(heroSubN, 'Across all matches', 13, 168, 174, 201);
     sb.e[heroSubN]._components = [rf(heroSubUT), rf(heroSubL)];
     // Neutral edge by default; AppUI re-tints to green/red based on P/L sign.
-    const heroEdge = mkCardEdge(sb, heroCardN, PHC.w, PHC.h, 140, 150, 170);
+    const heroEdge = mkCardEdge(sb, heroCardN, PHC.w, PHC.h, 168, 174, 201);
     sb.e[heroCardN]._components = [rf(heroCardUT), rf(heroCardSpr)];
     sb.e[heroCardN]._children = [rf(heroHeaderN), rf(heroValueN), rf(heroSubN), rf(heroEdge)];
 
@@ -4707,7 +4735,7 @@ function generate() {
     const xpFooterN = sb.e.length;
     sb.node('PFXpFooterLabel', xpCardN, [], [], v3(PXC.footer.x, PXC.footer.y, 0));
     const xpFooterUT = sb.ut(xpFooterN, PXC.footer.w, PXC.footer.h);
-    const xpFooterL = sb.lbl(xpFooterN, 'Earn XP by winning matches', 11, 140, 150, 170);
+    const xpFooterL = sb.lbl(xpFooterN, 'Earn XP by winning matches', 11, 168, 174, 201);
     sb.e[xpFooterN]._components = [rf(xpFooterUT), rf(xpFooterL)];
     sb.e[xpCardN]._components = [rf(xpCardUT), rf(xpCardSpr)];
     sb.e[xpCardN]._children = [rf(xpHeaderN), rf(xpValN), rf(xpTrackN), rf(xpFillN), rf(xpFooterN)];
@@ -4731,9 +4759,9 @@ function generate() {
     sb.e[pfEmptyStateN]._active = false;
 
     const pfHint = mkLabel(sb, 'PortfolioHintLabel', pfN, 'Real mode stats update after your first match', 12,
-        PFE.hint.y, PFE.hint.w, PFE.hint.h, 140, 150, 170);
+        PFE.hint.y, PFE.hint.w, PFE.hint.h, 168, 174, 201);
     const pfStatus = mkLabel(sb, 'PortfolioStatusLabel', pfN, '', 14,
-        PFE.status.y, PFE.status.w, PFE.status.h, 140, 150, 170);
+        PFE.status.y, PFE.status.w, PFE.status.h, 168, 174, 201);
 
     // Part 9: MatchHistory view — hidden when Stats tab is active.
     // Container anchors label + scrollview + load-more button as a unit.
@@ -4742,7 +4770,7 @@ function generate() {
     sb.ut(pfHistoryViewN, 720, 1280);
     const pfHistoryEmpty = mkLabel(sb, 'PortfolioHistoryEmptyLabel', pfHistoryViewN,
         'No matches yet — play a Real match to see history.',
-        14, PFE.historyEmpty.y, PFE.historyEmpty.w, PFE.historyEmpty.h, 140, 150, 170);
+        14, PFE.historyEmpty.y, PFE.historyEmpty.w, PFE.historyEmpty.h, 168, 174, 201);
     const pfHistorySV = mkScrollView(sb, 'PortfolioHistoryScroll', pfHistoryViewN,
         PFE.historyScroll.x, PFE.historyScroll.y, PFE.historyScroll.w, PFE.historyScroll.h);
     // 30-row pool from LAYOUT.PortfolioPanel.templates.matchHistoryRow.
@@ -4792,7 +4820,7 @@ function generate() {
     sb.ut(pfTrophiesViewN, PFE.trophiesView.w, PFE.trophiesView.h);
     const pfTrophiesEmpty = mkLabel(sb, 'PortfolioTrophiesEmptyLabel', pfTrophiesViewN,
         'No trophies yet — win a weekly season to earn your first',
-        14, PFE.trophiesEmpty.y, PFE.trophiesEmpty.w, PFE.trophiesEmpty.h, 140, 150, 170);
+        14, PFE.trophiesEmpty.y, PFE.trophiesEmpty.w, PFE.trophiesEmpty.h, 168, 174, 201);
     const PTT = LAYOUT.PortfolioPanel.templates.trophyTile;
     const pfTrophyTileIndices = [];
     for (let row = 0; row < PTT.rows; row++) {
@@ -4809,7 +4837,7 @@ function generate() {
             const titleLbl = mkLabel(sb, 'Title', tN, 'Week #0', 14,
                 PTT.title.y, PTT.title.w, PTT.title.h, 220, 200, 140);
             const winsLbl = mkLabel(sb, 'Wins', tN, '0 wins', 12,
-                PTT.wins.y, PTT.wins.w, PTT.wins.h, 140, 150, 170);
+                PTT.wins.y, PTT.wins.w, PTT.wins.h, 168, 174, 201);
             // Phase 14 (B4): gold edge accent — rank tile.
             const tEdge = mkCardEdge(sb, tN, PTT.w, PTT.h, 255, 210, 74);
             sb.e[tN]._components = [rf(tUT), rf(tSpr)];
@@ -4907,6 +4935,7 @@ function generate() {
     sb.node('MatchesInProgressPanel', canvas, [], [mipN+1], lobbyMount('MatchesInProgressPanel'));
     sb.ut(mipN, 720, 1280);
 
+    logBackParity('MatchesInProgressPanel', MIPE.backLink.y);
     const mipBackLink = mkLabel(sb, 'BackLinkLabel', mipN, '← Back', 18,
         MIPE.backLink.y, MIPE.backLink.w, MIPE.backLink.h, 200, 210, 230);
     sb.e[mipBackLink]._lpos = v3(MIPE.backLink.x, MIPE.backLink.y, 0);
@@ -4999,7 +5028,7 @@ function generate() {
     sb.e[mipMoreLblN]._active = false;
 
     const mipStatus = mkLabel(sb, 'MatchesInProgressStatusLabel', mipN, '', 12,
-        MIPE.status.y, MIPE.status.w, MIPE.status.h, 130, 140, 165);
+        MIPE.status.y, MIPE.status.w, MIPE.status.h, 168, 174, 201);
 
     sb.e[mipN]._children = [
         rf(mipBackLink), rf(mipBackBtnN),
@@ -5028,7 +5057,7 @@ function generate() {
         WPE.mode.y, WPE.mode.w, WPE.mode.h, 140, 220, 180);
     style(sb, wpMode, { mono: true });  // Phase 15 (B5): mixed numeric/mode line
     const wpRake     = mkLabel(sb, 'WaitingRakeLabel', wpN, '', 13,
-        WPE.rake.y, WPE.rake.w, WPE.rake.h, 160, 170, 190);
+        WPE.rake.y, WPE.rake.w, WPE.rake.h, 168, 174, 201);
     const wpProgress = mkLabel(sb, 'WaitingProgressLabel', wpN, '0/2 players · 0:00 / 2:00', 18,
         WPE.progress.y, WPE.progress.w, WPE.progress.h, 180, 190, 210);
     style(sb, wpProgress, { mono: true });  // Phase 15 (B5): live timer + count
@@ -5047,10 +5076,10 @@ function generate() {
     sb.e[wpForceBtn]._active = false;
     // Streak banner: hidden unless current_streak ≥ 3. UX Phase 2b: IconBadge flame attached by AppUI.
     const wpStreakBanner = mkLabel(sb, 'WaitingStreakBanner', wpN, 'Day 3 streak — keep the fire going', 16,
-        WPE.streakBanner.y, WPE.streakBanner.w, WPE.streakBanner.h, 218, 165, 32);
+        WPE.streakBanner.y, WPE.streakBanner.w, WPE.streakBanner.h, 255, 210, 74);
     sb.e[wpStreakBanner]._active = false;
     const wpStatus = mkLabel(sb, 'WaitingStatusLabel', wpN, '', 12,
-        WPE.status.y, WPE.status.w, WPE.status.h, 140, 150, 170);
+        WPE.status.y, WPE.status.w, WPE.status.h, 168, 174, 201);
 
     sb.e[wpN]._children = [rf(wpTitle), rf(wpMode), rf(wpRake), rf(wpProgress), rf(wpSpinner), rf(wpStreakBanner), rf(wpCancelBtn), rf(wpBotBtn), rf(wpForceBtn), rf(wpStatus)];
     sb.e[wpN]._active = false;
@@ -5102,7 +5131,7 @@ function generate() {
     // (above the 60pt h=80 "YOU WON" title) per LayoutSpec.PostMatchPanel.backBtn.y.
     // Rename: BackButton (label is BackLinkLabel) — but AppUI listens on the
     // PostMatchBackButton node by historic name, so we rename here for compat.
-    const _pmBack = mkBackHeader(sb, pmN, { y: PME.backBtn.y });
+    const _pmBack = mkBackHeader(sb, pmN, { y: PME.backBtn.y, panelKey: 'PostMatchPanel' });
     sb.e[_pmBack.btnN]._name = 'PostMatchBackButton';
     sb.e[_pmBack.linkN]._name = 'PostMatchBackLinkLabel';
     const pmBackBtn = _pmBack.btnN;
@@ -5121,7 +5150,7 @@ function generate() {
         PME.title.y, PME.title.w, PME.title.h, 255, 255, 255);
     style(sb, pmTitle, { bold: true });
     const pmTrack = mkLabel(sb, 'PostMatchTrackLabel', pmN, 'Paper · 1v1', 28,
-        PME.track.y, PME.track.w, PME.track.h, 140, 150, 170);
+        PME.track.y, PME.track.w, PME.track.h, 168, 174, 201);
 
     // Mascot glow halo — Graphics circle behind the mascot, drawn before so
     // the mascot renders on top. AppUI fills + fades on show.
@@ -5184,7 +5213,7 @@ function generate() {
         const lblN = sb.e.length;
         sb.node('Label', cardN, [], [], v3(PMC.header.x, PMC.header.y, 0));
         const lblUT = sb.ut(lblN, PMC.header.w, PMC.header.h);
-        const lblL = sb.lbl(lblN, d.label, 13, 130, 140, 165);
+        const lblL = sb.lbl(lblN, d.label, 13, 168, 174, 201);
         sb.e[lblL]._spacingX = 1;
         sb.e[lblN]._components = [rf(lblUT), rf(lblL)];
         const valN = sb.e.length;
@@ -5205,7 +5234,7 @@ function generate() {
         sb.e[valSubN]._components = [rf(valSubUT), rf(valSubL)];
         // Edge accent — emitted neutral; AppUI tints per outcome (green/rose)
         // at show time. Tagged PMCardEdge_<key> so the binder can find it.
-        const cardEdge = mkCardEdge(sb, cardN, PMC.w, PMC.h, 130, 140, 165);
+        const cardEdge = mkCardEdge(sb, cardN, PMC.w, PMC.h, 168, 174, 201);
         sb.e[cardEdge]._name = `PMCardEdge_${d.key}`;
         sb.e[cardN]._components = [rf(cardUT), rf(cardSpr)];
         sb.e[cardN]._children = [rf(lblN), rf(valN), rf(valSubN), rf(cardEdge)];
@@ -5254,7 +5283,7 @@ function generate() {
     sb.e[pmShareBtn]._lpos = v3(PME.shareButton.x, PME.shareButton.y, 0);
 
     const pmStatus = mkLabel(sb, 'PostMatchStatusLabel', pmN, '', 12,
-        PME.status.y, PME.status.w, PME.status.h, 140, 150, 170);
+        PME.status.y, PME.status.w, PME.status.h, 168, 174, 201);
 
     // Trophy — corner badge in title row. Empty label; AppUI attaches
     // rankIcon (trophy / medalSilver / medalBronze) at show time.
@@ -5365,6 +5394,7 @@ function generate() {
         SP.sheetBg.x, SP.sheetBg.y, SP.sheetBg.w, SP.sheetBg.h,
         8, 10, 20, 160);
 
+    logBackParity('SettingsPanel', SP.backLink.y);
     const stBackLink = mkLabel(sb, 'BackLinkLabel', stN, '← Back', 18,
         SP.backLink.y, SP.backLink.w, SP.backLink.h, 200, 210, 230);
     sb.e[stBackLink]._lpos = v3(SP.backLink.x, SP.backLink.y, 0);
@@ -5381,8 +5411,8 @@ function generate() {
         _duration: 0.1, _zoomScale: 1.02, _target: rf(stBackBtn), _id: gid(),
     });
     sb.e[stBackBtn]._components = [rf(stBackBtnUT), rf(stBackBtnBtn)];
-    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, 'Settings', 28,
-        SP.title.y, SP.title.w, SP.title.h, 218, 165, 32);
+    const stTitle = mkLabel(sb, 'SettingsTitleLabel', stN, 'Settings', 30,
+        SP.title.y, SP.title.w, SP.title.h, 255, 210, 74);
     style(sb, stTitle, { bold: true });
 
     // WALLET → identity-anchor card. Phase 30 / Phase 31:
@@ -5402,7 +5432,7 @@ function generate() {
     const stWalletCardSpr = sb.spr(stWalletCard, 28, 36, 58);
 
     const stWalletHeader = mkLabel(sb, 'HeaderLabel', stWalletCard, 'WALLET', 12,
-        WC.header.y, WC.header.w, WC.header.h, 140, 150, 170);
+        WC.header.y, WC.header.w, WC.header.h, 168, 174, 201);
     sb.e[stWalletHeader]._lpos = v3(WC.header.x, WC.header.y, 0);
     sb.e[sb.e[stWalletHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stWalletHeader, { spacing: 2 });
@@ -5472,8 +5502,8 @@ function generate() {
     sb.node('ProfileCard', stN, [], [], v3(SP.profileCard.x, SP.profileCard.y, 0));
     const stProfileCardUT = sb.ut(stProfileCard, SP.profileCard.w, SP.profileCard.h);
     const stProfileCardSpr = sb.spr(stProfileCard, 24, 30, 48);
-    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 14,
-        PC.header.y, PC.header.w, PC.header.h, 140, 150, 170);
+    const stProfileHeader = mkLabel(sb, 'HeaderLabel', stProfileCard, 'PROFILE', 12,
+        PC.header.y, PC.header.w, PC.header.h, 168, 174, 201);
     sb.e[stProfileHeader]._lpos = v3(PC.header.x, PC.header.y, 0);
     sb.e[sb.e[stProfileHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stProfileHeader, { spacing: 1 });
@@ -5590,7 +5620,7 @@ function generate() {
         const btn = sb.btn(rowN, 28, 34, 48);
         const keySp = rowSpec.children.keyLabel;
         const keyN = mkLabel(sb, `${name}KeyLabel`, rowN, keyText, 16,
-            keySp.y, keySp.w, keySp.h, 140, 150, 170);
+            keySp.y, keySp.w, keySp.h, 168, 174, 201);
         sb.e[keyN]._lpos = v3(keySp.x, keySp.y, 0);
         sb.e[sb.e[keyN]._components[1].__id__]._horizontalAlign = 0;
         style(sb, keyN, { spacing: 1 });
@@ -5601,7 +5631,7 @@ function generate() {
         sb.e[sb.e[valN]._components[1].__id__]._horizontalAlign = 2;
         const chevSp = rowSpec.children.chevron;
         const chevN = mkLabel(sb, `${name}Chevron`, rowN, '›', 22,
-            chevSp.y, chevSp.w, chevSp.h, 140, 150, 170);
+            chevSp.y, chevSp.w, chevSp.h, 168, 174, 201);
         sb.e[chevN]._lpos = v3(chevSp.x, chevSp.y, 0);
         sb.e[sb.e[chevN]._components[1].__id__]._horizontalAlign = 2;
         sb.e[rowN]._components = [rf(ut), rf(spr), rf(btn)];
@@ -5617,7 +5647,7 @@ function generate() {
     // invisible hit areas. Phase 29: TRACK → TRADING MODE.
     const trkSpc = QPC.qpTrackRow;
     const stQpTrackKey = mkLabel(sb, 'QPTrackKeyLabel', stQpCardN, 'TRADING MODE', 16,
-        trkSpc.y, trkSpc.w, trkSpc.h, 140, 150, 170);
+        trkSpc.y, trkSpc.w, trkSpc.h, 168, 174, 201);
     sb.e[stQpTrackKey]._lpos = v3(trkSpc.x, trkSpc.y, 0);
     sb.e[sb.e[stQpTrackKey]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stQpTrackKey, { spacing: 1 });
@@ -5648,7 +5678,7 @@ function generate() {
     style(sb, stQpTrackPaperLbl, { bold: true });
     const ttRL = tt.children.realLabel;
     const stQpTrackRealLbl = mkLabel(sb, 'QPTrackRealLabel', stQpTrackToggle, 'Real', 16,
-        ttRL.y, ttRL.w, ttRL.h, 160, 170, 190);
+        ttRL.y, ttRL.w, ttRL.h, 168, 174, 201);
     sb.e[stQpTrackRealLbl]._lpos = v3(ttRL.x, ttRL.y, 0);
     // Invisible hit areas overlaying each half. Transparent buttons handle taps.
     const mkInvisHit = (name, parent, hSpc) => {
@@ -5738,8 +5768,8 @@ function generate() {
     // softer card fill so the Wallet / Match Setup cards above keep dominant
     // weight. Match Setup keeps (24,30,48); Audio drops to (22,28,44).
     const stAudioSpr = sb.spr(stAudioCardN, 22, 28, 44);
-    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'PREFERENCES', 14,
-        AC.header.y, AC.header.w, AC.header.h, 140, 150, 170);
+    const stAudioHeader = mkLabel(sb, 'HeaderLabel', stAudioCardN, 'PREFERENCES', 12,
+        AC.header.y, AC.header.w, AC.header.h, 168, 174, 201);
     sb.e[stAudioHeader]._lpos = v3(AC.header.x, AC.header.y, 0);
     sb.e[sb.e[stAudioHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stAudioHeader, { spacing: 1 });
@@ -5824,8 +5854,8 @@ function generate() {
     // Phase 31 — Account is the calmest card: muted bg + softer dividers so
     // the eye lands on Wallet / Match Setup first.
     const stAccountSpr = sb.spr(stAccountCardN, 20, 26, 40);
-    const stAccountHeader = mkLabel(sb, 'HeaderLabel', stAccountCardN, 'ACCOUNT', 14,
-        ACC.header.y, ACC.header.w, ACC.header.h, 140, 150, 170);
+    const stAccountHeader = mkLabel(sb, 'HeaderLabel', stAccountCardN, 'ACCOUNT', 12,
+        ACC.header.y, ACC.header.w, ACC.header.h, 168, 174, 201);
     sb.e[stAccountHeader]._lpos = v3(ACC.header.x, ACC.header.y, 0);
     sb.e[sb.e[stAccountHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, stAccountHeader, { spacing: 1 });
@@ -5872,7 +5902,7 @@ function generate() {
 
         const cSp = rowSpec.children.chevron;
         const chevN = mkLabel(sb, `${rowName}Chevron`, rowN, '›', 22,
-            cSp.y, cSp.w, cSp.h, 140, 150, 170);
+            cSp.y, cSp.w, cSp.h, 168, 174, 201);
         sb.e[chevN]._lpos = v3(cSp.x, cSp.y, 0);
         sb.e[sb.e[chevN]._components[1].__id__]._horizontalAlign = 2;
 
@@ -5900,7 +5930,7 @@ function generate() {
     // · Cancel" + auto-cancel timer arms; second tap: existing delete flow).
     const stDangerLbl = mkLabel(sb, 'DangerZoneLabel', stN, 'DANGER ZONE', 11,
         SP.dangerZoneLabel.y, SP.dangerZoneLabel.w, SP.dangerZoneLabel.h,
-        140, 150, 170);
+        168, 174, 201);
     style(sb, stDangerLbl, { spacing: 2 });
 
     const stDeleteBtn = sb.e.length;
@@ -5928,7 +5958,7 @@ function generate() {
     sb.e[stDeleteBtn]._children = [rf(stDeleteStripe), rf(stDeleteLbl), rf(stDeleteChev)];
 
     const stStatus = mkLabel(sb, 'SettingsStatusLabel', stN, '', 12,
-        SP.status.y, SP.status.w, SP.status.h, 140, 150, 170);
+        SP.status.y, SP.status.w, SP.status.h, 168, 174, 201);
 
     sb.e[stN]._children = [
         // Phase 30 — sheet bg sits BEHIND every card by being added first.
@@ -6082,7 +6112,7 @@ function generate() {
 
         // Hint label — "Tap to continue" muted.
         const hintN = mkLabel(sb, `${TCT.names[i]}_Hint`, cardN, 'Tap to continue', 14,
-            TCC.hint.y, TCC.hint.w, TCC.hint.h, 140, 150, 170);
+            TCC.hint.y, TCC.hint.w, TCC.hint.h, 168, 174, 201);
         sb.e[hintN]._lpos = v3(TCC.hint.x, TCC.hint.y, 0);
         sb.e[sb.e[hintN]._components[1].__id__]._horizontalAlign = 2;
 
@@ -6119,17 +6149,18 @@ function generate() {
     const SPE = LAYOUT.SpectatorPanel.elements;
     // 2026-04-29 — uniform "← Back" header, mirrors MIP. Renamed BackButton
     // node to SpectatorBackButton for AppUI click-handler compat.
-    const _specBack = mkBackHeader(sb, specN, { y: SPE.backBtn.y });
+    const _specBack = mkBackHeader(sb, specN, { y: SPE.backBtn.y, panelKey: 'SpectatorPanel' });
     sb.e[_specBack.btnN]._name = 'SpectatorBackButton';
     sb.e[_specBack.linkN]._name = 'SpectatorBackLinkLabel';
     const specBackBtn = _specBack.btnN;
     // UX Phase 2b: IconBadge eye attached by AppUI. Phase 2c: bold.
     // 9c: title w 460→300 to clear BackButton bbox right x=-180.
-    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 28,
-        SPE.title.y, SPE.title.w, SPE.title.h, 255, 255, 255);
+    // 2026-04-29 — uniform title color (gold) and size (30pt) per UNIFORM_TEXT.
+    const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 30,
+        SPE.title.y, SPE.title.w, SPE.title.h, 255, 210, 74);
     style(sb, specTitle, { bold: true });
     const specMatchLabel = mkLabel(sb, 'SpectatorMatchLabel', specN, 'match —', 13,
-        SPE.matchLabel.y, SPE.matchLabel.w, SPE.matchLabel.h, 140, 150, 170);
+        SPE.matchLabel.y, SPE.matchLabel.w, SPE.matchLabel.h, 168, 174, 201);
     const specStatusLabel = mkLabel(sb, 'SpectatorStatusLabel', specN, 'Connecting…', 14,
         SPE.statusLabel.y, SPE.statusLabel.w, SPE.statusLabel.h, 140, 220, 180);
 
@@ -6162,7 +6193,7 @@ function generate() {
     sb.node('SpectatorEventList', specN, [], [], v3(SPE.eventList.x, SPE.eventList.y, 0));
     sb.ut(specEventListN, SPE.eventList.w, SPE.eventList.h);
     const specEventHeaderL = mkLabel(sb, 'HeaderLabel', specEventListN, 'LIVE EVENTS', 11,
-        SPE.eventListHeader.y, SPE.eventListHeader.w, SPE.eventListHeader.h, 140, 150, 170);
+        SPE.eventListHeader.y, SPE.eventListHeader.w, SPE.eventListHeader.h, 168, 174, 201);
     sb.e[specEventHeaderL]._lpos = v3(SPE.eventListHeader.x, SPE.eventListHeader.y, 0);
     sb.e[sb.e[specEventHeaderL]._components[1].__id__]._horizontalAlign = 0;
     style(sb, specEventHeaderL, { spacing: 1 });  // Phase 15 (B5)
@@ -6209,14 +6240,15 @@ function generate() {
     // Chrome from LAYOUT.TournamentPanel.elements.
     const TPE = LAYOUT.TournamentPanel.elements;
     // 2026-04-29 — uniform "← Back" header, mirrors MIP.
-    const _tourBack = mkBackHeader(sb, tourN, { y: TPE.backBtn.y });
+    const _tourBack = mkBackHeader(sb, tourN, { y: TPE.backBtn.y, panelKey: 'TournamentPanel' });
     sb.e[_tourBack.btnN]._name = 'TournamentBackButton';
     sb.e[_tourBack.linkN]._name = 'TournamentBackLinkLabel';
     const tourBackBtn = _tourBack.btnN;
     // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
     // 9c: title w 460→300 to clear BackButton bbox right x=-180.
-    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 28,
-        TPE.title.y, TPE.title.w, TPE.title.h, 230, 210, 255);
+    // 2026-04-29 — uniform title color (gold) and size (30pt) per UNIFORM_TEXT.
+    const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 30,
+        TPE.title.y, TPE.title.w, TPE.title.h, 255, 210, 74);
     style(sb, tourTitle, { bold: true });
     const tourMatchLabel  = mkLabel(sb, 'TournamentMatchLabel', tourN, 'match —', 13,
         TPE.matchLabel.y, TPE.matchLabel.w, TPE.matchLabel.h, 160, 150, 200);
@@ -6286,18 +6318,18 @@ function generate() {
 
     // Header: back, title, refresh.
     // 2026-04-29 — uniform "← Back" header, mirrors MIP.
-    const _fmBack = mkBackHeader(sb, fmN, { y: FME.backBtn.y });
+    const _fmBack = mkBackHeader(sb, fmN, { y: FME.backBtn.y, panelKey: 'FindMatchPanel' });
     sb.e[_fmBack.btnN]._name = 'FindMatchBackButton';
     sb.e[_fmBack.linkN]._name = 'FindMatchBackLinkLabel';
     const fmBackBtn = _fmBack.btnN;
     const fmTitle = mkLabel(sb, 'FindMatchTitleLabel', fmN, 'Find a Match', 30,
-        FME.title.y, FME.title.w, FME.title.h, 218, 165, 32);
+        FME.title.y, FME.title.w, FME.title.h, 255, 210, 74);
     style(sb, fmTitle, { bold: true });
     const fmRefreshBtn = mkBtnXY(sb, 'FindMatchRefreshButton', fmN, '↻',
         FME.refreshBtn.x, FME.refreshBtn.y, FME.refreshBtn.w, FME.refreshBtn.h,
         38, 44, 64);
     const fmCountLabel = mkLabel(sb, 'FindMatchCountLabel', fmN, '— open lobbies', 14,
-        FME.countLabel.y, FME.countLabel.w, FME.countLabel.h, 218, 165, 32);
+        FME.countLabel.y, FME.countLabel.w, FME.countLabel.h, 255, 210, 74);
     style(sb, fmCountLabel, { bold: true });
 
     // 2026-04-27 FindMatch redesign — pulse dot left of count label.
@@ -6335,7 +6367,7 @@ function generate() {
         _id: gid(),
     });
     const fmLvXpChipLbl = mkLabel(sb, 'FindMatchLvXpChipLabel', fmLvXpChipN, 'Lv 1 · 0 XP', 14, 0,
-        FME.lvxpChip.w - 16, FME.lvxpChip.h - 6, 218, 165, 32);
+        FME.lvxpChip.w - 16, FME.lvxpChip.h - 6, 255, 210, 74);
     sb.e[sb.e[fmLvXpChipLbl]._components[1].__id__]._isBold = true;
     sb.e[fmLvXpChipN]._components = [rf(fmLvXpChipUT), rf(fmLvXpChipSpr)];
     sb.e[fmLvXpChipN]._children = [rf(fmLvXpChipLbl)];
@@ -6573,7 +6605,7 @@ function generate() {
         sb.e[sb.e[modeL]._components[1].__id__]._isBold = true;
         // Bold gold wager hero — center-prominent. 2026-04-28 final pass: 20 → 26.
         const wagerL = mkLabel(sb, `MatchCardWagerLabel_${i}`, rN, '0.05 SOL', 26,
-            MR.wager.y, MR.wager.w, MR.wager.h, 218, 165, 32);
+            MR.wager.y, MR.wager.w, MR.wager.h, 255, 210, 74);
         sb.e[wagerL]._lpos = v3(MR.wager.x, MR.wager.y, 0);
         style(sb, wagerL, { mono: true, bold: true });
         sb.e[sb.e[wagerL]._components[1].__id__]._horizontalAlign = 0;
@@ -6603,7 +6635,7 @@ function generate() {
         sb.e[winL]._lpos = v3(MR.window.x, MR.window.y, 0);
         sb.e[sb.e[winL]._components[1].__id__]._horizontalAlign = 0;
         const subL = mkLabel(sb, `MatchCardSubLabel_${i}`, rN, '1/2 players · 0:42 ago', 13,
-            MR.sub.y, MR.sub.w, MR.sub.h, 160, 170, 190);
+            MR.sub.y, MR.sub.w, MR.sub.h, 168, 174, 201);
         sb.e[subL]._lpos = v3(MR.sub.x, MR.sub.y, 0);
         sb.e[sb.e[subL]._components[1].__id__]._horizontalAlign = 0;
         // Capacity progress bar — track + tween-fill.
@@ -6671,7 +6703,7 @@ function generate() {
 
     // Legacy empty state — kept for fallback. _active=false by default.
     const fmEmptyL = mkLabel(sb, 'FindMatchEmptyLabel', fmN, 'No open lobbies match these filters — host one or play a bot.', 14,
-        FME.emptyLabel.y, FME.emptyLabel.w, FME.emptyLabel.h, 140, 150, 170);
+        FME.emptyLabel.y, FME.emptyLabel.w, FME.emptyLabel.h, 168, 174, 201);
     sb.e[fmEmptyL]._active = false;
 
     // Phase A2 — gamified empty-state cluster (mascot + dual CTAs).
@@ -6681,7 +6713,7 @@ function generate() {
     sb.e[fmEmptyMascotN]._components = [rf(fmEmptyMascotUT)];
     sb.e[fmEmptyMascotN]._active = false;
     const fmEmptyTitle = mkLabel(sb, 'FindMatchEmptyTitle', fmN, 'No matches yet', 24,
-        FME.emptyTitle.y, FME.emptyTitle.w, FME.emptyTitle.h, 218, 165, 32);
+        FME.emptyTitle.y, FME.emptyTitle.w, FME.emptyTitle.h, 255, 210, 74);
     style(sb, fmEmptyTitle, { bold: true });
     sb.e[fmEmptyTitle]._active = false;
     const fmEmptySubtitle = mkLabel(sb, 'FindMatchEmptySubtitle', fmN,
@@ -6707,7 +6739,7 @@ function generate() {
     style(sb, fmHostBtn, { bold: true });
     sb.e[fmHostBtn]._active = false;
     const fmStatus = mkLabel(sb, 'FindMatchStatusLabel', fmN, '', 12,
-        FME.status.y, FME.status.w, FME.status.h, 140, 150, 170);
+        FME.status.y, FME.status.w, FME.status.h, 168, 174, 201);
 
     // 2026-04-28 polish — Phase G: ambient particle drift container. Empty Node;
     // AppUI._showFindMatchPanel calls addParticleDrift(layer, 4) on first show.
@@ -6792,7 +6824,7 @@ function generate() {
 
     // Title + subtitle.
     const jcTitle = mkLabel(sb, 'JoinConfirmTitleLabel', jcCardN, 'Confirm Join', 28,
-        JCE.title.y, JCE.title.w, JCE.title.h, 218, 165, 32);
+        JCE.title.y, JCE.title.w, JCE.title.h, 255, 210, 74);
     style(sb, jcTitle, { bold: true });
     const jcSubtitle = mkLabel(sb, 'JoinConfirmSubtitleLabel', jcCardN, 'Review the lobby — then Join.', 14,
         JCE.subtitle.y, JCE.subtitle.w, JCE.subtitle.h, 168, 174, 201);
@@ -6841,7 +6873,7 @@ function generate() {
 
     // Wager hero — big gold center.
     const jcWagerHero = mkLabel(sb, 'JoinConfirmWagerHeroLabel', jcCardN, '0.05 SOL', 36,
-        JCE.wagerHero.y, JCE.wagerHero.w, JCE.wagerHero.h, 218, 165, 32);
+        JCE.wagerHero.y, JCE.wagerHero.w, JCE.wagerHero.h, 255, 210, 74);
     style(sb, jcWagerHero, { bold: true, mono: true });
 
     // Window + capacity meta row.
@@ -6854,10 +6886,10 @@ function generate() {
 
     // Host + age row.
     const jcHostL = mkLabel(sb, 'JoinConfirmHostLabel', jcCardN, 'Host: 5Ksq…sDst', 14,
-        JCE.hostLabel.y, JCE.hostLabel.w, JCE.hostLabel.h, 140, 150, 170);
+        JCE.hostLabel.y, JCE.hostLabel.w, JCE.hostLabel.h, 168, 174, 201);
     sb.e[jcHostL]._lpos = v3(JCE.hostLabel.x, JCE.hostLabel.y, 0);
     const jcAgeL = mkLabel(sb, 'JoinConfirmAgeLabel', jcCardN, '0:42 ago', 14,
-        JCE.ageLabel.y, JCE.ageLabel.w, JCE.ageLabel.h, 140, 150, 170);
+        JCE.ageLabel.y, JCE.ageLabel.w, JCE.ageLabel.h, 168, 174, 201);
     sb.e[jcAgeL]._lpos = v3(JCE.ageLabel.x, JCE.ageLabel.y, 0);
 
     // Capacity progress bar — track + tween-fill.
@@ -6892,7 +6924,7 @@ function generate() {
         VAR('success').r, VAR('success').g, VAR('success').b);
     style(sb, jcGoBtn, { bold: true });
     const jcHint = mkLabel(sb, 'JoinConfirmHintLabel', jcCardN, 'You\'ll pick 3 tokens next.', 12,
-        JCE.hint.y, JCE.hint.w, JCE.hint.h, 140, 150, 170);
+        JCE.hint.y, JCE.hint.w, JCE.hint.h, 168, 174, 201);
 
     sb.e[jcCardN]._children = [
         rf(jcTitle), rf(jcSubtitle),
@@ -6923,11 +6955,11 @@ function generate() {
     sb.spr(countdownN, 8, 12, 20);
     sb.e[countdownN]._active = false;
     const countdownBigN = mkLabel(sb, 'CountdownBigLabel', countdownN, '3', 160,
-        COE.bigLabel.y, COE.bigLabel.w, COE.bigLabel.h, 218, 165, 32);
+        COE.bigLabel.y, COE.bigLabel.w, COE.bigLabel.h, 255, 210, 74);
     const countdownSquadN = mkLabel(sb, 'CountdownSquadPreviewLabel', countdownN, 'Your squad', 24,
         COE.squadLabel.y, COE.squadLabel.w, COE.squadLabel.h, 180, 190, 210);
     const countdownHintN = mkLabel(sb, 'CountdownHintLabel', countdownN, 'Match starting…', 18,
-        COE.hintLabel.y, COE.hintLabel.w, COE.hintLabel.h, 140, 150, 170);
+        COE.hintLabel.y, COE.hintLabel.w, COE.hintLabel.h, 168, 174, 201);
     sb.e[countdownN]._children = [rf(countdownBigN), rf(countdownSquadN), rf(countdownHintN)];
 
     // ═══════════════════════════════════════════════════════════════
@@ -6940,11 +6972,11 @@ function generate() {
     sb.spr(signingN, 4, 6, 12);
     sb.e[signingN]._active = false;
     const signingSpinnerN = mkLabel(sb, 'SigningSpinnerLabel', signingN, '⟳', 80,
-        SOE.spinner.y, SOE.spinner.w, SOE.spinner.h, 218, 165, 32);
+        SOE.spinner.y, SOE.spinner.w, SOE.spinner.h, 255, 210, 74);
     const signingStatusN = mkLabel(sb, 'SigningStatusLabel', signingN, 'Awaiting wallet approval…', 24,
         SOE.statusLabel.y, SOE.statusLabel.w, SOE.statusLabel.h, 230, 230, 240);
     const signingHintN = mkLabel(sb, 'SigningHintLabel', signingN, 'Check your wallet app — sign to continue.', 16,
-        SOE.hintLabel.y, SOE.hintLabel.w, SOE.hintLabel.h, 140, 150, 170);
+        SOE.hintLabel.y, SOE.hintLabel.w, SOE.hintLabel.h, 168, 174, 201);
     sb.e[signingN]._children = [rf(signingSpinnerN), rf(signingStatusN), rf(signingHintN)];
 
     // ═══════════════════════════════════════════════════════════════
@@ -6963,11 +6995,11 @@ function generate() {
     sb.ut(loadingMascotN, LOE.mascotContainer.w, LOE.mascotContainer.h);
 
     const loadingSpinnerN = mkLabel(sb, 'LoadingSpinnerLabel', loadingN, '⟳', 80,
-        LOE.spinner.y, LOE.spinner.w, LOE.spinner.h, 218, 165, 32);
+        LOE.spinner.y, LOE.spinner.w, LOE.spinner.h, 255, 210, 74);
     const loadingStatusN  = mkLabel(sb, 'LoadingStatusLabel',  loadingN, 'Loading…', 24,
         LOE.statusLabel.y, LOE.statusLabel.w, LOE.statusLabel.h, 230, 230, 240);
     const loadingTipN     = mkLabel(sb, 'LoadingTipLabel',     loadingN, '', 16,
-        LOE.tipLabel.y, LOE.tipLabel.w, LOE.tipLabel.h, 140, 150, 170);
+        LOE.tipLabel.y, LOE.tipLabel.w, LOE.tipLabel.h, 168, 174, 201);
     style(sb, loadingTipN, { spacing: 1 });
 
     sb.e[loadingN]._children = [rf(loadingMascotN), rf(loadingSpinnerN), rf(loadingStatusN), rf(loadingTipN)];
@@ -7005,7 +7037,7 @@ function generate() {
     sb.e[luN]._components = [rf(luUT), rf(luBgSpr), rf(luDismissBtn)];
     // Title.
     const luTitle = mkLabel(sb, 'LevelUpTitleLabel', luN, 'LEVEL UP', 64,
-        LUE.title.y, LUE.title.w, LUE.title.h, 218, 165, 32);
+        LUE.title.y, LUE.title.w, LUE.title.h, 255, 210, 74);
     style(sb, luTitle, { bold: true });
     // Big level number with count-up tween at runtime.
     const luBigLevel = mkLabel(sb, 'LevelUpBigLevel', luN, '5', 180,
@@ -7019,7 +7051,7 @@ function generate() {
         LUE.rake.y, LUE.rake.w, LUE.rake.h, 48, 198, 155);
     // Hint at the bottom.
     const luHint = mkLabel(sb, 'LevelUpHintLabel', luN, 'tap to continue', 14,
-        LUE.hint.y, LUE.hint.w, LUE.hint.h, 140, 150, 170);
+        LUE.hint.y, LUE.hint.w, LUE.hint.h, 168, 174, 201);
     sb.e[luN]._children = [rf(luTitle), rf(luBigLevel), rf(luCaption), rf(luRake), rf(luHint)];
     sb.e[luN]._active = false;
 
@@ -7093,7 +7125,7 @@ function generate() {
 
     // Header row: title (left) · Mark-all-read (right) · close ✕ (top-right corner).
     const npHeader = mkLabel(sb, 'NotifHeaderLabel', npCardN, 'Notifications', 22,
-        NPE.cardHeaderLabel.y, NPE.cardHeaderLabel.w, NPE.cardHeaderLabel.h, 218, 165, 32);
+        NPE.cardHeaderLabel.y, NPE.cardHeaderLabel.w, NPE.cardHeaderLabel.h, 255, 210, 74);
     sb.e[npHeader]._lpos = v3(NPE.cardHeaderLabel.x, NPE.cardHeaderLabel.y, 0);
     sb.e[sb.e[npHeader]._components[1].__id__]._horizontalAlign = 0; // left-align
     sb.e[sb.e[npHeader]._components[1].__id__]._isBold = true;

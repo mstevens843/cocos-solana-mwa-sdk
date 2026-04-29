@@ -46,6 +46,17 @@ export const UNIFORM_HEADER = {
     BACK_BTN:   { x: -280, w: 140, h: 36 },
 } as const;
 
+// 2026-04-29 — uniform text styling tokens. Title color = gold for action
+// panels (PostMatch keeps its 60pt white hero accent for "YOU WON"). Dim
+// text = one canonical RGB for subtitles, status labels, and section
+// eyebrows. Eyebrow font size = 12pt across panels.
+export const UNIFORM_TEXT = {
+    TITLE_COLOR:       { r: 255, g: 210, b: 74 },
+    TITLE_FONT_SIZE:   30,
+    DIM_COLOR:         { r: 168, g: 174, b: 201 },
+    EYEBROW_FONT_SIZE: 12,
+} as const;
+
 export const LayoutSpec: Record<string, PanelSpec> = {
     BackgroundFX: {
         canvas: { w: 720, h: 1280 },
@@ -282,8 +293,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         RUNTIME_TOP_EDGE: 748,
         elements: {
-            backLink:         { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            backLink:         { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:            { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
             personalRankCard: { x: 0,    y: -130, w: 660, h: 100, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
@@ -293,8 +304,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: 750, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: 750, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
             refreshBtn:     { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost' },
             countLabel:     { x: 0,    y: 665,  w: 600, h: 18, type: 'label' },
@@ -326,8 +337,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30% (388→272). Mirrors `td`
             // constants block in LayoutSpec.cjs.
-            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 685, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 685, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: 570,  w: 320, h: 36, type: 'label' },
             // 2026-04-27 UI overhaul — anchors header band.
             headerUnderline: { x: 0,    y: 540,  w: 712, h: 2,  type: 'sprite' },
@@ -385,8 +396,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         RUNTIME_TOP_EDGE: 748,
         elements: {
             historyView: { x: 0,    y: 0,   w: 720, h: 1280, type: 'group' },
-            backLink:    { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:     { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            backLink:    { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:     { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:       { x: 0,    y: 680, w: 400, h: 44,   type: 'label' },
         },
         allowedOverlaps: [['BackLinkLabel', 'BackButton']],
@@ -432,8 +443,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
-            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 614, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 614, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             symbolLabel:     { x:    0, y: 614,  w: 320, h: 34, type: 'label' },
             nameLabel:       { x:    0, y: 588,  w: 320, h: 18, type: 'label' },
             mintChip:        { x:  255, y: 612,  w: 130, h: 26, type: 'btnGhost' },
