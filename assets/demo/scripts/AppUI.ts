@@ -6735,11 +6735,11 @@ export class AppUI extends Component {
                 this._raceAdvantageSubtextLabel.string = 'Waiting for prices…';
                 this._raceAdvantageSubtextLabel.color = new Color(168, 174, 201);
             }
-            this._setAdvantageBorderColor(168, 174, 201);
+            this._drawStaticAdvantageBorder();
             this._setAdvantageHaloColor(168, 174, 201);
             if (this._raceAdvantageHaloOpacity) {
                 Tween.stopAllByTarget(this._raceAdvantageHaloOpacity);
-                this._raceAdvantageHaloOpacity.opacity = 130;
+                this._raceAdvantageHaloOpacity.opacity = 70;
             }
             if (this._opponentSubtitleGapLabel) {
                 this._opponentSubtitleGapLabel.string = '—';
@@ -7917,7 +7917,8 @@ export class AppUI extends Component {
                 .call(() => { this._lastRenderedOpponentDeltaPct = gap; })
                 .start();
         }
-        this._setAdvantageBorderColor(r, g, b);
+        // Border stays neutral slate (drawn once in _initAdvantageCardVisuals);
+        // only the outer halo bloom carries the leader-state color.
         this._setAdvantageHaloColor(r, g, b);
         if (this._raceAdvantageSubtextLabel) {
             this._raceAdvantageSubtextLabel.string = waitingForPrices
@@ -7946,34 +7947,41 @@ export class AppUI extends Component {
         if (this._raceAdvantageHaloNode) {
             this._raceAdvantageHaloOpacity = this._raceAdvantageHaloNode.getComponent(UIOpacity)
                 ?? this._raceAdvantageHaloNode.addComponent(UIOpacity);
-            this._raceAdvantageHaloOpacity.opacity = 130;
-            // FIX 10B — re-enabled, routed through enqueuePostDraw queue.
+            this._raceAdvantageHaloOpacity.opacity = 70;
             installSoftGlow(this._raceAdvantageHaloNode, {
                 color: new Color(168, 174, 201),
-                peakAlpha: 110,
+                peakAlpha: 28,
                 rings: 14,
             });
         }
-        this._setAdvantageBorderColor(168, 174, 201);
+        this._drawStaticAdvantageBorder();
     }
 
-    /** Restroke the rounded-rect border — only redraws when color changes. */
-    private _setAdvantageBorderColor(r: number, g: number, b: number): void {
+    /** Static dark fill + neutral slate stroke. Hides the halo rings inside
+     *  the card box so the big delta number stays legible; only the outer
+     *  halo bloom (which extends past the border) carries leader-state color. */
+    private _drawStaticAdvantageBorder(): void {
         const gfx = this._raceAdvantageBorderGfx;
         if (!gfx) return;
-        const prev = this._lastAdvantageBorderColor;
-        if (prev && prev.r === r && prev.g === g && prev.b === b) return;
-        this._lastAdvantageBorderColor = { r, g, b };
         const ut = gfx.node.getComponent(UITransform);
         const w = ut?.contentSize.width  ?? 320;
         const h = ut?.contentSize.height ?? 180;
         gfx.clear();
         gfx.lineWidth = 2;
-        gfx.strokeColor = new Color(r, g, b, 220);
-        gfx.fillColor   = new Color(r, g, b, 22);
+        gfx.fillColor   = new Color(14, 18, 30, 245);
+        gfx.strokeColor = new Color(66, 76, 102, 220);
         gfx.roundRect(-w / 2, -h / 2, w, h, 24);
         gfx.fill();
         gfx.stroke();
+        this._lastAdvantageBorderColor = { r: 66, g: 76, b: 102 };
+    }
+
+    /** No-op stub. Border is now painted once in _drawStaticAdvantageBorder
+     *  with a fixed neutral slate stroke + dark fill; leader-state color is
+     *  carried by the outer halo only. Kept as a stub so any latent caller
+     *  doesn't blow up. */
+    private _setAdvantageBorderColor(_r: number, _g: number, _b: number): void {
+        return;
     }
 
     /** Re-color the soft halo — uses LandingFX.installSoftGlow's force flag. */
@@ -7982,20 +7990,22 @@ export class AppUI extends Component {
         if (!node) return;
         installSoftGlow(node, {
             color: new Color(r, g, b),
-            peakAlpha: 110,
+            peakAlpha: 28,
             rings: 14,
             force: true,
         });
     }
 
-    /** One-shot halo brighten on lead reversal — surge then settle (~600ms). */
+    /** One-shot halo brighten on lead reversal — surge then settle (~600ms).
+     *  Re-scaled to the new low baseline; only the outer halo flickers
+     *  because the dark border fill masks the rings inside the card box. */
     private _flashAdvantageHalo(): void {
         const op = this._raceAdvantageHaloOpacity;
         if (!op) return;
         Tween.stopAllByTarget(op);
         tween(op)
-            .to(0.20, { opacity: 230 }, { easing: 'quartOut' })
-            .to(0.40, { opacity: 130 }, { easing: 'quartIn'  })
+            .to(0.20, { opacity: 140 }, { easing: 'quartOut' })
+            .to(0.40, { opacity: 70 },  { easing: 'quartIn'  })
             .start();
     }
 
