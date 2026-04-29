@@ -19,6 +19,18 @@
  *      WITHOUT rebuilding the APK.
  */
 
+// 2026-04-29 — UNIFORM back/title/subtitle header band, mirrors MIP.
+// Every panel with a back button must use these exact panel-local Y values
+// and the (x, w, h) shape below. MatchesInProgressPanel is the canonical
+// reference (back on its own row, title 40 below, subtitle 36 below title).
+const UNIFORM_HEADER = {
+    BACK_Y:     580,                                    // back on its own row, panel-local
+    TITLE_Y:    540,                                    // 40 below back
+    SUBTITLE_Y: 504,                                    // 36 below title
+    BACK_LINK:  { x: -280, w: 110, h: 28 },             // visible "← Back" label
+    BACK_BTN:   { x: -280, w: 140, h: 36 },             // invisible hit area, slightly larger
+};
+
 // 2026-04-27 v2 — Token Duel page deterministic Y anchors.
 // Source-of-truth for every Y on TokenDuelPanel. NEVER hand-tune element
 // Y values on this page; always derive from these. Canvas y-up,
@@ -1118,9 +1130,9 @@ const LayoutSpec = {
             // delete-account moved further down, dark sheet behind cards.
             sheetBg:         { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite',
                 notes: 'subtle dark overlay (z-order behind all cards) — first child of SettingsPanel' },
-            backLink:        { x: -280, y: settings.HEADER_Y, w: 110, h: 28,  type: 'label' },
-            backBtn:         { x: -280, y: settings.HEADER_Y, w: 140, h: 36,  type: 'btnGhost' },
-            title:           { x: 0,    y: settings.TITLE_Y,  w: 400, h: 40,  type: 'label' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:           { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44,  type: 'label' },
             // Wallet → compact identity card (160→124, ~22% reduction).
             // Layout: header row (status dot + secondary "Connected · MWA"),
             // pubkey row (mono, prominent, with copy icon), divider, balance row.
@@ -1515,11 +1527,11 @@ const LayoutSpec = {
     MatchesInProgressPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:  { x: -280, y: mip.BACK_Y,     w: 110, h: 28,  type: 'label' },
-            backBtn:   { x: -280, y: mip.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
-            title:     { x: 0,    y: mip.TITLE_Y,    w: 600, h: 44,  type: 'label',
+            backLink:  { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:   { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:     { x: 0,    y: UNIFORM_HEADER.TITLE_Y,    w: 600, h: 44,  type: 'label',
                 notes: '"Matches In Progress" — gold bold 30pt' },
-            subtitle:  { x: 0,    y: mip.SUBTITLE_Y, w: 520, h: 22,  type: 'label',
+            subtitle:  { x: 0,    y: UNIFORM_HEADER.SUBTITLE_Y, w: 520, h: 22,  type: 'label',
                 notes: 'AppUI fills "{N} games running" / "All clear"' },
             // Empty-state cluster (shown when zero active matches).
             emptyState:        { x: 0, y: mip.EMPTY_STATE_Y, w: 600, h: 240, type: 'group' },
@@ -1644,8 +1656,8 @@ const LayoutSpec = {
         // up RUNTIME_TOP_EDGE to align with other panels.
         RUNTIME_TOP_EDGE: 748,
         elements: {
-            backLink:        { x: -280, y: leaderboard.BACK_Y,     w: 110, h: 28,  type: 'label' },
-            backBtn:         { x: -280, y: leaderboard.BACK_Y,     w: 140, h: 36,  type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: leaderboard.TITLE_Y,    w: 400, h: 44,  type: 'label' },
             // Subtitle line under title — "{mode} · This Week" / "All modes · This Week".
             subtitle:        { x: 0,    y: leaderboard.SUBTITLE_Y, w: 520, h: 24,  type: 'label' },
@@ -1725,10 +1737,14 @@ const LayoutSpec = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn:         { x: -280, y: 700,  w: 160, h: 44, type: 'btnGhost' },
-            title:           { x: 0,    y: 700,  w: 400, h: 40, type: 'label',    notes: 'gold bold; sword IconBadge attached at runtime via _attachStaticIconBadges' },
-            refreshBtn:      { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost', notes: 'AppUI tween-spins the icon on tap for refresh feedback' },
-            countLabel:      { x: 0,    y: 665,  w: 600, h: 22, type: 'label',    notes: 'live count pill — pulses via addIdlePulse' },
+            // 2026-04-29 — uniform back/title header, mirrors MIP. refreshBtn
+            // sits to the right of the title (was sharing the back row at y=700);
+            // moved to y=540 to flank the title.
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:           { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label',    notes: 'gold bold; sword IconBadge attached at runtime via _attachStaticIconBadges' },
+            refreshBtn:      { x: 280,  y: UNIFORM_HEADER.TITLE_Y, w: 56,  h: 44, type: 'btnGhost', notes: 'AppUI tween-spins the icon on tap for refresh feedback' },
+            countLabel:      { x: 0,    y: UNIFORM_HEADER.SUBTITLE_Y, w: 600, h: 22, type: 'label',    notes: 'live count pill — pulses via addIdlePulse; sits in subtitle slot' },
             // Phase A2 — Lv/XP chip TOP-RIGHT of header (relocated from -260
             // → 240 in Stage 2 to match the new Home + TokenDuel pattern).
             lvxpChip:        { x: 240,  y: 750,  w: 200, h: 32, type: 'chip',     notes: '"Lv N · X/Y"; gold-on-dim; hidden when not connected' },
@@ -1736,7 +1752,7 @@ const LayoutSpec = {
             hideFullToggle:  { x: 0,    y: 418,  w: 160, h: 24, type: 'btnPrimary', notes: '2026-04-28 polish — utility tone, smaller + lower contrast (Phase F)' },
             // 2026-04-27 FindMatch redesign — pulse dot left of count label.
             // AppUI tints rose/teal per active tab and runs addIdlePulse on it.
-            liveCountPulseDot:  { x: -90, y: 665, w: 10, h: 10, type: 'sprite', notes: 'addIdlePulse — rose on Live, teal on Open' },
+            liveCountPulseDot:  { x: -90, y: UNIFORM_HEADER.SUBTITLE_Y, w: 10, h: 10, type: 'sprite', notes: 'addIdlePulse — rose on Live, teal on Open; tracks countLabel y' },
             // 2026-04-28 final pass — unified FilterCard now contains EVERYTHING:
             // tabs (top), 3 chip rows (with row labels left), and Hide-full footer.
             // Card grew to h=240 to encapsulate all sub-elements.
@@ -1961,9 +1977,9 @@ const LayoutSpec = {
             // Chips 293 · ColHeaders 255 · FeedScrollView (103, h=272, ~3 visible
             // rows of h=85)} · SquadPanel (-184, h=220: header → 3 slots → wager+Start)
             // · Status (-362). Side padding 16 → cards w=688/696.
-            backLink:           { x: -288, y: td.HEADER_Y,  w: 100, h: 28, type: 'label' },
-            backBtn:            { x: -288, y: td.HEADER_Y,  w: 120, h: 40, type: 'btnGhost' },
-            title:              { x: 0,    y: td.TITLE_Y,   w: 320, h: 36, type: 'label' },
+            backLink:           { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:            { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:              { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 320, h: 44, type: 'label' },
             // 2026-04-27 UI overhaul — thin violet glow line anchoring header band.
             // Sits 12 px below title baseline (TITLE_Y - title.h/2 - 12 = 540).
             headerUnderline:    { x: 0,    y: 540, w: 712, h: 2, type: 'sprite',
@@ -2298,8 +2314,8 @@ const LayoutSpec = {
         elements: {
             historyView: { x: 0, y: 0, w: 720, h: 1280, type: 'group',
                 notes: 'PortfolioHistoryView container; hidden until History tab active' },
-            backLink: { x: -280, y: portfolio.BACK_Y, w: 110, h: 28, type: 'label' },
-            backBtn:  { x: -280, y: portfolio.BACK_Y, w: 140, h: 36, type: 'btnGhost' },
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:    { x: 0,    y: portfolio.TITLE_Y, w: 400, h: 44, type: 'label' },
             // Subtitle eyebrow under title.
             subtitle:    { x: 0,    y: portfolio.SUBTITLE_Y, w: 460, h: 18, type: 'label' },
@@ -2568,10 +2584,10 @@ const LayoutSpec = {
         canvas: { w: 720, h: 1280 },
         elements: {
             roster:  { x: 0, y: 150, w: 640, h: 440, type: 'group' },
-            // 9c — chrome (back/title) migrated.
-            backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label',
-                notes: '9c: w 460→300 to clear BackButton bbox right x=-180' },
+            // 2026-04-29 — uniform back/title header, mirrors MIP.
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
             // 11 — header strip + join CTA.
             matchLabel:  { x: 0,    y: 558, w: 500, h: 20, type: 'label' },
             statusLabel: { x: 0,    y: 520, w: 500, h: 22, type: 'label' },
@@ -2604,8 +2620,8 @@ const LayoutSpec = {
         canvas: { w: 720, h: 1280 },
         elements: {
             // Identity band — Back at left, Symbol/Name centered, MintChip at right.
-            backLink:        { x: -300, y: 612, w: 100, h: 26, type: 'label' },
-            backBtn:         { x: -300, y: 612, w: 130, h: 34, type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             symbolLabel:     { x:    0, y: 614, w: 320, h: 34, type: 'label' },
             nameLabel:       { x:    0, y: 588, w: 320, h: 18, type: 'label' },
             mintChip:        { x:  255, y: 612, w: 130, h: 26, type: 'btnGhost' },
@@ -2705,10 +2721,9 @@ const LayoutSpec = {
     DailyChallengePanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -280, y: 618, w: 110, h: 28, type: 'label' },
-            backBtn:         { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
-            title:           { x: 0,    y: 600, w: 400, h: 40, type: 'label',
-                notes: '9c: w 600→400 to clear BackButton bbox right x=-210' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:           { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label' },
             // 11 — DailyStreakCard at y=440 + internals (relative to card center).
             streakCard:      { x: 0,    y: 440, w: 600, h: 100, type: 'group' },
             streakHeader:    { x: -260, y: 34,  w: 200, h: 16,  type: 'label' },
@@ -2746,9 +2761,10 @@ const LayoutSpec = {
     SpectatorPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label',
-                notes: '9c: w 460→300 to clear BackButton bbox right x=-180' },
+            // 2026-04-29 — uniform back/title header, mirrors MIP.
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
             // 11 — header strip + player/event lists + join CTA.
             matchLabel:      { x: 0, y: 558, w: 500, h: 20, type: 'label' },
             statusLabel:     { x: 0, y: 520, w: 500, h: 22, type: 'label' },
@@ -2788,7 +2804,12 @@ const LayoutSpec = {
             // constants block at the top of this file. NEVER hand-tune y.
             outcomeBg:       { x: 0,    y: 0,    w: pm.PANEL_W, h: pm.PANEL_H, type: 'graphics',
                 notes: 'full-canvas Graphics rect; AppUI fills + fades alpha on show' },
-            backBtn:         { x: -260, y: pm.BACK_Y,  w: 160, h: 44,  type: 'btnGhost' },
+            // 2026-04-29 — uniform back STYLE (x/w/h/text) per MIP. PostMatch
+            // keeps its 60pt h=80 title at pm.TITLE_Y=564, so the back row
+            // sits ABOVE the title's top edge (604) at y=622 instead of MIP's
+            // y=580 (which would overlap the title bbox).
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 622, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 622, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: pm.TITLE_Y, w: 620, h: 80,  type: 'label',
                 notes: '60pt bold, color-coded green/rose by outcome (was 56)' },
             track:           { x: 0,    y: pm.TRACK_Y, w: 600, h: 44,  type: 'label' },

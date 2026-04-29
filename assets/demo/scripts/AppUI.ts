@@ -16125,9 +16125,8 @@ export class AppUI extends Component {
         this._settingsPanel.active = true;
         this._dumpPanelLayout(this._settingsPanel, 'show_settings');
         this._hydrateSettingsPanel();
-        // Guest mode — hide wallet card + username editbox + delete account +
-        // the Disconnect row (now inside AccountSettingsCard). Sound + haptics
-        // + fee schedule stay (no setup required).
+        // Guest mode — hide wallet card + username editbox + delete account.
+        // Sound + haptics stay (no setup required).
         const guest = this._isGuest();
         const setActive = (name: string, active: boolean) => {
             const n = this._settingsPanel?.getChildByName(name);
@@ -16136,10 +16135,10 @@ export class AppUI extends Component {
         setActive('WalletCard',                  !guest);
         setActive('ProfileCard',                 !guest);  // username editbox lives here
         setActive('DeleteAccountSettingsButton', !guest);
-        // Phase 29 — DisconnectSettingsButton now nests inside AccountSettingsCard.
-        const accountCard = this._settingsPanel?.getChildByName('AccountSettingsCard');
-        const discRow = accountCard?.getChildByName('DisconnectSettingsButton');
-        if (discRow) discRow.active = !guest;
+        // Dev-only: Fees / Reconnect / Disconnect rows. Set
+        // globalThis.TD_DEV_SETTINGS = true to expose them in a local build.
+        const devSettings = !!(globalThis as any).TD_DEV_SETTINGS;
+        setActive('AccountSettingsCard', devSettings);
     }
 
     private _onSettingsBackClick(): void {

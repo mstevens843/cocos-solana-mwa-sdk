@@ -34,6 +34,18 @@ export interface PanelSpec {
     allowedOverlaps: Array<[string, string]>;
 }
 
+// 2026-04-29 — uniform back/title/subtitle header band, mirrors MIP.
+// Every panel with a back button must use these exact panel-local Y values
+// and the (x, w, h) shape below. MatchesInProgressPanel is the canonical
+// reference (back on its own row, title 40 below, subtitle 36 below title).
+export const UNIFORM_HEADER = {
+    BACK_Y:     580,
+    TITLE_Y:    540,
+    SUBTITLE_Y: 504,
+    BACK_LINK:  { x: -280, w: 110, h: 28 },
+    BACK_BTN:   { x: -280, w: 140, h: 36 },
+} as const;
+
 export const LayoutSpec: Record<string, PanelSpec> = {
     BackgroundFX: {
         canvas: { w: 720, h: 1280 },
@@ -241,9 +253,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         elements: {
             // Phase 30 — premium settings redesign. KEEP IN SYNC with LayoutSpec.cjs.
             sheetBg:       { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite' },
-            backLink:      { x: -280, y: 620,  w: 110, h: 28, type: 'label' },
-            backBtn:       { x: -280, y: 620,  w: 140, h: 36, type: 'btnGhost' },
-            title:         { x: 0,    y: 614,  w: 400, h: 40, type: 'label' },
+            backLink:      { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:       { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:         { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label' },
             walletCard:    { x: 0,    y: 530,  w: 688, h: 124, type: 'group' },
             profileCard:   { x: 0,    y: 376,  w: 688, h: 148, type: 'group' },
             quickPlayCard: { x: 0,    y: 138,  w: 688, h: 260, type: 'group' },
@@ -270,8 +282,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         RUNTIME_TOP_EDGE: 748,
         elements: {
-            backLink:         { x: -280, y: 720,  w: 110, h: 28,  type: 'label' },
-            backBtn:          { x: -280, y: 720,  w: 140, h: 36,  type: 'btnGhost' },
+            backLink:         { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:            { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
             personalRankCard: { x: 0,    y: -130, w: 660, h: 100, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
@@ -281,7 +293,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn:        { x: -280, y: 700,  w: 160, h: 44, type: 'btnGhost' },
+            backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
             refreshBtn:     { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost' },
             countLabel:     { x: 0,    y: 665,  w: 600, h: 18, type: 'label' },
@@ -313,8 +326,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30% (388→272). Mirrors `td`
             // constants block in LayoutSpec.cjs.
-            backLink:        { x: -288, y: 620,  w: 100, h: 28, type: 'label' },
-            backBtn:         { x: -288, y: 620,  w: 120, h: 40, type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: 570,  w: 320, h: 36, type: 'label' },
             // 2026-04-27 UI overhaul — anchors header band.
             headerUnderline: { x: 0,    y: 540,  w: 712, h: 2,  type: 'sprite' },
@@ -372,8 +385,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         RUNTIME_TOP_EDGE: 748,
         elements: {
             historyView: { x: 0,    y: 0,   w: 720, h: 1280, type: 'group' },
-            backLink:    { x: -280, y: 720, w: 110, h: 28,   type: 'label' },
-            backBtn:     { x: -280, y: 720, w: 140, h: 36,   type: 'btnGhost' },
+            backLink:    { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:     { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:       { x: 0,    y: 680, w: 400, h: 44,   type: 'label' },
         },
         allowedOverlaps: [['BackLinkLabel', 'BackButton']],
@@ -392,7 +405,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         elements: {
             listContainer:         { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
-            cardHeaderLabel:       { x: -170, y: 608, w: 200, h: 30,  type: 'label' },
+            cardHeaderLabel:       { x: -60,  y: 608, w: 240, h: 30,  type: 'label' },
             cardCloseButton:       { x: 168,  y: 608, w: 36,  h: 36,  type: 'btnGhost' },
             cardMarkAsReadButton:  { x: -90,  y: 556, w: 170, h: 36,  type: 'btnGhost' },
             cardMarkAllReadButton: { x: 90,   y: 556, w: 170, h: 36,  type: 'btnGhost' },
@@ -410,16 +423,17 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         elements: {
             roster:  { x: 0,    y: 150, w: 640, h: 440, type: 'group' },
-            backBtn: { x: -260, y: 600, w: 160, h: 44,  type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40,  type: 'label' },
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
         },
         allowedOverlaps: [],
     },
     TokenDetailPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -300, y: 612,  w: 100, h: 26, type: 'label' },
-            backBtn:         { x: -300, y: 612,  w: 130, h: 34, type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             symbolLabel:     { x:    0, y: 614,  w: 320, h: 34, type: 'label' },
             nameLabel:       { x:    0, y: 588,  w: 320, h: 18, type: 'label' },
             mintChip:        { x:  255, y: 612,  w: 130, h: 26, type: 'btnGhost' },
@@ -441,8 +455,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     DailyChallengePanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backLink:        { x: -280, y: 618, w: 110, h: 28, type: 'label' },
-            backBtn:         { x: -280, y: 618, w: 140, h: 36, type: 'btnGhost' },
+            backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:           { x: 0,    y: 600, w: 400, h: 40, type: 'label' },
             streakDayLabel:  { x: 0,    y: 2,   w: 560, h: 38, type: 'label' },
             streakBestLabel: { x: 0,    y: -28, w: 560, h: 22, type: 'label' },
@@ -452,8 +466,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     SpectatorPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            backBtn: { x: -260, y: 600, w: 160, h: 44, type: 'btnGhost' },
-            title:   { x: 0,    y: 600, w: 300, h: 40, type: 'label' },
+            backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
+            backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
+            title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
         },
         allowedOverlaps: [],
     },
