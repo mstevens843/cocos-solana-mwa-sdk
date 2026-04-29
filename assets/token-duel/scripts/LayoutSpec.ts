@@ -100,6 +100,88 @@ export const UNIFORM_CARD = {
     NOTIFICATION_H:  92,
 } as const;
 
+// 2026-04-29 PostMatch viewport-aware 3-zone resolver. Mirrors pm.zones
+// in LayoutSpec.cjs. AppUI._relayoutPostMatchToViewport reads
+// view.getVisibleSize() and snaps each child to (zoneAnchor + delta) so
+// the layout follows the device viewport instead of the panel canvas.
+//   topAnchor = (vh / 2) - SAFE_AREA_TOP
+//   centerY   = 0                          (panel root rests at world origin)
+//   botAnchor = (-vh / 2) + SAFE_AREA_BOT
+export const POSTMATCH_SAFE_AREA_TOP = 110;
+export const POSTMATCH_SAFE_AREA_BOT =  96;
+export const POSTMATCH_ZONES = {
+    top: {
+        backLink:        -28,
+        backBtn:         -28,
+        title:           -90,
+        track:          -148,
+        trophy:          -28,
+    },
+    center: {
+        mascotGlow:        0,
+        mascotContainer:   0,
+        payoutLabel:    -200,
+    },
+    bottom: {
+        sameSquadBtn:     44,
+        againBtn:         44,
+        sameSquadGlow:    44,
+        xpBarFill:       120,
+        xpBarLabelLeft:  120,
+        xpBarLabelRight: 120,
+        cardsRow2:       198,
+        cardsRow1:       330,
+        rake:            420,
+        breakdown:       450,
+        subtitle:        482,
+        shareButton:      90,
+        status:          -50,
+    },
+} as const;
+
+// 2026-04-29 — Dashboard zone scaffold. Mirrors DashboardLayoutSpec in
+// LayoutSpec.cjs. AppUI runtime pill builders (Stats/History/Trophies, Paper/
+// Real, 1v1/Trio/4p/8p, Portfolio/Leaderboard hub strip) read y from these
+// zones so they cannot drift into a sibling row.
+export interface DashboardZone {
+    topY: number;
+    bottomY: number;
+    centerY: number;
+    height: number;
+}
+export interface DashboardZones {
+    header:      DashboardZone;
+    title:       DashboardZone;
+    modeSwitch:  DashboardZone | null;
+    subtab:      DashboardZone;
+    content:     DashboardZone;
+}
+function _zone(topY: number, height: number): DashboardZone {
+    const bottomY = topY - height;
+    return { topY, bottomY, centerY: topY - height / 2, height };
+}
+export function buildDashboardZones(opts: { includeModeSwitch: boolean }): DashboardZones {
+    const TOP = 760;
+    const H = { header: 80, title: 104, modeSwitch: 60, subtab: 60 };
+    const header     = _zone(TOP, H.header);
+    const title      = _zone(header.bottomY, H.title);
+    const modeSwitch = opts.includeModeSwitch ? _zone(title.bottomY, H.modeSwitch) : null;
+    const subtab     = _zone((modeSwitch || title).bottomY, H.subtab);
+    const contentTop = subtab.bottomY;
+    const contentBottom = -480;
+    const content: DashboardZone = {
+        topY: contentTop,
+        bottomY: contentBottom,
+        centerY: (contentTop + contentBottom) / 2,
+        height: contentTop - contentBottom,
+    };
+    return { header, title, modeSwitch, subtab, content };
+}
+export const DashboardLayoutSpec = {
+    portfolio:   buildDashboardZones({ includeModeSwitch: true }),
+    leaderboard: buildDashboardZones({ includeModeSwitch: false }),
+} as const;
+
 export const LayoutSpec: Record<string, PanelSpec> = {
     BackgroundFX: {
         canvas: { w: 720, h: 1280 },
@@ -310,14 +392,14 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             backLink:      { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:       { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:         { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label' },
-            walletCard:    { x: 0,    y: 530,  w: UNIFORM_LAYOUT.CONTENT_W, h: 124, type: 'group' },
-            profileCard:   { x: 0,    y: 376,  w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
-            quickPlayCard: { x: 0,    y: 138,  w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
-            audioCard:       { x: 0,    y: -104, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
-            accountCard:     { x: 0,    y: -332, w: UNIFORM_LAYOUT.CONTENT_W, h: 232, type: 'group' },
-            dangerZoneLabel: { x: 0,    y: -486, w: 200, h: 14, type: 'label' },
-            deleteBtn:       { x: 0,    y: -518, w: 320, h: 44, type: 'btnGhost' },
-            status:          { x: 0,    y: -562, w: 640, h: 20, type: 'label' },
+            walletCard:    { x: 0,    y: 424,  w: UNIFORM_LAYOUT.CONTENT_W, h: 124, type: 'group' },
+            profileCard:   { x: 0,    y: 264,  w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
+            quickPlayCard: { x: 0,    y: 36,   w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
+            audioCard:       { x: 0,    y: -192, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
+            accountCard:     { x: 0,    y: -414, w: UNIFORM_LAYOUT.CONTENT_W, h: 232, type: 'group' },
+            dangerZoneLabel: { x: 0,    y: -566, w: 200, h: 14, type: 'label' },
+            deleteBtn:       { x: 0,    y: -598, w: 320, h: 44, type: 'btnGhost' },
+            status:          { x: 0,    y: -625, w: 640, h: 20, type: 'label' },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
@@ -352,22 +434,28 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             title:          { x: 0,    y: 700,  w: 400, h: 36, type: 'label' },
             refreshBtn:     { x: 280,  y: 700,  w: 56,  h: 44, type: 'btnGhost' },
             countLabel:     { x: 0,    y: 665,  w: 600, h: 18, type: 'label' },
-            // 2026-04-28 final pass — Hide-full INSIDE FilterCard footer.
-            hideFullToggle: { x: 0,    y: 418,  w: 160, h: 24, type: 'btnPrimary' },
-            // 2026-04-28 final pass — unified FilterCard encapsulates tabs + chip rows + hide-full.
+            hideFullToggle: { x: 0,    y: 388,  w: 160, h: 28, type: 'btnPrimary' },
             liveCountPulseDot:  { x: -90, y: 665, w: 10,  h: 10,  type: 'sprite' },
-            filterCard:         { x: 0,   y: 510, w: UNIFORM_LAYOUT.CONTENT_W, h: 240, type: 'sprite' },
-            filterDivider1:     { x: 0,   y: 520, w: 620, h: 1,   type: 'sprite' },
-            filterDivider2:     { x: 0,   y: 480, w: 620, h: 1,   type: 'sprite' },
-            filterDivider3:     { x: 0,   y: 438, w: 620, h: 1,   type: 'sprite' },
-            fmModeLabel:        { x: -312, y: 540, w: 70,  h: 22, type: 'label'  },
-            fmWindowLabel:      { x: -312, y: 500, w: 70,  h: 22, type: 'label'  },
-            fmWagerLabel:       { x: -312, y: 460, w: 70,  h: 22, type: 'label'  },
-            tabActiveUnderline: { x: -122, y: 575, w: 200, h: 4,  type: 'sprite' },
-            tailHintTitle:      { x: 0,    y: 200, w: 600, h: 24, type: 'label'  },
-            tailHintSubtitle:   { x: 0,    y: 172, w: 600, h: 20, type: 'label'  },
-            tailResetBtn:       { x: -90,  y: 130, w: 160, h: 40, type: 'btnGhost' },
-            tailStartBtn:       { x: 90,   y: 130, w: 160, h: 40, type: 'btnGhost' },
+            // 2026-04-29 FindMatch UX rebuild: 3 row trays + SegmentMount stubs.
+            modeTray:           { x: 80,  y: 540, w: 480, h: 50, type: 'sprite' },
+            windowTray:         { x: 80,  y: 480, w: 480, h: 50, type: 'sprite' },
+            wagerTray:          { x: 80,  y: 420, w: 480, h: 50, type: 'sprite' },
+            segmentMountMode:   { x: 80,  y: 540, w: 480, h: 44, type: 'group'  },
+            segmentMountWindow: { x: 80,  y: 480, w: 480, h: 44, type: 'group'  },
+            segmentMountWager:  { x: 80,  y: 420, w: 480, h: 44, type: 'group'  },
+            fmModeLabel:        { x: -260, y: 540, w: 100, h: 22, type: 'label' },
+            fmWindowLabel:      { x: -260, y: 480, w: 100, h: 22, type: 'label' },
+            fmWagerLabel:       { x: -260, y: 420, w: 100, h: 22, type: 'label' },
+            // Legacy stubs kept for AppUI binding compat (hidden / zero size).
+            filterCard:         { x: 0, y: 510, w: UNIFORM_LAYOUT.CONTENT_W, h: 1, type: 'sprite' },
+            filterDivider1:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            filterDivider2:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            filterDivider3:     { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            tabActiveUnderline: { x: 0, y: 0, w: 1, h: 1, type: 'sprite' },
+            tailHintTitle:      { x: 0, y: -2000, w: 600, h: 24, type: 'label'  },
+            tailHintSubtitle:   { x: 0, y: -2000, w: 600, h: 20, type: 'label'  },
+            tailResetBtn:       { x: 0, y: -2000, w: 160, h: 40, type: 'btnGhost' },
+            tailStartBtn:       { x: 0, y: -2000, w: 160, h: 40, type: 'btnGhost' },
             emptyLabel:     { x: 0,    y: -340, w: 660, h: 22, type: 'label' },
             hostBtn:        { x: 0,    y: -440, w: 540, h: 64, type: 'btnPrimary' },
             status:         { x: 0,    y: -700, w: 660, h: 20, type: 'label' },
@@ -382,35 +470,43 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // constants block in LayoutSpec.cjs.
             backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 685, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 685, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            title:           { x: 0,    y: 570,  w: 320, h: 36, type: 'label' },
-            // 2026-04-27 UI overhaul — anchors header band.
-            headerUnderline: { x: 0,    y: 540,  w: 712, h: 2,  type: 'sprite' },
+            // 2026-04-29 token-picker rebuild — title raised 570→560, w 320→360, h 36→48.
+            title:           { x: 0,    y: 560,  w: 360, h: 48, type: 'label' },
+            // 2026-04-29 — moved 540→520 to clear bbox of larger title (h:36→48 at y:560).
+            headerUnderline: { x: 0,    y: 520,  w: 712, h: 2,  type: 'sprite' },
             levelPill:       { x: 85,   y: 620,  w: 140, h: 44, type: 'chip' },
             solPill:         { x: 255,  y: 620,  w: 140, h: 44, type: 'chip' },
-            matchSetupCard:  { x: 0,    y: 480,  w: UNIFORM_LAYOUT.CONTENT_W, h: 93, type: 'group' },
-            // 2026-04-27 UI overhaul — ready-state underline at matchSetupCard bottom.
-            matchSetupReadyGlow: { x: 0, y: 434, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
-            feedFrameCard:   { x: 0,    y: 89,   w: 712, h: 656, type: 'sprite' },
-            search:          { x: 46,   y: 387,  w: 312, h: 44, type: 'editbox' },
-            searchClear:     { x: 188,  y: 387,  w: 32,  h: 32, type: 'btnGhost' },
-            feedTabDropdown: { x: -224, y: 387,  w: 200, h: 44, type: 'btnGhost' },
-            watchlistStar:   { x: 240,  y: 387,  w: 44,  h: 44, type: 'btnGhost' },
-            cancelWatchlist: { x: 240,  y: 387,  w: 36,  h: 36, type: 'btnGhost' },
-            liveIndicator:   { x: 314,  y: 387,  w: 80,  h: 24, type: 'label' },
-            minLiqDropdown:    { x: -16,  y: 335,  w: 110, h: 32,  type: 'chip' },
-            columnsBtn:        { x: 270,  y: 335,  w: 96,  h: 32,  type: 'chip' },
-            feedColumnHeaders: { x: 0,    y: 297,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
-            feedScrollView:    { x: 0,    y: 26,   w: UNIFORM_LAYOUT.CONTENT_W, h: 510, type: 'scrollview' },
-            // 2026-04-27 UI overhaul — panel h 220→230 to host taller pillar cards.
-            squadPanel:        { x: 0,    y: -364, w: UNIFORM_LAYOUT.CONTENT_W, h: 230, type: 'group' },
-            squadHeaderLabel:  { x: 0,    y: -279, w: 420, h: 24,  type: 'label' },
-            // 2026-04-27 UI overhaul — wagerValueButton compact pill, wagerStartButton hero.
-            wagerValueButton:  { x: -260, y: -488, w: 160, h: 52,  type: 'btnGhost' },
-            wagerStartButton:  { x:  100, y: -488, w: 480, h: 60,  type: 'btnPrimary' },
-            wagerLockChip:     { x: -260, y: -488, w: 160, h: 52,  type: 'chip' },
-            wagerBotChip:      { x: -260, y: -488, w: 160, h: 52,  type: 'chip' },
+            // 2026-04-29b flagship rebalance — h 80→64 (orientation hint, not hero).
+            matchSetupCard:  { x: 0,    y: 470,  w: UNIFORM_LAYOUT.CONTENT_W, h: 64, type: 'group' },
+            // ready-state underline at matchSetupCard bottom (y = 470 - 32 + 1 = 439).
+            matchSetupReadyGlow: { x: 0, y: 439, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
+            // 2026-04-29b — frame h 656→540 to free vertical real estate for squad.
+            feedFrameCard:   { x: 0,    y: 147,  w: 712, h: 540, type: 'sprite' },
+            // 2026-04-29 — Row 1 re-balanced (priority width on search, no overflow on LIVE).
+            search:          { x: 18,   y: 387,  w: 332, h: 44, type: 'editbox' },
+            searchClear:     { x: 168,  y: 387,  w: 32,  h: 32, type: 'btnGhost' },
+            feedTabDropdown: { x: -250, y: 387,  w: 180, h: 44, type: 'btnGhost' },
+            watchlistStar:   { x: 218,  y: 387,  w: 44,  h: 44, type: 'btnGhost' },
+            cancelWatchlist: { x: 218,  y: 387,  w: 36,  h: 36, type: 'btnGhost' },
+            liveIndicator:   { x: 292,  y: 387,  w: 80,  h: 24, type: 'label' },
+            minLiqDropdown:    { x: -16,  y: 343,  w: 110, h: 32,  type: 'chip' },
+            columnsBtn:        { x: 270,  y: 343,  w: 96,  h: 32,  type: 'chip' },
+            feedColumnHeaders: { x: 0,    y: 305,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
+            feedScrollView:    { x: 0,    y: 85,   w: UNIFORM_LAYOUT.CONTENT_W, h: 392, type: 'scrollview' },
+            // 2026-04-29b flagship rebalance — panel h 230→296; squad becomes hero region.
+            squadPanel:        { x: 0,    y: -283, w: UNIFORM_LAYOUT.CONTENT_W, h: 296, type: 'group' },
+            squadHeaderEyebrow:{ x: 0,    y: -156, w: 360, h: 14,  type: 'label' },
+            squadHeaderLabel:  { x: 0,    y: -180, w: 420, h: 28,  type: 'label' },
+            squadHeaderRule:   { x: 0,    y: -202, w: 240, h: 1,   type: 'sprite' },
+            // 2026-04-29b — divider above wager row (commitment grouping).
+            wagerRowDivider:   { x: 0,    y: -428, w: 680, h: 1,   type: 'sprite' },
+            // 2026-04-29 — stake + CTA share 60-px baseline; CTA fills remaining width.
+            wagerValueButton:  { x: -252, y: -468, w: 160, h: 60,  type: 'btnGhost' },
+            wagerStartButton:  { x:   88, y: -468, w: 480, h: 60,  type: 'btnPrimary' },
+            wagerLockChip:     { x: -252, y: -468, w: 160, h: 60,  type: 'chip' },
+            wagerBotChip:      { x: -252, y: -468, w: 160, h: 60,  type: 'chip' },
             wagerHintLabel:    { x: 0,    y: -700, w: 600, h: 24,  type: 'label' },
-            wagerDropdown:     { x: -240, y: -408, w: 360, h: 360, type: 'group' },
+            wagerDropdown:     { x: -240, y: -436, w: 360, h: 360, type: 'group' },
             stakeHeaderLabel:  { x: 0,    y: -395, w: 280, h: 18,  type: 'label' },
             stakeValueLabel:   { x: 0,    y: -420, w: 300, h: 28,  type: 'label' },
             stakeSlider:       { x: 0,    y: -455, w: 560, h: 14,  type: 'graphics' },
@@ -422,7 +518,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             holding3Label:     { x: 0,    y: -550, w: 200, h: 50,  type: 'label' },
             gameArea:          { x: 0,    y: 0,    w: 720, h: 1000,type: 'group' },
             gameOverLabel:     { x: 0,    y: 0,    w: 680, h: 180, type: 'label' },
-            status:            { x: 0,    y: -568, w: 688, h: 26,  type: 'label' },
+            status:            { x: 0,    y: -560, w: 688, h: 26,  type: 'label' },
             rowActionPopover:  { x: 0,    y: 0,    w: 260, h: 110, type: 'group' },
             rowActionPickBtn:  { x: 0,    y:  26,  w: 240, h: 44,  type: 'btnPrimary' },
             rowActionChartBtn: { x: 0,    y: -26,  w: 240, h: 44,  type: 'btnGhost' },
@@ -458,18 +554,16 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     NotificationPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            listContainer:         { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
-            cardHeaderLabel:       { x: -60,  y: 608, w: 240, h: 30,  type: 'label' },
-            cardCloseButton:       { x: 168,  y: 608, w: 36,  h: 36,  type: 'btnGhost' },
-            cardMarkAsReadButton:  { x: -90,  y: 556, w: 170, h: 36,  type: 'btnGhost' },
-            cardMarkAllReadButton: { x: 90,   y: 556, w: 170, h: 36,  type: 'btnGhost' },
-            cardHeaderDivider:     { x: 0,    y: 530, w: 356, h: 1,   type: 'sprite' },
-            groupLabelNow:         { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },
-            groupLabelToday:       { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },
-            groupLabelEarlier:     { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },
-            emptyIcon:             { x: 0,    y: 80,  w: 64,  h: 64,  type: 'group' },
-            emptyTitleLabel:       { x: 0,    y: 0,   w: 320, h: 24,  type: 'label' },
-            emptySubtitleLabel:    { x: 0,    y: -28, w: 340, h: 18,  type: 'label' },
+            listContainer:         { x:    0, y:  -90, w: 360, h: 920, type: 'group' },
+            cardHeaderLabel:       { x: -180, y:  608, w: 220, h:  30, type: 'label' },
+            cardMarkAllReadButton: { x:   90, y:  608, w: 110, h:  28, type: 'btnGhost' },
+            cardCloseButton:       { x:  168, y:  608, w:  36, h:  36, type: 'btnGhost' },
+            cardHeaderDivider:     { x:    0, y:  580, w: 356, h:   1, type: 'sprite' },
+            groupLabelToday:       { x: -160, y:    0, w: 200, h:  16, type: 'label' },
+            groupLabelEarlier:     { x: -160, y:    0, w: 200, h:  16, type: 'label' },
+            emptyIcon:             { x:    0, y:   80, w:  64, h:  64, type: 'group' },
+            emptyTitleLabel:       { x:    0, y:    0, w: 320, h:  24, type: 'label' },
+            emptySubtitleLabel:    { x:    0, y:  -28, w: 340, h:  18, type: 'label' },
         },
         allowedOverlaps: [],
     },

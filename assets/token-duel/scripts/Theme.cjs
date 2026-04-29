@@ -229,8 +229,10 @@ const ButtonVariants = {
 //   tertiary   → inline / minor controls. Refresh, Reset, Settings rows.
 //   danger     → destructive actions. Delete account.
 const ButtonTierSpec = {
-    primary:   { height: 132, fontSize: 32, iconSize: 32, glowAlpha: 110, glowPad: 14, paddingX: 24, pressPop: true, idlePulse: true,  ripple: true,  shimmer: false, strongPress: true  },
-    secondary: { height: 100, fontSize: 24, iconSize: 26, glowAlpha:  70, glowPad: 10, paddingX: 22, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: true  },
+    // Heights aligned to existing LayoutSpec.cjs values (136h FindMatch, 104h
+    // Start/MIP/Bot) — both sit inside the user's spec ranges.
+    primary:   { height: 136, fontSize: 32, iconSize: 32, glowAlpha: 110, glowPad: 16, paddingX: 24, pressPop: true, idlePulse: true,  ripple: true,  shimmer: false, strongPress: true  },
+    secondary: { height: 104, fontSize: 24, iconSize: 26, glowAlpha:  70, glowPad: 12, paddingX: 22, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: true  },
     tertiary:  { height:  48, fontSize: 18, iconSize: 20, glowAlpha:   0, glowPad:  0, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
     danger:    { height:  48, fontSize: 18, iconSize: 20, glowAlpha:  50, glowPad:  6, paddingX: 16, pressPop: true, idlePulse: false, ripple: false, shimmer: false, strongPress: false },
 };

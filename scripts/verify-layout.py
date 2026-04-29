@@ -140,6 +140,124 @@ def boxes_overlap(b1: tuple[float, float, float, float], b2: tuple[float, float,
     return (x1 < x2 + w2) and (x2 < x1 + w1) and (y1 < y2 + h2) and (y2 < y1 + h1)
 
 
+# 2026-04-29 — Dashboard zone scaffold (mirrors DashboardLayoutSpec in
+# LayoutSpec.cjs / .ts). Portfolio + Leaderboard share a strict 5-zone
+# vertical layout. Each zone is (topY, bottomY) in panel-local Y.
+def _build_dashboard_zones(include_mode_switch: bool) -> dict[str, tuple[float, float]]:
+    TOP = 760
+    H = {"header": 80, "title": 104, "modeSwitch": 60, "subtab": 60}
+    header_top = TOP
+    header_bot = header_top - H["header"]
+    title_top = header_bot
+    title_bot = title_top - H["title"]
+    if include_mode_switch:
+        ms_top = title_bot
+        ms_bot = ms_top - H["modeSwitch"]
+        sub_top = ms_bot
+    else:
+        ms_top = ms_bot = None
+        sub_top = title_bot
+    sub_bot = sub_top - H["subtab"]
+    content_top = sub_bot
+    content_bot = -480
+    out = {
+        "header":  (header_top, header_bot),
+        "title":   (title_top, title_bot),
+        "subtab":  (sub_top, sub_bot),
+        "content": (content_top, content_bot),
+    }
+    if include_mode_switch:
+        out["modeSwitch"] = (ms_top, ms_bot)
+    return out
+
+
+# Map element node names → claimed zone for the panels that opt into the
+# zone-containment check. Names not listed are skipped (e.g., legacy hidden
+# stubs, status footer below CONTENT, sticky-bottom YOU card).
+_PORTFOLIO_ZONE_MAP = {
+    "BackLinkLabel":                 "header",
+    "BackButton":                    "header",
+    "HubTabStrip":                   "header",
+    "PortfolioTitleLabel":           "title",
+    "PortfolioSubtitleLabel":        "title",
+    "PortfolioPubkeyLabel":          "title",
+    "PortfolioModeLabel":            "modeSwitch",
+    "PFModePill":                    "modeSwitch",
+    "PFTopLevelPill":                "subtab",
+    "PortfolioStatsTab":             "subtab",
+    "PortfolioHistoryTab":           "subtab",
+    "PortfolioTrophiesTab":          "subtab",
+    "PortfolioPaperTab":             "modeSwitch",
+    "PortfolioRealTab":              "modeSwitch",
+    "PFStatCard_pnl":                "content",
+    "PFStatCard_wins":               "content",
+    "PFStatCard_losses":             "content",
+    "PFStatCard_winrate":            "content",
+    "PFStatCard_games":              "content",
+    "PFStatCard_xp":                 "content",
+    "PortfolioGroupHeaderPerformance": "content",
+    "PortfolioGroupHeaderActivity":  "content",
+}
+_LEADERBOARD_ZONE_MAP = {
+    "BackLinkLabel":                 "header",
+    "BackButton":                    "header",
+    "HubTabStrip":                   "header",
+    "LeaderboardTitleLabel":         "title",
+    "LeaderboardSubtitleLabel":      "title",
+    "LBModePill":                    "subtab",
+    "ModeTabsContainer":             "subtab",
+    "LBTab_1v1":                     "subtab",
+    "LBTab_trio":                    "subtab",
+    "LBTab_4p":                      "subtab",
+    "LBTab_8p":                      "subtab",
+    "LBTab_season":                  "subtab",
+    "TopPlayerCard":                 "content",
+}
+_DASHBOARD_PANELS = {
+    "PortfolioPanel":   (_PORTFOLIO_ZONE_MAP,   _build_dashboard_zones(True)),
+    "LeaderboardPanel": (_LEADERBOARD_ZONE_MAP, _build_dashboard_zones(False)),
+}
+
+
+def verify_dashboard_zones(nodes: list, panel_idx: int, panel_name: str) -> int:
+    """Assert each known element on Portfolio/Leaderboard sits inside its
+    claimed zone. Returns count of containment failures."""
+    if panel_name not in _DASHBOARD_PANELS:
+        return 0
+    zone_map, zones = _DASHBOARD_PANELS[panel_name]
+    failures = 0
+    for c in nodes[panel_idx].get("_children", []):
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("__id__")
+        if cid is None or cid >= len(nodes):
+            continue
+        cn = nodes[cid]
+        if cn.get("__type__") != "cc.Node":
+            continue
+        nm = cn.get("_name", "")
+        if nm not in zone_map:
+            continue
+        bb = bbox_of(nodes, cid)
+        if bb is None:
+            continue
+        zone_key = zone_map[nm]
+        if zone_key not in zones:
+            continue
+        top_y, bot_y = zones[zone_key]
+        bx, by, bw, bh = bb
+        el_top = by + bh
+        el_bot = by
+        # 4-px tolerance for sub-pixel rendering of pill glow / shadows.
+        TOL = 4.0
+        if el_top > top_y + TOL or el_bot < bot_y - TOL:
+            failures += 1
+            print(f"  ZONE-BREACH {panel_name}.{nm} (zone={zone_key})")
+            print(f"    element y span [{el_bot:.0f}, {el_top:.0f}]   "
+                  f"zone y span [{bot_y:.0f}, {top_y:.0f}]")
+    return failures
+
+
 def verify_panel(nodes: list, panel_idx: int, panel_name: str, allowed: list[tuple[str, str]]) -> int:
     """Return number of unintended overlaps in this panel."""
     n = nodes[panel_idx]
@@ -304,6 +422,8 @@ def main() -> int:
         n_children = len(nodes[panel_idx].get("_children", []))
         before = total_overlaps
         total_overlaps += verify_panel(nodes, panel_idx, panel_name, allowed)
+        # 2026-04-29 — Dashboard zone-containment check for Portfolio + Leaderboard.
+        total_overlaps += verify_dashboard_zones(nodes, panel_idx, panel_name)
         added = total_overlaps - before
         marker = "OK" if added == 0 else f"{added} OVERLAPS"
         print(f"  {panel_name:30s} {n_children:3d} children   {marker}")
@@ -312,7 +432,7 @@ def main() -> int:
     if total_overlaps == 0:
         print("PASS — no unintended overlaps detected.")
         return 0
-    print(f"FAIL — {total_overlaps} unintended overlap(s) detected.")
+    print(f"FAIL — {total_overlaps} unintended overlap(s) / zone breaches detected.")
     return 1
 
 

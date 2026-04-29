@@ -29,6 +29,7 @@
  */
 
 import { Button, Color, Node, Sprite, tween, Tween, UIOpacity, UITransform, Vec3 } from 'cc';
+import { ButtonTier, ButtonTierSpec, Palette } from './Theme';
 
 const TAG = '[ButtonFX]';
 
@@ -263,4 +264,85 @@ export function enhancePrimaryCTA(node: Node | null): void {
     setStrongPress(btn);
     addRipple(btn);  // Phase 18 — ripple on hero CTAs (silent no-op if no Ripple_ child)
     console.log(`${TAG} enhancePrimaryCTA | applied to ${node.name}`);
+}
+
+/**
+ * 2026-04-29 (Prompt 1) — global button-hierarchy dispatcher.
+ *
+ * Applies the right effect bundle for a tier:
+ *   primary    → idle pulse + press dip + strong press + ripple (full hero treatment).
+ *   secondary  → press dip + strong press only (no idle pulse, no ripple).
+ *   tertiary   → press dip only — no zoom bump, no glow flash.
+ *   danger     → press dip with rose-tint override on the glow flash; no idle pulse.
+ *
+ * Replaces the per-call hand-wiring of addIdlePulse / addPressPop / addRipple
+ * scattered through AppUI.start(). Call once per button at start time:
+ *
+ *   applyButtonTier(this._homePanel.getChildByName('FindMatchButton'), 'primary');
+ *
+ * Silent no-op when node is null or has no Button component.
+ */
+export function applyButtonTier(node: Node | null, tier: ButtonTier): void {
+    if (!node) return;
+    const btn = node.getComponent(Button);
+    if (!btn) {
+        console.log(`${TAG} applyButtonTier(${tier}) | no Button on ${node?.name ?? '<null>'}`);
+        return;
+    }
+    const spec = ButtonTierSpec[tier];
+    if (!spec) {
+        console.log(`${TAG} applyButtonTier | unknown tier "${tier}"`);
+        return;
+    }
+    if (spec.idlePulse)   addIdlePulse(node);
+    if (spec.pressPop) {
+        if (tier === 'danger') addDangerPressPop(btn);
+        else                   addPressPop(btn);
+    }
+    if (spec.strongPress) setStrongPress(btn);
+    if (spec.ripple)      addRipple(btn);
+    console.log(`${TAG} applyButtonTier(${tier}) | applied to ${node.name}`);
+}
+
+/**
+ * Danger-tier press feedback — same scale dip as addPressPop but the glow
+ * flash uses rose (#FF4D4D from Palette.accent.rose) so destructive presses
+ * read as a tinted consequence cue rather than a neutral confirmation.
+ */
+function addDangerPressPop(button: Button): void {
+    const node = button.node;
+    button.node.on(Button.EventType.CLICK, () => {
+        const wasPulsing = pulseSet.has(node);
+        if (wasPulsing) {
+            pulseSet.delete(node);
+            Tween.stopAllByTarget(node);
+        }
+        node.setScale(1, 1, 1);
+
+        tween(node)
+            .to(0.07, { scale: new Vec3(0.97, 0.97, 1) }, { easing: 'cubicIn' })
+            .to(0.07, { scale: new Vec3(1, 1, 1) },       { easing: 'backOut' })
+            .start();
+
+        // Rose-tinted halo flash on optional sibling BtnGlow_<name>.
+        const halo = node.parent ? node.parent.getChildByName(`BtnGlow_${node.name}`) : null;
+        if (halo) {
+            const haloOp = halo.getComponent(UIOpacity) ?? halo.addComponent(UIOpacity);
+            const baseOpacity = haloOp.opacity;
+            const peakOpacity = Math.min(255, baseOpacity + 80);
+            Tween.stopAllByTarget(haloOp);
+            tween(haloOp)
+                .to(0.09, { opacity: peakOpacity }, { easing: 'cubicOut' })
+                .to(0.22, { opacity: baseOpacity }, { easing: 'cubicIn' })
+                .start();
+        }
+
+        // Sprite color flash — shift toward rose for ~120ms, then restore.
+        const spr = node.getComponent(Sprite);
+        if (spr) {
+            const orig = spr.color.clone();
+            spr.color = new Color(255, 77, 77, orig.a);  // Palette.accent.rose
+            setTimeout(() => { spr.color = orig; }, 120);
+        }
+    }, null);
 }

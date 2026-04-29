@@ -11,8 +11,9 @@ import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, Scr
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
 import { swapPanel, popScale, shake } from '../../token-duel/scripts/PanelTransitions';
 import { MascotController, MascotState } from '../../token-duel/scripts/MascotController';
-import { Palette, themeColor, colorFromHex } from '../../token-duel/scripts/Theme';
-import { enhancePrimaryCTA, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
+import { Palette, themeColor, colorFromHex, TabTier, TabTierSpec } from '../../token-duel/scripts/Theme';
+import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, DashboardLayoutSpec } from '../../token-duel/scripts/LayoutSpec';
+import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
 import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
@@ -770,17 +771,8 @@ export class AppUI extends Component {
     private _notifCloseButton: Button | null = null;
     private _notifMarkAllReadButton: Button | null = null;
     private _notifMarkAllReadLabel: Label | null = null;
-    /** 2026-04-28 — selection-mode CTA in the new header 50/50 row. Label morphs
-     *  "Mark as Read" → "Mark N Read - Confirm" based on _notifSelectedIds size. */
-    private _notifMarkAsReadButton: Button | null = null;
-    private _notifMarkAsReadLabel: Label | null = null;
-    private _notifSelectionMode: boolean = false;
-    private _notifSelectedIds: Set<string> = new Set();
-    private _notifRowCheckboxes: (Node | null)[] = [];
-    private _notifRowCheckmarks: (Node | null)[] = [];
     private _notifEmptyGroup: Node | null = null;
     private _notifEmptyIcon: Node | null = null;
-    private _notifGroupLabelNow: Node | null = null;
     private _notifGroupLabelToday: Node | null = null;
     private _notifGroupLabelEarlier: Node | null = null;
     private _notifRows: Node[] = [];
@@ -810,6 +802,14 @@ export class AppUI extends Component {
     // Phase H2 — Open Lobbies / Live Now tab toggle on FindMatchPanel.
     private _findMatchTabOpenBtn: Button | null = null;
     private _findMatchTabLiveBtn: Button | null = null;
+    // 2026-04-29 (Prompt 2) — runtime pill replaces the scene-bound tabs.
+    private _findMatchTabSetActive: ((key: string) => void) | null = null;
+    private _findMatchTabRedraw:    (() => void)              | null = null;
+    // 2026-04-29 FindMatch UX rebuild: filter chips driven by _buildSegmentedPill,
+    // mounted into SegmentMount_Mode / Window / Wager nodes.
+    private _fmModePillSetActive:   ((key: string) => void) | null = null;
+    private _fmWindowPillSetActive: ((key: string) => void) | null = null;
+    private _fmWagerPillSetActive:  ((key: string) => void) | null = null;
     private _filterModeButtons: Map<string, Button> = new Map();
     private _filterWindowButtons: Map<string, Button> = new Map();
     private _filterWagerButtons: Map<string, Button> = new Map();
@@ -835,7 +835,7 @@ export class AppUI extends Component {
     private _mipPanel: Node = null!;
     private _mipRowNodes: Node[] = [];
     private _mipRingGraphics: Graphics[] = [];
-    private _mipWinLineLabels: Label[] = [];
+    private _mipStatusLabels: Label[] = [];
     private _mipWindowLineLabels: Label[] = [];
     private _mipStakeChipLabels: Label[] = [];
     private _mipOpponentChipLabels: Label[] = [];
@@ -857,6 +857,14 @@ export class AppUI extends Component {
     private _mipDuelBarGlows: Graphics[] = [];
     private _mipDuelBarTicks: Graphics[] = [];
     private _mipResumeButtons: Button[] = [];
+    /** 2026-04-29 — live-control-center redesign refs. */
+    private _mipLiveDots: Sprite[] = [];
+    private _mipLiveLabels: Label[] = [];
+    private _mipProgressFills: Node[] = [];
+    private _mipProgressFillUTs: UITransform[] = [];
+    private _mipProgressFillSprites: Sprite[] = [];
+    private _mipProgressTracks: Sprite[] = [];
+    private _mipResumePulsing: boolean[] = [];
     /** Eased duel-bar position per row (-1..+1). _renderMipRows sets target;
      *  _mipFrameTick lerps current toward target so the bar slides instead
      *  of snapping when delta% changes on each 1-s tick. */
@@ -1426,7 +1434,9 @@ export class AppUI extends Component {
         }, this);
 
         // ── betting-duel Phase 3: RacePanel binding ──
-        this._racePanel = this._tokenDuelPanel.getChildByName('RacePanel') ?? null;
+        // 2026-04-29 — RacePanel re-parented from TokenDuelPanel to canvas
+        // root (kills purple bleed at viewport top from stacked lobbyMount).
+        this._racePanel = this.node.getChildByName('RacePanel') ?? null;
         if (this._racePanel) {
             this._raceCountdownLabel     = this._racePanel.getChildByName('RaceCountdownLabel')?.getComponent(Label) ?? null;
             this._raceHeroDeltaLabel     = this._racePanel.getChildByName('RaceHeroDeltaLabel')?.getComponent(Label) ?? null;
@@ -1975,15 +1985,16 @@ export class AppUI extends Component {
                 }
             }
             // Runtime segmented pill — replaces the four scene-bound mode tabs.
-            // 2026-04-28 round-2: y=514 (LayoutSpec.leaderboard.MODE_TABS_Y).
-            // Mirrors Portfolio's Paper/Real chip y for visual rhythm across
-            // the hub; clears the gold #1 TopPlayerCard (y=380) by ≥36px
-            // including outer-glow padding. Inactive label floor at 70% white.
+            // 2026-04-29 — y derived from DashboardLayoutSpec.leaderboard.subtab.centerY
+            // so the strip is locked inside its SUBTAB zone and cannot bleed into
+            // the #1 hero card below or the title row above.
+            // 2026-04-29 (Prompt 2) — tier='mode' pulls teal fill, 48h height,
+            // 18pt font, and the mode-tier glow + label alphas from TabTierSpec.
             const lbModePill = this._buildSegmentedPill(this._leaderboardPanel, {
                 name: 'LBModePill',
+                tier: 'mode',
                 width: 420,
-                height: 48,
-                y: 514,
+                y: DashboardLayoutSpec.leaderboard.subtab.centerY,
                 segments: [
                     { key: '1v1',  label: '1v1' },
                     { key: 'trio', label: 'Trio' },
@@ -1991,11 +2002,6 @@ export class AppUI extends Component {
                     { key: '8p',   label: '8p' },
                 ],
                 activeKey: this._lbFilterMode === 4 ? '__none__' : ['1v1', 'trio', '4p', '8p'][this._lbFilterMode] ?? '1v1',
-                fillHex: Palette.accent.teal,
-                glowHex: Palette.accent.teal,
-                bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFFB3',
-                fontSize: 18,
                 onClick: (key) => {
                     const modeU8 = ({ '1v1': 0, trio: 1, '4p': 2, '8p': 3 } as Record<string, number>)[key];
                     if (modeU8 == null) return;
@@ -2253,42 +2259,42 @@ export class AppUI extends Component {
             const legacyModeLabelN = this._portfolioPanel.getChildByName('PortfolioModeLabel');
             if (legacyModeLabelN) legacyModeLabelN.active = false;
             // Runtime pill — Stats / History / Trophies.
-            // 2026-04-28 round-2: y=428 (LayoutSpec.portfolio.TABS_Y). Sits below
-            // the Paper/Real chip (y=514) with glow padding on both sides; well
-            // clear of the pubkey row (y=568). `bgHex` uses pillTray so the
-            // strip has a visible edge against the panel.
+            // 2026-04-29 — y derived from DashboardLayoutSpec.portfolio.subtab.centerY
+            // so the strip lives inside its SUBTAB zone, sits cleanly below the
+            // Paper/Real chip in the MODE_SWITCH zone, and never overlaps the
+            // hero PnL card at the top of CONTENT.
+            // 2026-04-29 (Prompt 2) — Stats/History/Trophies are SUB tier per
+            // spec (content filtering). Tier='sub' picks up 40h, 16pt, teal
+            // glow at lower alpha so the strip defers to the Hub pill above.
             const pfTopPill = this._buildSegmentedPill(this._portfolioPanel, {
                 name: 'PFTopLevelPill',
+                tier: 'sub',
                 width: 420,
-                height: 48,
-                y: 428,
+                y: DashboardLayoutSpec.portfolio.subtab.centerY,
                 segments: [
                     { key: 'stats',    label: 'Stats' },
                     { key: 'history',  label: 'History' },
                     { key: 'trophies', label: 'Trophies' },
                 ],
                 activeKey: this._pfTopLevelTab,
-                fillHex: Palette.accent.teal,
-                glowHex: Palette.accent.teal,
-                bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFFB3',
-                fontSize: 18,
                 onClick: (key) => this._onPortfolioTopLevelTab(key as 'stats' | 'history' | 'trophies'),
             });
             this._pfTopLevelSetActive = pfTopPill.setActive;
             this._pfTopLevelRedraw = pfTopPill.redraw;
             this._pfTopLevelPillStrip = pfTopPill.strip;
-            // Runtime chip — Paper / Real. 2026-04-28 round-2: y=514
-            // (LayoutSpec.portfolio.MODE_TOGGLE_Y). Demoted from a 260×56
-            // sub-label pill to a 200×36 chip, sits above the secondary tabs
-            // so it reads as "section context" instead of a third tab row.
-            // Glow drops to tealDim so the chip never out-shines the
-            // secondary strip below it.
+            // Runtime chip — Paper / Real.
+            // 2026-04-29 — y derived from DashboardLayoutSpec.portfolio.modeSwitch.centerY,
+            // anchoring the chip inside its dedicated MODE_SWITCH zone above the
+            // SUBTAB row. Glow stays at tealDim so the chip never out-shines the
+            // sub-pill below it.
+            // Paper/Real is a CHIP not a tab — kept as a custom 200×36 size
+            // with explicit fontSize 13. Routes through the same builder for
+            // active-state animation parity.
             const pfModePill = this._buildSegmentedPill(this._portfolioPanel, {
                 name: 'PFModePill',
                 width: 200,
                 height: 36,
-                y: 514,
+                y: DashboardLayoutSpec.portfolio.modeSwitch!.centerY,
                 segments: [
                     { key: 'paper', label: 'Paper' },
                     { key: 'real',  label: 'Real' },
@@ -2297,7 +2303,6 @@ export class AppUI extends Component {
                 fillHex: Palette.accent.teal,
                 glowHex: Palette.accent.tealDim,
                 bgHex:   Palette.bg.pillTray,
-                inactiveLabelHex: '#FFFFFFB3',
                 fontSize: 13,
                 onClick: (key) => this._onPortfolioTabClick(key as 'paper' | 'real'),
             });
@@ -2746,38 +2751,106 @@ export class AppUI extends Component {
             this._findMatchHostButton  = this._findMatchPanel.getChildByName('FindMatchHostButton')?.getComponent(Button) ?? null;
             this._findMatchHideFullToggle = this._findMatchPanel.getChildByName('FilterHideFullToggle')?.getComponent(Button) ?? null;
             // Phase H2 — Open / Live tab buttons.
-            this._findMatchTabOpenBtn = this._findMatchPanel.getChildByName('FindMatchTab_Open')?.getComponent(Button) ?? null;
-            this._findMatchTabLiveBtn = this._findMatchPanel.getChildByName('FindMatchTab_Live')?.getComponent(Button) ?? null;
-            this._findMatchTabOpenBtn?.node.on(Button.EventType.CLICK, () => this._onFindMatchTabClick('open'), this);
-            this._findMatchTabLiveBtn?.node.on(Button.EventType.CLICK, () => this._onFindMatchTabClick('live'), this);
+            // 2026-04-29 (Prompt 2) — migrated from hand-styled scene-bound
+            // buttons to the central _buildSegmentedPill helper. Drops the
+            // 78%-opacity inactive workaround (was the source of the "dark /
+            // invisible tab" complaint) and unifies styling with Hub / Mode /
+            // Sub strips. Old scene nodes + sliding underline are deactivated
+            // since the pill renders its own active highlight + slide.
+            const fmTabOpenOld = this._findMatchPanel.getChildByName('FindMatchTab_Open');
+            const fmTabLiveOld = this._findMatchPanel.getChildByName('FindMatchTab_Live');
+            const fmTabUnderline = this._findMatchPanel.getChildByName('TabActiveUnderline');
+            const fmTabGlowOpen  = this._findMatchPanel.getChildByName('ChipGlow_FindMatchTab_Open');
+            const fmTabGlowLive  = this._findMatchPanel.getChildByName('ChipGlow_FindMatchTab_Live');
+            if (fmTabOpenOld)   fmTabOpenOld.active = false;
+            if (fmTabLiveOld)   fmTabLiveOld.active = false;
+            if (fmTabUnderline) fmTabUnderline.active = false;
+            if (fmTabGlowOpen)  fmTabGlowOpen.active = false;
+            if (fmTabGlowLive)  fmTabGlowLive.active = false;
+            // Build the runtime pill at the same Y (=602) the scene tabs used.
+            const fmTabPill = this._buildSegmentedPill(this._findMatchPanel, {
+                name: 'FindMatchTabsPill',
+                tier: 'mode',
+                width: 484,
+                y: 602,
+                segments: [
+                    { key: 'open', label: 'Open Lobbies' },
+                    { key: 'live', label: 'Live Now' },
+                ],
+                activeKey: 'open',
+                onClick: (key) => this._onFindMatchTabClick(key as 'open' | 'live'),
+            });
+            this._findMatchTabSetActive = fmTabPill.setActive;
+            this._findMatchTabRedraw    = fmTabPill.redraw;
+            // Keep the legacy Button references null — the manual chip-styling
+            // path in _refreshFindMatchFilterChips skips the 'tab' row when
+            // these are null so the pill is the only source of tab visuals.
+            this._findMatchTabOpenBtn = fmTabPill.buttons.get('open') ?? null;
+            this._findMatchTabLiveBtn = fmTabPill.buttons.get('live') ?? null;
             this._findMatchBackButton?.node.on(Button.EventType.CLICK, () => this._hideFindMatchPanel(), this);
             this._findMatchRefreshButton?.node.on(Button.EventType.CLICK, () => { void this._matchBrowser?.refresh(); }, this);
             this._findMatchHostButton?.node.on(Button.EventType.CLICK, () => this._onFindMatchHostTap(), this);
             this._findMatchHideFullToggle?.node.on(Button.EventType.CLICK, () => this._onToggleHideFull(), this);
-            // Filter chips (Stage 3: trio replaces br10).
-            const modeKeys = ['all', 'oneVone', 'trio', '4p', '8p'];
-            for (const k of modeKeys) {
-                const b = this._findMatchPanel.getChildByName(`FilterMode_${k}`)?.getComponent(Button);
-                if (b) {
-                    this._filterModeButtons.set(k, b);
-                    b.node.on(Button.EventType.CLICK, () => this._onFilterModeClick(k), this);
-                }
+            // 2026-04-29 FindMatch UX rebuild: 3 filter rows are driven by
+            // _buildSegmentedPill (mode tier), mounted into SegmentMount_Mode /
+            // Window / Wager. The pill provides its own active fill, halo, and
+            // sliding underline, so the prior chip + glow scaffolding is gone.
+            const fmModeMount = this._findMatchPanel.getChildByName('FindMatchSegmentMountMode');
+            if (fmModeMount) {
+                const pill = this._buildSegmentedPill(fmModeMount, {
+                    name: 'FindMatchModeFilterPill',
+                    tier: 'mode',
+                    width: 480, height: 44, y: 0,
+                    segments: [
+                        { key: 'all',     label: 'All' },
+                        { key: 'oneVone', label: '1v1' },
+                        { key: 'trio',    label: 'Trio' },
+                        { key: '4p',      label: '4p' },
+                        { key: '8p',      label: '8p' },
+                    ],
+                    activeKey: 'all',
+                    onClick: (key: string) => this._onFilterModeClick(key),
+                });
+                this._fmModePillSetActive = pill.setActive;
+                for (const [k, b] of pill.buttons) this._filterModeButtons.set(k, b);
             }
-            const winKeys = ['all', '30s', '1m', '5m', '1h', '24h', '7d'];
-            for (const k of winKeys) {
-                const b = this._findMatchPanel.getChildByName(`FilterWindow_${k}`)?.getComponent(Button);
-                if (b) {
-                    this._filterWindowButtons.set(k, b);
-                    b.node.on(Button.EventType.CLICK, () => this._onFilterWindowClick(k), this);
-                }
+            const fmWindowMount = this._findMatchPanel.getChildByName('FindMatchSegmentMountWindow');
+            if (fmWindowMount) {
+                const pill = this._buildSegmentedPill(fmWindowMount, {
+                    name: 'FindMatchWindowFilterPill',
+                    tier: 'mode',
+                    width: 480, height: 44, y: 0,
+                    segments: [
+                        { key: 'all', label: 'All' },
+                        { key: '30s', label: '30s' },
+                        { key: '1m',  label: '1m' },
+                        { key: '5m',  label: '5m' },
+                        { key: '1h',  label: '1h' },
+                    ],
+                    activeKey: 'all',
+                    onClick: (key: string) => this._onFilterWindowClick(key),
+                });
+                this._fmWindowPillSetActive = pill.setActive;
+                for (const [k, b] of pill.buttons) this._filterWindowButtons.set(k, b);
             }
-            const wagerKeys = ['all', 'low', 'mid', 'high', 'whale'];
-            for (const k of wagerKeys) {
-                const b = this._findMatchPanel.getChildByName(`FilterWager_${k}`)?.getComponent(Button);
-                if (b) {
-                    this._filterWagerButtons.set(k, b);
-                    b.node.on(Button.EventType.CLICK, () => this._onFilterWagerClick(k), this);
-                }
+            const fmWagerMount = this._findMatchPanel.getChildByName('FindMatchSegmentMountWager');
+            if (fmWagerMount) {
+                const pill = this._buildSegmentedPill(fmWagerMount, {
+                    name: 'FindMatchWagerFilterPill',
+                    tier: 'mode',
+                    width: 480, height: 44, y: 0,
+                    segments: [
+                        { key: 'all',   label: 'All' },
+                        { key: 'low',   label: 'Low' },
+                        { key: 'mid',   label: 'Mid' },
+                        { key: 'high',  label: 'High' },
+                        { key: 'whale', label: 'Whale' },
+                    ],
+                    activeKey: 'all',
+                    onClick: (key: string) => this._onFilterWagerClick(key),
+                });
+                this._fmWagerPillSetActive = pill.setActive;
+                for (const [k, b] of pill.buttons) this._filterWagerButtons.set(k, b);
             }
             // 8 row pool — Phase A2 redesign: edge stripes + capacity bar fills + track chips.
             // 2026-04-28 polish — Phase H: per-slot UIOpacity tween on PDA-diff so
@@ -2822,12 +2895,9 @@ export class AppUI extends Component {
                 if (joinBtn) {
                     try { addPressPop(joinBtn); } catch (_) { /* ignore */ }
                     try { addIdlePulse(joinBtn.node, 1.04, 1.4); } catch (_) { /* ignore */ }
-                    // Constrain inside card: card spans ±330; right edge target = +314
-                    // (16px padding from card right). 150 → 128 width is ~15% narrower
-                    // (height preserved); pos.x = 314 − 64 = 250.
-                    const _btnUt = joinBtn.node.getComponent(UITransform);
-                    if (_btnUt) _btnUt.setContentSize(128, 80);
-                    joinBtn.node.setPosition(250, 0, 0);
+                    // 2026-04-29 FindMatch UX rebuild: Resume CTA geometry now
+                    // baked at codegen (96x56 at x=246), so the prior runtime
+                    // resize/reposition workaround is no longer needed.
                 }
                 // Card touch-glow — fade glow alpha in on touch-start, return to
                 // baseline on touch-end/cancel. 2026-04-28 polish — Phase C: baseline
@@ -2967,16 +3037,41 @@ export class AppUI extends Component {
                 if (!rowN) continue;
                 this._mipRowNodes.push(rowN);
 
+                // 2026-04-29 redesign — card chrome refs.
+                const cardBg = rowN.getChildByName(`MIPCardBg_${i}`)?.getComponent(Sprite);
+                if (cardBg) this._mipCardBgs.push(cardBg);
+                const cardGlow = rowN.getChildByName(`MIPCardGlow_${i}`)?.getComponent(Sprite);
+                if (cardGlow) this._mipCardGlows.push(cardGlow);
                 const edgeSpr = rowN.getChildByName(`MIPCardEdge_${i}`)?.getComponent(Sprite);
                 if (edgeSpr) this._mipCardEdges.push(edgeSpr);
+
+                // Progress bar refs (track + fill — fill UITransform width tweens).
+                const trackSpr = rowN.getChildByName(`MIPProgressTrack_${i}`)?.getComponent(Sprite);
+                if (trackSpr) this._mipProgressTracks.push(trackSpr);
+                const fillN = rowN.getChildByName(`MIPProgressFill_${i}`);
+                if (fillN) {
+                    this._mipProgressFills.push(fillN);
+                    const fillUT = fillN.getComponent(UITransform);
+                    if (fillUT) this._mipProgressFillUTs.push(fillUT);
+                    const fillSpr = fillN.getComponent(Sprite);
+                    if (fillSpr) this._mipProgressFillSprites.push(fillSpr);
+                }
+
+                // LIVE indicator refs (top-right cluster).
+                const liveDot = rowN.getChildByName(`MIPLiveDot_${i}`)?.getComponent(Sprite);
+                if (liveDot) this._mipLiveDots.push(liveDot);
+                const liveLbl = rowN.getChildByName(`MIPLiveLabel_${i}`)?.getComponent(Label);
+                if (liveLbl) this._mipLiveLabels.push(liveLbl);
+
                 const vsL = rowN.getChildByName(`MIPVsLabel_${i}`)?.getComponent(Label);
                 if (vsL) this._mipVsLabels.push(vsL);
                 const timeL = rowN.getChildByName(`MIPTimeLabel_${i}`)?.getComponent(Label);
                 if (timeL) this._mipTimeLabels.push(timeL);
                 const stakeL = rowN.getChildByName(`MIPStakeChip_${i}`)?.getComponent(Label);
                 if (stakeL) this._mipStakeChipLabels.push(stakeL);
-                const winL = rowN.getChildByName(`MIPWinLine_${i}`)?.getComponent(Label);
-                if (winL) this._mipWinLineLabels.push(winL);
+                // Status label (was MIPWinLine pre-2026-04-29 redesign).
+                const winL = rowN.getChildByName(`MIPStatusLabel_${i}`)?.getComponent(Label);
+                if (winL) this._mipStatusLabels.push(winL);
 
                 const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
                 if (tap) {
@@ -2986,8 +3081,10 @@ export class AppUI extends Component {
                 const resume = rowN.getChildByName(`MIPResumeBtn_${i}`)?.getComponent(Button);
                 if (resume) {
                     const idx = i;
+                    this._mipResumeButtons.push(resume);
                     resume.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
                 }
+                this._mipResumePulsing.push(false);
             }
             console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/6 emptyState=${!!this._mipEmptyState} subtitle=${!!this._mipSubtitleLabel}`);
         } else {
@@ -3041,8 +3138,6 @@ export class AppUI extends Component {
             this._notifCloseButton = this._notifPanelCard?.getChildByName('NotifCloseButton')?.getComponent(Button) ?? null;
             this._notifMarkAllReadButton = this._notifPanelCard?.getChildByName('NotifMarkAllReadButton')?.getComponent(Button) ?? null;
             this._notifMarkAllReadLabel = this._notifMarkAllReadButton?.node.getChildByName('Label')?.getComponent(Label) ?? null;
-            this._notifMarkAsReadButton = this._notifPanelCard?.getChildByName('NotifMarkAsReadButton')?.getComponent(Button) ?? null;
-            this._notifMarkAsReadLabel = this._notifMarkAsReadButton?.node.getChildByName('Label')?.getComponent(Label) ?? null;
             const emptyN = this._notifPanelCard?.getChildByName('NotifEmptyGroup');
             this._notifEmptyGroup = emptyN ?? null;
             this._notifEmptyIcon = emptyN?.getChildByName('NotifEmptyIcon') ?? null;
@@ -3053,7 +3148,6 @@ export class AppUI extends Component {
             }
             const listN = this._notifPanelCard?.getChildByName('NotifListContainer');
             if (listN) {
-                this._notifGroupLabelNow     = listN.getChildByName('NotifGroupLabel_now') ?? null;
                 this._notifGroupLabelToday   = listN.getChildByName('NotifGroupLabel_today') ?? null;
                 this._notifGroupLabelEarlier = listN.getChildByName('NotifGroupLabel_earlier') ?? null;
                 for (let i = 0; i < 8; i++) {
@@ -3061,17 +3155,11 @@ export class AppUI extends Component {
                     if (!row) continue;
                     this._notifRows.push(row);
                     this._notifRowIds.push(null);
-                    const cbNode = row.getChildByName(`NotifRowCheckbox_${i}`) ?? null;
-                    this._notifRowCheckboxes.push(cbNode);
-                    const cmNode = cbNode?.getChildByName(`NotifRowCheckmark_${i}`) ?? null;
-                    this._notifRowCheckmarks.push(cmNode);
-                    if (cmNode) {
-                        const cmSpr = cmNode.getComponent(Sprite);
-                        if (cmSpr) cmSpr.color = new Color(0, 0, 0, 0);
-                        try { IconLibrary.attach(cmNode, 'check', { size: 18 }); } catch (_) { /* ignore */ }
-                    }
                     const rb = row.getComponent(Button);
-                    rb?.node.on(Button.EventType.CLICK, () => this._onNotifRowTap(i), this);
+                    if (rb) {
+                        rb.node.on(Button.EventType.CLICK, () => this._onNotifRowTap(i), this);
+                        try { addPressPop(rb); } catch (_) { /* ButtonFX optional */ }
+                    }
                 }
             }
             // Tap-outside-to-dismiss via the panel root's Button (added in scene gen).
@@ -3079,7 +3167,6 @@ export class AppUI extends Component {
             npRoot?.node.on(Button.EventType.CLICK, () => this._hideNotificationPanel(), this);
             this._notifCloseButton?.node.on(Button.EventType.CLICK, () => this._hideNotificationPanel(), this);
             this._notifMarkAllReadButton?.node.on(Button.EventType.CLICK, () => this._onNotifMarkAllReadTap(), this);
-            this._notifMarkAsReadButton?.node.on(Button.EventType.CLICK, () => this._onNotifMarkAsReadTap(), this);
             console.log(`${TAG} start | NotificationPanel wired=true rows=${this._notifRows.length}/8`);
         } else {
             console.log(`${TAG} start | WARN NotificationPanel missing`);
@@ -3790,6 +3877,10 @@ export class AppUI extends Component {
         }
         this._setActivePanel('mip');
         await this._refreshMipMatches();
+        // 2026-04-29 — start the 1-s render tick + per-frame breathing tick.
+        // Drives progress-bar fill, glow alpha breathing, urgent pulse on
+        // <20% remaining, and label refresh.
+        this._startMipTick();
         // Force panel UIOpacity to 255 in case swapPanel's animateIn fade was
         // interrupted (defensive — only thing we keep from the prior backstops).
         const op = this._mipPanel.getComponent(UIOpacity);
@@ -3887,11 +3978,12 @@ export class AppUI extends Component {
     }
 
     /**
-     * 2026-04-29 — Nuclear-rebuild renderer. Fixed 6-row pool (no scrollview).
-     * Activates first min(n,6) rows, deactivates the rest. Per-row: VS line,
-     * time label, stake chip, win-line status, edge stripe tint. "+N more"
-     * hint shows when n > 6. No duel bar, no ring graphics, no hero-card
-     * growth — those decorative features can return after the page renders.
+     * 2026-04-29 — Live-control-center renderer. Fixed 6-row pool (no scrollview).
+     * Activates first min(n,6) rows, deactivates the rest. Per row: card chrome
+     * (bg + glow halo + leader-state edge), LIVE indicator, VS / stake / status /
+     * time labels, timer progress bar (elapsed/total), and an idle-pulsing
+     * Resume CTA. `_mipFrameTick` reads `_mipRowFraction` + `_mipRowLeaderState`
+     * to drive the breathing glow + urgent-pulse under 20% remaining.
      */
     private _renderMipRows(): void {
         const n = this._mipMatches.length;
@@ -3905,11 +3997,25 @@ export class AppUI extends Component {
             this._mipMoreLabel.string = n > 6 ? `+${n - 6} more` : '';
         }
         const me = MWAManager.instance?.connectedPubkey ?? '';
+        // Progress-track inner width; matches LayoutSpec mipRow.progressFill
+        // anchored at (0, 0.5). If the progress-track sprite array reports a
+        // narrower content size, use that — keeps fill flush with the track.
+        const PROGRESS_W = 624;
         for (let i = 0; i < this._mipRowNodes.length; i++) {
             const row = this._mipRowNodes[i];
             const m = i < visible ? this._mipMatches[i] : null;
             if (!row) continue;
-            if (!m) { row.active = false; continue; }
+            if (!m) {
+                row.active = false;
+                // Stop the resume idle pulse on rows that just went inactive
+                // so they don't tween in the background.
+                const resumeBtn = this._mipResumeButtons[i];
+                if (resumeBtn && this._mipResumePulsing[i]) {
+                    try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
+                    this._mipResumePulsing[i] = false;
+                }
+                continue;
+            }
             row.active = true;
 
             // VS label.
@@ -3925,18 +4031,30 @@ export class AppUI extends Component {
                 }
             }
 
-            // Time label.
+            // Time label + remaining/total fraction (drives progress bar +
+            // _mipFrameTick urgent-pulse).
             const remainingMs = this._mipRemainingMs(m);
+            const totalMs = this._mipWindowDurationMs(m.timeWindow);
             const timeLbl = this._mipTimeLabels[i];
             if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
+            const remainingFrac = totalMs > 0 ? Math.max(0, Math.min(1, remainingMs / totalMs)) : 0;
+            // _mipRowFraction stores REMAINING fraction (legacy convention —
+            // _mipFrameTick uses `frac < 0.2` to detect <20% remaining).
+            this._mipRowFraction[i] = remainingFrac;
+            const elapsedFrac = 1 - remainingFrac;
 
-            // Win-line status.
+            // Leader state.
             const myIdx = m.players.indexOf(me);
             const myHeight = myIdx >= 0 ? (m.heights[myIdx] ?? 0) : 0;
             const leaderHeight = Math.max(...m.heights);
             const isWinning = myHeight === leaderHeight && myHeight > 0;
             const isPregame = myHeight === 0 && leaderHeight === 0;
-            const winLbl = this._mipWinLineLabels[i];
+            const state: 'winning' | 'losing' | 'pregame' =
+                isPregame ? 'pregame' : isWinning ? 'winning' : 'losing';
+            this._mipRowLeaderState[i] = state;
+
+            // Status label (was win-line — now carries pregame copy too).
+            const winLbl = this._mipStatusLabels[i];
             if (winLbl) {
                 if (isPregame) {
                     winLbl.string = 'Round just started';
@@ -3964,13 +4082,45 @@ export class AppUI extends Component {
                 }
             }
 
-            // Edge stripe tint per leader state.
+            // Edge stripe + glow-halo RGB tint per leader state. Glow alpha
+            // is animated separately in _mipFrameTick (0 alpha here is a
+            // sentinel; tick raises it to ~36-110 based on state + breathe).
+            const stateTint = isPregame ? new Color(100, 110, 140, 255)
+                            : isWinning ? new Color(48, 198, 155, 255)
+                                        : new Color(236, 88, 122, 255);
             const edge = this._mipCardEdges[i];
-            if (edge) {
-                const tint = isPregame ? new Color(100, 110, 140, 255)
-                           : isWinning ? new Color(48, 198, 155, 255)
-                           : new Color(236, 88, 122, 255);
-                edge.color = tint;
+            if (edge) edge.color = stateTint;
+            const glow = this._mipCardGlows[i];
+            if (glow) {
+                glow.color = new Color(stateTint.r, stateTint.g, stateTint.b, glow.color.a);
+            }
+
+            // LIVE indicator dot + label — tinted by leader state.
+            const liveDot = this._mipLiveDots[i];
+            if (liveDot) liveDot.color = stateTint;
+            const liveLbl = this._mipLiveLabels[i];
+            if (liveLbl) {
+                liveLbl.color = isPregame
+                    ? new Color(168, 174, 201, 255)
+                    : new Color(stateTint.r, stateTint.g, stateTint.b, 255);
+            }
+
+            // Progress bar — fills from left as elapsed time grows. Tints with
+            // leader state. Width = PROGRESS_W * elapsed/total.
+            const fillUT = this._mipProgressFillUTs[i];
+            if (fillUT) fillUT.setContentSize(PROGRESS_W * elapsedFrac, 4);
+            const fillSpr = this._mipProgressFillSprites[i];
+            if (fillSpr) {
+                fillSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, 230);
+            }
+
+            // Resume CTA — start a low-intensity idle pulse the first time the
+            // row becomes active. _mipResumePulsing tracks the state so we
+            // don't restart the tween every render.
+            const resumeBtn = this._mipResumeButtons[i];
+            if (resumeBtn && !this._mipResumePulsing[i]) {
+                try { addIdlePulse(resumeBtn.node, 1.6, 1.02); } catch (_) { /* tween not loaded */ }
+                this._mipResumePulsing[i] = true;
             }
         }
     }
@@ -4732,36 +4882,39 @@ export class AppUI extends Component {
      * zoomScale). Silent no-op for any button that isn't found in the scene.
      */
     private _enhancePrimaryCTAs(): void {
-        // Phase 13 (B3): Connect is the gateway action — first thing in any
-        // demo recording. It must breathe.
-        // 2026-04-28 hackathon UX — Connect alone is the hero. Guest +
-        // Reconnect drop the idle pulse so visual hierarchy is unambiguous;
-        // they keep press-pop + strong-press for tactile feedback only.
-        // Mirrors the Home V3 pattern below (StartMatch hero, Find/MIP press-only).
-        enhancePrimaryCTA(this._landingPanel?.getChildByName('ConnectButton') ?? null);
-        const lpReconnBtn = this._landingPanel?.getChildByName('ReconnectButton')?.getComponent(Button) ?? null;
-        if (lpReconnBtn) { addPressPop(lpReconnBtn); setStrongPress(lpReconnBtn); }
-        const lpGuestBtn = this._landingPanel?.getChildByName('PlayAsGuestButton')?.getComponent(Button) ?? null;
-        if (lpGuestBtn) { addPressPop(lpGuestBtn); setStrongPress(lpGuestBtn); }
-        // V4 — Home CTA hierarchy ("Play Now" hub). Find Match is the hero
-        // (instant play) and gets the full enhancePrimaryCTA treatment
-        // (idle pulse + ripple + strong press + pop). Start Match drops to
-        // secondary (press pop + strong press, no breathing). MIP is
-        // contextual (press pop only). Bot Match keeps tier-2 feedback.
+        // 2026-04-29 (Prompt 1) — global button hierarchy. Replaces the
+        // hand-wired enhancePrimaryCTA / addPressPop / setStrongPress sequence
+        // with a tier-driven dispatch. ButtonFX.applyButtonTier reads
+        // ButtonTierSpec[tier] and applies the right effect bundle:
+        //   primary   → idle pulse + press + strong + ripple
+        //   secondary → press + strong
+        //   tertiary  → press only
+        //   danger    → press with rose-tinted flash
+        // Hierarchy is locked at the tier level — no per-call alpha tuning.
+        const wire = (panel: Node | null, name: string, tier: 'primary' | 'secondary' | 'tertiary' | 'danger') => {
+            applyButtonTier(panel?.getChildByName(name) ?? null, tier);
+        };
+
+        // Landing — Connect is the gateway hero; Reconnect/Guest defer.
+        wire(this._landingPanel, 'ConnectButton',     'primary');
+        wire(this._landingPanel, 'ReconnectButton',   'secondary');
+        wire(this._landingPanel, 'PlayAsGuestButton', 'secondary');
+
+        // Home — Find Match is the hero; Start/Bot/MIP are secondary.
+        wire(this._homePanel, 'FindMatchButton',         'primary');
+        wire(this._homePanel, 'StartMatchButton',        'secondary');
+        wire(this._homePanel, 'MatchesInProgressButton', 'secondary');
+        wire(this._homePanel, 'BotMatchButton',          'secondary');
+
+        // Periodic shimmer sweep stays on the home hero only — it's the
+        // single tier-1 surface that visually shouts "instant play."
         const findMatchHero = this._homePanel?.getChildByName('FindMatchButton') ?? null;
-        enhancePrimaryCTA(findMatchHero);
-        // V5 — periodic shimmer sweep on the hero only (every ~4.5s). Layers
-        // atop the idle pulse without competing for the eye.
         try { addShimmerSweep(findMatchHero, 0.9, 3.6); } catch (_) { /* tween not loaded */ }
-        const startBtn = this._homePanel?.getChildByName('StartMatchButton')?.getComponent(Button) ?? null;
-        if (startBtn) { addPressPop(startBtn); setStrongPress(startBtn); }
-        const mipBtn = this._homePanel?.getChildByName('MatchesInProgressButton')?.getComponent(Button) ?? null;
-        if (mipBtn) { addPressPop(mipBtn); }
-        const botBtn = this._homePanel?.getChildByName('BotMatchButton')?.getComponent(Button) ?? null;
-        if (botBtn) { addPressPop(botBtn); setStrongPress(botBtn); }
-        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('WagerStartButton') ?? null);
-        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StartGameButton') ?? null);
-        enhancePrimaryCTA(this._tokenDuelPanel?.getChildByName('StakeCommitButton') ?? null);
+
+        // Token Duel — WagerStart is the high-stakes commit hero.
+        wire(this._tokenDuelPanel, 'WagerStartButton',  'primary');
+        wire(this._tokenDuelPanel, 'StartGameButton',   'secondary');
+        wire(this._tokenDuelPanel, 'StakeCommitButton', 'secondary');
     }
 
     /**
@@ -5067,9 +5220,11 @@ export class AppUI extends Component {
      * full sibling set including Leaderboard/Portfolio/Settings/Daily/Spec.
      */
     private _hideAllTopLevelPanelsExcept(keep: 'leaderboard' | 'portfolio' | 'settings'): void {
+        // 2026-04-29 — RacePanel added: re-parented to canvas root, so it's
+        // a peer of these panels and must be force-hidden alongside them.
         const candidateNames = ['LandingPanel', 'HomePanel', 'TokenDuelPanel', 'TokenDetailPanel',
             'LeaderboardPanel', 'PortfolioPanel', 'SettingsPanel', 'DailyChallengePanel',
-            'SpectatorPanel', 'TournamentPanel', 'PostMatchPanel', 'WaitingPanel'];
+            'SpectatorPanel', 'TournamentPanel', 'PostMatchPanel', 'WaitingPanel', 'RacePanel'];
         const keepMap: Record<string, string> = {
             leaderboard: 'LeaderboardPanel',
             portfolio:   'PortfolioPanel',
@@ -8952,6 +9107,9 @@ export class AppUI extends Component {
             // pick/watchlist mode). Its checked state mirrors squad membership
             // for the row's mint, except in watchlist mode where it mirrors
             // the pending-add set instead.
+            // 2026-04-29b flagship rebalance — checkbox lives in a dedicated
+            // 28-px LEFT GUTTER (no longer floating over the avatar). Unchecked
+            // state reads as a dim slate placeholder, checked flips teal.
             const chkSpr = this._feedRowCheckboxes[i];
             const isInSquad = this._squad.slots.some((s) => !!s && s.address === row.address);
             if (chkSpr?.node) {
@@ -8959,7 +9117,7 @@ export class AppUI extends Component {
                 const checked = this._watchlistMode
                     ? this._watchlistChecked.has(row.address)
                     : isInSquad;
-                chkSpr.color = checked ? new Color(48, 198, 155, 255) : new Color(45, 52, 70, 255);
+                chkSpr.color = checked ? new Color(20, 241, 149, 255) : new Color(80, 92, 116, 200);
                 const iconN = chkSpr.node.getChildByName('CheckmarkIcon');
                 if (iconN) iconN.active = checked;
             }
@@ -8972,10 +9130,11 @@ export class AppUI extends Component {
             const logo = this._feedRowLogoSprites[i];
             if (logo?.node) {
                 logo.node.active = true;
-                // Defensive: re-assert 2.5x hero size in case scene cache lags.
-                // Mirrors LayoutSpec.cjs feedRow.logo.{w,h}.
+                // Defensive: re-assert spec size (64×64 per LayoutSpec.cjs
+                // feedRow.logo) in case scene cache lags after the
+                // 2026-04-29b flagship rebalance trim from 96→64.
                 const logoUT = logo.node.getComponent(UITransform);
-                if (logoUT) logoUT.setContentSize(220, 220);
+                if (logoUT) logoUT.setContentSize(64, 64);
             }
             this._loadLogoInto(logo, row.logoUri);
 
@@ -10858,6 +11017,15 @@ export class AppUI extends Component {
         if (!this._postMatchPanel) return;
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
+        // Re-entry safety: stop any in-flight pulse from a prior result show
+        // before we re-prep — avoids stacked pulse tweens on back-to-back
+        // matches (mascot & payout would otherwise scale-drift each cycle).
+        this._stopPostMatchPulseSync();
+        // Snap every child to a viewport-anchored position BEFORE any other
+        // visual setup reads node positions (glow rings, mascot scale,
+        // cascade beats). Mascot lands on the true viewport midpoint so the
+        // glow rings cradle it correctly; CTAs hug the bottom safe area.
+        this._relayoutPostMatchToViewport();
         this._dumpPanelLayout(this._postMatchPanel, 'show_post_match');
         // Defensive: force-enable each PostMatch button so a leftover
         // interactable=false from a prior cascade can't persist into this show.
@@ -10902,17 +11070,24 @@ export class AppUI extends Component {
         if (this._postMatchOutcomeBgGfx && this._postMatchOutcomeBgOpacity) {
             const bg = this._postMatchOutcomeBgGfx;
             bg.clear();
-            // Layer 1: dark base — kills the old loud wash.
+            // Layer 1: dark base — sized to the visible viewport so the wash
+            // always fills the screen, never less, never more (was hardcoded
+            // 720×1280 which left a void on tall devices).
+            const vsBg = view.getVisibleSize();
+            const vwBg = vsBg.width;
+            const vhBg = vsBg.height;
             bg.fillColor = baseDark;
-            bg.rect(-360, -640, 720, 1280);
+            bg.rect(-vwBg / 2, -vhBg / 2, vwBg, vhBg);
             bg.fill();
             // Layer 2: radial bloom — 12 concentric circles, outer largest +
-            // dimmest first so each smaller ring layers brighter on top. Builds
-            // a soft glow without needing a gradient texture asset.
-            // Center y matches PostMatchMascotContainer's _lpos.y in Main.scene.
+            // dimmest first so each smaller ring layers brighter on top.
+            // Mascot is true-centered by _relayoutPostMatchToViewport so the
+            // rings concentric on the mascot's panel-local Y cradle it. No
+            // 200 px fallback: if the mascot node is missing we fall back to
+            // 0 (the viewport mid), not an arbitrary upper-third Y.
             const mascotN = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
             const cx = mascotN ? mascotN.position.x : 0;
-            const cy = mascotN ? mascotN.position.y : 200;
+            const cy = mascotN ? mascotN.position.y : 0;
             for (let i = 11; i >= 0; i--) {
                 const r = 120 + i * 36;
                 const a = Math.max(0, 4 + (11 - i) * 5);  // dimmed: outer 4 → inner 59 (was 6→94)
@@ -10949,16 +11124,13 @@ export class AppUI extends Component {
             // Glow fade-in is deferred to Beat 3 (alongside mascot setState)
             // so a colored halo doesn't sit empty for ~1.1s before the
             // mascot itself appears.
-            // Slow scale pulse on the glow node so the aura "breathes".
+            // Reset glow scale to neutral. The shared-phase pulse-sync
+            // (glow scale + payout label scale) is started inside beatPayout
+            // for wins; loss state holds the glow at static 1.0 since pulsing
+            // a loss feels mocking.
             const glowNode = this._postMatchMascotGlowGfx.node;
             Tween.stopAllByTarget(glowNode);
-            glowNode.setScale(0.92, 0.92, 1);
-            tween(glowNode)
-                .to(1.4, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'sineInOut' })
-                .to(1.4, { scale: new Vec3(0.92, 0.92, 1) }, { easing: 'sineInOut' })
-                .union()
-                .repeatForever()
-                .start();
+            glowNode.setScale(1, 1, 1);
         }
         // Staging pass: mascot is the centerpiece — 1.30× over the dimmed
         // rings so the celebrate/lose animation is unmissable.
@@ -11322,7 +11494,10 @@ export class AppUI extends Component {
         const beatTitle = () => fadeIn(titleNode, 0.22);
         // Beat 1 — track label (T=180).
         const beatTrack = () => fadeIn(trackNode, 0.16);
-        // Beat 2 — payout scale-in + count-up ticker (T=320).
+        // Beat 2 — payout scale-in + count-up ticker (T=320). On win, the
+        // shared-phase pulse-sync (mascot glow + PnL label heartbeat) starts
+        // here too, after the scale-in completes — a single proxy drives
+        // both so they breathe in lockstep.
         const beatPayout = () => {
             if (!this._postMatchPayoutLabel || !payoutNodeFinal || !payoutOp) return;
             Tween.stopAllByTarget(payoutNodeFinal);
@@ -11336,6 +11511,10 @@ export class AppUI extends Component {
                     if (!this._postMatchPayoutLabel) return;
                     if (outcome.won && payoutSol > 0) {
                         this._animatePayoutTicker(this._postMatchPayoutLabel, payoutSol, 0.7);
+                        // Kick off the shared-phase pulse only after the
+                        // ticker grabs the label (count-up updates the
+                        // string; pulse drives the scale around it).
+                        this._startPostMatchPulseSync();
                     } else if (!outcome.won && payoutWagerSol > 0) {
                         this._animateLossTicker(this._postMatchPayoutLabel, payoutWagerSol, 0.7);
                     }
@@ -11506,6 +11685,12 @@ export class AppUI extends Component {
             snapCTA(ctaPrimary);
             snapCTA(ctaSecondary);
             if (ctaPrimary) addIdlePulse(ctaPrimary, 1.04, 1.4);
+            // Pulse-sync — finalizer fires on tap-to-skip, so the heartbeat
+            // should be running when the user lands on the static frame.
+            if (outcome.won) {
+                this._stopPostMatchPulseSync();
+                this._startPostMatchPulseSync();
+            }
         };
 
         // Tap-to-skip wiring — bind once on the panel; idempotent. Tapping
@@ -11566,15 +11751,27 @@ export class AppUI extends Component {
         const accent = won ? new Color(255, 210, 74, 255) : new Color(236, 88, 122, 255);
         const gold   = new Color(255, 210, 74, 255);
 
-        // Labels — left always shows the "next-level" target post-animation,
-        // right shows the gained XP delta in accent color.
+        // Labels — left always shows the "next-level" target post-animation.
+        // Right shows the gained XP delta in accent color. On win it counts
+        // up from +0 → +xpGained synced with the bar fill (one heartbeat).
+        // On loss it lands statically — no celebration without the win.
         left.string = `Lv ${prog1.level} → Lv ${prog1.level + 1}`;
         left.color = new Color(150, 160, 185, 255);
-        right.string = `+${xpGained} XP`;
         right.color = accent;
+        right.string = won ? '+0 XP' : `+${xpGained} XP`;
 
         // Initial frame at prog0 fill.
         drawBar(prog0.progress, accent);
+
+        // XP count-up proxy — drives the right label in lockstep with the
+        // bar fill. Bar and number share their final landing point but the
+        // number tween spans the full arc (so a level-up split bar still
+        // sees a single smooth count-up).
+        const xpCounter = { n: 0 };
+        const writeXp = () => {
+            const n = Math.max(0, Math.round(xpCounter.n));
+            right.string = `+${n} XP`;
+        };
 
         const proxy = { p: prog0.progress };
         if (leveledUp) {
@@ -11594,6 +11791,13 @@ export class AppUI extends Component {
                     onUpdate: () => drawBar(proxy.p, accent),
                 })
                 .start();
+            if (won) {
+                Tween.stopAllByTarget(xpCounter);
+                tween(xpCounter)
+                    .to(1.2, { n: xpGained }, { easing: 'cubicOut', onUpdate: writeXp })
+                    .call(writeXp)
+                    .start();
+            }
         } else {
             tween(proxy)
                 .to(0.7, { p: prog1.progress }, {
@@ -11601,6 +11805,13 @@ export class AppUI extends Component {
                     onUpdate: () => drawBar(proxy.p, accent),
                 })
                 .start();
+            if (won) {
+                Tween.stopAllByTarget(xpCounter);
+                tween(xpCounter)
+                    .to(0.7, { n: xpGained }, { easing: 'cubicOut', onUpdate: writeXp })
+                    .call(writeXp)
+                    .start();
+            }
         }
     }
 
@@ -11646,6 +11857,124 @@ export class AppUI extends Component {
             }, Math.round((baseDelay + 1 * stagger + 0.28) * 1000));
         }
         console.log(`${TAG} _revealPostMatchStaggered | CASCADE order=[${order.join(',')}] won=${won}`);
+    }
+
+    /**
+     * 2026-04-29 viewport-aware result scene. Snaps every PostMatchPanel
+     * child to its zone-anchored Y (POSTMATCH_ZONES) computed from the
+     * live viewport height, so the mascot lands on the true viewport
+     * midpoint, the top zone hugs the safe-top, and the bottom zone hugs
+     * the safe-bottom. Also resizes the panel UTransform + OutcomeBgTint
+     * Graphics rect to fill the viewport so the dark wash never leaves a
+     * gap (was the source of the purple top band / green bottom band).
+     */
+    private _relayoutPostMatchToViewport(): void {
+        if (!this._postMatchPanel) return;
+        const vs = view.getVisibleSize();
+        const vw = vs.width;
+        const vh = vs.height;
+
+        // Panel root rests at world origin so panel-local 0 maps to the
+        // viewport's vertical midpoint (anchor 0.5).
+        this._postMatchPanel.setPosition(new Vec3(0, 0, 0));
+
+        const panelUT = this._postMatchPanel.getComponent(UITransform);
+        if (panelUT) panelUT.setContentSize(vw, vh);
+
+        const outcomeBg = this._postMatchPanel.getChildByName('OutcomeBgTint');
+        if (outcomeBg) {
+            const bgUT = outcomeBg.getComponent(UITransform);
+            if (bgUT) bgUT.setContentSize(vw, vh);
+        }
+
+        const topAnchor = (vh / 2) - POSTMATCH_SAFE_AREA_TOP;
+        const botAnchor = (-vh / 2) + POSTMATCH_SAFE_AREA_BOT;
+
+        const Z = POSTMATCH_ZONES;
+        const setY = (name: string, y: number) => {
+            const n = this._postMatchPanel?.getChildByName(name);
+            if (!n) return;
+            const p = n.position;
+            n.setPosition(new Vec3(p.x, y, p.z));
+        };
+
+        // TOP zone — back row, title, subtitle, trophy badge.
+        setY('PostMatchBackLinkLabel', topAnchor + Z.top.backLink);
+        setY('PostMatchBackButton',    topAnchor + Z.top.backBtn);
+        setY('PostMatchTitleLabel',    topAnchor + Z.top.title);
+        setY('PostMatchTrackLabel',    topAnchor + Z.top.track);
+        setY('TrophyLabel',            topAnchor + Z.top.trophy);
+
+        // CENTER zone — mascot is the anchor; glow + payout cradle it.
+        setY('MascotGlow',                Z.center.mascotGlow);
+        setY('PostMatchMascotContainer',  Z.center.mascotContainer);
+        setY('PostMatchPayoutLabel',      Z.center.payoutLabel);
+
+        // BOTTOM zone — CTAs hug the safe-bottom, stats stack above them.
+        // mkBtnHero builds the halo as a sibling node named BtnGlow_<btn>;
+        // it must follow the primary CTA so the bloom doesn't drift.
+        setY('PostMatchSameSquadButton',           botAnchor + Z.bottom.sameSquadBtn);
+        setY('BtnGlow_PostMatchSameSquadButton',   botAnchor + Z.bottom.sameSquadGlow);
+        setY('PostMatchAgainButton',               botAnchor + Z.bottom.againBtn);
+        setY('PostMatchXPBarFill',           botAnchor + Z.bottom.xpBarFill);
+        setY('PostMatchXPBarLabelLeft',      botAnchor + Z.bottom.xpBarLabelLeft);
+        setY('PostMatchXPBarLabelRight',     botAnchor + Z.bottom.xpBarLabelRight);
+        setY('PMCard_xp',                    botAnchor + Z.bottom.cardsRow2);
+        setY('PMCard_lvl',                   botAnchor + Z.bottom.cardsRow2);
+        setY('PMCard_you',                   botAnchor + Z.bottom.cardsRow1);
+        setY('PMCard_opp',                   botAnchor + Z.bottom.cardsRow1);
+        setY('PostMatchRakeLabel',           botAnchor + Z.bottom.rake);
+        setY('PostMatchBreakdownLabel',      botAnchor + Z.bottom.breakdown);
+        setY('PostMatchSubtitleLabel',       botAnchor + Z.bottom.subtitle);
+        setY('PostMatchShareButton',         botAnchor + Z.bottom.shareButton);
+        setY('PostMatchStatusLabel',         botAnchor + Z.bottom.status);
+
+        console.log(`${TAG} _relayoutPostMatchToViewport | vw=${vw} vh=${vh} topAnchor=${topAnchor.toFixed(1)} botAnchor=${botAnchor.toFixed(1)}`);
+    }
+
+    /**
+     * 2026-04-29 win-only pulse sync. One shared phase drives the mascot
+     * glow scale and the +SOL payout label scale, so they breathe in
+     * lockstep — the heartbeat of the result moment. Amplitude is
+     * intentionally tiny (≤6% glow, ≤3% payout) so it reads as "alive,"
+     * not "wobbling." Loss state skips this entirely.
+     */
+    private _startPostMatchPulseSync(): void {
+        if (!this._postMatchMascotGlowGfx || !this._postMatchPayoutLabel) return;
+        const glowNode = this._postMatchMascotGlowGfx.node;
+        const payoutNode = this._postMatchPayoutLabel.node;
+        const phase = { p: 0 };
+        // Stash on the panel so _stopPostMatchPulseSync can find it.
+        (this._postMatchPanel as any)._pulseSyncPhase = phase;
+        Tween.stopAllByTarget(phase);
+        const apply = () => {
+            const p = phase.p;
+            const glowScale   = 0.96 + 0.06 * p;   // 0.96 → 1.02
+            const payoutScale = 1.00 + 0.03 * p;   // 1.00 → 1.03
+            glowNode.setScale(glowScale, glowScale, 1);
+            payoutNode.setScale(payoutScale, payoutScale, 1);
+        };
+        tween(phase)
+            .to(0.72, { p: 1 }, { easing: 'sineInOut', onUpdate: apply })
+            .to(0.72, { p: 0 }, { easing: 'sineInOut', onUpdate: apply })
+            .union()
+            .repeatForever()
+            .start();
+    }
+
+    private _stopPostMatchPulseSync(): void {
+        if (!this._postMatchPanel) return;
+        const phase = (this._postMatchPanel as any)._pulseSyncPhase;
+        if (phase) {
+            Tween.stopAllByTarget(phase);
+            (this._postMatchPanel as any)._pulseSyncPhase = null;
+        }
+        if (this._postMatchMascotGlowGfx) {
+            this._postMatchMascotGlowGfx.node.setScale(1, 1, 1);
+        }
+        if (this._postMatchPayoutLabel) {
+            this._postMatchPayoutLabel.node.setScale(1, 1, 1);
+        }
     }
 
     /**
@@ -11939,6 +12268,7 @@ export class AppUI extends Component {
     private _onPostMatchBack(): void {
         console.log(`${PMBTAG} HANDLER_FIRED back`);
         this._dumpAppState('post_match_back_enter');
+        this._stopPostMatchPulseSync();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
         console.log(`${TAG} _onPostMatchBack | BACK_TO_HOME`);
@@ -11948,6 +12278,7 @@ export class AppUI extends Component {
     private _onPostMatchAgain(): void {
         console.log(`${PMBTAG} HANDLER_FIRED again`);
         this._dumpAppState('post_match_again_enter');
+        this._stopPostMatchPulseSync();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Re-open picker so user can pick mode/wager again. Squad still intact.
@@ -11966,6 +12297,7 @@ export class AppUI extends Component {
     private _onPostMatchSameSquad(): void {
         console.log(`${PMBTAG} HANDLER_FIRED sameSquad`);
         this._dumpAppState('post_match_same_squad_enter');
+        this._stopPostMatchPulseSync();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Reuse existing picker state — wager, mode, window, track are all
@@ -12678,7 +13010,9 @@ export class AppUI extends Component {
 
     private static readonly NOTIF_REST_X = 160;
     private static readonly NOTIF_OFF_X  = 600;
-    private static readonly NOTIF_SCRIM_ALPHA = 90;
+    // 2026-04-29 redesign: scrim alpha bumped 90→140 so the home behind the
+    // panel reads as clearly dimmed instead of semi-visible.
+    private static readonly NOTIF_SCRIM_ALPHA = 140;
 
     private _showNotificationPanel(): void {
         if (!this._notifPanel) return;
@@ -12687,17 +13021,8 @@ export class AppUI extends Component {
         this._dumpPanelLayout(this._notifPanel, 'show_notification');
         // Render BEFORE the slide so the rows are sized + visible during entry.
         this._renderNotificationList();
-        // Card slide.
-        if (this._notifPanelCard) {
-            const restingX = AppUI.NOTIF_REST_X;
-            const offX = AppUI.NOTIF_OFF_X;
-            Tween.stopAllByTarget(this._notifPanelCard);
-            this._notifPanelCard.setPosition(restingX + offX, 0, 0);
-            tween(this._notifPanelCard)
-                .to(0.22, { position: new Vec3(restingX, 0, 0) }, { easing: 'cubicOut' })
-                .start();
-        }
-        // Scrim fade-in (parallel with card slide).
+        // Scrim fade-in starts ~40ms BEFORE the card so the surface anchor
+        // lands first, then the card slides over a clearly-dimmed home.
         if (this._notifBackdropOpacity) {
             const op = this._notifBackdropOpacity;
             Tween.stopAllByTarget(op);
@@ -12706,13 +13031,24 @@ export class AppUI extends Component {
                 .to(0.22, { opacity: AppUI.NOTIF_SCRIM_ALPHA }, { easing: 'cubicOut' })
                 .start();
         }
+        // Card slide — kicked off after a tiny delay so the scrim is already
+        // a few frames into its fade.
+        if (this._notifPanelCard) {
+            const restingX = AppUI.NOTIF_REST_X;
+            const offX = AppUI.NOTIF_OFF_X;
+            const cardN = this._notifPanelCard;
+            Tween.stopAllByTarget(cardN);
+            cardN.setPosition(restingX + offX, 0, 0);
+            tween(cardN)
+                .delay(0.04)
+                .to(0.22, { position: new Vec3(restingX, 0, 0) }, { easing: 'cubicOut' })
+                .start();
+        }
     }
 
     private _hideNotificationPanel(): void {
         if (!this._notifPanel) return;
         console.log(`${TAG} _hideNotificationPanel | HIDE`);
-        // Always exit selection mode on hide so the next open starts clean.
-        if (this._notifSelectionMode) this._setNotifSelectionMode(false);
         const restingX = AppUI.NOTIF_REST_X;
         const offX = AppUI.NOTIF_OFF_X;
         if (this._notifPanelCard) {
@@ -12737,12 +13073,10 @@ export class AppUI extends Component {
         const marked = NotificationStore.instance.markAllRead();
         console.log(`${TAG} _onNotifMarkAllReadTap | marked=${marked}`);
         if (marked === 0) return;
-        // Bulk action obsoletes any in-flight selection.
-        if (this._notifSelectionMode) this._setNotifSelectionMode(false);
         // Force-paint immediately so the user sees rows dim within <100ms;
         // the store's _fanout will re-render again, which is harmless.
-        // _renderNotificationList now reconciles MarkAllRead enabled state
-        // from getUnreadCount() — no need to disable here separately.
+        // _renderNotificationList reconciles MarkAllRead enabled state from
+        // getUnreadCount() — no need to disable here separately.
         this._renderNotificationList();
         // Transient confirmation toast — emitted via a synthetic notification
         // straight to the toast queue so it surfaces but never persists.
@@ -12769,81 +13103,29 @@ export class AppUI extends Component {
         if (!btn) return;
         btn.interactable = enabled;
         if (this._notifMarkAllReadLabel) {
-            // Bright when actionable, muted when disabled.
             const c = this._notifMarkAllReadLabel.color;
             this._notifMarkAllReadLabel.color = new Color(c.r, c.g, c.b, enabled ? 255 : 110);
         }
     }
 
-    /**
-     * 2026-04-28 — selection-mode dispatcher for the new "Mark as Read"
-     * button. Three-state toggle that mirrors the TokenSquad CTA pattern:
-     *   idle           → enter selection mode
-     *   mode + 0 sel   → exit selection mode
-     *   mode + N sel   → confirm (markRead each, exit mode)
-     */
-    private _onNotifMarkAsReadTap(): void {
-        if (!this._notifSelectionMode) {
-            this._setNotifSelectionMode(true);
-            return;
-        }
-        if (this._notifSelectedIds.size === 0) {
-            this._setNotifSelectionMode(false);
-            return;
-        }
-        this._confirmMarkAsRead();
-    }
-
-    private _setNotifSelectionMode(on: boolean): void {
-        this._notifSelectionMode = on;
-        if (!on) this._notifSelectedIds.clear();
-        for (let i = 0; i < this._notifRows.length; i++) {
-            const row = this._notifRows[i];
-            const cb = this._notifRowCheckboxes[i];
-            const cm = this._notifRowCheckmarks[i];
-            if (cb) cb.active = on && !!row?.active;
-            if (cm) cm.active = false;
-        }
-        this._updateMarkAsReadLabel();
-    }
-
-    private _updateMarkAsReadLabel(): void {
-        const n = this._notifSelectedIds.size;
-        const txt = (!this._notifSelectionMode || n === 0)
-            ? 'Mark as Read'
-            : `Mark ${n} Read - Confirm`;
-        if (this._notifMarkAsReadLabel) this._notifMarkAsReadLabel.string = txt;
-    }
-
-    private _confirmMarkAsRead(): void {
-        const ids = Array.from(this._notifSelectedIds);
-        for (const id of ids) NotificationStore.instance.dismiss(id);
-        console.log(`${TAG} _confirmMarkAsRead | count=${ids.length}`);
-        this._setNotifSelectionMode(false);
-        this._renderNotificationList();
-    }
-
     private _onNotifRowTap(rowIdx: number): void {
         const id = this._notifRowIds[rowIdx];
         if (!id) return;
-        // Selection mode — tap toggles the checkbox instead of deep-linking.
-        if (this._notifSelectionMode) {
-            if (this._notifSelectedIds.has(id)) this._notifSelectedIds.delete(id);
-            else this._notifSelectedIds.add(id);
-            const cm = this._notifRowCheckmarks[rowIdx];
-            if (cm) cm.active = this._notifSelectedIds.has(id);
-            this._updateMarkAsReadLabel();
-            return;
-        }
         const list = NotificationStore.instance.getRecent(50);
         const n = list.find((x) => x.id === id);
         if (!n) return;
-        // Mark read first.
+        // Mark read first (idempotent — store no-ops if already read).
         NotificationStore.instance.markRead(id);
-        // Dispatch deep-link.
+        // If the notification has a deep-link, dispatch it and close the panel.
         const handler = this._resolveNotifTapHandler(n);
-        try { handler?.(n); } catch (e) { console.log(`${TAG} _onNotifRowTap | dispatch error ${e}`); }
-        this._hideNotificationPanel();
+        if (handler) {
+            try { handler(n); } catch (e) { console.log(`${TAG} _onNotifRowTap | dispatch error ${e}`); }
+            this._hideNotificationPanel();
+            return;
+        }
+        // No deep-link — just re-render so the read state is reflected
+        // (dim opacity + accent edge off + dot off). Panel stays open.
+        this._renderNotificationList();
     }
 
     /** Returns a tap handler for the given notification (used by both panel rows and toast taps). */
@@ -12875,25 +13157,20 @@ export class AppUI extends Component {
         }
     }
 
+    /** Local-day equality — used to partition notifications into Today vs Earlier. */
+    private static _isToday(ts: number): boolean {
+        const d = new Date(ts);
+        const now = new Date();
+        return d.getFullYear() === now.getFullYear()
+            && d.getMonth() === now.getMonth()
+            && d.getDate() === now.getDate();
+    }
+
     private _renderNotificationList(): void {
         const items = NotificationStore.instance.getRecent(8);
-        if (this._notifEmptyLabel) {
-            this._notifEmptyLabel.node.active = items.length === 0;
+        if (this._notifEmptyGroup) {
+            this._notifEmptyGroup.active = items.length === 0;
         }
-        // Per-kind color map (RGB triplets matching the toast queue).
-        const KIND_RGB: Record<NotificationKind, [number, number, number]> = {
-            match_filled:        [153, 69, 255],
-            match_started:       [153, 69, 255],
-            match_settled:       [48, 198, 155],
-            payout:              [255, 210, 74],
-            match_expired:       [255, 180, 84],
-            lobby_cancelled:     [255, 180, 84],
-            level_up:            [255, 210, 74],
-            streak_milestone:    [255, 180, 84],
-            tournament_starting: [255, 210, 74],
-            tournament_full:     [255, 210, 74],
-            challenge_done:      [48, 198, 155],
-        };
         const KIND_ICON: Record<NotificationKind, IconName> = {
             match_filled: 'sword',
             match_started: 'bolt',
@@ -12907,51 +13184,88 @@ export class AppUI extends Component {
             tournament_full: 'crown',
             challenge_done: 'check',
         };
-        for (let i = 0; i < this._notifRows.length; i++) {
-            const row = this._notifRows[i];
-            if (!row) continue;
-            const n = items[i];
-            if (!n) {
-                row.active = false;
-                this._notifRowIds[i] = null;
-                continue;
+        // Partition by local-day "today" vs everything else.
+        const todayItems: typeof items = [];
+        const earlierItems: typeof items = [];
+        for (const n of items) {
+            if (AppUI._isToday(n.createdAt)) todayItems.push(n);
+            else earlierItems.push(n);
+        }
+        // Geometry constants — must match LayoutSpec.cjs NotificationPanel.templates.notifRow.
+        const ROW_H = 76;
+        const ROW_GAP = 12;
+        const ROW_PITCH = ROW_H + ROW_GAP;      // 88
+        const SECTION_LABEL_H = 16;
+        const LABEL_TO_ROW_GAP = 16;            // gap below a section label
+        const INTER_SECTION_GAP = 24;           // gap between sections (label-to-label)
+        const TOP_Y = 460;                      // top edge of NotifListContainer (h=920, centered)
+        let cursorY = TOP_Y;                    // cursor tracks the top edge of the next element to be placed
+        // Helper to position a section label given the current cursor.
+        const placeSectionLabel = (node: Node | null) => {
+            if (!node) return;
+            node.active = true;
+            const labelCenterY = cursorY - SECTION_LABEL_H / 2;
+            node.setPosition(node.position.x, labelCenterY, 0);
+            cursorY -= (SECTION_LABEL_H + LABEL_TO_ROW_GAP);
+        };
+        // Hide both labels first; show the relevant ones below.
+        if (this._notifGroupLabelToday)   this._notifGroupLabelToday.active   = false;
+        if (this._notifGroupLabelEarlier) this._notifGroupLabelEarlier.active = false;
+        // Walk the row pool, filling Today section first, then Earlier.
+        let rowIdx = 0;
+        const placeRowsForSection = (sectionItems: typeof items) => {
+            for (const n of sectionItems) {
+                if (rowIdx >= this._notifRows.length) return;
+                const row = this._notifRows[rowIdx];
+                if (!row) { rowIdx++; continue; }
+                row.active = true;
+                this._notifRowIds[rowIdx] = n.id;
+                // Position row centered on its slot; cursorY is the top edge.
+                const rowCenterY = cursorY - ROW_H / 2;
+                row.setPosition(row.position.x, rowCenterY, 0);
+                cursorY -= ROW_PITCH;
+                // Title + body + time.
+                const titleL = row.getChildByName(`NotifRowTitleLabel_${rowIdx}`)?.getComponent(Label);
+                if (titleL) titleL.string = n.title;
+                const bodyL = row.getChildByName(`NotifRowBodyLabel_${rowIdx}`)?.getComponent(Label);
+                if (bodyL) bodyL.string = n.body;
+                const timeL = row.getChildByName(`NotifRowTimeLabel_${rowIdx}`)?.getComponent(Label);
+                if (timeL) timeL.string = this._relativeTimeAgo(n.createdAt);
+                // Icon (per-kind).
+                const iconN = row.getChildByName(`NotifRowIcon_${rowIdx}`);
+                if (iconN) {
+                    try { IconLibrary.attach(iconN, KIND_ICON[n.kind] ?? 'bell', { size: 32 }); }
+                    catch (_) { /* ignore */ }
+                }
+                // Read/unread visual: full opacity + dot + accent edge for unread,
+                // 70% opacity + no dot + no edge for read.
+                const isUnread = n.readAt === null;
+                const op = row.getComponent(UIOpacity);
+                if (op) op.opacity = isUnread ? 255 : 178;
+                const dot = row.getChildByName(`NotifRowUnreadDot_${rowIdx}`);
+                if (dot) dot.active = isUnread;
+                const edge = row.getChildByName(`NotifRowAccentEdge_${rowIdx}`);
+                if (edge) edge.active = isUnread;
+                rowIdx++;
             }
-            row.active = true;
-            this._notifRowIds[i] = n.id;
-            // Title + body.
-            const titleL = row.getChildByName(`NotifRowTitleLabel_${i}`)?.getComponent(Label);
-            if (titleL) titleL.string = n.title;
-            const bodyL = row.getChildByName(`NotifRowBodyLabel_${i}`)?.getComponent(Label);
-            if (bodyL) bodyL.string = n.body;
-            // Time ago.
-            const timeL = row.getChildByName(`NotifRowTimeLabel_${i}`)?.getComponent(Label);
-            if (timeL) timeL.string = this._relativeTimeAgo(n.createdAt);
-            // Stripe color (dimmed if read).
-            const stripe = row.getChildByName(`NotifRowStripe_${i}`)?.getComponent(Sprite);
-            if (stripe) {
-                const [r, g, b] = KIND_RGB[n.kind] ?? [153, 69, 255];
-                const alpha = n.readAt === null ? 255 : 110;
-                stripe.color = new Color(r, g, b, alpha);
-            }
-            // Icon.
-            const iconN = row.getChildByName(`NotifRowIcon_${i}`);
-            if (iconN) {
-                try { IconLibrary.attach(iconN, KIND_ICON[n.kind] ?? 'bell', { size: 32 }); }
-                catch (_) { /* ignore */ }
-            }
-            // Unread dot.
-            const dot = row.getChildByName(`NotifRowUnreadDot_${i}`);
-            if (dot) dot.active = n.readAt === null;
-            // Selection-mode checkbox visibility + per-row checkmark state.
-            const cb = this._notifRowCheckboxes[i];
-            const cm = this._notifRowCheckmarks[i];
-            if (cb) cb.active = this._notifSelectionMode;
-            if (cm) cm.active = this._notifSelectionMode && this._notifSelectedIds.has(n.id);
+        };
+        if (todayItems.length > 0) {
+            placeSectionLabel(this._notifGroupLabelToday);
+            placeRowsForSection(todayItems);
+        }
+        if (earlierItems.length > 0) {
+            // Add an inter-section gap above the next section label.
+            if (todayItems.length > 0) cursorY -= (INTER_SECTION_GAP - ROW_GAP);
+            placeSectionLabel(this._notifGroupLabelEarlier);
+            placeRowsForSection(earlierItems);
+        }
+        // Hide remaining unused rows.
+        for (; rowIdx < this._notifRows.length; rowIdx++) {
+            const row = this._notifRows[rowIdx];
+            if (row) row.active = false;
+            this._notifRowIds[rowIdx] = null;
         }
         // Reconcile MarkAllRead enabled state with current unread count.
-        // Why: previously _setMarkAllReadEnabled(false) was sticky across
-        // panel re-opens — so once the user tapped it, the button stayed
-        // greyed forever even when new unreads arrived.
         this._setMarkAllReadEnabled(NotificationStore.instance.getUnreadCount() > 0);
     }
 
@@ -13182,6 +13496,8 @@ export class AppUI extends Component {
         // Stop the empty-state phrase rotation so the next render re-starts
         // it with the new mode's phrase set.
         this._stopFindMatchEmptyPhraseRotation();
+        // 2026-04-29 (Prompt 2) — drive the segmented pill's active highlight.
+        this._findMatchTabSetActive?.(mode);
         this._refreshFindMatchFilterChips();
     }
 
@@ -13227,119 +13543,17 @@ export class AppUI extends Component {
         const browserMode = this._matchBrowser?.getMode() ?? 'open';
         const tabActiveKey = browserMode === 'live' ? 'Live' : 'Open';
 
-        // Apply per-row polish. `prefix` matches the ChipGlow_<prefix>_<key> naming.
-        // 2026-04-27 redesign — tabs use violet active, filter chips stay teal so
-        // navigation reads visually distinct from filter selection.
-        const fmPanel = this._findMatchPanel;
-        const applyRow = (
-            buttons: Map<string, Button>,
-            activeKey: string,
-            rowKey: 'mode' | 'window' | 'wager' | 'tab',
-            namePrefix: string,
-            activeRgb: [number, number, number] = [48, 198, 155],
-        ) => {
-            const previousActive = this._filterActiveChip.get(rowKey);
-            const isTab = rowKey === 'tab';
-            for (const [k, b] of buttons) {
-                const active = k === activeKey;
-                const node = b.node;
-                const spr = node.getComponent(Sprite);
-                if (spr) {
-                    // 2026-04-28 polish — bump inactive contrast. Tabs need to
-                    // read as "available, not selected" (lifted charcoal, solid).
-                    // Filter chips sit "on surface" (slight translucency so the
-                    // FilterCard edge shows through).
-                    spr.color = active
-                        ? new Color(activeRgb[0], activeRgb[1], activeRgb[2], 240)
-                        : isTab
-                            ? new Color(40, 46, 68, 235)       // tab inactive — solid lifted charcoal
-                            : new Color(34, 40, 56, 200);      // chip inactive — on-surface translucent
-                }
-                // Bold + bright label when active. Inactive labels raised from
-                // (168, 174, 201) → (196, 204, 226) so they read as secondary,
-                // not disabled.
-                const lbl = node.getChildByName('Label')?.getComponent(Label);
-                if (lbl) {
-                    lbl.color = active
-                        ? new Color(255, 255, 255, 255)
-                        : isTab
-                            ? new Color(208, 216, 240, 255)
-                            : new Color(196, 204, 226, 255);
-                    (lbl as any)._isBold = active;
-                }
-                // Glow sibling toggle. Active glow opacity bumped to 220 (up
-                // from default ~140) so the selected chip reads as the brightest
-                // element on the FilterCard. Tabs cross-fade (180ms) so the
-                // switch reads as glow transferring rather than snapping. Filter
-                // chips snap (instant) since they fire many times per second on
-                // mode/window/wager rebalance.
-                if (fmPanel) {
-                    const glow = fmPanel.getChildByName(`ChipGlow_${namePrefix}_${k}`);
-                    if (glow) {
-                        const glowOp = glow.getComponent(UIOpacity) ?? glow.addComponent(UIOpacity);
-                        if (isTab) {
-                            if (active) {
-                                glow.active = true;
-                                Tween.stopAllByTarget(glowOp);
-                                tween(glowOp).to(0.18, { opacity: 220 }, { easing: 'cubicOut' }).start();
-                            } else {
-                                Tween.stopAllByTarget(glowOp);
-                                tween(glowOp)
-                                    .to(0.18, { opacity: 0 }, { easing: 'cubicIn' })
-                                    .call(() => { glow.active = false; })
-                                    .start();
-                            }
-                        } else {
-                            glow.active = active;
-                            if (active) glowOp.opacity = 220;
-                        }
-                    }
-                }
-                // Idle pulse: only the active chip breathes. Stop pulses on
-                // any chip that just became inactive.
-                if (active) {
-                    try { addIdlePulse(node, 1.04, 1.5); } catch (_) { /* ignore */ }
-                    // popScale on the chip that just GAINED active status (not the
-                    // first render) so the change feels tactile.
-                    if (previousActive !== undefined && previousActive !== k) {
-                        try { popScale(node, 1.08); } catch (_) { /* ignore */ }
-                    }
-                } else {
-                    Tween.stopAllByTarget(node);
-                    node.scale = new Vec3(1, 1, 1);
-                }
-            }
-            this._filterActiveChip.set(rowKey, activeKey);
-        };
-
-        applyRow(this._filterModeButtons,   modeActiveKey,   'mode',   'FilterMode');
-        applyRow(this._filterWindowButtons, windowActiveKey, 'window', 'FilterWindow');
-        applyRow(this._filterWagerButtons,  wagerActiveKey,  'wager',  'FilterWager');
-        // Tabs — violet active to mark "navigation", distinct from teal filter chips.
-        const tabMap = new Map<string, Button>();
-        if (this._findMatchTabOpenBtn) tabMap.set('Open', this._findMatchTabOpenBtn);
-        if (this._findMatchTabLiveBtn) tabMap.set('Live', this._findMatchTabLiveBtn);
-        applyRow(tabMap, tabActiveKey, 'tab', 'FindMatchTab', [153, 69, 255]);
-
-        // 2026-04-28 polish — Phase B "channel-switch" feel: keep inactive tabs
-        // legible so they read as "available, not selected". Bumped from 150 →
-        // 200 so the inactive tab no longer reads as broken/disabled.
-        for (const [k, b] of tabMap) {
-            const op = b.node.getComponent(UIOpacity) ?? b.node.addComponent(UIOpacity);
-            const target = k === tabActiveKey ? 255 : 200;
-            Tween.stopAllByTarget(op);
-            tween(op).to(0.18, { opacity: target }, { easing: 'sineOut' }).start();
-        }
-
-        // 2026-04-27 redesign — slide tab underline beneath the active tab.
-        if (this._findMatchTabUnderline) {
-            const targetX = tabActiveKey === 'Live' ? 122 : -122;
-            Tween.stopAllByTarget(this._findMatchTabUnderline);
-            tween(this._findMatchTabUnderline)
-                .to(0.16, { position: new Vec3(targetX, this._findMatchTabUnderline.position.y, 0) },
-                    { easing: 'cubicOut' })
-                .start();
-        }
+        // 2026-04-29 FindMatch UX rebuild: filter rows are segmented pills,
+        // so active state is driven by setActive on each pill controller.
+        // The pill manages its own active fill, label color, halo, and slide.
+        // The prior per-button styling + ChipGlow_* sibling toggles are gone.
+        this._fmModePillSetActive?.(modeActiveKey);
+        this._fmWindowPillSetActive?.(windowActiveKey);
+        this._fmWagerPillSetActive?.(wagerActiveKey);
+        this._filterActiveChip.set('mode',   modeActiveKey);
+        this._filterActiveChip.set('window', windowActiveKey);
+        this._filterActiveChip.set('wager',  wagerActiveKey);
+        this._findMatchTabSetActive?.(tabActiveKey === 'Live' ? 'live' : 'open');
 
         // 2026-04-27 redesign — pulse dot tracks tab selection (rose=Live, teal=Open).
         this._refreshLiveCountPulse();
@@ -13668,52 +13882,14 @@ export class AppUI extends Component {
         // Hide the legacy bare empty label — replaced by the cluster above.
         if (this._findMatchEmptyLabel) this._findMatchEmptyLabel.node.active = false;
 
-        // 2026-04-28 final pass — tail hint when only 1-2 matches present.
-        // Reposition relative to the LAST visible card so the hint always sits
-        // ~60px below the bottom edge of the bottom-most card. Constants mirror
-        // LayoutSpec.cjs FindMatchPanel.templates.matchRow.
-        const MR_BASE_Y = 320;
-        const MR_GAP_Y  = -118;
-        const MR_HEIGHT = 108;
-        const visibleCount = visible.length;
-        const showTail = visibleCount >= 1 && visibleCount <= 2;
-        if (this._findMatchTailHintTitle) {
-            const titleNode = this._findMatchTailHintTitle.node;
-            titleNode.active = showTail;
-            if (showTail) {
-                const lastCardY = MR_BASE_Y + (visibleCount - 1) * MR_GAP_Y;
-                const titleY = lastCardY - (MR_HEIGHT / 2) - 60;
-                titleNode.setPosition(new Vec3(0, titleY, 0));
-            }
-        }
-        if (this._findMatchTailHintSubtitle) {
-            const subNode = this._findMatchTailHintSubtitle.node;
-            subNode.active = showTail;
-            if (showTail) {
-                const lastCardY = MR_BASE_Y + (visibleCount - 1) * MR_GAP_Y;
-                const subY = lastCardY - (MR_HEIGHT / 2) - 90;
-                subNode.setPosition(new Vec3(0, subY, 0));
-            }
-        }
-        // 2026-04-28 polish — Phase E: Reset / Start a Duel CTAs sit ~40px below
-        // the subtitle, side-by-side. Open Lobbies shows both; Live Now shows
-        // only Reset (centered) since hosting doesn't apply.
-        const tailCtaY = showTail
-            ? (MR_BASE_Y + (visibleCount - 1) * MR_GAP_Y) - (MR_HEIGHT / 2) - 130
-            : 0;
-        if (this._findMatchTailResetButton) {
-            const n = this._findMatchTailResetButton.node;
-            n.active = showTail;
-            if (showTail) {
-                const x = mode === 'live' ? 0 : -90;
-                n.setPosition(new Vec3(x, tailCtaY, 0));
-            }
-        }
-        if (this._findMatchTailStartButton) {
-            const n = this._findMatchTailStartButton.node;
-            n.active = showTail && mode === 'open';
-            if (n.active) n.setPosition(new Vec3(90, tailCtaY, 0));
-        }
+        // 2026-04-29 FindMatch UX rebuild: tail hint deprecated. Showing
+        // "No matches right now" alongside a visible match was confusing UX.
+        // Empty-state cluster (mascot + Host / Bot CTAs) handles the no-results
+        // case. Tail-hint nodes stay hidden permanently.
+        if (this._findMatchTailHintTitle)    this._findMatchTailHintTitle.node.active = false;
+        if (this._findMatchTailHintSubtitle) this._findMatchTailHintSubtitle.node.active = false;
+        if (this._findMatchTailResetButton)  this._findMatchTailResetButton.node.active = false;
+        if (this._findMatchTailStartButton)  this._findMatchTailStartButton.node.active = false;
 
         const now = Date.now() / 1000;
         for (let i = 0; i < this._matchCardRows.length; i++) {
@@ -14428,7 +14604,11 @@ export class AppUI extends Component {
         // overlay at full alpha and the read would be off.
         let opacity = node.getComponent(UIOpacity);
         if (!opacity) opacity = node.addComponent(UIOpacity);
-        opacity.opacity = ready ? 255 : 130;
+        // 2026-04-29 token-picker rebuild — incomplete-squad opacity 130→180 so
+        // the "Pick N more" label reads clearly. The brief calls for the CTA to
+        // be "disabled/secondary but still readable"; 130 was too dim to read as
+        // anything but broken.
+        opacity.opacity = ready ? 255 : 180;
         // 2026-04-28 polish — pulse at 2/3 (anticipation) AND 3/3 (ready).
         // 2/3 uses the subtler addAlmostReadyPulse (1.015 / 2.5s) so it
         // reads as "finish your squad" without competing with the 3/3
@@ -14872,33 +15052,30 @@ export class AppUI extends Component {
     }
 
     /** Phase N4: build the hub-tab strip (Portfolio | Leaderboard) on a panel.
-     *  2026-04-28 round-2: pill y=720 (LayoutSpec.{portfolio,leaderboard}.HUB_TABS_Y).
-     *  Active-pill outer glow extends ±18px above and below the row bounds — any
-     *  stacked row must sit ≥36px away (verified via verify-layout.py).
+     *  2026-04-29 — y derives from DashboardLayoutSpec.{portfolio,leaderboard}.header.centerY,
+     *  locking the strip inside the HEADER zone (h=80). Outer glow envelope (±18)
+     *  is fully contained inside the zone, so the strip cannot bleed into the
+     *  TITLE row below.
      *  Delegates to the shared `_buildSegmentedPill` helper with violet active
      *  fill so the primary mode-switch reads as nav (purple) while sub-tabs
      *  use teal selection. */
     private _buildHubTabs(parent: Node): { portfolio: Button; leaderboard: Button } {
+        // 2026-04-29 (Prompt 2) — tier='hub' pulls violet fill, pillTrayHi bg,
+        // 56h height, 20pt font, and tier-locked glow + label alphas straight
+        // from TabTierSpec. The previous explicit opts are now defaults.
+        const zones = (parent === this._leaderboardPanel)
+            ? DashboardLayoutSpec.leaderboard
+            : DashboardLayoutSpec.portfolio;
         const pill = this._buildSegmentedPill(parent, {
             name: 'HubTabStrip',
+            tier: 'hub',
             width: 360,
-            height: 56,
-            y: 720,
+            y: zones.header.centerY,
             segments: [
                 { key: 'portfolio',   label: 'Portfolio' },
                 { key: 'leaderboard', label: 'Leaderboard' },
             ],
             activeKey: this._hubActiveTab,
-            fillHex: Palette.accent.violet,
-            glowHex: Palette.accent.violet,
-            // 2026-04-28 visibility upgrade: pillTrayHi gives the primary hub
-            // pill an extra contrast step over panel surface so the container
-            // reads as a tray, not a stain. Inactive label drops to 70% white
-            // so the active "Portfolio" / "Leaderboard" wins luminance.
-            bgHex: Palette.bg.pillTrayHi,
-            activeLabelHex:   '#FFFFFF',
-            inactiveLabelHex: '#FFFFFFB3',
-            fontSize: 20,
             showDivider: true,
             zoomScale: 0.95,
             onClick: (key) => this._onHubTabClick(key as 'portfolio' | 'leaderboard'),
@@ -14930,13 +15107,22 @@ export class AppUI extends Component {
      */
     private _buildSegmentedPill(parent: Node, opts: {
         name?: string;
+        // 2026-04-29 (Prompt 2) — tier locks the visual hierarchy across all
+        // segmented controls. When set, TabTierSpec[tier] supplies defaults
+        // for height, fontSize, fill, tray bg, glow alphas, and label
+        // opacities. Explicit per-call opts still win — pass tier first,
+        // override surgically only when needed.
+        //   hub  → primary nav (Portfolio / Leaderboard) — violet, 56h.
+        //   mode → mode switching (1v1 / Trio / 4p / 8p, Open / Live) — teal, 48h.
+        //   sub  → content filtering (Stats / History / Trophies) — teal, 40h.
+        tier?: TabTier;
         width: number;
-        height: number;
+        height?: number;
         y: number;
         x?: number;
         segments: { key: string; label: string; subLabel?: string }[];
         activeKey: string;
-        fillHex: string;
+        fillHex?: string;
         glowHex?: string;
         bgHex?: string;
         activeLabelHex?: string;
@@ -14951,8 +15137,10 @@ export class AppUI extends Component {
         buttons: Map<string, Button>;
         redraw: () => void;
     } {
+        // Resolve tier defaults first; per-call opts override below.
+        const spec = opts.tier ? TabTierSpec[opts.tier] : null;
         const STRIP_W = opts.width;
-        const STRIP_H = opts.height;
+        const STRIP_H = opts.height ?? spec?.height ?? 48;
         const PAD = 6;
         const N = Math.max(1, opts.segments.length);
         const TAB_W = (STRIP_W - 2 * PAD) / N;
@@ -14964,18 +15152,29 @@ export class AppUI extends Component {
             return i < 0 ? 0 : i;
         };
 
-        const fillC = colorFromHex(opts.fillHex);
-        const glowBase = colorFromHex(opts.glowHex ?? opts.fillHex);
+        const resolvedFillHex = opts.fillHex ?? spec?.activeFillHex ?? Palette.accent.teal;
+        const fillC = colorFromHex(resolvedFillHex);
+        const glowBase = colorFromHex(opts.glowHex ?? resolvedFillHex);
         // 2026-04-28 Hub-tab visibility upgrade — double-layer glow replaces
         // the old single alpha-90 pill. Outer halo gives a soft ambient
         // bloom; inner glow is a tighter ring whose alpha breathes 180→255
-        // to draw the eye to the active segment.
-        const glowOuterC = new Color(glowBase.r, glowBase.g, glowBase.b, 60);
-        const glowInnerC = new Color(glowBase.r, glowBase.g, glowBase.b, 140);
-        const bgC = colorFromHex(opts.bgHex ?? Palette.bg.pillTray);
+        // to draw the eye to the active segment. Alpha values come from the
+        // tier spec when one is supplied (hub gets the strongest bloom).
+        const outerAlpha = spec?.glowOuterAlpha ?? 60;
+        const innerAlpha = spec?.glowInnerAlpha ?? 140;
+        const glowOuterC = new Color(glowBase.r, glowBase.g, glowBase.b, outerAlpha);
+        const glowInnerC = new Color(glowBase.r, glowBase.g, glowBase.b, innerAlpha);
+        const bgC = colorFromHex(opts.bgHex ?? spec?.trayBgHex ?? Palette.bg.pillTray);
         const activeLblC = colorFromHex(opts.activeLabelHex ?? Palette.text.inverse);
-        const inactiveLblC = colorFromHex(opts.inactiveLabelHex ?? Palette.text.mid);
-        const fontSize = opts.fontSize ?? 18;
+        // 2026-04-29 (Prompt 2) — inactive label alpha locked at 180 (~70%)
+        // per the spec's "never fade below readability" rule. Old call sites
+        // hardcoded `#FFFFFFB3` (179) which matches this within 1 step.
+        const inactiveLblC = (() => {
+            if (opts.inactiveLabelHex) return colorFromHex(opts.inactiveLabelHex);
+            const inactiveAlpha = spec?.inactiveLabelAlpha ?? 180;
+            return new Color(255, 255, 255, inactiveAlpha);
+        })();
+        const fontSize = opts.fontSize ?? spec?.fontSize ?? 18;
         const ACTIVE_SCALE = 1.04;
         const hasAnySub = opts.segments.some((s) => !!s.subLabel);
 
