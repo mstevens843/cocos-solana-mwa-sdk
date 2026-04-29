@@ -382,11 +382,12 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     NotificationPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            listContainer:         { x: 0,    y: -80, w: 360, h: 940, type: 'group' },
-            cardHeaderLabel:       { x: -88,  y: 600, w: 180, h: 30,  type: 'label' },
-            cardMarkAllReadButton: { x: 84,   y: 600, w: 124, h: 30,  type: 'btnGhost' },
-            cardCloseButton:       { x: 168,  y: 600, w: 36,  h: 36,  type: 'btnGhost' },
-            cardHeaderDivider:     { x: 0,    y: 572, w: 356, h: 1,   type: 'sprite' },
+            listContainer:         { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
+            cardHeaderLabel:       { x: -170, y: 608, w: 200, h: 30,  type: 'label' },
+            cardCloseButton:       { x: 168,  y: 608, w: 36,  h: 36,  type: 'btnGhost' },
+            cardMarkAsReadButton:  { x: -90,  y: 556, w: 170, h: 36,  type: 'btnGhost' },
+            cardMarkAllReadButton: { x: 90,   y: 556, w: 170, h: 36,  type: 'btnGhost' },
+            cardHeaderDivider:     { x: 0,    y: 530, w: 356, h: 1,   type: 'sprite' },
             groupLabelNow:         { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },
             groupLabelToday:       { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },
             groupLabelEarlier:     { x: -78,  y: 0,   w: 200, h: 18,  type: 'label' },

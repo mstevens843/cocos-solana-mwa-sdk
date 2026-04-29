@@ -3390,14 +3390,9 @@ export class AppUI extends Component {
         // freshness refresh of the user's Last Result snapshot.
         this._startMatchTicker();
 
-        // 2026-04-28 — top-heavy ambient particle drift on home panel.
-        // ensureParticleDrift re-spawns on every entry so navigating away
-        // from Home (Find Match, etc.) and returning still shows the layer.
-        if (this._homePanel) {
-            try {
-                ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' });
-            } catch (_) { /* tween/Graphics may not be loaded yet */ }
-        }
+        // 2026-04-28 — Home particle drift is now spawned in _setActivePanel
+        // so back-button paths (MIP back, Race escape) that bypass _showHome
+        // still get the layer.
 
         // Part 13: refresh rake-tier chip (async; hides when not connected).
         void this._refreshRakeChip();
@@ -3678,11 +3673,16 @@ export class AppUI extends Component {
             this._rebuildMipDisplay();
             void this._refreshMipMatches();
         }
-        // 2026-04-28 — re-spawn ambient particle drift on every Landing entry
-        // so disconnect → return-to-Landing keeps the layer alive. Home owns
-        // its own re-spawn in _showHome (alongside other home-specific work).
+        // 2026-04-28 — re-spawn ambient particle drift on every panel entry
+        // so disconnect → Landing and back-button → Home both keep the layer
+        // alive. Anchored here (not in _showHome / _showLanding) because
+        // several callers reach Home via _setActivePanel('home') directly
+        // (MIP back button, Race escape) without going through _showHome.
         if (which === 'landing' && this._landingPanel) {
             try { ensureParticleDrift(this._landingPanel, 6); } catch (_) { /* tween/Graphics may not be loaded yet */ }
+        }
+        if (which === 'home' && this._homePanel) {
+            try { ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' }); } catch (_) { /* tween/Graphics may not be loaded yet */ }
         }
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
     }

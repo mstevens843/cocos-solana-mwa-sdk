@@ -2501,13 +2501,18 @@ const LayoutSpec = {
         card: { w: 400, h: 1280, restingX: 160, offX: 600 },
         elements: {
             // List area sits below header divider; w 360 matches card content width.
-            listContainer:        { x: 0,    y: -80, w: 360, h: 940, type: 'group' },
-            // Header row: title left, Mark-all-read right-of-title, close ✕ top-right corner.
-            cardHeaderLabel:      { x: -88,  y: 600, w: 180, h: 30, type: 'label' },
-            cardMarkAllReadButton:{ x: 84,   y: 600, w: 124, h: 30, type: 'btnGhost' },
-            cardCloseButton:      { x: 168,  y: 600, w: 36,  h: 36, type: 'btnGhost' },
+            // 2026-04-28 — y dropped -80 → -110, h shortened 940 → 900 to clear new
+            // 50/50 action row (MarkAsRead | MarkAllRead) below the title.
+            listContainer:        { x: 0,    y: -110, w: 360, h: 900, type: 'group' },
+            // Header row 1 — title alone (top). Close ✕ stays top-right corner.
+            cardHeaderLabel:      { x: -170, y: 608, w: 200, h: 30, type: 'label' },
+            cardCloseButton:      { x: 168,  y: 608, w: 36,  h: 36, type: 'btnGhost' },
+            // Header row 2 — 50/50 action split: left = MarkAsRead (selection mode),
+            // right = MarkAllRead (existing bulk action). Both 170w with 4px gap.
+            cardMarkAsReadButton: { x: -90,  y: 556, w: 170, h: 36, type: 'btnGhost' },
+            cardMarkAllReadButton:{ x: 90,   y: 556, w: 170, h: 36, type: 'btnGhost' },
             // 1px low-alpha divider beneath the header row.
-            cardHeaderDivider:    { x: 0,    y: 572, w: 356, h: 1,  type: 'sprite' },
+            cardHeaderDivider:    { x: 0,    y: 530, w: 356, h: 1,  type: 'sprite' },
             // Group section headers ("Now" / "Today" / "Earlier"). Y is
             // computed at runtime; these specs lock width/height/x only.
             groupLabelNow:        { x: -78,  y: 0,   w: 200, h: 18, type: 'label' },
@@ -2522,15 +2527,18 @@ const LayoutSpec = {
             // 8 reusable rows in NotifListContainer. AppUI activates per
             // unread notification, writes Title/Body/Time labels, toggles
             // unread dot. Geometry tightened to fit 360-wide content area.
+            // 2026-04-28 — added checkbox slot (left of icon) for selection
+            // mode; icon/title/body slid right to clear it.
             notifRow: {
                 count: 8, w: 360, h: 92, gap: 8,
                 baseY: 460, gapY: -100,
-                stripe: { x: -177, y: 0,   w: 6,   h: 92 },
-                icon:   { x: -150, y: 0,   w: 40,  h: 40 },
-                title:  { x: -18,  y: 18,  w: 200, h: 22 },
-                body:   { x: -18,  y: -10, w: 200, h: 28 },
-                time:   { x: 130,  y: -32, w: 80,  h: 16 },
-                dot:    { x: 162,  y: 32,  w: 8,   h: 8 },
+                stripe:   { x: -177, y: 0,   w: 6,   h: 92 },
+                checkbox: { x: -156, y: 0,   w: 24,  h: 24 },
+                icon:     { x: -122, y: 0,   w: 40,  h: 40 },
+                title:    { x: 4,    y: 18,  w: 200, h: 22 },
+                body:     { x: 4,    y: -10, w: 200, h: 28 },
+                time:     { x: 130,  y: -32, w: 80,  h: 16 },
+                dot:      { x: 162,  y: 32,  w: 8,   h: 8 },
             },
         },
         allowedOverlaps: [],
