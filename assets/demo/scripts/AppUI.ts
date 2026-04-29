@@ -843,6 +843,7 @@ export class AppUI extends Component {
     private _mipTapButtons: Button[] = [];
     private _mipEmptyState: Node | null = null;
     private _mipSubtitleLabel: Label | null = null;
+    private _mipMoreLabel: Label | null = null;
     private _mipMatches: MatchState[] = [];
     /** Live-battle redesign refs (one per row). */
     private _mipCardBgs: Sprite[] = [];
@@ -2950,83 +2951,45 @@ export class AppUI extends Component {
         const mipBtnComp = mipBtnNode?.getComponent(Button);
         if (mipBtnComp) mipBtnComp.interactable = true;
 
-        // ── 2026-04-27 — MatchesInProgressPanel + 30-row pool bindings ──
+        // ── 2026-04-29 — MatchesInProgressPanel nuclear rebuild bindings ──
+        // Fixed 6-row pool, no scrollview. Rows are direct children of the panel.
         if (this._mipPanel) {
             this._mipSubtitleLabel = this._mipPanel.getChildByName('MatchesInProgressSubtitleLabel')?.getComponent(Label) ?? null;
             this._mipEmptyState = this._mipPanel.getChildByName('MIPEmptyState') ?? null;
+            this._mipMoreLabel = this._mipPanel.getChildByName('MIPMoreLabel')?.getComponent(Label) ?? null;
             const mipBackBtn = this._mipPanel.getChildByName('BackButton')?.getComponent(Button);
             mipBackBtn?.node.on(Button.EventType.CLICK, () => this._setActivePanel('home'), this);
             const emptyCta = this._mipEmptyState?.getChildByName('MIPEmptyCtaButton')?.getComponent(Button);
             emptyCta?.node.on(Button.EventType.CLICK, () => this._showFindMatchPanel(), this);
-            const mipScrollSV = this._mipPanel.getChildByName('MIPScrollView')?.getComponent(ScrollView);
-            const mipContent = mipScrollSV?.content;
-            if (mipContent) {
-                for (let i = 0; i < 30; i++) {
-                    const rowN = mipContent.getChildByName(`MIPRow_${i}`);
-                    if (!rowN) continue;
-                    this._mipRowNodes.push(rowN);
-                    // Battle-card surface + glow (live-battle redesign).
-                    const cardBgN = rowN.getChildByName(`MIPCardBg_${i}`);
-                    const cardBgSpr = cardBgN?.getComponent(Sprite);
-                    const cardBgUT = cardBgN?.getComponent(UITransform);
-                    if (cardBgSpr) this._mipCardBgs.push(cardBgSpr);
-                    if (cardBgUT) this._mipCardBgUTs.push(cardBgUT);
-                    const cardGlowN = rowN.getChildByName(`MIPCardGlow_${i}`);
-                    const cardGlowSpr = cardGlowN?.getComponent(Sprite);
-                    const cardGlowUT = cardGlowN?.getComponent(UITransform);
-                    if (cardGlowSpr) this._mipCardGlows.push(cardGlowSpr);
-                    if (cardGlowUT) this._mipCardGlowUTs.push(cardGlowUT);
-                    const edgeSpr = rowN.getChildByName(`MIPCardEdge_${i}`)?.getComponent(Sprite);
-                    if (edgeSpr) this._mipCardEdges.push(edgeSpr);
-                    // Ring + labels.
-                    const ringG = rowN.getChildByName(`MIPRing_${i}`)?.getComponent(Graphics);
-                    if (ringG) this._mipRingGraphics.push(ringG);
-                    const winL = rowN.getChildByName(`MIPWinLine_${i}`)?.getComponent(Label);
-                    if (winL) this._mipWinLineLabels.push(winL);
-                    const vsL = rowN.getChildByName(`MIPVsLabel_${i}`)?.getComponent(Label);
-                    if (vsL) this._mipVsLabels.push(vsL);
-                    const windowL = rowN.getChildByName(`MIPWindowLine_${i}`)?.getComponent(Label);
-                    if (windowL) this._mipWindowLineLabels.push(windowL);
-                    const stakeL = rowN.getChildByName(`MIPStakeChip_${i}`)?.getComponent(Label);
-                    if (stakeL) this._mipStakeChipLabels.push(stakeL);
-                    const oppL = rowN.getChildByName(`MIPOpponentChip_${i}`)?.getComponent(Label);
-                    if (oppL) {
-                        this._mipOpponentChipLabels.push(oppL);
-                        // Live-battle redesign: VS label takes over this slot.
-                        oppL.node.active = false;
-                    }
-                    const timeL = rowN.getChildByName(`MIPTimeLabel_${i}`)?.getComponent(Label);
-                    if (timeL) this._mipTimeLabels.push(timeL);
-                    // Duel bar group.
-                    const dbTrack = rowN.getChildByName(`MIPDuelBarTrack_${i}`)?.getComponent(Graphics);
-                    if (dbTrack) this._mipDuelBarTracks.push(dbTrack);
-                    const dbFill = rowN.getChildByName(`MIPDuelBar_${i}`)?.getComponent(Graphics);
-                    if (dbFill) this._mipDuelBarFills.push(dbFill);
-                    const dbGlow = rowN.getChildByName(`MIPDuelBarGlow_${i}`)?.getComponent(Graphics);
-                    if (dbGlow) this._mipDuelBarGlows.push(dbGlow);
-                    const dbTick = rowN.getChildByName(`MIPDuelBarTick_${i}`)?.getComponent(Graphics);
-                    if (dbTick) this._mipDuelBarTicks.push(dbTick);
-                    // Tap target + Resume button — both fire _onMipRowTap.
-                    const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
-                    if (tap) {
-                        this._mipTapButtons.push(tap);
-                        const idx = i;
-                        tap.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
-                    }
-                    const resume = rowN.getChildByName(`MIPResumeBtn_${i}`)?.getComponent(Button);
-                    if (resume) {
-                        this._mipResumeButtons.push(resume);
-                        const idx = i;
-                        resume.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
-                    }
-                    // Init eased duel-bar state per row.
-                    this._mipDuelBarPos.push(0);
-                    this._mipDuelBarTargetPos.push(0);
-                    this._mipRowLeaderState.push('pregame');
-                    this._mipRowFraction.push(1);
+
+            for (let i = 0; i < 6; i++) {
+                const rowN = this._mipPanel.getChildByName(`MIPRow_${i}`);
+                if (!rowN) continue;
+                this._mipRowNodes.push(rowN);
+
+                const edgeSpr = rowN.getChildByName(`MIPCardEdge_${i}`)?.getComponent(Sprite);
+                if (edgeSpr) this._mipCardEdges.push(edgeSpr);
+                const vsL = rowN.getChildByName(`MIPVsLabel_${i}`)?.getComponent(Label);
+                if (vsL) this._mipVsLabels.push(vsL);
+                const timeL = rowN.getChildByName(`MIPTimeLabel_${i}`)?.getComponent(Label);
+                if (timeL) this._mipTimeLabels.push(timeL);
+                const stakeL = rowN.getChildByName(`MIPStakeChip_${i}`)?.getComponent(Label);
+                if (stakeL) this._mipStakeChipLabels.push(stakeL);
+                const winL = rowN.getChildByName(`MIPWinLine_${i}`)?.getComponent(Label);
+                if (winL) this._mipWinLineLabels.push(winL);
+
+                const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
+                if (tap) {
+                    const idx = i;
+                    tap.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
+                }
+                const resume = rowN.getChildByName(`MIPResumeBtn_${i}`)?.getComponent(Button);
+                if (resume) {
+                    const idx = i;
+                    resume.node.on(Button.EventType.CLICK, () => this._onMipRowTap(idx), this);
                 }
             }
-            console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/30 emptyState=${!!this._mipEmptyState} subtitle=${!!this._mipSubtitleLabel}`);
+            console.log(`${TAG} start | MatchesInProgressPanel wired=true rows=${this._mipRowNodes.length}/6 emptyState=${!!this._mipEmptyState} subtitle=${!!this._mipSubtitleLabel}`);
         } else {
             console.log(`${TAG} start | WARN MatchesInProgressPanel missing — regenerate scene`);
         }
@@ -3827,28 +3790,10 @@ export class AppUI extends Component {
         }
         this._setActivePanel('mip');
         await this._refreshMipMatches();
-        // 2026-04-28 — defensive backstops for the empty-MIP UX regression.
-        // (a) Force panel UIOpacity to 255: swapPanel's animateIn fades 0→255
-        //     over Motion.base; if a stale tween targets the same UIOpacity it
-        //     can stop short and leave the panel partially transparent.
-        // (b) Reset scroll position to top so the hero row (positioned in the
-        //     upper portion of content) is in the visible window.
+        // Force panel UIOpacity to 255 in case swapPanel's animateIn fade was
+        // interrupted (defensive — only thing we keep from the prior backstops).
         const op = this._mipPanel.getComponent(UIOpacity);
         if (op) op.opacity = 255;
-        const sv = this._mipPanel.getChildByName('MIPScrollView')?.getComponent(ScrollView);
-        sv?.scrollToTop(0);
-        // (c) Recurse the opacity reset to ScrollView, mask view, content,
-        //     and row 0 so a stale child-level UIOpacity tween (e.g. from a
-        //     prior animateOut) can't keep the hero card invisible. The
-        //     panel-level reset above doesn't propagate.
-        const mipScrollNode = this._mipPanel.getChildByName('MIPScrollView');
-        const mipViewNode = mipScrollNode?.getChildByName('view');
-        const mipContentNode = mipViewNode?.getChildByName('content');
-        for (const n of [mipScrollNode, mipViewNode, mipContentNode, this._mipRowNodes[0] ?? null]) {
-            const childOp = n?.getComponent(UIOpacity);
-            if (childOp) childOp.opacity = 255;
-        }
-        this._startMipTick();
     }
 
     /**
@@ -3942,49 +3887,32 @@ export class AppUI extends Component {
     }
 
     /**
-     * Repaint all 30 row nodes from the current `_mipMatches` snapshot.
-     * Activates rows up to N, deactivates the rest. Live-battle redesign:
-     * also fills the centered VS label + duel-bar target position + per-row
-     * leader-state cache (read by `_mipFrameTick` for breathing animations).
-     * Hero-card layout (N=1) is applied at the end.
+     * 2026-04-29 — Nuclear-rebuild renderer. Fixed 6-row pool (no scrollview).
+     * Activates first min(n,6) rows, deactivates the rest. Per-row: VS line,
+     * time label, stake chip, win-line status, edge stripe tint. "+N more"
+     * hint shows when n > 6. No duel bar, no ring graphics, no hero-card
+     * growth — those decorative features can return after the page renders.
      */
     private _renderMipRows(): void {
         const n = this._mipMatches.length;
+        const visible = Math.min(n, 6);
         if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
         if (this._mipSubtitleLabel) {
             this._mipSubtitleLabel.string = n === 0 ? 'All clear' : `${n} game${n > 1 ? 's' : ''} running`;
         }
+        if (this._mipMoreLabel) {
+            this._mipMoreLabel.node.active = n > 6;
+            this._mipMoreLabel.string = n > 6 ? `+${n - 6} more` : '';
+        }
         const me = MWAManager.instance?.connectedPubkey ?? '';
         for (let i = 0; i < this._mipRowNodes.length; i++) {
-            const m = this._mipMatches[i];
             const row = this._mipRowNodes[i];
+            const m = i < visible ? this._mipMatches[i] : null;
             if (!row) continue;
             if (!m) { row.active = false; continue; }
             row.active = true;
 
-            // Win line (delta + sign vs leader)
-            const myIdx = m.players.indexOf(me);
-            const myHeight = myIdx >= 0 ? (m.heights[myIdx] ?? 0) : 0;
-            const leaderHeight = Math.max(...m.heights);
-            const isWinning = myHeight === leaderHeight && myHeight > 0;
-            const isPregame = myHeight === 0 && leaderHeight === 0;
-            const myDeltaPct = decodeScore(myHeight);
-            const winLbl = this._mipWinLineLabels[i];
-            if (winLbl) {
-                if (isPregame) {
-                    winLbl.string = 'Round just started';
-                    winLbl.color = new Color(168, 174, 201, 255);
-                } else if (isWinning) {
-                    winLbl.string = `YOU ${myDeltaPct >= 0 ? '+' : ''}${myDeltaPct.toFixed(2)}%`;
-                    winLbl.color = new Color(48, 198, 155, 255);
-                } else {
-                    const leaderDeltaPct = decodeScore(leaderHeight);
-                    winLbl.string = `OPP ${leaderDeltaPct >= 0 ? '+' : ''}${leaderDeltaPct.toFixed(2)}%`;
-                    winLbl.color = new Color(236, 88, 122, 255);
-                }
-            }
-
-            // Centered VS label — "VS BOT" / "VS @user".
+            // VS label.
             const oppPubkey = m.players.find((p) => p !== me) ?? '';
             const isBot = !oppPubkey || oppPubkey.endsWith('BOT') || /bot/i.test(oppPubkey);
             const vsLbl = this._mipVsLabels[i];
@@ -3995,14 +3923,34 @@ export class AppUI extends Component {
                     const display = this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`;
                     vsLbl.string = `VS ${display.toUpperCase()}`;
                 }
-                vsLbl.color = new Color(168, 174, 201, 255);
             }
 
-            // Window / age line
-            const wndLbl = this._mipWindowLineLabels[i];
-            if (wndLbl) wndLbl.string = this._mipFormatWindow(m);
+            // Time label.
+            const remainingMs = this._mipRemainingMs(m);
+            const timeLbl = this._mipTimeLabels[i];
+            if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
 
-            // Stake chip
+            // Win-line status.
+            const myIdx = m.players.indexOf(me);
+            const myHeight = myIdx >= 0 ? (m.heights[myIdx] ?? 0) : 0;
+            const leaderHeight = Math.max(...m.heights);
+            const isWinning = myHeight === leaderHeight && myHeight > 0;
+            const isPregame = myHeight === 0 && leaderHeight === 0;
+            const winLbl = this._mipWinLineLabels[i];
+            if (winLbl) {
+                if (isPregame) {
+                    winLbl.string = 'Round just started';
+                    winLbl.color = new Color(168, 174, 201, 255);
+                } else if (isWinning) {
+                    winLbl.string = `YOU +${decodeScore(myHeight).toFixed(2)}%`;
+                    winLbl.color = new Color(48, 198, 155, 255);
+                } else {
+                    winLbl.string = `OPP +${decodeScore(leaderHeight).toFixed(2)}%`;
+                    winLbl.color = new Color(236, 88, 122, 255);
+                }
+            }
+
+            // Stake chip.
             const stakeLbl = this._mipStakeChipLabels[i];
             if (stakeLbl) {
                 const isPaper = m.wagerLamports === 0n;
@@ -4016,133 +3964,13 @@ export class AppUI extends Component {
                 }
             }
 
-            // Opponent chip — kept hidden in live-battle redesign (data
-            // surfaces via the centered VS label). Defensive: re-hide here in
-            // case the row was reactivated after a renderer skip.
-            const oppLbl = this._mipOpponentChipLabels[i];
-            if (oppLbl) oppLbl.node.active = false;
-
-            // Ring fraction + time label.
-            const remainingMs = this._mipRemainingMs(m);
-            const totalMs = this._mipWindowDurationMs(m.timeWindow);
-            const fraction = totalMs > 0 ? remainingMs / totalMs : 0;
-            this._mipRowFraction[i] = fraction;
-            this._updateMipRing(i, fraction);
-            const timeLbl = this._mipTimeLabels[i];
-            if (timeLbl) timeLbl.string = this._formatRemainingTime(remainingMs);
-
-            // Duel-bar target position. Lead = my% − opponent best%, saturated
-            // to ±5pp (matches the live race's normalization). _mipFrameTick
-            // lerps _mipDuelBarPos[i] toward this target.
-            let oppBestHeight = 0;
-            for (let p = 0; p < m.heights.length; p++) {
-                if (p === myIdx) continue;
-                if (m.heights[p] > oppBestHeight) oppBestHeight = m.heights[p];
-            }
-            const oppBestPct = decodeScore(oppBestHeight);
-            const lead = myDeltaPct - oppBestPct;
-            const target = isPregame ? 0 : Math.max(-1, Math.min(1, lead / 5));
-            this._mipDuelBarTargetPos[i] = target;
-
-            // Leader-state cache + edge/glow tint.
-            const state: 'winning' | 'losing' | 'pregame' = isPregame ? 'pregame' : (isWinning ? 'winning' : 'losing');
-            this._mipRowLeaderState[i] = state;
-            this._tintMipCardEdge(i, state);
-
-            // Static draws — track + center tick are state-free.
-            this._drawMipDuelBarTrack(i);
-            this._drawMipDuelBarCenterTick(i);
-        }
-
-        // Hero-card treatment when exactly one match is live: grow row 0 to
-        // ~660×260 and center vertically inside the scrollview area.
-        this._applyMipHeroLayout();
-
-        // 2026-04-28 diag — single dense log; pinpoints empty-MIP-panel bug.
-        // Read AFTER hero-layout so row0 reflects the final positioned/sized state.
-        const r0 = this._mipRowNodes[0];
-        const r0Pos = r0?.position;
-        const r0CardBg = this._mipCardBgUTs[0];
-        const r0CardBgSpr = this._mipCardBgs[0];
-        const panelOp = this._mipPanel?.getComponent(UIOpacity);
-        const scrollNode = this._mipPanel?.getChildByName('MIPScrollView');
-        const scrollSV = scrollNode?.getComponent(ScrollView);
-        const scrollContent = scrollSV?.content;
-        const scrollOp = scrollNode?.getComponent(UIOpacity);
-        const contentOp = scrollContent?.getComponent(UIOpacity);
-        const r0Op = r0?.getComponent(UIOpacity);
-        const contentPos = scrollContent?.position;
-        console.log(`${TAG} _renderMipRows | n=${n} rowPool=${this._mipRowNodes.length}/30`
-            + ` empty=${!!this._mipEmptyState} emptyActive=${this._mipEmptyState?.active}`
-            + ` panel=${!!this._mipPanel} panelActive=${this._mipPanel?.active} panelOpacity=${panelOp?.opacity ?? 'no-op'}`
-            + ` scroll=${!!scrollSV} scrollOpacity=${scrollOp?.opacity ?? 'no-op'}`
-            + ` content=${!!scrollContent} contentChildren=${scrollContent?.children.length ?? 0}`
-            + ` contentOpacity=${contentOp?.opacity ?? 'no-op'}`
-            + ` contentPos=(${contentPos?.x ?? '?'},${contentPos?.y ?? '?'})`
-            + ` row0Active=${r0?.active} row0Pos=(${r0Pos?.x ?? '?'},${r0Pos?.y ?? '?'})`
-            + ` row0Opacity=${r0Op?.opacity ?? 'no-op'}`
-            + ` row0CardSize=(${r0CardBg?.width ?? '?'}x${r0CardBg?.height ?? '?'})`
-            + ` row0CardAlpha=${r0CardBgSpr?.color?.a ?? '?'}`);
-
-        // 2026-04-29 — defensive row-child reset: pin every active row's child
-        // UIOpacity to 255 + re-pin the teal edge stripe alpha. Covers stale
-        // tweens that could leave a child invisible on the next render.
-        for (let ri = 0; ri < n && ri < this._mipRowNodes.length; ri++) {
-            const rNode = this._mipRowNodes[ri];
-            if (!rNode) continue;
-            for (const child of rNode.children) {
-                const cop = child.getComponent(UIOpacity);
-                if (cop) cop.opacity = 255;
-            }
-            const edge = this._mipCardEdges[ri];
-            if (edge) edge.color = new Color(edge.color.r, edge.color.g, edge.color.b, 255);
-        }
-
-        // 2026-04-29 — DETERMINISTIC GEOMETRY LOG. Prints actual worldPosition
-        // of row 0, title, subtitle, view mask bounds. Empirical proof of where
-        // each element ACTUALLY renders on the device — supersedes hand-traced
-        // parent-chain math. If row.worldY > subtitle.worldY, the row is
-        // colliding with header text (the suspected bug). If row.worldY <
-        // subtitle.worldY, row sits below subtitle as designed.
-        if (n >= 1 && r0) {
-            const titleNode = this._mipPanel?.getChildByName('MatchesInProgressTitleLabel');
-            const subtitleNode = this._mipPanel?.getChildByName('MatchesInProgressSubtitleLabel');
-            const viewNode = this._mipPanel?.getChildByName('MIPScrollView')?.getChildByName('view');
-            const r0World = r0.worldPosition;
-            const titleWorld = titleNode?.worldPosition;
-            const subtitleWorld = subtitleNode?.worldPosition;
-            const viewUT = viewNode?.getComponent(UITransform);
-            const viewWorld = viewNode?.worldPosition;
-            const viewTop = viewWorld && viewUT ? (viewWorld.y + viewUT.height * (1 - (viewUT.anchorY ?? 0.5))) : null;
-            const viewBot = viewWorld && viewUT ? (viewWorld.y - viewUT.height * (viewUT.anchorY ?? 0.5)) : null;
-            const r0UT = r0.getComponent(UITransform);
-            const r0Top = r0World && r0UT ? (r0World.y + r0UT.height * (1 - (r0UT.anchorY ?? 0.5))) : null;
-            const r0Bot = r0World && r0UT ? (r0World.y - r0UT.height * (r0UT.anchorY ?? 0.5)) : null;
-            console.log(`${TAG} GEOM`
-                + ` row0.world=(${r0World?.x.toFixed(0) ?? '?'},${r0World?.y.toFixed(0) ?? '?'})`
-                + ` row0.span=[${r0Bot?.toFixed(0) ?? '?'}..${r0Top?.toFixed(0) ?? '?'}]`
-                + ` title.world=(${titleWorld?.x.toFixed(0) ?? '?'},${titleWorld?.y.toFixed(0) ?? '?'})`
-                + ` subtitle.world=(${subtitleWorld?.x.toFixed(0) ?? '?'},${subtitleWorld?.y.toFixed(0) ?? '?'})`
-                + ` view.world=(${viewWorld?.x.toFixed(0) ?? '?'},${viewWorld?.y.toFixed(0) ?? '?'})`
-                + ` view.span=[${viewBot?.toFixed(0) ?? '?'}..${viewTop?.toFixed(0) ?? '?'}]`
-                + ` collidesTitle=${(r0Top !== null && titleWorld) ? (r0Top >= titleWorld.y - 22) : '?'}`);
-
-            // 2026-04-29 — per-child probe: UITransform size, layer, and
-            // renderable-component details. If a child has size 0×0, missing
-            // sprite frame, empty label string, missing font, or wrong layer,
-            // it'll surface here. Prior diagnostics covered active/opacity/
-            // alpha but never these dimensions.
-            for (let ci = 0; ci < r0.children.length; ci++) {
-                const c = r0.children[ci];
-                const ut = c.getComponent(UITransform);
-                const lbl = c.getComponent(Label);
-                const spr = c.getComponent(Sprite);
-                const grx = c.getComponent(Graphics);
-                const desc = lbl ? `LABEL str="${lbl.string}" fs=${lbl.fontSize} fontUUID=${(lbl as any)._font?._uuid ?? 'system'} sysFont=${(lbl as any)._isSystemFontUsed}`
-                          : spr ? `SPRITE frameUUID=${(spr as any).spriteFrame?._uuid ?? 'null'}`
-                          : grx ? `GRAPHICS lineW=${(grx as any).lineWidth}`
-                          : 'OTHER';
-                console.log(`${TAG} CHILD[${ci}] ${c.name} size=(${ut?.width.toFixed(0) ?? '?'}x${ut?.height.toFixed(0) ?? '?'}) layer=${c.layer} ${desc}`);
+            // Edge stripe tint per leader state.
+            const edge = this._mipCardEdges[i];
+            if (edge) {
+                const tint = isPregame ? new Color(100, 110, 140, 255)
+                           : isWinning ? new Color(48, 198, 155, 255)
+                           : new Color(236, 88, 122, 255);
+                edge.color = tint;
             }
         }
     }

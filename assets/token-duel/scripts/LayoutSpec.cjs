@@ -287,26 +287,30 @@ const landing = {
 // status footer closer to the canvas bottom. Panel root is offset by
 // (0, -SAFE_AREA_TOP, 0) so panel-local y maps to world y - 110.
 const settings = {
-    // Header band — back / title (HomePanel parity).
-    HEADER_Y:             620,   // backLink + backBtn (was 618; +2)
-    TITLE_Y:              620,   // "Settings" title — aligned with HEADER_Y so title + back form one horizontal row (was 614).
+    // Header band — back / title (uniform with MIP).
+    // 2026-04-29: back moved to its own row (UNIFORM_HEADER.BACK_Y=580), title
+    // moved to its own row below (UNIFORM_HEADER.TITLE_Y=540). Card stack
+    // shifted DOWN 80 px to clear the new title row (walletCard top edge
+    // would have collided with title without the shift).
+    HEADER_Y:             580,   // legacy alias, prefer UNIFORM_HEADER.BACK_Y
+    TITLE_Y:              540,   // legacy alias, prefer UNIFORM_HEADER.TITLE_Y
 
-    // Card stack — uniformly shifted UP +30 from legacy.
-    WALLET_CARD_Y:        530,   // h=124 (was 500)
-    PROFILE_CARD_Y:       376,   // h=148 (was 346)
-    QP_CARD_Y:            138,   // h=260 — DEFAULT MATCH SETTINGS (was 108)
-    AUDIO_CARD_Y:         -104,  // h=148 — PREFERENCES (was -134)
-    ACCOUNT_CARD_Y:       -332,  // h=232 — ACCOUNT (was -362)
+    // Card stack — shifted DOWN 80 from previous to clear new title row.
+    WALLET_CARD_Y:        450,   // was 530, shift -80
+    PROFILE_CARD_Y:       296,   // was 376
+    QP_CARD_Y:            58,    // was 138
+    AUDIO_CARD_Y:         -184,  // was -104
+    ACCOUNT_CARD_Y:       -412,  // was -332
 
-    // Standalone footer.
-    DELETE_BTN_Y:         -518,  // (was -548)
-    STATUS_Y:             -562,  // (was -592)
+    // Standalone footer (also shifted -80; bottom is tight on short devices).
+    DELETE_BTN_Y:         -598,  // was -518
+    STATUS_Y:             -625,  // was -562 (clamped above canvas bottom -640)
 
     // Popovers — direct children of panel for z-order; ride along with
     // their card parents so anchors stay consistent.
-    QP_MODE_POPOVER_Y:    98,    // (was 68)
-    QP_WINDOW_POPOVER_Y:  52,    // (was 22)
-    QP_WAGER_POPOVER_Y:   -14,   // (was -44)
+    QP_MODE_POPOVER_Y:    18,    // was 98, shift -80
+    QP_WINDOW_POPOVER_Y:  -28,   // was 52
+    QP_WAGER_POPOVER_Y:   -94,   // was -14
 };
 
 // 2026-04-27 — PortfolioPanel deterministic Y anchors.
@@ -383,44 +387,40 @@ const leaderboard = {
     STATUS_Y:         -740,
 };
 
-// 2026-04-27 — MatchesInProgressPanel deterministic Y anchors.
-// Full-screen list of active matches the connected pubkey is in. Scrollview
-// + 30-row pool. Live-battle redesign round 2: each row is a 150-px immersive
-// card with cardBg sprite, leader-tinted glow, big (radius 28) timer ring,
-// split duel bar (track/fill/glow/tick), VS label, and a Resume CTA. Hero
-// treatment when N=1 (runtime scales row 0 to 260px).
+// 2026-04-29 — MatchesInProgressPanel: fixed 6-row pool, NO scrollview/Mask.
+// Prior scrollview + 30-row pool architecture had row content invisible despite
+// every diagnostic passing (data, opacity, world position, font, layer). Cause
+// suspected to be cc.Mask interaction with the parent UITransform chain. New
+// shape mirrors FindMatchPanel (which renders correctly): rows are direct
+// children of the panel, no Mask, no scrollview. 6 rows covers practical load.
 const mip = {
-    // Header band — tightened from 720/680/638 so the list takes more screen.
     BACK_Y:           580,
     TITLE_Y:          540,
     SUBTITLE_Y:       504,
 
-    // Scrollview + row pool.
-    SCROLL_Y:         60,
-    SCROLL_H:         1000,
+    // Fixed row pool (no scrollview).
     ROW_W:            660,
-    ROW_H:            150,
-    // 2026-04-29 — moved from -40 to -200. The scrollview spans panel y=-440
-    // to +560 (60±500), but the title sits at panel y=540 and subtitle at 504,
-    // both INSIDE the scrollview's view rectangle. With baseY=-40, row 0
-    // landed at panel y=520, colliding with the title and being mostly
-    // occluded by the title/subtitle labels. Was masked by the now-removed
-    // dark CardBg sprite. -200 puts row 0 at panel y=360, cleanly below the
-    // subtitle. Matches the hero (n=1) layout in AppUI._applyMipHeroLayout.
-    ROW_BASE_Y:       -200,
-    ROW_GAP_Y:        -170,
+    ROW_H:            100,
+    ROW_BASE_Y:       400,    // first row center
+    ROW_GAP_Y:        -110,   // stride downward
+    ROW_COUNT:        6,
 
-    // Empty state (shown when filteredCount === 0).
+    // Empty state (shown when zero active matches).
     EMPTY_STATE_Y:    120,
     EMPTY_TITLE_Y:    60,
     EMPTY_SUB_Y:      0,
     EMPTY_CTA_Y:      -60,
+
+    // "+N more" label below row 5 when n > 6.
+    MORE_LABEL_Y:    -260,
 
     // Footer.
     STATUS_Y:         -740,
 };
 
 const LayoutSpec = {
+    // 2026-04-29 — exposed for generator helpers (mkBackHeader, etc.).
+    UNIFORM_HEADER,
     /* ───── GLOBAL allowed overlaps ─────────────────────────────────── */
     // Pairs listed here are checked AGAINST EVERY PANEL. Use sparingly —
     // for structural patterns that legitimately recur app-wide.
@@ -1515,23 +1515,19 @@ const LayoutSpec = {
     },
 
     /* ───── MATCHES IN PROGRESS ─────────────────────────────────────── */
-    // 2026-04-27 — Live-battle redesign. Each row is a 150-px immersive card:
-    //   • Card surface (cardBg) + leader-tinted glow halo (cardGlow) behind
-    //   • Top row: OPP/YOU + delta% (left), VS BOT/@user (center), big
-    //     remaining-time label + radius-28 timer ring (right)
-    //   • Mid: split duel bar (track + fill + leading-tip glow + center tick)
-    //     showing your-vs-opponent performance from -1..+1
-    //   • Bottom row: window/age line + stake chip (left), Resume CTA (right)
-    //   • Hero treatment when N=1: row 0 grows to 260px and centers vertically
-    //     (runtime scaling — single shared template).
+    // 2026-04-29 — Nuclear rebuild. Fixed 6-row pool, NO scrollview/Mask.
+    // Mirrors FindMatchPanel pattern (which renders correctly). Each row
+    // sits directly under the subtitle on the app background — no card
+    // chrome, just a thin teal accent stripe on the left and the match info
+    // (VS line, time, stake chip, win line, Resume button).
     MatchesInProgressPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
             backLink:  { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:   { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            title:     { x: 0,    y: UNIFORM_HEADER.TITLE_Y,    w: 600, h: 44,  type: 'label',
+            title:     { x: 0, y: UNIFORM_HEADER.TITLE_Y,    w: 600, h: 44, type: 'label',
                 notes: '"Matches In Progress" — gold bold 30pt' },
-            subtitle:  { x: 0,    y: UNIFORM_HEADER.SUBTITLE_Y, w: 520, h: 22,  type: 'label',
+            subtitle:  { x: 0, y: UNIFORM_HEADER.SUBTITLE_Y, w: 520, h: 22, type: 'label',
                 notes: 'AppUI fills "{N} games running" / "All clear"' },
             // Empty-state cluster (shown when zero active matches).
             emptyState:        { x: 0, y: mip.EMPTY_STATE_Y, w: 600, h: 240, type: 'group' },
@@ -1539,106 +1535,50 @@ const LayoutSpec = {
             emptyStateSubtitle:{ x: 0, y: mip.EMPTY_SUB_Y   + mip.EMPTY_STATE_Y, w: 600, h: 22, type: 'label' },
             emptyStateCta:     { x: 0, y: mip.EMPTY_CTA_Y   + mip.EMPTY_STATE_Y, w: 320, h: 56, type: 'btnPrimary',
                 notes: '"Start a Match" — routes to FindMatchPanel' },
-            // Scrollview holding the row pool.
-            scroll:    { x: 0, y: mip.SCROLL_Y, w: 660, h: mip.SCROLL_H, type: 'scrollview' },
+            // "+N more" hint below the visible row pool.
+            moreLabel: { x: 0, y: mip.MORE_LABEL_Y, w: 600, h: 18, type: 'label' },
+            // Legacy scrollview entry — generator still creates a (now unused)
+            // MIPScrollView container for row mounting; the active 6-row pool
+            // lives as direct panel children but the generator still expects
+            // scroll.x/y/w/h to exist. Compatibility shim until generator is
+            // updated to the new no-scrollview architecture.
+            scroll:    { x: 0, y: 60, w: 660, h: 1000, type: 'scrollview' },
             // Status footer.
             status:    { x: 0, y: mip.STATUS_Y, w: 600, h: 22, type: 'label' },
         },
         templates: {
-            // 30-row pool. Battle card layout:
-            //   cardGlow (behind) → cardBg (surface) → tapTarget → edge
-            //   → winLine / vsLabel / timeLabel / ring (top row)
-            //   → duelBarTrack / duelBar / duelBarGlow / duelBarTick (mid)
-            //   → windowLine / stakeChip / resumeBtn (bottom row)
-            // tapTarget added before resumeBtn so the button intercepts clicks.
+            // 6-row pool. Direct children of the panel (NO scrollview, NO Mask).
             mipRow: {
-                count: 30, w: mip.ROW_W, h: mip.ROW_H,
+                count: mip.ROW_COUNT, w: mip.ROW_W, h: mip.ROW_H,
                 baseY: mip.ROW_BASE_Y, gapY: mip.ROW_GAP_Y,
-
-                // Surface + glow (full-card-sized).
-                cardGlow:     { x: 0,    y: 0,   w: 668, h: 158 },
-                cardBg:       { x: 0,    y: 0,   w: 660, h: 150 },
-                edge:         { x: -326, y: 0,   w: 4,   h: 130 },
-
-                // TOP ROW.
-                winLine:      { x: -200, y: 50,  w: 220, h: 28 },
-                vsLabel:      { x: 0,    y: 50,  w: 200, h: 24 },
-                timeLabel:    { x: 240,  y: 50,  w: 130, h: 24 },
-                ring:         { x: 240,  y: 14,  w: 64,  h: 64 },
-
-                // MIDDLE — duel bar group (Graphics nodes; all centered y=0).
-                duelBarTrack: { x: 0,    y: 0,   w: 480, h: 8  },
-                duelBar:      { x: 0,    y: 0,   w: 480, h: 12 },
-                duelBarGlow:  { x: 0,    y: 0,   w: 480, h: 24 },
-                duelBarTick:  { x: 0,    y: 0,   w: 4,   h: 24 },
-
-                // BOTTOM ROW.
-                windowLine:   { x: -200, y: -50, w: 240, h: 18 },
-                stakeChip:    { x: -50,  y: -50, w: 90,  h: 18 },
-                // Kept in spec for backward compat; AppUI sets _active=false
-                // (data now surfaces via the centered VS label).
-                opponentChip: { x: -50,  y: -50, w: 90,  h: 18 },
-                resumeBtn:    { x: 240,  y: -52, w: 110, h: 36 },
-
-                tapTarget:    { x: 0,    y: 0,   w: mip.ROW_W, h: mip.ROW_H },
+                // Thin teal accent on far left (only chrome).
+                edge:       { x: -326, y: 0,   w: 4,   h: 80 },
+                // VS line (left, top): "VS BOT" / "VS @user".
+                vsLabel:    { x: -180, y: 18,  w: 280, h: 28 },
+                // Time line (right, top): "18h 42m left".
+                timeLabel:  { x: 180,  y: 18,  w: 140, h: 22 },
+                // Win line (left, bottom): "Round just started" / "YOU +0.32%" / "OPP +0.50%".
+                winLine:    { x: -100, y: -18, w: 220, h: 18 },
+                // Stake chip (left of win line, bottom): "PAPER" / "0.5 SOL".
+                stakeChip:  { x: -220, y: -18, w: 120, h: 18 },
+                // Resume button (right, center).
+                resumeBtn:  { x: 220,  y: 0,   w: 100, h: 36 },
+                // Full-row invisible tap target.
+                tapTarget:  { x: 0,    y: 0,   w: mip.ROW_W, h: mip.ROW_H },
             },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
-            // Card surface sits behind everything — overlaps all foreground.
-            ['MIPCardBg', 'MIPCardEdge'],
-            ['MIPCardBg', 'MIPWinLine'],
-            ['MIPCardBg', 'MIPVsLabel'],
-            ['MIPCardBg', 'MIPTimeLabel'],
-            ['MIPCardBg', 'MIPRing'],
-            ['MIPCardBg', 'MIPDuelBar'],
-            ['MIPCardBg', 'MIPDuelBarTrack'],
-            ['MIPCardBg', 'MIPDuelBarGlow'],
-            ['MIPCardBg', 'MIPDuelBarTick'],
-            ['MIPCardBg', 'MIPWindowLine'],
-            ['MIPCardBg', 'MIPStakeChip'],
-            ['MIPCardBg', 'MIPOpponentChip'],
-            ['MIPCardBg', 'MIPResumeBtn'],
-            // Glow sits behind card surface.
-            ['MIPCardGlow', 'MIPCardBg'],
-            ['MIPCardGlow', 'MIPCardEdge'],
-            ['MIPCardGlow', 'MIPWinLine'],
-            ['MIPCardGlow', 'MIPVsLabel'],
-            ['MIPCardGlow', 'MIPTimeLabel'],
-            ['MIPCardGlow', 'MIPRing'],
-            ['MIPCardGlow', 'MIPDuelBar'],
-            ['MIPCardGlow', 'MIPDuelBarTrack'],
-            ['MIPCardGlow', 'MIPDuelBarGlow'],
-            ['MIPCardGlow', 'MIPDuelBarTick'],
-            ['MIPCardGlow', 'MIPWindowLine'],
-            ['MIPCardGlow', 'MIPStakeChip'],
-            ['MIPCardGlow', 'MIPOpponentChip'],
-            ['MIPCardGlow', 'MIPResumeBtn'],
-            // Duel bar group — track/fill/glow/tick all stack at y=0.
-            ['MIPDuelBarTrack', 'MIPDuelBar'],
-            ['MIPDuelBarTrack', 'MIPDuelBarGlow'],
-            ['MIPDuelBarTrack', 'MIPDuelBarTick'],
-            ['MIPDuelBar', 'MIPDuelBarGlow'],
-            ['MIPDuelBar', 'MIPDuelBarTick'],
-            ['MIPDuelBarGlow', 'MIPDuelBarTick'],
-            // Ring + time label share the right rail (ring at y=14, label y=50).
-            ['MIPRing', 'MIPTimeLabel'],
-            // Tap target sits BEHIND all visible row content.
-            ['MIPTapTarget', 'MIPCardBg'],
-            ['MIPTapTarget', 'MIPCardGlow'],
+            // Tap target sits behind all visible row content.
             ['MIPTapTarget', 'MIPCardEdge'],
-            ['MIPTapTarget', 'MIPWinLine'],
             ['MIPTapTarget', 'MIPVsLabel'],
-            ['MIPTapTarget', 'MIPWindowLine'],
-            ['MIPTapTarget', 'MIPStakeChip'],
-            ['MIPTapTarget', 'MIPOpponentChip'],
-            ['MIPTapTarget', 'MIPRing'],
             ['MIPTapTarget', 'MIPTimeLabel'],
-            ['MIPTapTarget', 'MIPDuelBar'],
-            ['MIPTapTarget', 'MIPDuelBarTrack'],
-            ['MIPTapTarget', 'MIPDuelBarGlow'],
-            ['MIPTapTarget', 'MIPDuelBarTick'],
+            ['MIPTapTarget', 'MIPWinLine'],
+            ['MIPTapTarget', 'MIPStakeChip'],
             ['MIPTapTarget', 'MIPResumeBtn'],
+            // Stake chip and win line share the bottom row at the same y; they
+            // are positioned to not overlap visually but their bbox may.
+            ['MIPStakeChip', 'MIPWinLine'],
         ],
     },
 
@@ -2588,10 +2528,11 @@ const LayoutSpec = {
             backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
-            // 11 — header strip + join CTA.
-            matchLabel:  { x: 0,    y: 558, w: 500, h: 20, type: 'label' },
-            statusLabel: { x: 0,    y: 520, w: 500, h: 22, type: 'label' },
-            prizeLabel:  { x: 0,    y: 485, w: 600, h: 22, type: 'label' },
+            // 11 — header strip + join CTA. 2026-04-29: shifted DOWN ~50 to
+            // clear the new MIP-style title row (y=540, spans 518-562).
+            matchLabel:  { x: 0,    y: 488, w: 500, h: 20, type: 'label' },
+            statusLabel: { x: 0,    y: 458, w: 500, h: 22, type: 'label' },
+            prizeLabel:  { x: 0,    y: 425, w: 600, h: 22, type: 'label' },
             joinBtn:     { x: 0,    y: -460, w: 620, h: 58, type: 'btnPrimary',
                 notes: 'shown only when status=Waiting AND slot free AND not already in' },
         },
@@ -2765,9 +2706,10 @@ const LayoutSpec = {
             backLink: { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:  { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:   { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 300, h: 44, type: 'label' },
-            // 11 — header strip + player/event lists + join CTA.
-            matchLabel:      { x: 0, y: 558, w: 500, h: 20, type: 'label' },
-            statusLabel:     { x: 0, y: 520, w: 500, h: 22, type: 'label' },
+            // 11 — header strip + player/event lists + join CTA. 2026-04-29:
+            // shifted DOWN ~50 to clear the new MIP-style title row.
+            matchLabel:      { x: 0, y: 488, w: 500, h: 20, type: 'label' },
+            statusLabel:     { x: 0, y: 458, w: 500, h: 22, type: 'label' },
             playerList:      { x: 0, y: 240, w: 620, h: 380, type: 'group' },
             eventList:       { x: 0, y: -170, w: 620, h: 260, type: 'group' },
             eventListHeader: { x: -270, y: 110, w: 300, h: 18, type: 'label' },

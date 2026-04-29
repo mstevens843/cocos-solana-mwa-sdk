@@ -235,6 +235,48 @@ const TEXT_LO  = () => cl(93,  100, 133, 255); // Palette.text.lo  — tertiary 
 // shadow. The brand-color base + brighter top + slight bottom-shadow reads
 // as a subtle convex surface (light-from-above). Children order
 // [TopHighlight, BottomShadow, Label] keeps Label on top.
+/**
+ * 2026-04-29 — uniform "← Back" header builder, mirrors MIP. Creates:
+ *   - "BackLinkLabel" (visible 18pt off-white left-aligned label "← Back")
+ *   - "BackButton"   (invisible 140x36 hit area, alpha-0 cc.Button)
+ * Both at panel-local (UNIFORM_HEADER.BACK_LINK.x, UNIFORM_HEADER.BACK_Y) by
+ * default; pass `y` to override (e.g. PostMatch sits its back at y=622 to
+ * clear the 60pt h=80 title).
+ *
+ * Returns { linkN, btnN } so callers can wire click handlers / opacity tweens.
+ */
+function mkBackHeader(sb, parent, opts = {}) {
+    const HDR = LAYOUT.UNIFORM_HEADER || {
+        BACK_Y: 580,
+        BACK_LINK: { x: -280, w: 110, h: 28 },
+        BACK_BTN:  { x: -280, w: 140, h: 36 },
+    };
+    const y = opts.y ?? HDR.BACK_Y;
+    // 1) visible label.
+    const linkN = mkLabel(sb, 'BackLinkLabel', parent, '← Back', 18,
+        y, HDR.BACK_LINK.w, HDR.BACK_LINK.h,
+        200, 210, 230);
+    sb.e[linkN]._lpos = v3(HDR.BACK_LINK.x, y, 0);
+    // Left-align the label so "← Back" sits flush against its left edge,
+    // matching the MIP reference screenshot.
+    const linkLabelIdx = sb.e[linkN]._components[1].__id__;
+    sb.e[linkLabelIdx]._horizontalAlign = 0;
+    // 2) invisible hit area (alpha-0 transitions, no background).
+    const btnN = sb.e.length;
+    sb.node('BackButton', parent, [], [], v3(HDR.BACK_BTN.x, y, 0));
+    const btnUT = sb.ut(btnN, HDR.BACK_BTN.w, HDR.BACK_BTN.h);
+    const btnBtn = sb.add({
+        __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(btnN), _enabled: true, __prefab: null,
+        _interactable: true, _transition: 0,
+        _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
+        _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
+        _duration: 0.1, _zoomScale: 1.04, _target: rf(btnN), _id: gid(),
+    });
+    sb.e[btnN]._components = [rf(btnUT), rf(btnBtn)];
+    return { linkN, btnN };
+}
+
 function mkBtn(sb, name, parent, text, y, w=500, h=75, br=60, bg=120, bb=200) {
     const bn=sb.e.length;
     const tHN=bn+1, bSN=bn+2, ln=bn+3, bu=bn+4, sp=bn+5, bt=bn+6;
@@ -1824,7 +1866,7 @@ function generate() {
     const TDT = LAYOUT.TokenDuelPanel.templates;
 
     const tdBackLink = mkLabel(sb, 'BackLinkLabel', tdN, '← Back', 18,
-        TDE.backLink.y, TDE.backLink.w, TDE.backLink.h, 160, 170, 190);
+        TDE.backLink.y, TDE.backLink.w, TDE.backLink.h, 200, 210, 230);
     sb.e[tdBackLink]._lpos = v3(TDE.backLink.x, TDE.backLink.y, 0);
     const tdBackLinkL = sb.e[tdBackLink]._components[1].__id__;
     sb.e[tdBackLinkL]._horizontalAlign = 0;
@@ -3953,7 +3995,7 @@ function generate() {
 
     // ─── Identity band ───────────────────────────────────────────────
     const detBackLink = mkLabel(sb, 'BackLinkLabel', tdetN, '← Back', 18,
-        TDETE.backLink.y, TDETE.backLink.w, TDETE.backLink.h, 160, 170, 190);
+        TDETE.backLink.y, TDETE.backLink.w, TDETE.backLink.h, 200, 210, 230);
     sb.e[detBackLink]._lpos = v3(TDETE.backLink.x, TDETE.backLink.y, 0);
     const detBackLinkL = sb.e[detBackLink]._components[1].__id__;
     sb.e[detBackLinkL]._horizontalAlign = 0;
@@ -4177,7 +4219,7 @@ function generate() {
     sb.spr(lbN, 10, 14, 22); // Phase 25: dark-slate backdrop hides BackgroundFX halos behind rank rows
 
     const lbBackLink = mkLabel(sb, 'BackLinkLabel', lbN, '← Back', 18,
-        LP.backLink.y, LP.backLink.w, LP.backLink.h, 160, 170, 190);
+        LP.backLink.y, LP.backLink.w, LP.backLink.h, 200, 210, 230);
     sb.e[lbBackLink]._lpos = v3(LP.backLink.x, LP.backLink.y, 0);
     const lbBackLinkL = sb.e[lbBackLink]._components[1].__id__;
     sb.e[lbBackLinkL]._horizontalAlign = 0;
@@ -4378,7 +4420,7 @@ function generate() {
     // Chrome from LAYOUT.DailyChallengePanel.elements.
     const DCE = LAYOUT.DailyChallengePanel.elements;
     const dcBackLink = mkLabel(sb, 'BackLinkLabel', dcN, '← Back', 18,
-        DCE.backLink.y, DCE.backLink.w, DCE.backLink.h, 160, 170, 190);
+        DCE.backLink.y, DCE.backLink.w, DCE.backLink.h, 200, 210, 230);
     sb.e[dcBackLink]._lpos = v3(DCE.backLink.x, DCE.backLink.y, 0);
     sb.e[sb.e[dcBackLink]._components[1].__id__]._horizontalAlign = 0;
     const dcBackBtn = sb.e.length;
@@ -4501,7 +4543,7 @@ function generate() {
     // Chrome from LAYOUT.PortfolioPanel.elements (9c addition).
     const PFE = LAYOUT.PortfolioPanel.elements;
     const pfBackLink = mkLabel(sb, 'BackLinkLabel', pfN, '← Back', 18,
-        PFE.backLink.y, PFE.backLink.w, PFE.backLink.h, 160, 170, 190);
+        PFE.backLink.y, PFE.backLink.w, PFE.backLink.h, 200, 210, 230);
     sb.e[pfBackLink]._lpos = v3(PFE.backLink.x, PFE.backLink.y, 0);
     const pfBackLinkL = sb.e[pfBackLink]._components[1].__id__;
     sb.e[pfBackLinkL]._horizontalAlign = 0;
@@ -4856,12 +4898,12 @@ function generate() {
         return gN;
     };
 
+    // 2026-04-29 — Nuclear rebuild: fixed 6-row pool, NO scrollview, NO Mask.
+    // Mirrors the FindMatchPanel pattern (which renders correctly). Rows are
+    // direct children of the panel. Each row carries only a UITransform; its
+    // content lives in child Sprite/Label/Button nodes. The thin teal stripe
+    // is the only chrome — page sits directly on the app background.
     const mipN = sb.e.length;
-    // 2026-04-29 — pre-register the UITransform slot at mipN+1 (matches
-    // HomePanel pattern at line ~1107). Prior empty [] left the panel
-    // with no UITransform in _components, breaking the parent transform
-    // chain for the deep-nested ScrollView mask + rows. Diagnosed via
-    // LayoutDiag log: MIPPanel UITransform=NONE while HomePanel had 720x1280.
     sb.node('MatchesInProgressPanel', canvas, [], [mipN+1], lobbyMount('MatchesInProgressPanel'));
     sb.ut(mipN, 720, 1280);
 
@@ -4890,131 +4932,71 @@ function generate() {
     sb.e[mipEmptyN]._children = [rf(mipEmptyTitle), rf(mipEmptySub), rf(mipEmptyCta)];
     sb.e[mipEmptyN]._active = false;
 
-    // Scrollview + 30-row pool. bgAlpha=0 so rows render directly on the app
-    // background (matches FindMatch styling — no card chrome).
-    const mipScroll = mkScrollView(sb, 'MIPScrollView', mipN,
-        MIPE.scroll.x, MIPE.scroll.y, MIPE.scroll.w, MIPE.scroll.h, 0);
-    // 2026-04-28 — MIP regression fix: content must fit the full 30-row pool.
-    // Row 29 sits at y = baseY + 29 * gapY = -40 + 29*(-170) = -4970, plus the
-    // row's own half-height (75). mkScrollView's default content size matches
-    // view height (1000), which clips/clamps everything past row 6 and (post
-    // UX upgrade where the row container itself is invisible) makes the hero
-    // card y=-500 land outside the scrollable region on some devices.
-    const mipContentH = Math.abs(MIPR.baseY) + Math.abs(MIPR.gapY) * (MIPR.count - 1) + MIPR.h; // 5120
-    sb.e[mipScroll.contentUT]._contentSize = sz(MIPE.scroll.w, mipContentH);
-
+    // 6 fixed rows — direct children of mipN.
     const mipRows = [];
     for (let i = 0; i < MIPR.count; i++) {
         const ry = MIPR.baseY + i * MIPR.gapY;
         const rowN = sb.e.length;
-        sb.node(`MIPRow_${i}`, mipScroll.content, [], [], v3(0, ry, 0));
-        const rowUT = sb.ut(rowN, MIPR.w, MIPR.h);
-        // 2026-04-29 — REMOVED the alpha-0 cc.Sprite that lived on the row
-        // container. Cross-panel comparison vs working scrollviews
-        // (TokenDuelFeed, PortfolioHistoryScroll) showed working rows have
-        // either a VISIBLE Sprite or NO Sprite at all on the row container —
-        // never alpha-0. Under cc.Mask, an alpha-0 parent Sprite causes
-        // Cocos 3.8 to skip the entire row subtree. Row keeps just UITransform.
+        sb.node(`MIPRow_${i}`, mipN, [], [rowN+1], v3(0, ry, 0));
+        sb.ut(rowN, MIPR.w, MIPR.h);
 
-        // Glow halo BEHIND the card surface — leader-tinted at runtime.
-        const cardGlowN = mipSolidSprite(`MIPCardGlow_${i}`, rowN,
-            MIPR.cardGlow.x, MIPR.cardGlow.y, MIPR.cardGlow.w, MIPR.cardGlow.h,
-            48, 198, 155, 0); // alpha 0; AppUI tints + alpha-pulses
-        // Card surface — alpha 0 so rows render directly on the app background
-        // (no dark card chrome). Node + UITransform stay live for runtime
-        // hero-card sizing in AppUI._applyMipHeroLayout.
-        const cardBgN = mipSolidSprite(`MIPCardBg_${i}`, rowN,
-            MIPR.cardBg.x, MIPR.cardBg.y, MIPR.cardBg.w, MIPR.cardBg.h,
-            30, 36, 56, 0);
-
-        // Invisible full-row tap target — added BEFORE Resume so the button
-        // (added later) intercepts clicks first.
-        const tapN = mipInvisBtn(`MIPTapTarget_${i}`, rowN,
-            MIPR.tapTarget.x, MIPR.tapTarget.y, MIPR.tapTarget.w, MIPR.tapTarget.h);
-
-        // Left teal stripe (recolored at runtime by leader state).
+        // Thin teal accent on far left edge (only chrome).
         const edgeN = mipSolidSprite(`MIPCardEdge_${i}`, rowN,
             MIPR.edge.x, MIPR.edge.y, MIPR.edge.w, MIPR.edge.h,
             48, 198, 155, 255);
 
-        // ── TOP ROW ────────────────────────────────────────────────
-        // Winning line — "OPP +0.0X%" / "YOU +0.0X%" / "Round just started"
-        const winLineN = mkLabel(sb, `MIPWinLine_${i}`, rowN, '—', 24,
-            MIPR.winLine.y, MIPR.winLine.w, MIPR.winLine.h, 244, 245, 249);
-        sb.e[winLineN]._lpos = v3(MIPR.winLine.x, MIPR.winLine.y, 0);
-        sb.e[sb.e[winLineN]._components[1].__id__]._horizontalAlign = 0;
-        style(sb, winLineN, { bold: true });
+        // Full-row invisible tap target (back of stack so resume button wins clicks).
+        const tapN = mipInvisBtn(`MIPTapTarget_${i}`, rowN,
+            MIPR.tapTarget.x, MIPR.tapTarget.y, MIPR.tapTarget.w, MIPR.tapTarget.h);
 
-        // VS label — center "VS BOT" / "VS @user" (mid-grey).
+        // VS label (left side, top): "VS BOT" / "VS @user".
         const vsLblN = mkLabel(sb, `MIPVsLabel_${i}`, rowN, '', 18,
-            MIPR.vsLabel.y, MIPR.vsLabel.w, MIPR.vsLabel.h, 168, 174, 201);
+            MIPR.vsLabel.y, MIPR.vsLabel.w, MIPR.vsLabel.h, 244, 245, 249);
         sb.e[vsLblN]._lpos = v3(MIPR.vsLabel.x, MIPR.vsLabel.y, 0);
+        sb.e[sb.e[vsLblN]._components[1].__id__]._horizontalAlign = 0;
         style(sb, vsLblN, { bold: true });
 
-        // Timer ring — Graphics arc (AppUI calls _updateMipRing(i, fraction)).
-        // Bigger than before (radius 28; container 64×64).
-        const ringN = mipGraphicsNode(`MIPRing_${i}`, rowN,
-            MIPR.ring.x, MIPR.ring.y, MIPR.ring.w, MIPR.ring.h);
-
-        // Time label (right of ring, bold mono — "4m 54s left").
-        const timeLblN = mkLabel(sb, `MIPTimeLabel_${i}`, rowN, '—', 18,
-            MIPR.timeLabel.y, MIPR.timeLabel.w, MIPR.timeLabel.h, 244, 245, 249);
+        // Time label (right side, top): "18h 42m left".
+        const timeLblN = mkLabel(sb, `MIPTimeLabel_${i}`, rowN, '—', 14,
+            MIPR.timeLabel.y, MIPR.timeLabel.w, MIPR.timeLabel.h, 168, 174, 201);
         sb.e[timeLblN]._lpos = v3(MIPR.timeLabel.x, MIPR.timeLabel.y, 0);
-        style(sb, timeLblN, { bold: true, mono: true });
+        sb.e[sb.e[timeLblN]._components[1].__id__]._horizontalAlign = 2;
+        style(sb, timeLblN, { mono: true });
 
-        // ── MIDDLE — duel bar group (Graphics nodes, AppUI redraws each frame)
-        const duelBarTrackN = mipGraphicsNode(`MIPDuelBarTrack_${i}`, rowN,
-            MIPR.duelBarTrack.x, MIPR.duelBarTrack.y, MIPR.duelBarTrack.w, MIPR.duelBarTrack.h);
-        const duelBarN = mipGraphicsNode(`MIPDuelBar_${i}`, rowN,
-            MIPR.duelBar.x, MIPR.duelBar.y, MIPR.duelBar.w, MIPR.duelBar.h);
-        const duelBarGlowN = mipGraphicsNode(`MIPDuelBarGlow_${i}`, rowN,
-            MIPR.duelBarGlow.x, MIPR.duelBarGlow.y, MIPR.duelBarGlow.w, MIPR.duelBarGlow.h);
-        const duelBarTickN = mipGraphicsNode(`MIPDuelBarTick_${i}`, rowN,
-            MIPR.duelBarTick.x, MIPR.duelBarTick.y, MIPR.duelBarTick.w, MIPR.duelBarTick.h);
-
-        // ── BOTTOM ROW ─────────────────────────────────────────────
-        // Window/age line ("5m match · started 5s ago", muted).
-        const windowLineN = mkLabel(sb, `MIPWindowLine_${i}`, rowN, '', 14,
-            MIPR.windowLine.y, MIPR.windowLine.w, MIPR.windowLine.h, 168, 174, 201);
-        sb.e[windowLineN]._lpos = v3(MIPR.windowLine.x, MIPR.windowLine.y, 0);
-        sb.e[sb.e[windowLineN]._components[1].__id__]._horizontalAlign = 0;
-
-        // Stake chip (bottom-mid, gold or muted teal at runtime).
-        const stakeChipN = mkLabel(sb, `MIPStakeChip_${i}`, rowN, '', 14,
+        // Stake chip (left, bottom): "PAPER" / "0.5 SOL".
+        const stakeChipN = mkLabel(sb, `MIPStakeChip_${i}`, rowN, '', 12,
             MIPR.stakeChip.y, MIPR.stakeChip.w, MIPR.stakeChip.h, 255, 210, 74);
         sb.e[stakeChipN]._lpos = v3(MIPR.stakeChip.x, MIPR.stakeChip.y, 0);
+        sb.e[sb.e[stakeChipN]._components[1].__id__]._horizontalAlign = 0;
         style(sb, stakeChipN, { bold: true, mono: true });
 
-        // Opponent chip — KEPT in scene for backward compat. AppUI flips
-        // _active=false on first render; data now surfaces via the centered
-        // VS label above.
-        const oppChipN = mkLabel(sb, `MIPOpponentChip_${i}`, rowN, '', 13,
-            MIPR.opponentChip.y, MIPR.opponentChip.w, MIPR.opponentChip.h, 244, 245, 249);
-        sb.e[oppChipN]._lpos = v3(MIPR.opponentChip.x, MIPR.opponentChip.y, 0);
+        // Win line (right of stake, bottom): status text.
+        const winLineN = mkLabel(sb, `MIPWinLine_${i}`, rowN, '—', 12,
+            MIPR.winLine.y, MIPR.winLine.w, MIPR.winLine.h, 168, 174, 201);
+        sb.e[winLineN]._lpos = v3(MIPR.winLine.x, MIPR.winLine.y, 0);
+        sb.e[sb.e[winLineN]._components[1].__id__]._horizontalAlign = 0;
 
-        // Resume CTA — small teal primary (right, bottom row).
+        // Resume CTA (right, center).
         const resumeBtnN = mkBtnXY(sb, `MIPResumeBtn_${i}`, rowN, 'Resume',
             MIPR.resumeBtn.x, MIPR.resumeBtn.y,
             MIPR.resumeBtn.w, MIPR.resumeBtn.h,
             48, 198, 155);
 
-        // 2026-04-29 — UITransform-only row container (no Sprite); see comment
-        // above where the row was created.
-        sb.e[rowN]._components = [rf(rowUT)];
-        // Z-order: glow → bg → tap → edge → winLine/vsLabel/timeLabel/ring →
-        // duelBar group → bottom labels → resume button (last so it's on top).
+        // Z-order: tap (back) → edge → labels → resume (front).
         sb.e[rowN]._children = [
-            rf(cardGlowN), rf(cardBgN),
             rf(tapN), rf(edgeN),
-            rf(winLineN), rf(vsLblN), rf(timeLblN), rf(ringN),
-            rf(duelBarTrackN), rf(duelBarN), rf(duelBarGlowN), rf(duelBarTickN),
-            rf(windowLineN), rf(stakeChipN), rf(oppChipN),
+            rf(vsLblN), rf(timeLblN),
+            rf(stakeChipN), rf(winLineN),
             rf(resumeBtnN),
         ];
         sb.e[rowN]._active = false;
         mipRows.push(rowN);
     }
-    sb.e[mipScroll.content]._children = mipRows.map(rf);
+
+    // "+N more" hint shown when active count > 6.
+    const mipMoreLblN = mkLabel(sb, 'MIPMoreLabel', mipN, '', 12,
+        MIPE.moreLabel.y, MIPE.moreLabel.w, MIPE.moreLabel.h, 168, 174, 201);
+    sb.e[mipMoreLblN]._active = false;
 
     const mipStatus = mkLabel(sb, 'MatchesInProgressStatusLabel', mipN, '', 12,
         MIPE.status.y, MIPE.status.w, MIPE.status.h, 130, 140, 165);
@@ -5023,7 +5005,8 @@ function generate() {
         rf(mipBackLink), rf(mipBackBtnN),
         rf(mipTitle), rf(mipSubtitle),
         rf(mipEmptyN),
-        rf(mipScroll.root),
+        ...mipRows.map(rf),
+        rf(mipMoreLblN),
         rf(mipStatus),
     ];
     sb.e[mipN]._active = false;
@@ -5115,17 +5098,23 @@ function generate() {
     });
     sb.e[pmOutcomeBgN]._components = [rf(pmOutcomeBgUT), rf(pmOutcomeBgGfx), rf(pmOutcomeBgOp)];
 
-    const pmBackBtn = mkBtn(sb, 'PostMatchBackButton', pmN, '← Back',
-        PME.backBtn.y, PME.backBtn.w, PME.backBtn.h, 55, 65, 85);
-    sb.e[pmBackBtn]._lpos = v3(PME.backBtn.x, PME.backBtn.y, 0);
-    // 2026-04-28 spatial pass — Back button drops into title row; dim to
-    // ~0.78 opacity so it doesn't compete with "YOU WON" for attention.
+    // 2026-04-29 — uniform "← Back" header. PostMatch keeps its custom y=622
+    // (above the 60pt h=80 "YOU WON" title) per LayoutSpec.PostMatchPanel.backBtn.y.
+    // Rename: BackButton (label is BackLinkLabel) — but AppUI listens on the
+    // PostMatchBackButton node by historic name, so we rename here for compat.
+    const _pmBack = mkBackHeader(sb, pmN, { y: PME.backBtn.y });
+    sb.e[_pmBack.btnN]._name = 'PostMatchBackButton';
+    sb.e[_pmBack.linkN]._name = 'PostMatchBackLinkLabel';
+    const pmBackBtn = _pmBack.btnN;
+    // 2026-04-28 spatial pass — Back link dims to ~0.78 opacity so it doesn't
+    // compete with "YOU WON" for attention. Apply UIOpacity to the visible
+    // label, not the invisible hit-area button.
     const pmBackBtnOp = sb.add({
         __type__: 'cc.UIOpacity', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(pmBackBtn), _enabled: true, __prefab: null,
+        node: rf(_pmBack.linkN), _enabled: true, __prefab: null,
         _opacity: 200,
     });
-    sb.e[pmBackBtn]._components.push(rf(pmBackBtnOp));
+    sb.e[_pmBack.linkN]._components.push(rf(pmBackBtnOp));
     // Title — bold, color-coded (green on win, rose on loss) at runtime.
     // 2026-04-28 — 56pt → 60pt for slightly bigger reward-moment energy.
     const pmTitle = mkLabel(sb, 'PostMatchTitleLabel', pmN, 'YOU WON!', 60,
@@ -5293,7 +5282,7 @@ function generate() {
     // CTAs, share, status, trophy.
     sb.e[pmN]._children = [
         rf(pmOutcomeBgN),
-        rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmTrophy),
+        rf(_pmBack.linkN), rf(pmBackBtn), rf(pmTitle), rf(pmTrack), rf(pmTrophy),
         rf(pmMascotGlowN), rf(pmMascotN),
         rf(pmPayout), rf(pmSubtitle), rf(pmBreakdown), rf(pmRake),
         ...pmCardIndices.map(rf),
@@ -5377,7 +5366,7 @@ function generate() {
         8, 10, 20, 160);
 
     const stBackLink = mkLabel(sb, 'BackLinkLabel', stN, '← Back', 18,
-        SP.backLink.y, SP.backLink.w, SP.backLink.h, 160, 170, 190);
+        SP.backLink.y, SP.backLink.w, SP.backLink.h, 200, 210, 230);
     sb.e[stBackLink]._lpos = v3(SP.backLink.x, SP.backLink.y, 0);
     sb.e[sb.e[stBackLink]._components[1].__id__]._horizontalAlign = 0;
     const stBackBtn = sb.e.length;
@@ -6128,9 +6117,12 @@ function generate() {
 
     // Chrome from LAYOUT.SpectatorPanel.elements.
     const SPE = LAYOUT.SpectatorPanel.elements;
-    const specBackBtn = mkBtn(sb, 'SpectatorBackButton', specN, '← Back',
-        SPE.backBtn.y, SPE.backBtn.w, SPE.backBtn.h, 55, 65, 85);
-    sb.e[specBackBtn]._lpos = v3(SPE.backBtn.x, SPE.backBtn.y, 0);
+    // 2026-04-29 — uniform "← Back" header, mirrors MIP. Renamed BackButton
+    // node to SpectatorBackButton for AppUI click-handler compat.
+    const _specBack = mkBackHeader(sb, specN, { y: SPE.backBtn.y });
+    sb.e[_specBack.btnN]._name = 'SpectatorBackButton';
+    sb.e[_specBack.linkN]._name = 'SpectatorBackLinkLabel';
+    const specBackBtn = _specBack.btnN;
     // UX Phase 2b: IconBadge eye attached by AppUI. Phase 2c: bold.
     // 9c: title w 460→300 to clear BackButton bbox right x=-180.
     const specTitle = mkLabel(sb, 'SpectatorTitleLabel', specN, 'Spectating', 28,
@@ -6198,7 +6190,7 @@ function generate() {
     sb.e[specJoinGlow]._active = false;
 
     sb.e[specN]._children = [
-        rf(specBackBtn), rf(specTitle), rf(specMatchLabel), rf(specStatusLabel),
+        rf(_specBack.linkN), rf(specBackBtn), rf(specTitle), rf(specMatchLabel), rf(specStatusLabel),
         rf(specPlayerListN), rf(specEventListN), rf(specJoinGlow), rf(specJoinBtn),
     ];
     sb.e[specN]._active = false;
@@ -6216,9 +6208,11 @@ function generate() {
 
     // Chrome from LAYOUT.TournamentPanel.elements.
     const TPE = LAYOUT.TournamentPanel.elements;
-    const tourBackBtn = mkBtn(sb, 'TournamentBackButton', tourN, '← Back',
-        TPE.backBtn.y, TPE.backBtn.w, TPE.backBtn.h, 55, 65, 85);
-    sb.e[tourBackBtn]._lpos = v3(TPE.backBtn.x, TPE.backBtn.y, 0);
+    // 2026-04-29 — uniform "← Back" header, mirrors MIP.
+    const _tourBack = mkBackHeader(sb, tourN, { y: TPE.backBtn.y });
+    sb.e[_tourBack.btnN]._name = 'TournamentBackButton';
+    sb.e[_tourBack.linkN]._name = 'TournamentBackLinkLabel';
+    const tourBackBtn = _tourBack.btnN;
     // UX Phase 2b: IconBadge sword attached by AppUI. Phase 2c: bold.
     // 9c: title w 460→300 to clear BackButton bbox right x=-180.
     const tourTitle = mkLabel(sb, 'TournamentTitleLabel', tourN, 'Tournament', 28,
@@ -6269,7 +6263,7 @@ function generate() {
     sb.e[tourJoinGlow]._active = false;
 
     sb.e[tourN]._children = [
-        rf(tourBackBtn), rf(tourTitle), rf(tourMatchLabel), rf(tourStatusLabel), rf(tourPrizeLabel),
+        rf(_tourBack.linkN), rf(tourBackBtn), rf(tourTitle), rf(tourMatchLabel), rf(tourStatusLabel), rf(tourPrizeLabel),
         rf(tourRosterN), rf(tourJoinGlow), rf(tourJoinBtn),
     ];
     sb.e[tourN]._active = false;
@@ -6291,9 +6285,11 @@ function generate() {
     sb.spr(fmN, 10, 14, 22);
 
     // Header: back, title, refresh.
-    const fmBackBtn = mkBtn(sb, 'FindMatchBackButton', fmN, '← Back',
-        FME.backBtn.y, FME.backBtn.w, FME.backBtn.h, 55, 65, 85);
-    sb.e[fmBackBtn]._lpos = v3(FME.backBtn.x, FME.backBtn.y, 0);
+    // 2026-04-29 — uniform "← Back" header, mirrors MIP.
+    const _fmBack = mkBackHeader(sb, fmN, { y: FME.backBtn.y });
+    sb.e[_fmBack.btnN]._name = 'FindMatchBackButton';
+    sb.e[_fmBack.linkN]._name = 'FindMatchBackLinkLabel';
+    const fmBackBtn = _fmBack.btnN;
     const fmTitle = mkLabel(sb, 'FindMatchTitleLabel', fmN, 'Find a Match', 30,
         FME.title.y, FME.title.w, FME.title.h, 218, 165, 32);
     style(sb, fmTitle, { bold: true });
@@ -6724,7 +6720,7 @@ function generate() {
     sb.e[fmN]._children = [
         // Ambient layer FIRST so 4 drifting violet/teal particles render behind everything.
         rf(fmAmbientLayerN),
-        rf(fmBackBtn), rf(fmTitle), rf(fmRefreshBtn), rf(fmCountLabel),
+        rf(_fmBack.linkN), rf(fmBackBtn), rf(fmTitle), rf(fmRefreshBtn), rf(fmCountLabel),
         rf(fmLivePulseDotN),
         rf(fmLvXpChipN),
         // 2026-04-28 final pass — FilterCard FIRST so all sub-elements render on top.
