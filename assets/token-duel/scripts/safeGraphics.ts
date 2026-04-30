@@ -128,12 +128,25 @@ export function safeAddGraphics(
  *
  * Idempotent — call once at boot. Safe to call from AppUI.start.
  */
-export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOnUnsafe?: boolean } = {}): void {
+export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOnUnsafe?: boolean; throwOnUnsafe?: boolean } = {}): void {
     if (_watcherInstalled) return;
     _watcherInstalled = true;
 
-    const maxTicks = opts.maxTicks ?? 8;
+    // 2026-04-30 Fix 11 — in dev (Cocos Editor preview / DEBUG APK), throw on
+    // any tick<3 unsafe Graphics attach so the offending site fails loudly
+    // instead of probabilistically SIGSEGV-ing later. Production builds keep
+    // warn-only behavior — never crash a shipped APK over a render-entity
+    // bug. EDITOR/DEBUG are Cocos build constants:
+    // https://docs.cocos.com/creator/3.8/manual/en/scripting/build-constants.html
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const isDev = !!((globalThis as any).EDITOR || (globalThis as any).DEBUG);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    // Bonus dev-only headroom: keep the watcher running for 30 ticks instead
+    // of 8 so polish iterations that newly add Graphics post-boot also get
+    // caught immediately. Zero cost in prod (still 8).
+    const maxTicks = opts.maxTicks ?? (isDev ? 30 : 8);
     const warnOnUnsafe = opts.warnOnUnsafe ?? true;
+    const throwOnUnsafe = opts.throwOnUnsafe ?? isDev;
 
     director.on(Director.EVENT_AFTER_DRAW, () => {
         _tickNum++;
@@ -166,14 +179,19 @@ export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOn
             const arg0 = args[0];
             const argLabel = typeof arg0 === 'function' ? (arg0.name || '?') : String(arg0);
             console.log(`${TAG} addComponent | tick=${_tickNum} phase=${phase} type=${argLabel} on="${this.name}"`);
-            if (warnOnUnsafe && !_inAfterDrawWindow && _tickNum < 3) {
-                console.warn(
-                    `${TAG} ⚠️  Graphics added on "${this.name}" at tick=${_tickNum} OUTSIDE AFTER_DRAW — likely engine SIGSEGV (0x28) trigger. ` +
-                    `Wrap in safeAddGraphics() or director.once(Director.EVENT_AFTER_DRAW).`,
-                );
-                // console.trace would dump a stack — included for the dev to
-                // jump to the call site directly.
-                try { console.trace(`${TAG} call site:`); } catch (_) { /* native may not support trace */ }
+            if (!_inAfterDrawWindow && _tickNum < 3) {
+                const msg = `${TAG} Graphics added on "${this.name}" at tick=${_tickNum} OUTSIDE AFTER_DRAW — likely engine SIGSEGV (0x28) trigger. Wrap in safeAddGraphics() or enqueuePostDraw() from assets/token-duel/scripts/safeGraphics.ts.`;
+                if (throwOnUnsafe) {
+                    // Dev (EDITOR || DEBUG): hard-fail at the offending site
+                    // so the bug is impossible to ignore. Throwing here also
+                    // gives the dev a precise stack trace at the addComponent
+                    // call, no bisection needed.
+                    throw new Error(msg);
+                }
+                if (warnOnUnsafe) {
+                    console.warn(`⚠️  ${msg}`);
+                    try { console.trace(`${TAG} call site:`); } catch (_) { /* native may not support trace */ }
+                }
             }
         }
         return result;

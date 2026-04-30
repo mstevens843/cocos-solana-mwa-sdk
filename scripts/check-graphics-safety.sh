@@ -13,9 +13,17 @@
 # This script greps every addComponent(Graphics) call in assets/ and reports
 # any site that ISN'T:
 #   - Inside the safeGraphics utility itself
-#   - Annotated with `// safe: <reason>` on the same line
 #   - Within ~200 lines of a director.once(EVENT_AFTER_DRAW),
 #     safeAddGraphics(, or enqueuePostDraw( wrapper
+#
+# 2026-04-30 — the `// safe: <reason>` annotation loophole was REMOVED.
+# Real-world bug: AppUI's _buildSegmentedPill / _mountRankBadge /
+# _mountPersonalRankBorder all carried `// safe: post-boot` annotations but
+# were demonstrably called from start(). The lint trusted the annotation,
+# logcat showed ~40 unsafe attaches at tick=0, app SIGSEGV'd probabilistically
+# on each boot. Annotations cannot be enforced; only call-graph proximity to
+# a real wrapper can. A separate pass below lists any remaining `// safe:`
+# comments as warnings (informational; clean them up).
 #
 # Run as a pre-commit hook or in CI. Exit 0 on clean, 1 on any unsafe site.
 
@@ -27,6 +35,17 @@ SCAN_DIR="${1:-$ROOT/assets}"
 if [[ ! -d "$SCAN_DIR" ]]; then
     echo "[check-graphics-safety] ERROR: scan dir not found: $SCAN_DIR" >&2
     exit 2
+fi
+
+# Informational pass: surface any `// safe:` comments still in the tree so
+# the user can clean them up. The annotation no longer changes lint behavior
+# but legacy ones may linger from before 2026-04-30.
+safe_comments=$(grep -rn -E "//\s*safe:" "$SCAN_DIR" \
+    --include="*.ts" --include="*.js" 2>/dev/null \
+    | grep -vE "/safeGraphics\.(ts|js):" || true)
+if [[ -n "$safe_comments" ]]; then
+    safe_count=$(echo "$safe_comments" | wc -l | tr -d ' ')
+    echo "[check-graphics-safety] note: $safe_count legacy '// safe:' comment(s) found (informational only — the lint no longer honors them; consider removing if the site is properly wrapped)."
 fi
 
 # Find every addComponent(Graphics) site.
@@ -53,10 +72,11 @@ while IFS= read -r line; do
         */safeGraphics.ts|*/safeGraphics.js) continue ;;
     esac
 
-    # Skip lines explicitly annotated as safe.
-    if echo "$code" | grep -qE "//\s*safe:"; then
-        continue
-    fi
+    # 2026-04-30 — the `// safe:` annotation loophole was removed. Annotations
+    # do not change runtime behavior and were used to label boot-time sites as
+    # "post-boot". Every addComponent(Graphics) must now route through
+    # safeAddGraphics(, enqueuePostDraw(, or a director.once(EVENT_AFTER_DRAW
+    # wrapper within 200 lines.
 
     # Look back up to 200 lines for the enclosing wrapper. 200 covers even
     # long function bodies; the wrapper is typically near the function head
@@ -95,6 +115,8 @@ echo "  2) Wrap the surrounding work in enqueuePostDraw(() => { ... })"
 echo "     from safeGraphics.ts (auto-budgeted)"
 echo "  3) Or wrap manually in director.once(Director.EVENT_AFTER_DRAW, ...)"
 echo "     (NOT auto-budgeted — only safe for one-off post-boot adds)"
-echo "  4) Or annotate with '// safe: <reason>' if you're certain it's safe"
-echo "     (e.g., always called post-boot)."
+echo ""
+echo "Note: '// safe: <reason>' annotations are NO LONGER honored (they"
+echo "do not change runtime behavior and were used to mislabel boot-time"
+echo "sites as post-boot). Wrap every site through one of the methods above."
 exit 1

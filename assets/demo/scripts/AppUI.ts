@@ -15,7 +15,7 @@ import { Palette, themeColor, colorFromHex, TabTier, TabTierSpec } from '../../t
 import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, DashboardLayoutSpec } from '../../token-duel/scripts/LayoutSpec';
 import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
 import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
-import { installGraphicsCreationWatcher } from '../../token-duel/scripts/safeGraphics';
+import { installGraphicsCreationWatcher, enqueuePostDraw } from '../../token-duel/scripts/safeGraphics';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -1153,7 +1153,7 @@ export class AppUI extends Component {
     private _rpc!: SolanaRpc;
 
     start(): void {
-        console.log(`${TAG} BUILD_STAMP v=2026-04-29-T1900-fix10E-revert-to-10A — re-disabled the 5 Fix 10B re-enables (3 LandingFX install*, vignette, halo, LoadingOverlay activation). Queue/atomic/defer kept as defenses. Phase 2 cure: pre-place Graphics in scene editor.`);
+        console.log(`${TAG} BUILD_STAMP v=2026-04-30-T1100-fix11-pill-node-budgeted — _buildSegmentedPill / _mountRankBadge / _mountPersonalRankBorder now route every addComponent(Graphics) through enqueuePostDraw with atomic Node+Graphics work units. Removes ~36 unsafe tick-0 Graphics attaches; spreads them across ~6 AFTER_DRAW ticks. Lying "// safe: post-boot" annotations removed. Watcher auto-throws unsafe attaches in dev (EDITOR||DEBUG); production warns. Lint loophole closed.`);
         // Boot-phase watcher: logs every Graphics component creation during
         // the first 8 ticks with phase context. If the engine SIGSEGVs, the
         // last `[SafeGraphics] addComponent` log line names the trigger Node.
@@ -5403,12 +5403,15 @@ export class AppUI extends Component {
             for (const tm of this._tutorialMascots) tm?.showProceduralFallback();
         }
 
-        // Now load icons serially in the background. Mascot is already showing.
+        // 2026-04-30 Fix 11 — parallel icon load. Each `loadOneSerial(name)`
+        // wraps `resources.load()` in a Promise; awaiting them in parallel
+        // (`Promise.all`) drops ~32 × 100ms ≈ 3 s of serial wall time. All
+        // sprites are still in the default `resources` bundle; no asset
+        // pipeline change. Mascot is already showing so a brief icon-pop is
+        // acceptable. (Layer 2 will move icons into a dedicated bundle.)
         console.log(`${TAG} phase3 | icons starting count=${iconNames.length} skipIcons=${skipIconsLoad}`);
         if (!skipIconsLoad) {
-            for (const name of iconNames) {
-                await loadOneSerial(name);
-            }
+            await Promise.all(iconNames.map((name) => loadOneSerial(name)));
         } else {
             console.log(`${TAG} phase3 | icons SKIPPED (TD_DISABLE_ICON_LOAD=true)`);
         }
@@ -15748,112 +15751,163 @@ export class AppUI extends Component {
         strip.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
         strip.setPosition(new Vec3(opts.x ?? 0, opts.y, 0));
 
-        // 2026-04-28 Graphics-buffer fix: each Graphics draw block is captured
-        // as a named function so `redraw()` (returned below) can replay them
-        // verbatim after Cocos drops the buffer on a deactivate→activate cycle.
+        // 2026-04-30 Fix 11 — Graphics children are created inside per-child
+        // enqueuePostDraw() blocks. Each block is atomic (Node + UITransform +
+        // Graphics together) so the engine never sees a half-attached entity.
+        // setSiblingIndex() inside each block locks render order independent
+        // of queue drain order. Tween targets that reference queued nodes
+        // (the UIOpacity on glowInner) are also moved inside their block.
+        // Refs below are mutable and populated by their queued block; redraw()
+        // and setActive() are null-safe so taps/relayouts before the queue
+        // drains do not throw.
+        let bg: Node | null = null;
+        let bgG: Graphics | null = null;
+        let glowOuter: Node | null = null;
+        let goG: Graphics | null = null;
+        let glowInner: Node | null = null;
+        let giG: Graphics | null = null;
+        let highlight: Node | null = null;
+        let hlG: Graphics | null = null;
+        let divider: Node | null = null;
+        let divG: Graphics | null = null;
+        // The latest active key — updated by setActive() so the queued blocks
+        // place themselves at the right slot when they finally run, even if a
+        // user tap arrived before the queue drained.
+        let activeKey = opts.activeKey;
+        const drawFns: Array<() => void> = [];
+        const glowOuterW = TAB_W + 2 * PAD, glowOuterH = TAB_H + 18;
+        const glowInnerW = TAB_W + 8, glowInnerH = TAB_H + 4;
+
         // Pill background — fully rounded.
-        const bg = new Node('PillBg');
-        strip.addChild(bg);
-        bg.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
-        const bgG = bg.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
-        const drawBg = (): void => {
-            bgG.clear();
-            bgG.fillColor = bgC;
-            bgG.roundRect(-STRIP_W / 2, -STRIP_H / 2, STRIP_W, STRIP_H, STRIP_H / 2);
-            bgG.fill();
-        };
-        drawBg();
+        enqueuePostDraw(() => {
+            if (!strip.isValid) return;
+            bg = new Node('PillBg');
+            strip.addChild(bg);
+            bg.setSiblingIndex(0);
+            bg.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
+            bgG = bg.addComponent(Graphics);
+            const drawBg = (): void => {
+                if (!bgG) return;
+                bgG.clear();
+                bgG.fillColor = bgC;
+                bgG.roundRect(-STRIP_W / 2, -STRIP_H / 2, STRIP_W, STRIP_H, STRIP_H / 2);
+                bgG.fill();
+            };
+            drawFns.push(drawBg);
+            drawBg();
+        });
 
         // Outer glow — soft ambient halo, slides with active segment.
         // Horizontal size is clamped to TAB_W + 2*PAD so the halo stays flush
         // with the strip's outer edges when the active segment is at the
         // leftmost / rightmost slot (otherwise it bleeds past as a visible
         // "stub" on the dark panel surface). Vertical bloom is unchanged.
-        const glowOuterW = TAB_W + 2 * PAD, glowOuterH = TAB_H + 18;
-        const glowOuter = new Node('PillGlowOuter');
-        strip.addChild(glowOuter);
-        glowOuter.addComponent(UITransform).setContentSize(glowOuterW, glowOuterH);
-        glowOuter.setPosition(new Vec3(initialX, 0, 0));
-        const goG = glowOuter.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
-        const drawGlowOuter = (): void => {
-            goG.clear();
-            goG.fillColor = glowOuterC;
-            goG.roundRect(-glowOuterW / 2, -glowOuterH / 2, glowOuterW, glowOuterH, glowOuterH / 2);
-            goG.fill();
-        };
-        drawGlowOuter();
+        enqueuePostDraw(() => {
+            if (!strip.isValid) return;
+            glowOuter = new Node('PillGlowOuter');
+            strip.addChild(glowOuter);
+            glowOuter.setSiblingIndex(1);
+            glowOuter.addComponent(UITransform).setContentSize(glowOuterW, glowOuterH);
+            glowOuter.setPosition(new Vec3(slotX(idxOf(activeKey)), 0, 0));
+            goG = glowOuter.addComponent(Graphics);
+            const drawGlowOuter = (): void => {
+                if (!goG) return;
+                goG.clear();
+                goG.fillColor = glowOuterC;
+                goG.roundRect(-glowOuterW / 2, -glowOuterH / 2, glowOuterW, glowOuterH, glowOuterH / 2);
+                goG.fill();
+            };
+            drawFns.push(drawGlowOuter);
+            drawGlowOuter();
+        });
 
         // Inner glow — tight ring with breathing alpha pulse + active scale-up.
-        const glowInnerW = TAB_W + 8, glowInnerH = TAB_H + 4;
-        const glowInner = new Node('PillGlowInner');
-        strip.addChild(glowInner);
-        glowInner.addComponent(UITransform).setContentSize(glowInnerW, glowInnerH);
-        glowInner.setPosition(new Vec3(initialX, 0, 0));
-        glowInner.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
-        const giG = glowInner.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
-        const drawGlowInner = (): void => {
-            giG.clear();
-            giG.fillColor = glowInnerC;
-            giG.roundRect(-glowInnerW / 2, -glowInnerH / 2, glowInnerW, glowInnerH, glowInnerH / 2);
-            giG.fill();
-        };
-        drawGlowInner();
-        const glowInnerOp = glowInner.addComponent(UIOpacity);
-        glowInnerOp.opacity = 200;
-        // Breathing pulse loop — same pattern as `_mountTopPlayerHalo`. The
-        // tween targets UIOpacity (separate from the position/scale tween on
-        // the node itself) so it doesn't fight `setActive`.
-        tween(glowInnerOp)
-            .repeatForever(
-                tween(glowInnerOp)
-                    .to(1.2, { opacity: 255 }, { easing: 'sineInOut' })
-                    .to(1.2, { opacity: 180 }, { easing: 'sineInOut' })
-            )
-            .start();
+        enqueuePostDraw(() => {
+            if (!strip.isValid) return;
+            glowInner = new Node('PillGlowInner');
+            strip.addChild(glowInner);
+            glowInner.setSiblingIndex(2);
+            glowInner.addComponent(UITransform).setContentSize(glowInnerW, glowInnerH);
+            glowInner.setPosition(new Vec3(slotX(idxOf(activeKey)), 0, 0));
+            glowInner.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
+            giG = glowInner.addComponent(Graphics);
+            const drawGlowInner = (): void => {
+                if (!giG) return;
+                giG.clear();
+                giG.fillColor = glowInnerC;
+                giG.roundRect(-glowInnerW / 2, -glowInnerH / 2, glowInnerW, glowInnerH, glowInnerH / 2);
+                giG.fill();
+            };
+            drawFns.push(drawGlowInner);
+            drawGlowInner();
+            const glowInnerOp = glowInner.addComponent(UIOpacity);
+            glowInnerOp.opacity = 200;
+            // Breathing pulse loop — tween targets UIOpacity (separate from
+            // the position/scale tween on the node itself) so it doesn't
+            // fight setActive.
+            tween(glowInnerOp)
+                .repeatForever(
+                    tween(glowInnerOp)
+                        .to(1.2, { opacity: 255 }, { easing: 'sineInOut' })
+                        .to(1.2, { opacity: 180 }, { easing: 'sineInOut' })
+                )
+                .start();
+        });
 
         // Active-tab highlight — the visible "filled" indicator. Initial
         // scale matches the active scale so the pill renders correctly on
         // first frame without an animation kick. The 1-px white inner stroke
         // (alpha 120) gives the active fill a subtle edge so the pill reads
         // as "locked in" rather than just colored.
-        const highlight = new Node('PillHighlight');
-        strip.addChild(highlight);
-        highlight.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
-        highlight.setPosition(new Vec3(initialX, 0, 0));
-        highlight.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
-        const hlG = highlight.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
-        const drawHighlight = (): void => {
-            hlG.clear();
-            hlG.fillColor = fillC;
-            hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
-            hlG.fill();
-            hlG.strokeColor = new Color(255, 255, 255, 120);
-            hlG.lineWidth = 1;
-            hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
-            hlG.stroke();
-        };
-        drawHighlight();
+        enqueuePostDraw(() => {
+            if (!strip.isValid) return;
+            highlight = new Node('PillHighlight');
+            strip.addChild(highlight);
+            highlight.setSiblingIndex(3);
+            highlight.addComponent(UITransform).setContentSize(TAB_W, TAB_H);
+            highlight.setPosition(new Vec3(slotX(idxOf(activeKey)), 0, 0));
+            highlight.setScale(new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1));
+            hlG = highlight.addComponent(Graphics);
+            const drawHighlight = (): void => {
+                if (!hlG) return;
+                hlG.clear();
+                hlG.fillColor = fillC;
+                hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
+                hlG.fill();
+                hlG.strokeColor = new Color(255, 255, 255, 120);
+                hlG.lineWidth = 1;
+                hlG.roundRect(-TAB_W / 2, -TAB_H / 2, TAB_W, TAB_H, TAB_H / 2);
+                hlG.stroke();
+            };
+            drawFns.push(drawHighlight);
+            drawHighlight();
+        });
 
         // Optional vertical dividers between adjacent segments.
-        let drawDivider: (() => void) | null = null;
         if (opts.showDivider && N > 1) {
-            const divider = new Node('PillDivider');
-            strip.addChild(divider);
-            divider.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
-            const divG = divider.addComponent(Graphics); // safe: _buildSegmentedPill runs on panel-activate (post-boot), not start()
-            drawDivider = (): void => {
-                divG.clear();
-                divG.strokeColor = new Color(255, 255, 255, 30);
-                divG.lineWidth = 1;
-                const inset = Math.min(14, TAB_H / 3);
-                for (let i = 1; i < N; i++) {
-                    const x = startX + i * TAB_W - TAB_W / 2;
-                    divG.moveTo(x, -(TAB_H / 2 - inset));
-                    divG.lineTo(x, +(TAB_H / 2 - inset));
-                }
-                divG.stroke();
-            };
-            drawDivider();
+            enqueuePostDraw(() => {
+                if (!strip.isValid) return;
+                divider = new Node('PillDivider');
+                strip.addChild(divider);
+                divider.setSiblingIndex(4);
+                divider.addComponent(UITransform).setContentSize(STRIP_W, STRIP_H);
+                divG = divider.addComponent(Graphics);
+                const drawDivider = (): void => {
+                    if (!divG) return;
+                    divG.clear();
+                    divG.strokeColor = new Color(255, 255, 255, 30);
+                    divG.lineWidth = 1;
+                    const inset = Math.min(14, TAB_H / 3);
+                    for (let i = 1; i < N; i++) {
+                        const x = startX + i * TAB_W - TAB_W / 2;
+                        divG.moveTo(x, -(TAB_H / 2 - inset));
+                        divG.lineTo(x, +(TAB_H / 2 - inset));
+                    }
+                    divG.stroke();
+                };
+                drawFns.push(drawDivider);
+                drawDivider();
+            });
         }
 
         // Invisible-hitbox button per segment (visual is the Graphics layers
@@ -15928,23 +15982,41 @@ export class AppUI extends Component {
         }
 
         const setActive = (key: string): void => {
+            // Stash latest target so any queued block that hasn't run yet
+            // places its node at the right slot when it does run.
+            activeKey = key;
             const i = idxOf(key);
             const x = slotX(i);
             // Highlight + inner glow slide together with an active scale lift;
-            // outer halo just slides (stays at scale 1 for a calm ambient bloom).
-            for (const n of [highlight, glowInner]) {
-                Tween.stopAllByTarget(n);
-                tween(n)
+            // outer halo just slides. Each tween is guarded — if the queued
+            // block hasn't created the node yet, the tween is a no-op and
+            // the block will pick up `activeKey` on creation.
+            if (highlight) {
+                Tween.stopAllByTarget(highlight);
+                tween(highlight)
                     .to(0.20, {
                         position: new Vec3(x, 0, 0),
                         scale: new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1),
                     }, { easing: 'cubicOut' })
                     .start();
             }
-            Tween.stopAllByTarget(glowOuter);
-            tween(glowOuter)
-                .to(0.20, { position: new Vec3(x, 0, 0) }, { easing: 'cubicOut' })
-                .start();
+            if (glowInner) {
+                Tween.stopAllByTarget(glowInner);
+                tween(glowInner)
+                    .to(0.20, {
+                        position: new Vec3(x, 0, 0),
+                        scale: new Vec3(ACTIVE_SCALE, ACTIVE_SCALE, 1),
+                    }, { easing: 'cubicOut' })
+                    .start();
+            }
+            if (glowOuter) {
+                Tween.stopAllByTarget(glowOuter);
+                tween(glowOuter)
+                    .to(0.20, { position: new Vec3(x, 0, 0) }, { easing: 'cubicOut' })
+                    .start();
+            }
+            // Labels are created synchronously below so they always exist
+            // by the time setActive runs.
             for (const [k, lbl] of labels) {
                 lbl.color = (k === key) ? activeLblC : inactiveLblC;
             }
@@ -15955,13 +16027,10 @@ export class AppUI extends Component {
         };
 
         // 2026-04-28 Graphics-buffer fix: replays every captured draw closure.
-        // Safe to call any number of times — each closure starts with g.clear().
+        // 2026-04-30 Fix 11: drawFns is populated by queued blocks; iterating
+        // it is null-safe (it's empty until queue starts draining).
         const redraw = (): void => {
-            drawBg();
-            drawGlowOuter();
-            drawGlowInner();
-            drawHighlight();
-            drawDivider?.();
+            drawFns.forEach((f) => f());
         };
 
         return { strip, setActive, buttons, redraw };
@@ -15981,34 +16050,54 @@ export class AppUI extends Component {
      * @param h       Badge height (36 for rows; 40 for TopPlayerCard)
      */
     private _mountRankBadge(parent: Node, rankNum: number, x: number, w: number, h: number): void {
-        let badge = parent.getChildByName('RankBadge');
-        if (!badge) {
-            badge = new Node('RankBadge');
+        // Local paint closure captures rankNum/w/h for re-tint on subsequent
+        // calls and for the queued create+paint atomic block on first call.
+        const paint = (g: Graphics): void => {
+            g.clear();
+            const gold = colorFromHex(Palette.rank.gold);
+            const surf = colorFromHex(Palette.bg.surface);
+            const tint =
+                rankNum === 1 ? gold :
+                rankNum === 2 ? new Color(216, 221, 240, 255) :
+                rankNum === 3 ? new Color(224, 138, 74, 255)  :
+                                surf;
+            const fillAlpha   = rankNum <= 3 ? 90  : 160;
+            const strokeAlpha = rankNum <= 3 ? 220 : 0;
+            g.fillColor = new Color(tint.r, tint.g, tint.b, fillAlpha);
+            g.roundRect(-w / 2, -h / 2, w, h, 8);
+            g.fill();
+            if (strokeAlpha > 0) {
+                g.lineWidth = 1.5;
+                g.strokeColor = new Color(tint.r, tint.g, tint.b, strokeAlpha);
+                g.roundRect(-w / 2, -h / 2, w, h, 8);
+                g.stroke();
+            }
+        };
+
+        const existing = parent.getChildByName('RankBadge');
+        if (existing) {
+            const g = existing.getComponent(Graphics);
+            if (g) paint(g);
+            return;
+        }
+        // 2026-04-30 Fix 11 — atomic create+attach+paint via enqueuePostDraw
+        // so first-mount never adds Graphics on tick 0. `__rankBadgePaint` is
+        // last-call-wins so a re-mount with a different rank before the queue
+        // drains correctly applies the latest tint when the block runs.
+        (parent as any).__rankBadgePaint = paint;
+        if ((parent as any).__rankBadgeQueued) return;
+        (parent as any).__rankBadgeQueued = true;
+        enqueuePostDraw(() => {
+            if (!parent.isValid) return;
+            if (parent.getChildByName('RankBadge')) return;
+            const badge = new Node('RankBadge');
             parent.insertChild(badge, 0); // behind labels
             badge.addComponent(UITransform).setContentSize(w, h);
             badge.setPosition(new Vec3(x, 0, 0));
-            badge.addComponent(Graphics); // safe: rank-badge mounter runs when leaderboard rows render (post-boot)
-        }
-        const g = badge.getComponent(Graphics)!;
-        g.clear();
-        const gold   = colorFromHex(Palette.rank.gold);
-        const surf   = colorFromHex(Palette.bg.surface);
-        const tint =
-            rankNum === 1 ? gold :
-            rankNum === 2 ? new Color(216, 221, 240, 255) :
-            rankNum === 3 ? new Color(224, 138, 74, 255)  :
-                            surf;
-        const fillAlpha   = rankNum <= 3 ? 90  : 160;
-        const strokeAlpha = rankNum <= 3 ? 220 : 0;
-        g.fillColor = new Color(tint.r, tint.g, tint.b, fillAlpha);
-        g.roundRect(-w / 2, -h / 2, w, h, 8);
-        g.fill();
-        if (strokeAlpha > 0) {
-            g.lineWidth = 1.5;
-            g.strokeColor = new Color(tint.r, tint.g, tint.b, strokeAlpha);
-            g.roundRect(-w / 2, -h / 2, w, h, 8);
-            g.stroke();
-        }
+            const g = badge.addComponent(Graphics);
+            const latestPaint = (parent as any).__rankBadgePaint as ((gg: Graphics) => void) | undefined;
+            (latestPaint ?? paint)(g);
+        });
     }
 
     /**
@@ -16018,19 +16107,27 @@ export class AppUI extends Component {
      */
     private _mountPersonalRankBorder(card: Node): void {
         if (card.getChildByName('StickyBorder')) return;
+        if ((card as any).__stickyBorderQueued) return;
+        (card as any).__stickyBorderQueued = true;
         const ut = card.getComponent(UITransform);
         const cardW = ut?.contentSize?.width ?? 660;
         const cardH = ut?.contentSize?.height ?? 100;
 
-        const border = new Node('StickyBorder');
-        card.addChild(border);
-        border.addComponent(UITransform).setContentSize(cardW, 2);
-        border.setPosition(new Vec3(0, cardH / 2 - 1, 0));
-        const g = border.addComponent(Graphics); // safe: _mountPersonalRankBorder runs when leaderboard panel activates (post-boot)
-        const teal = colorFromHex(Palette.accent.teal);
-        g.fillColor = new Color(teal.r, teal.g, teal.b, 110);
-        g.rect(-cardW / 2, -1, cardW, 2);
-        g.fill();
+        // 2026-04-30 Fix 11 — atomic create+attach+paint via enqueuePostDraw
+        // so border creation never adds Graphics on tick 0.
+        enqueuePostDraw(() => {
+            if (!card.isValid) return;
+            if (card.getChildByName('StickyBorder')) return;
+            const border = new Node('StickyBorder');
+            card.addChild(border);
+            border.addComponent(UITransform).setContentSize(cardW, 2);
+            border.setPosition(new Vec3(0, cardH / 2 - 1, 0));
+            const g = border.addComponent(Graphics);
+            const teal = colorFromHex(Palette.accent.teal);
+            g.fillColor = new Color(teal.r, teal.g, teal.b, 110);
+            g.rect(-cardW / 2, -1, cardW, 2);
+            g.fill();
+        });
     }
 
     /** Phase N4: Disconnect entry on Home — wallet path emits MWA_DISCONNECTED
