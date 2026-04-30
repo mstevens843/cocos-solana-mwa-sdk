@@ -299,17 +299,24 @@ pm.zones = {
     top: {                       // anchor: viewport top - SAFE_AREA_TOP
         backLink:   -2000,       // hidden — back button removed from win screen
         backBtn:    -2000,
-        title:        -8,        // "YOU WON, HIBUDD" — 28 px below safe-top
-        track:       -54,        // "Paper · 1v1 Duel" — 18 px below title
-        earned:      -98,        // "YOU EARNED" eyebrow, 14pt dim
-        payoutLabel:-148,        // +0.10 SOL hero, 96pt
-        breakdownPill:-208,      // chip-wrapped per-token row
-        subtitle:   -250,        // "Won by 0.58%"
-        trophy:      -28,        // corner badge in title row (unchanged)
+        // 2026-04-29 game-over polish — hero block shifted ~48 px DOWN from
+        // safe-top and inter-element gaps tightened from (46/44/50/60/42)
+        // to spec (16/22/10/14/10). Title font also drops 64→52pt at runtime
+        // and grows to 130h to host two-line wrap "YOU WON\nHIBUDD".
+        title:       -56,        // was -8 — pushed down to break top crowding
+        track:      -134,        // 16 px below title (title visible h ~70)
+        earned:     -176,        // 22 px below track
+        payoutLabel:-240,        // 10 px below earned (payout visible h ~100)
+        breakdownPill:-316,      // 14 px below payout
+        subtitle:   -360,        // 10 px below pill
+        trophy:      -76,        // follow title shift
     },
     center: {                    // anchor: viewport vertical mid (panel-local 0)
-        mascotGlow:        0,
-        mascotContainer:   0,
+        // 2026-04-29 — slight upward nudge balances the now-lower hero block
+        // and leaves more vertical breathing room for bottom-zone stat grid.
+        // Ring bloom + floor shadow follow the mascot Y procedurally.
+        mascotGlow:       25,
+        mascotContainer:  25,
     },
     bottom: {                    // anchor: viewport bottom + SAFE_AREA_BOT
         sameSquadBtn:    56,     // primary CTA, 56 px above safe-bottom
@@ -449,10 +456,10 @@ const race = {
 const landing = {
     // Hero band — title + subtitle + mascot. 2026-04-28 polish pass dropped
     // the redundant tagline + support line (down to one dominant idea).
-    // 2026-04-29 dominance pass: subtitle pulled tighter to title (422 → 432)
-    // so they read as one unit.
+    // 2026-04-29 demo-ready pass: subtitle pulled tighter to title (432 → 438)
+    // so they read as a tighter cap-to-cap unit; mascot zone unchanged.
     TITLE_Y:          480,
-    SUBTITLE_Y:       432,    // 2026-04-29 dominance pass: 422 → 432 (closer to title)
+    SUBTITLE_Y:       438,    // 2026-04-29 demo-ready: 432 → 438 (tighter cap-to-cap)
     MASCOT_Y:         250,    // 2026-04-28 polish: 300 → 250 (anchor toward CTA)
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
@@ -463,17 +470,19 @@ const landing = {
     // stack feels "decided" instead of spread. 2026-04-28: trust line
     // pulled tighter to Connect; new LiveSignal sub-cue inserted between
     // trust and Guest, so Guest + Reconnect drop to make room.
-    // 2026-04-29 dominance pass: ConnectButton h 110 → 126, so its bottom
-    // edge dropped 8px. Cascade everything below 8px down to clear collision;
-    // LIVE_SIGNAL gets +12 (extra 4px of breathing between trust + live).
-    CONNECT_Y:        -18,    // PRIMARY — Enter the Duel (h=126, was 110)
-    TRUST_Y:          -86,    // 2026-04-29: -78 → -86 (cascade)
-    LIVE_SIGNAL_Y:    -112,   // 2026-04-29: -100 → -112 (cascade + breathing)
-    GUEST_Y:          -186,   // 2026-04-29: -178 → -186 (cascade)
-    RECONNECT_Y:      -282,   // 2026-04-29: -278 → -282 (cascade, h drop 72→64)
+    // 2026-04-29 demo-ready pass: ConnectButton h 126 → 108 (less bloated),
+    // so its bottom edge rose 9 px. Trust line gains 24 px clearance; live
+    // signal cascades; Guest + Reconnect adjust to keep 18/16 px clearance
+    // bands. Reconnect width restored to UNIFORM (was 560), opacity raised
+    // in AppUI.
+    CONNECT_Y:        -18,    // PRIMARY — Enter the Duel (h=108, was 126)
+    TRUST_Y:          -104,   // 2026-04-29 demo-ready: -86 → -104 (24 px clearance below CTA bottom -72)
+    LIVE_SIGNAL_Y:    -128,   // 2026-04-29 demo-ready: -112 → -128 (cascade + breathing)
+    GUEST_Y:          -196,   // 2026-04-29 demo-ready: -186 → -196 (clear new live signal)
+    RECONNECT_Y:      -296,   // 2026-04-29 demo-ready: -282 → -296 (16 px clearance below Guest bottom -236)
 
     // Bottom status footer.
-    STATUS_PILL_Y:    -555,
+    STATUS_PILL_Y:    -540,   // 2026-04-29 demo-ready: -555 → -540 (lift off home indicator)
 };
 
 // 2026-04-27 — SettingsPanel deterministic Y anchors.
@@ -816,27 +825,27 @@ const LayoutSpec = {
             bgGradientBotMid:    { x: 0,   y: -560, w: 720, h: 200, type: 'sprite',     notes: 'near-black bottom band, mid alpha (≈55)' },
             bgGradientBotInner:  { x: 0,   y: -620, w: 720, h: 80,  type: 'sprite',     notes: 'near-black bottom band, peak alpha (≈110) at very bottom' },
             // Hero band (compressed — was y=500/432/220/45/-10 in v1)
-            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 78,  type: 'label',      notes: '2026-04-29 dominance pass: 64pt → 68pt; bbox h 72→78. Token Duel — display, gold + letter-spacing 2 + halo behind' },
+            title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 78,  type: 'label',      notes: '2026-04-29 dominance pass: 64pt → 68pt; bbox h 72→78. Token Duel — display, gold + letter-spacing 3 + halo behind' },
             // 2026-04-27 UX upgrade — gold halo behind title for shimmer.
             titleGlow:           { x: 0,   y: landing.TITLE_Y,    w: 720, h: 140, type: 'sprite',     notes: 'gold radial halo behind TitleLabel; alpha-pulsed by LandingFX.addGlowPulse' },
-            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 30,  type: 'label',      notes: '"Outperform. Or get outperformed." — 22pt body, mid, dimmed' },
-            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 320, h: 320, type: 'mascot',     notes: '2026-04-28 hackathon UX: w/h 280→320 (+14%); mascot is the centerpiece' },
+            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 26,  type: 'label',      notes: '2026-04-29 demo-ready: 22→18pt subtle (Palette.text.mid). Reads as supporting microcopy under the gold title.' },
+            mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 280, h: 280, type: 'mascot',     notes: '2026-04-29 demo-ready: w/h 320→280. Mascot supports the title; no longer dominates the page.' },
             // 2026-04-27 UX upgrade — soft drop-shadow ellipse below mascot.
-            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 170, w: 280, h: 28, type: 'sprite', notes: '2026-04-29 dominance pass: w 240→280 + alpha 90→130 to ground the mascot subtly (no platform/ring per user veto); cl(0,0,0,130)' },
+            mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 150, w: 240, h: 28, type: 'sprite', notes: '2026-04-29 demo-ready: w 280→240, scene alpha 130→0. Sprite painted invisible — installSoftEllipse renders a soft Graphics ellipse on top via enqueuePostDraw. Reads as a pedestal, not a black bar.' },
             // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
-            mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 520, h: 520, type: 'sprite',     notes: '2026-04-28 hackathon UX: w/h 440→520 (+18%); violet radial halo grows with mascot; alpha-pulsed by LandingFX.addGlowPulse' },
+            mascotGlow:          { x: 0,   y: landing.MASCOT_Y,   w: 400, h: 400, type: 'sprite',     notes: '2026-04-29 demo-ready: w/h 520→400 (track smaller mascot). Sprite alpha set to 0 in scene — installSoftGlow draws the soft violet radial via Graphics; no hard square ever paints.' },
             // CTA card backdrop — semi-translucent dark surface w/ violet edge.
             ctaCardBg:           { x: 0,   y: landing.CTA_CARD_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 400, type: 'group',      notes: '2026-04-29 dominance pass: h 440→400 to trim the dead backdrop below Reconnect. visual grouping behind action stack; bg.card #1E2438 alpha 130 + violet top edge accent' },
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
-            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 126, type: 'btnPrimary', notes: '2026-04-29 dominance pass: h 110→126 (+15%, within primary tier 136 cap). PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL"' },
-            connectChevron:      { x: 290, y: landing.CONNECT_Y,   w: 28,  h: 32,  type: 'label',      notes: '2026-04-29 dominance pass: › 38→42pt, alpha 230→255 (bbox 24/28 → 28/32). right-aligned inside ConnectButton — directional cue' },
-            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '2026-04-29 dominance pass: copy shortened to "🔒 Secure · Non-custodial" (dropped redundant "You control your wallet"); font 12 → 11 to read as microcopy. Green-tinted for reassurance.' },
+            connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 108, type: 'btnPrimary', notes: '2026-04-29 demo-ready: h 126→108 (substantial, not bloated). PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL". Title fontSize override 28pt + paddingX override 28 passed from generate-scenes.js call site (does not touch ButtonTierSpec.primary which other primary CTAs depend on).' },
+            connectChevron:      { x: 296, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: '2026-04-29 demo-ready: x 290→296 (track new paddingX), › 42→36pt (proportional to smaller button), bbox 28/32 → 24/28.' },
+            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '2026-04-29 demo-ready: copy restored to full "🔒 Secure · Non-custodial · You control your wallet" (was shortened); font stays 11pt microcopy. Green-tinted for reassurance.' },
             // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
             liveSignalLabel:     { x: 0,    y: landing.LIVE_SIGNAL_Y,     w: 640, h: 20, type: 'label',     notes: '"Live now · Join in seconds" — energy cue under Connect; teal-tinted' },
             liveSignalDot:       { x: -118, y: landing.LIVE_SIGNAL_Y + 1, w: 8,   h: 8,  type: 'sprite',    notes: '2026-04-28 polish — leading green dot pulsed by LandingFX.addGlowPulse' },
-            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess', notes: '2026-04-27 UX upgrade: w/h 660/100→640/88 — softer than primary. Body sprite alpha softened to ~210 in AppUI._polishLandingPanel for stronger primary contrast (2026-04-29).' },
-            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 560,                      h: 64,  type: 'btnGhost',   notes: '2026-04-29 dominance pass: w 620→560, h 72→64, runtime label alpha 180→140. Visibly narrower + shorter + dimmer than Guest. Only active when AuthCache.hasCachedAuth.' },
-            connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 200, h: 40, type: 'chip',      notes: 'subtle bottom pill — disconnected/connecting/failed states' },
+            playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 80,  type: 'btnSuccess', notes: '2026-04-29 demo-ready: h 88→80; same width as Connect (UNIFORM rule), shorter so Connect remains visibly dominant. Body opacity dropped to 180 + halo alpha 40 in AppUI.' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 64,  type: 'btnGhost',   notes: '2026-04-29 demo-ready: w 560→UNIFORM (consistent button widths), runtime opacity 110→180, +1 px violet outline alpha 60 (mkBtnHeroLayered ghost outline opt) so dark-on-dark ghost reads as deliberate, not glitchy. Title fontSize override 18pt to match tertiary feel.' },
+            connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 180, h: 40, type: 'chip',      notes: '2026-04-29 demo-ready: w 200→180; faint pill background (Palette.bg.card alpha 90) so the chip reads as part of the layout, not a floating label. Lifted to -540 to clear the home indicator.' },
         },
         allowedOverlaps: [
             // Card backdrop intentionally sits behind every action element
@@ -3167,8 +3176,10 @@ const LayoutSpec = {
             // still gets a valid node (just with active=false).
             backLink:        { x: -2000, y: -2000, w: 1, h: 1, type: 'label' },
             backBtn:         { x: -2000, y: -2000, w: 1, h: 1, type: 'btnGhost' },
-            title:           { x: 0,    y: pm.TITLE_Y, w: 620, h: 80,  type: 'label',
-                notes: '60pt bold, color-coded green/rose by outcome (was 56)' },
+            // 2026-04-29 polish — h 80→130 so two-line "YOU WON\n{NAME}"
+            // wrap renders without clipping (runtime drops font 64→52pt).
+            title:           { x: 0,    y: pm.TITLE_Y, w: 620, h: 130, type: 'label',
+                notes: '52pt bold runtime; 130h hosts two-line username wrap' },
             track:           { x: 0,    y: pm.TRACK_Y, w: 600, h: 44,  type: 'label' },
             // 2026-04-29 — eyebrow label above the +X SOL hero. AppUI sets
             // string ("YOU EARNED" / "YOU LOST") + colors per outcome.
@@ -3191,11 +3202,13 @@ const LayoutSpec = {
             breakdown:       { x: 0,    y: 0, w: 520, h: 26, type: 'label',
                 notes: 'per-token row, 18pt, opacity ~0.7. Child of breakdownPill — local x/y both 0.' },
             rake:            { x: 0,    y: pm.RAKE_Y, w: 600, h: 40, type: 'label' },
-            xpBarLabelLeft:  { x: -240, y: pm.XP_BAR_Y, w: 200, h: 22, type: 'label',
+            // 2026-04-29 polish — bar narrows 480→420 and labels push out to
+            // ±250 so "Lv N" / "+N XP" sit clear of the fill rectangle.
+            xpBarLabelLeft:  { x: -250, y: pm.XP_BAR_Y, w: 200, h: 22, type: 'label',
                 notes: '"Lv N → Lv N+1" 14pt mid-grey' },
-            xpBarFill:       { x: 0,    y: pm.XP_BAR_Y, w: 480, h: 24, type: 'graphics',
-                notes: '2026-04-29 — h 16→24 (thicker progression bar).' },
-            xpBarLabelRight: { x: 240,  y: pm.XP_BAR_Y, w: 120, h: 22, type: 'label',
+            xpBarFill:       { x: 0,    y: pm.XP_BAR_Y, w: 420, h: 24, type: 'graphics',
+                notes: '2026-04-29 — h 16→24 thicker; w 480→420 to clear labels.' },
+            xpBarLabelRight: { x: 250,  y: pm.XP_BAR_Y, w: 120, h: 22, type: 'label',
                 notes: '"+10 XP" 18pt bold accent' },
             // 2026-04-29 — CTAs widen 320→340 with a 16-px center gap and
             // grow 64→84 to host two-line title + subtitle ("PICK NEW SQUAD"
@@ -3221,9 +3234,11 @@ const LayoutSpec = {
                     { key: 'xp',  label: 'XP EARNED',  x: -160, y: pm.CARDS_ROW2_Y },
                     { key: 'lvl', label: 'LEVEL',      x:  160, y: pm.CARDS_ROW2_Y },
                 ],
-                header:   { x: 0, y: 42,  w: 280, h: 22 },
-                value:    { x: 0, y: -8,  w: 280, h: 36, fontSize: 32 },   // big +N (was y=-22, h=44, font 34)
-                valueSub: { x: 0, y: -42, w: 280, h: 20, fontSize: 13 },   // NEW small sub-line
+                // 2026-04-29 polish — header smaller/muter, value bigger,
+                // sub tighter. Header pushed up 4 px to give value more room.
+                header:   { x: 0, y: 46,  w: 280, h: 20, fontSize: 13 },
+                value:    { x: 0, y: -8,  w: 280, h: 40, fontSize: 36 },   // 32→36
+                valueSub: { x: 0, y: -42, w: 280, h: 18, fontSize: 12 },   // 13→12
             },
             // 12 confetti shells, child of TrophyLabel; AppUI rebases burst
             // origin to mascot world position at show time so the burst still

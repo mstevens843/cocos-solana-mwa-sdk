@@ -144,17 +144,21 @@ export const POSTMATCH_ZONES = {
     top: {
         backLink:      -2000,    // hidden — back button removed from win screen
         backBtn:       -2000,
-        title:            -8,
-        track:           -54,
-        earned:          -98,    // NEW eyebrow ("YOU EARNED")
-        payoutLabel:    -148,    // moved OUT of center
-        breakdownPill:  -208,    // NEW chip pill wrapping breakdown row
-        subtitle:       -250,
-        trophy:          -28,
+        // 2026-04-29 game-over polish — hero block shifted ~48 px DOWN
+        // from safe-top, internal gaps tightened to (16/22/10/14/10).
+        // KEEP IN SYNC with LayoutSpec.cjs `pm.zones.top`.
+        title:           -56,
+        track:          -134,
+        earned:         -176,
+        payoutLabel:    -240,
+        breakdownPill:  -316,
+        subtitle:       -360,
+        trophy:          -76,
     },
     center: {
-        mascotGlow:        0,
-        mascotContainer:   0,
+        // 2026-04-29 — mascot nudged 25 px up to balance lowered hero.
+        mascotGlow:       25,
+        mascotContainer:  25,
     },
     bottom: {
         sameSquadBtn:     56,
@@ -235,25 +239,27 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         bg: { color: '#000000' },
         elements: {
-            // 2026-04-29 dominance pass: title h 72→78 (font 64→68), subtitle y
-            // 422→432 (tighter to title), connectBtn h 110→126 (+15%), chevron
-            // bbox 24/28→28/32 (font 38→42), mascotShadow added (w 280),
-            // ctaCardBg h 440→400 (trim dead backdrop), trustLine y -78→-86,
-            // liveSignal y -100→-112 (cascade + extra breathing), playAsGuest
-            // y -178→-186, reconnBtn -278→-282 / w 680→560 / h 72→64 (visibly
-            // weakest in stack).
+            // 2026-04-29 demo-ready pass: subtitle y 432→438 (tighter cap-to-cap),
+            // mascot 320→280 (supports title, doesn't dominate), connectBtn h
+            // 126→108 (substantial not bloated), chevron x 290→296 + bbox 28/32
+            // → 24/28 (font 42→36 proportional), trustLine y -86→-104 (24 px
+            // clearance), liveSignal y -112→-128 (cascade), playAsGuestBtn h
+            // 88→80 + y -186→-196 (clearly secondary), reconnBtn w 560→UNIFORM
+            // + y -282→-296 (consistent button widths; runtime opacity 110→180
+            // + violet outline make it read as deliberate tertiary), pill w
+            // 200→180 + y -555→-540 + faint bg.
             title:                { x: 0,   y: 480,  w: 680, h: 78,  type: 'label' },
-            subtitle:             { x: 0,   y: 432,  w: 680, h: 30,  type: 'label' },
-            mascot:               { x: 0,   y: 250,  w: 320, h: 320, type: 'mascot' },
+            subtitle:             { x: 0,   y: 438,  w: 680, h: 26,  type: 'label' },
+            mascot:               { x: 0,   y: 250,  w: 280, h: 280, type: 'mascot' },
             ctaCardBg:            { x: 0,   y: -178, w: UNIFORM_LAYOUT.CONTENT_W, h: 400, type: 'group' },
-            connectBtn:           { x: 0,   y: -18,  w: UNIFORM_LAYOUT.CONTENT_W, h: 126, type: 'btnPrimary' },
-            connectChevron:       { x: 290, y: -18,  w: 28,  h: 32,  type: 'label' },
-            trustLine:            { x: 0,   y: -86,  w: 640, h: 20,  type: 'label' },
-            liveSignalLabel:      { x: 0,    y: -112, w: 640, h: 20,  type: 'label' },
-            liveSignalDot:        { x: -118, y: -111, w: 8,   h: 8,   type: 'sprite' },
-            playAsGuestBtn:       { x: 0,   y: -186, w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnSuccess' },
-            reconnBtn:            { x: 0,   y: -282, w: 560, h: 64,  type: 'btnGhost' },
-            connectionStatusPill: { x: 0,   y: -555, w: 200, h: 40,  type: 'chip' },
+            connectBtn:           { x: 0,   y: -18,  w: UNIFORM_LAYOUT.CONTENT_W, h: 108, type: 'btnPrimary' },
+            connectChevron:       { x: 296, y: -18,  w: 24,  h: 28,  type: 'label' },
+            trustLine:            { x: 0,   y: -104, w: 640, h: 20,  type: 'label' },
+            liveSignalLabel:      { x: 0,    y: -128, w: 640, h: 20,  type: 'label' },
+            liveSignalDot:        { x: -118, y: -127, w: 8,   h: 8,   type: 'sprite' },
+            playAsGuestBtn:       { x: 0,   y: -196, w: UNIFORM_LAYOUT.CONTENT_W, h: 80,  type: 'btnSuccess' },
+            reconnBtn:            { x: 0,   y: -296, w: UNIFORM_LAYOUT.CONTENT_W, h: 64,  type: 'btnGhost' },
+            connectionStatusPill: { x: 0,   y: -540, w: 180, h: 40,  type: 'chip' },
         },
         allowedOverlaps: [
             ['CTACardBg', 'ConnectButton'],

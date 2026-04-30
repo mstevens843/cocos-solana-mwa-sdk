@@ -237,37 +237,52 @@ export class MascotController extends Component {
         const ut = root.getComponent(UITransform) ?? root.addComponent(UITransform);
         ut.contentSize.set(180, 220);
 
-        this._bodyNode = this._mkChild('MascotBody', new Vec3(0, 0, 0));
-        this._wandNode = this._mkChild('MascotWand', new Vec3(60, 30, 0));
-        this._eyeL    = this._mkChild('MascotEyeL', new Vec3(-20, 30, 0));
-        this._eyeR    = this._mkChild('MascotEyeR', new Vec3(20, 30, 0));
-
-        // Queue each Graphics attachment via the budgeted post-draw queue
-        // (PER_TICK_BUDGET in safeGraphics). Without this, all 12 mascot
-        // Graphics adds would land in the same AFTER_DRAW tick alongside the
-        // LandingFX queue + a second LoadingMascot, overflowing the engine's
-        // ~20-Graphics-per-tick ceiling and SIGSEGV'ing tick 2 DRAW at 0x28.
-        const body = this._bodyNode, wand = this._wandNode, eyeL = this._eyeL, eyeR = this._eyeR;
-        enqueuePostDraw(() => { if (body.isValid)  this._drawBody(body); });
-        enqueuePostDraw(() => { if (wand.isValid)  this._drawWand(wand); });
-        enqueuePostDraw(() => { if (eyeL.isValid)  this._drawEye(eyeL); });
-        enqueuePostDraw(() => { if (eyeR.isValid)  this._drawEye(eyeR); });
+        // FIX 10C — each work unit creates Node + UITransform + Graphics
+        // ATOMICALLY in the same enqueuePostDraw tick. Previously Fix 10B
+        // split Node creation (synchronous) from Graphics attachment (queued
+        // for later ticks), leaving 12 bare Node+UITransform children in the
+        // tree at end of tick 1 AFTER_DRAW. Tick 2 DRAW walked the tree, hit
+        // a half-initialised render entity, dereferenced offset 0x28 in
+        // js_cc_UIModelProxy_activeSubModels → SIGSEGV. The atomic pattern
+        // matches Fix 10A's working behaviour (Node+Graphics together) while
+        // still respecting the queue's PER_TICK_BUDGET so the total tick-1
+        // load stays well under the engine's ~20-entity ceiling.
+        enqueuePostDraw(() => {
+            if (!root.isValid) return;
+            this._bodyNode = this._mkChild('MascotBody', new Vec3(0, 0, 0));
+            this._drawBody(this._bodyNode);
+            this._bodyNode.active = false;
+        });
+        enqueuePostDraw(() => {
+            if (!root.isValid) return;
+            this._wandNode = this._mkChild('MascotWand', new Vec3(60, 30, 0));
+            this._drawWand(this._wandNode);
+            this._wandNode.active = false;
+        });
+        enqueuePostDraw(() => {
+            if (!root.isValid) return;
+            this._eyeL = this._mkChild('MascotEyeL', new Vec3(-20, 30, 0));
+            this._drawEye(this._eyeL);
+            this._eyeL.active = false;
+        });
+        enqueuePostDraw(() => {
+            if (!root.isValid) return;
+            this._eyeR = this._mkChild('MascotEyeR', new Vec3(20, 30, 0));
+            this._drawEye(this._eyeR);
+            this._eyeR.active = false;
+        });
 
         // Sparkle pool (8 nodes for celebrate burst, hidden by default).
         for (let i = 0; i < 8; i++) {
-            const s = this._mkChild(`MascotSparkle_${i}`, new Vec3(0, 0, 0));
-            s.active = false;
-            this._sparkleNodes.push(s);
-            enqueuePostDraw(() => { if (s.isValid) this._drawSparkle(s); });
+            const idx = i;
+            enqueuePostDraw(() => {
+                if (!root.isValid) return;
+                const s = this._mkChild(`MascotSparkle_${idx}`, new Vec3(0, 0, 0));
+                this._drawSparkle(s);
+                s.active = false;
+                this._sparkleNodes.push(s);
+            });
         }
-        // Default state: procedural HIDDEN. Made visible only by explicit
-        // showProceduralFallback() call when Seedance loading fails. This
-        // prevents the procedural body from flashing for ~3s on cold start
-        // before phase3 swaps to the per-state Seedance frames.
-        if (this._bodyNode) this._bodyNode.active = false;
-        if (this._wandNode) this._wandNode.active = false;
-        if (this._eyeL) this._eyeL.active = false;
-        if (this._eyeR) this._eyeR.active = false;
     }
 
     /**

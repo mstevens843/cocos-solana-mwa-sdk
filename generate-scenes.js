@@ -594,6 +594,10 @@ function mkBtnHeroLayered(sb, name, parent, title, subtitle, x, y, w, h, br, bg,
     // dictates title fontSize and halo strength. Subtitle stays a proportional
     // ratio so two-line layout doesn't squash. Height + width stay caller-
     // controlled (LayoutSpec-driven) to preserve calibrated dimensions.
+    // 2026-04-29 (demo-ready) — opts.titleFs / opts.subFs let a single call
+    // site (currently the Landing ConnectButton + ReconnectButton) override
+    // the tier font size without cascading to every other primary/secondary
+    // button. Preferred over editing ButtonTierSpec.
     const ts = tierSpec(opts);
     const ghost = opts.ghost === true;
     const haloAlpha = ts ? ts.glowAlpha : (opts.haloAlpha ?? 80);
@@ -601,9 +605,9 @@ function mkBtnHeroLayered(sb, name, parent, title, subtitle, x, y, w, h, br, bg,
     const bodyR = ghost ? 21 : br, bodyG = ghost ? 25 : bg, bodyB = ghost ? 41 : bb;
     const titleR = ghost ? br : 255, titleG = ghost ? bg : 255, titleB = ghost ? bb : 255;
     const subAlpha = 220;
-    const titleFs = ts ? ts.fontSize : Math.max(24, Math.round(h * 0.28));
-    const subFs   = ts ? Math.max(14, Math.round(ts.fontSize * 0.55))
-                       : Math.max(14, Math.round(h * 0.16));
+    const titleFs = opts.titleFs ?? (ts ? ts.fontSize : Math.max(24, Math.round(h * 0.28)));
+    const subFs   = opts.subFs   ?? (ts ? Math.max(14, Math.round(titleFs * 0.55))
+                                        : Math.max(14, Math.round(h * 0.16)));
 
     // Glow halo sibling — added BEFORE button body so it renders behind.
     // Skipped for ghost (secondary surface) and for any tier whose glowAlpha
@@ -1336,31 +1340,38 @@ function generate() {
     // (still solid gold + halo; user explicitly liked the simple yellow look).
     const title = mkLabel(sb, 'TitleLabel', lpN, 'Token Duel',
         68, LE.title.y, LE.title.w, LE.title.h);
-    // 2026-04-27 UX upgrade — letter-spacing for more "decided" feel.
-    style(sb, title, { bold: true, color: GOLD(), spacing: 2 });
+    // 2026-04-29 demo-ready pass — letter-spacing 2 → 3 for premium / "decided"
+    // feel; preserves gold + halo identity.
+    style(sb, title, { bold: true, color: GOLD(), spacing: 3 });
 
-    // 2026-04-27 UX upgrade — sharper subtitle copy + slightly smaller (24 → 22).
+    // 2026-04-29 demo-ready pass — subtitle 22 → 18pt + Palette.text.mid color
+    // (168, 174, 201). Reads as supporting microcopy under the gold title
+    // instead of a competing line.
     const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Outperform. Or get outperformed.',
-        22, LE.subtitle.y, LE.subtitle.w, LE.subtitle.h, 168, 174, 201);
+        18, LE.subtitle.y, LE.subtitle.w, LE.subtitle.h, 168, 174, 201);
 
-    // 2026-04-27 UX upgrade — violet radial bloom behind mascot. Sized 440×440
-    // (vs mascot 280×280) so it spills 80px past the mascot on every side.
+    // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
+    // 2026-04-29 demo-ready pass: scene Sprite color alpha 80 → 0. The
+    // hard-edged Sprite never paints, so the visible "purple square" behind
+    // the mascot is gone permanently. AppUI._polishLandingPanel calls
+    // LandingFX.installSoftGlow, which attaches a Graphics-drawn radial to
+    // the same node — that's what the user sees, faded in via addGlowPulse.
     const mascotGlow = sb.e.length;
     sb.node('MascotGlow', lpN, [], [], v3(LE.mascotGlow.x, LE.mascotGlow.y, 0));
     const mascotGlowUT  = sb.ut(mascotGlow, LE.mascotGlow.w, LE.mascotGlow.h);
     const mascotGlowSpr = sb.spr(mascotGlow, 153, 69, 255);
-    sb.e[mascotGlowSpr]._color = cl(153, 69, 255, 80);
+    sb.e[mascotGlowSpr]._color = cl(153, 69, 255, 0);
     sb.e[mascotGlow]._components = [rf(mascotGlowUT), rf(mascotGlowSpr)];
 
     // 2026-04-27 UX upgrade — flat dark ellipse below mascot for grounding.
-    // 2026-04-29 dominance pass: alpha 90 → 130 + width 240 → 280 (in
-    // LayoutSpec) so the mascot reads as "placed" instead of floating.
-    // No platform / ring / second halo — user explicitly vetoed the staged look.
+    // 2026-04-29 demo-ready pass: scene Sprite color alpha 130 → 0 so the
+    // black bar never paints. installSoftEllipse renders a soft Graphics
+    // pedestal on the same node — reads as ground, not a sliced bar.
     const mascotShadow = sb.e.length;
     sb.node('MascotShadow', lpN, [], [], v3(LE.mascotShadow.x, LE.mascotShadow.y, 0));
     const mascotShadowUT  = sb.ut(mascotShadow, LE.mascotShadow.w, LE.mascotShadow.h);
     const mascotShadowSpr = sb.spr(mascotShadow, 0, 0, 0);
-    sb.e[mascotShadowSpr]._color = cl(0, 0, 0, 130);
+    sb.e[mascotShadowSpr]._color = cl(0, 0, 0, 0);
     sb.e[mascotShadow]._components = [rf(mascotShadowUT), rf(mascotShadowSpr)];
 
     // Mascot container — Empty Node; AppUI.start() adds MascotController
@@ -1391,21 +1402,26 @@ function generate() {
     // PRIMARY — Enter the Duel (gold, matches the title color above).
     // 2026-04-28 hackathon UX — copy upgrade "Play Token Duel" → "Enter the
     // Duel" (game-first command verb). Subtitle "Stake SOL · Win SOL" stays.
+    // 2026-04-29 demo-ready — titleFs override 28 + subFs override 16. Tier
+    // stays 'primary' (preserves halo, idle-pulse, press-pop, shimmer, strong-
+    // press), but the per-call font sizes scale down proportional to the new
+    // 108 button height without touching ButtonTierSpec.primary (which is
+    // shared with FindMatch / StartMatch on Home).
     const { glow: connectGlow, btn: connectBtn } = mkBtnHeroLayered(sb,
         'ConnectButton', lpN,
         'Enter the Duel', 'Stake SOL · Win SOL',
         LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
         255, 210, 74,
-        { tier: 'primary', gradient: true });
+        { tier: 'primary', gradient: true, titleFs: 28, subFs: 16 });
 
     // Right-aligned chevron — directional cue. Child of ConnectButton.
     const chevronN = sb.e.length;
     sb.node('ConnectChevron', connectBtn, [], [chevronN+1, chevronN+2],
         v3(LE.connectChevron.x, 0, 0));
     sb.ut(chevronN, LE.connectChevron.w, LE.connectChevron.h);
-    // 2026-04-29 dominance pass — chevron 38 → 42, alpha 230 → 255 so the
-    // directional cue reads as boldly as the rest of the primary CTA.
-    sb.lbl(chevronN, '›', 42, 255, 255, 255);
+    // 2026-04-29 demo-ready pass — chevron 42 → 36 (proportional to smaller
+    // 108-height button); alpha stays 255.
+    sb.lbl(chevronN, '›', 36, 255, 255, 255);
     sb.e[chevronN+2]._color = cl(255, 255, 255, 255);
     style(sb, chevronN, { bold: true });
     sb.e[connectBtn]._children = [...(sb.e[connectBtn]._children ?? []), rf(chevronN)];
@@ -1415,10 +1431,12 @@ function generate() {
     // reassurance accent (was neutral text.mid 168/174/201).
     // 2026-04-28 hackathon UX — font 14 → 12 to reduce visual weight (now
     // shares space with new LiveSignal label below).
-    // 2026-04-29 dominance pass — copy shortened ("You control your wallet"
-    // duplicated "Non-custodial") and font 12 → 11 to read as microcopy.
+    // 2026-04-29 demo-ready pass — copy restored to full
+    // "🔒 Secure · Non-custodial · You control your wallet". With trust line
+    // moved 18 px lower (24 px clearance below the smaller CTA), the longer
+    // copy fits without competing with the button. Font stays 11pt microcopy.
     const trustLine = mkLabel(sb, 'TrustLineLabel', lpN,
-        '🔒  Secure · Non-custodial',
+        '🔒  Secure · Non-custodial · You control your wallet',
         11, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
 
     // 2026-04-28 hackathon UX — "live system" sub-CTA cue between trust line
@@ -1445,27 +1463,39 @@ function generate() {
     sb.e[liveDotN]._components = [rf(liveDotUT), rf(liveDotSpr)];
 
     // SECONDARY — Reconnect (ghost-teal, conditional via AppUI).
+    // 2026-04-29 demo-ready — width restored to UNIFORM (was narrowed to 560
+    // in the dominance pass, which broke the consistent-button-widths rule
+    // and made it look glitchy). Title font dropped to 18pt so it stays
+    // visibly tertiary; AppUI raises opacity 110 → 180 so it no longer reads
+    // as "broken/disabled".
     const { btn: reconnBtn } = mkBtnHeroLayered(sb,
         'ReconnectButton', lpN,
         '⟳  Reconnect', 'Continue with saved wallet',
         LE.reconnBtn.x, LE.reconnBtn.y, LE.reconnBtn.w, LE.reconnBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { tier: 'secondary', ghost: true });
+        { tier: 'secondary', ghost: true, titleFs: 18, subFs: 12 });
     sb.e[reconnBtn]._active = false;
 
     // SECONDARY — Play as Guest (teal, two-line layered, defers visually
     // to Connect via tier-locked glow strength).
+    // 2026-04-29 demo-ready — titleFs override 22 (was 24 from tier),
+    // subFs 13 (was 13 from tier). Smaller height (88→80) keeps it visibly
+    // shorter than Connect; AppUI drops body opacity 210 → 180 + halo 70 →
+    // 40 so it reads as clearly secondary.
     const { glow: guestGlow, btn: guestBtn } = mkBtnHeroLayered(sb,
         'PlayAsGuestButton', lpN,
         '👤  Play as Guest', 'Practice with bots · no wallet needed',
         LE.playAsGuestBtn.x, LE.playAsGuestBtn.y, LE.playAsGuestBtn.w, LE.playAsGuestBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { tier: 'secondary' });
+        { tier: 'secondary', titleFs: 22, subFs: 13 });
 
     // ── Footer ──────────────────────────────────────────────────────
+    // 2026-04-29 demo-ready — bgAlpha 90 (faint Palette.bg.card capsule) so
+    // the chip reads as part of the layout, not a floating label.
     const statusPill = mkPill(sb, 'ConnectionStatusPill', lpN, '● Disconnected',
         LE.connectionStatusPill.x, LE.connectionStatusPill.y,
-        LE.connectionStatusPill.w, LE.connectionStatusPill.h);
+        LE.connectionStatusPill.w, LE.connectionStatusPill.h,
+        { bgAlpha: 90 });
 
     // Patch LandingPanel children — render order matters.
     // 2026-04-27 UX upgrade — gradient bands render FIRST (deepest behind),

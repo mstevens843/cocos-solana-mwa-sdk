@@ -1153,7 +1153,7 @@ export class AppUI extends Component {
     private _rpc!: SolanaRpc;
 
     start(): void {
-        console.log(`${TAG} BUILD_STAMP v=2026-04-29-T1700-fix10B-stagger — LandingFX install* + LoadingOverlay re-enabled, queued through safeGraphics.enqueuePostDraw with PER_TICK_BUDGET=6`);
+        console.log(`${TAG} BUILD_STAMP v=2026-04-29-T1900-fix10E-revert-to-10A — re-disabled the 5 Fix 10B re-enables (3 LandingFX install*, vignette, halo, LoadingOverlay activation). Queue/atomic/defer kept as defenses. Phase 2 cure: pre-place Graphics in scene editor.`);
         // Boot-phase watcher: logs every Graphics component creation during
         // the first 8 ticks with phase context. If the engine SIGSEGVs, the
         // last `[SafeGraphics] addComponent` log line names the trigger Node.
@@ -3423,8 +3423,24 @@ export class AppUI extends Component {
         // other state (fresh install, explicit disconnect, deleted account)
         // falls through to the Landing panel. See KNOWN_ISSUES.md #15.
         if (mwa?.cache?.hasAutoLoginAuth()) {
-            console.log(`${TAG} start | AUTO_SIGN_IN_CANDIDATE cache.hasAutoLoginAuth=true — attempting reauthorize`);
-            this._attemptAutoSignIn();
+            // FIX 10D — defer auto-signin past boot stabilization window.
+            // Running it during tick 1 AFTER_DRAW (when the await reauthorize()
+            // microtask resolves) caused tick 2 DRAW SIGSEGV at 0x28
+            // (UIModelProxy) because _onMwaAuthorized + the deferred _showHome
+            // registration touch render entities mid-boot, before the
+            // queue-pumped Graphics flood + Mascot atomic adds have settled.
+            // 500ms ≈ 30 ticks at 60 FPS, by which time the queue has fully
+            // drained and the render-entity tree is stable. Show Landing
+            // immediately so the user has visual feedback during the wait;
+            // _showHome will run via auto-signin's own AFTER_DRAW defer when
+            // the eventual reauthorize SUCCESS fires.
+            console.log(`${TAG} start | AUTO_SIGN_IN_DEFERRED 500ms cache.hasAutoLoginAuth=true — showing Landing during boot stabilization window`);
+            this._showLanding();
+            setTimeout(() => {
+                if (!this.node?.isValid) return;
+                console.log(`${TAG} start | AUTO_SIGN_IN_DEFERRED_FIRE — engine should be stable, attempting reauthorize`);
+                this._attemptAutoSignIn();
+            }, 500);
         } else {
             console.log(`${TAG} start | AUTO_SIGN_IN_SKIP cache.hasAutoLoginAuth=false — showing Landing`);
             this._showLanding();
@@ -5106,13 +5122,18 @@ export class AppUI extends Component {
         const titleGlow  = lp.getChildByName('TitleGlow');
         const mascotGlow = lp.getChildByName('MascotGlow');
         const mascotShdw = lp.getChildByName('MascotShadow');
-        // FIX 10B (2026-04-29) — re-enabled. LandingFX now routes Graphics
-        // attachment through safeGraphics.enqueuePostDraw with a per-tick
-        // budget of 6, spreading these adds across multiple AFTER_DRAW ticks
-        // so the engine never sees > ~18 Graphics in any single tick.
-        if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
-        if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 130 });
-        if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
+        // FIX 10E (2026-04-29) — RE-DISABLED. Fix 10B re-enabled these via
+        // queue, Fix 10C made Mascot atomic, Fix 10D deferred auto-signin —
+        // each iteration still crashed in tick 2 DRAW. The queue/atomic/defer
+        // are correct defenses but not sufficient to cover the cumulative
+        // tree-state trigger that Fix 10A's 5 disables together avoid.
+        // Permanent cure (Phase 2): pre-place ring child Nodes with Graphics
+        // components in Main.scene, refactor install* → paintSoftGlow that
+        // calls gfx.clear()/circle()/fill() into pre-placed Graphics. Then
+        // re-enable. See ~/.claude/plans/replicated-purring-journal.md.
+        // if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
+        // if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 110 });
+        // if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
 
         // Soften the 6 depth-gradient plates ~50% so their hard rectangular
         // edges stop reading as horizontal bands. They still imply depth at
@@ -5133,17 +5154,18 @@ export class AppUI extends Component {
 
         // Edge vignette overlay — sits between gradient stack and content.
         // Subtle corner darken focuses the eye on the center hero.
-        // FIX 10B — re-enabled, routed through enqueuePostDraw queue.
-        installLandingVignette(lp);
+        // FIX 10E — RE-DISABLED. See _polishLandingPanel installSoftGlow note above.
+        // installLandingVignette(lp);
 
         if (mascotGlow) addGlowPulse(mascotGlow, 110, 2.6);
 
         if (titleGlow) addGlowPulse(titleGlow, 120, 2.8);
 
         const connectGlow = lp.getChildByName('BtnGlow_ConnectButton');
-        // 2026-04-28 hackathon UX — Connect halo amplified: peak 130 → 170
-        // (+30%), period 3.0 → 2.2 (faster cycle reads as urgency).
-        if (connectGlow) addGlowPulse(connectGlow, 170, 2.2);
+        // 2026-04-29 demo-ready pass: Connect halo peak 170 → 130 + period
+        // 2.2 → 2.6. The dominance-pass amplification was reading as frantic
+        // on the smaller 108-h button; calmer breath reads as premium.
+        if (connectGlow) addGlowPulse(connectGlow, 130, 2.6);
 
         // 2026-04-28 polish — periodic shimmer sweep across the Connect CTA.
         // Layers atop idle-pulse + glow-pulse without competing — narrow
@@ -5157,19 +5179,30 @@ export class AppUI extends Component {
         const reconn = lp.getChildByName('ReconnectButton');
         if (reconn) {
             const op = reconn.getComponent(UIOpacity) ?? reconn.addComponent(UIOpacity);
-            // 2026-04-29 dominance pass: 150 → 110 (~43%). Reconnect is now
-            // narrower (560), shorter (64h), AND dimmer — three legibility
-            // cues that together kill the visual competition with Guest.
-            op.opacity = 110;
+            // 2026-04-29 demo-ready pass: 110 → 180 (~71%). The dominance-pass
+            // 43% was reading as "broken/disabled" rather than tertiary. Width
+            // is now uniform with Connect/Guest, so opacity alone (plus the
+            // smaller 18pt title) carries the tertiary signal.
+            op.opacity = 180;
         }
         // 2026-04-28 hackathon UX — Guest also dims (lighter than Reconnect).
         // Visible secondary, but visibly secondary. Connect alone is the hero.
         const guest = lp.getChildByName('PlayAsGuestButton');
         if (guest) {
             const op = guest.getComponent(UIOpacity) ?? guest.addComponent(UIOpacity);
-            // 2026-04-29 dominance pass: 235 → 210 (~82%). Guest stays clearly
-            // secondary so Connect reads as the one bright surface.
-            op.opacity = 210;
+            // 2026-04-29 demo-ready pass: 210 → 180 (~71%). Plus the halo
+            // dimming below, Guest now visibly defers to Connect without
+            // looking like a half-faded duplicate.
+            op.opacity = 180;
+        }
+        // 2026-04-29 demo-ready pass — Guest halo dimmed to alpha 40 so it
+        // doesn't compete with the Connect halo's gold breath. Tier system
+        // would have given it 70; we want 40 here specifically because the
+        // smaller Connect button means the halos sit visually closer.
+        const guestGlow = lp.getChildByName('BtnGlow_PlayAsGuestButton');
+        if (guestGlow) {
+            const op = guestGlow.getComponent(UIOpacity) ?? guestGlow.addComponent(UIOpacity);
+            op.opacity = 90;
         }
 
         // 2026-04-28 polish — bottom "Disconnected" pill drops to footnote
@@ -5178,7 +5211,11 @@ export class AppUI extends Component {
         const pill = lp.getChildByName('ConnectionStatusPill');
         if (pill) {
             const op = pill.getComponent(UIOpacity) ?? pill.addComponent(UIOpacity);
-            op.opacity = 140;
+            // 2026-04-29 demo-ready pass: 140 → 170 (~67%). The pill now has
+            // a faint Palette.bg.card capsule around it (mkPill bgAlpha=90),
+            // so it reads as part of the layout. Slightly higher opacity
+            // makes the readable text legible without dominating.
+            op.opacity = 170;
         }
 
         // 2026-04-28 — particle drift now spawned in _setActivePanel('landing')
@@ -7948,11 +7985,12 @@ export class AppUI extends Component {
             this._raceAdvantageHaloOpacity = this._raceAdvantageHaloNode.getComponent(UIOpacity)
                 ?? this._raceAdvantageHaloNode.addComponent(UIOpacity);
             this._raceAdvantageHaloOpacity.opacity = 70;
-            installSoftGlow(this._raceAdvantageHaloNode, {
-                color: new Color(168, 174, 201),
-                peakAlpha: 28,
-                rings: 14,
-            });
+            // FIX 10E — RE-DISABLED. See _polishLandingPanel for context.
+            // installSoftGlow(this._raceAdvantageHaloNode, {
+            //     color: new Color(168, 174, 201),
+            //     peakAlpha: 28,
+            //     rings: 14,
+            // });
         }
         this._drawStaticAdvantageBorder();
     }
@@ -8493,12 +8531,13 @@ export class AppUI extends Component {
         const MIN_DISPLAY_MS = 600;
         const MAX_TIMEOUT_MS = 3000;
 
-        // FIX 10B (2026-04-29) — re-enabled. LoadingMascotContainer's
-        // _buildMascot still dumps 12 unbudgeted Graphics in its AFTER_DRAW
-        // tick, but with the LandingFX flood now budgeted (PER_TICK_BUDGET=6
-        // in safeGraphics), tick 1 total stays at ~18 (12 LandingMascot +
-        // 6 queued) which is the empirically-safe number.
-        this._showLoadingOverlay('Preparing your dashboard…');
+        // FIX 10E (2026-04-29) — RE-DISABLED. Activating LoadingOverlay
+        // fires LoadingMascotContainer.onLoad which queues a second
+        // _buildMascot. Even with atomic queue (Fix 10C) and auto-signin
+        // defer (Fix 10D), tick 2 DRAW still SIGSEGVs. Cumulative tree-state
+        // trigger we couldn't isolate. Phase 2 cure: pre-place LoadingOverlay
+        // subtree's render entities in scene, then re-enable.
+        // this._showLoadingOverlay('Preparing your dashboard…');
 
         // Race: phase3 done OR 3s timeout. .catch() prevents promise
         // rejection from short-circuiting the race.
@@ -11468,9 +11507,12 @@ export class AppUI extends Component {
             const mascotN = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
             const cx = mascotN ? mascotN.position.x : 0;
             const cy = mascotN ? mascotN.position.y : 0;
+            // 2026-04-29 polish — bloom radii cut (outer 354→268, -24%) and
+            // alpha curve cut (inner 35→23, -34%) so the rings frame the
+            // mascot pocket instead of washing the whole canvas.
             for (let i = 11; i >= 0; i--) {
-                const r = 90 + i * 24;
-                const a = Math.max(0, 2 + (11 - i) * 3);  // outer 2 → inner 35
+                const r = 70 + i * 18;
+                const a = Math.max(0, 1 + (11 - i) * 2);  // outer 1 → inner 23
                 bg.fillColor = new Color(glow.r, glow.g, glow.b, a);
                 bg.circle(cx, cy, r);
                 bg.fill();
@@ -11508,11 +11550,11 @@ export class AppUI extends Component {
             g.fillColor = new Color(0, 0, 0, 110);
             g.ellipse(0, -110, 110, 22);
             g.fill();
-            // 2026-04-29 win-screen redesign — halo dimmed + tightened
-            // (200→160 radius, α 235→180) so the mascot reads as the focus
-            // and the halo supports rather than dominates.
-            g.fillColor = new Color(glow.r, glow.g, glow.b, 180);
-            g.circle(0, 0, 160);
+            // 2026-04-29 game-over polish — halo further reduced
+            // (160→108 radius -32%, α 180→115 -36%) so the glow only
+            // highlights the mascot pocket, not the whole frame.
+            g.fillColor = new Color(glow.r, glow.g, glow.b, 115);
+            g.circle(0, 0, 108);
             g.fill();
             const op = this._postMatchMascotGlowOpacity;
             Tween.stopAllByTarget(op);
@@ -11604,21 +11646,29 @@ export class AppUI extends Component {
             const myPubkey = MWAManager.instance?.connectedPubkey ?? '';
             const myName = myPubkey ? this._getDisplayName(myPubkey) : '';
             const isUsername = myName && !myName.includes('…');
+            // 2026-04-29 polish — long usernames broke the title row. Truncate
+            // at 12 chars and stack "YOU WON\n{NAME}" on two lines so 52pt
+            // type fits inside the 620px slot regardless of name length.
+            const safeName = isUsername
+                ? (myName.length > 12 ? myName.slice(0, 12) + '…' : myName)
+                : '';
             if (outcome.placement != null && outcome.totalPlayers != null && outcome.totalPlayers > 2) {
                 title = `${nth(outcome.placement)} OF ${outcome.totalPlayers}`;
             } else if (outcome.won) {
-                title = isUsername ? `YOU WON, ${myName.toUpperCase()}` : 'YOU WON';
+                title = safeName ? `YOU WON\n${safeName.toUpperCase()}` : 'YOU WON';
             } else {
                 title = 'SO CLOSE…';
             }
             this._postMatchTitleLabel.string = title;
-            // 2026-04-27 v2 — pure white title for max contrast against the new
-            // dark base; accent-tinted outline gives it color identity. Bumped
-            // size 44→64 and tightened spacing per UX spec.
+            // 2026-04-29 polish — title 64→52pt (~19% reduction), lineHeight
+            // 70→58. Wrap stays on as a safety net; the explicit \n above is
+            // the primary mechanism for the two-line stack.
             this._postMatchTitleLabel.color = new Color(255, 255, 255, 255);
-            this._postMatchTitleLabel.fontSize = 64;
-            this._postMatchTitleLabel.lineHeight = 70;
+            this._postMatchTitleLabel.fontSize = 52;
+            this._postMatchTitleLabel.lineHeight = 58;
             this._postMatchTitleLabel.spacingX = -1;
+            this._postMatchTitleLabel.enableWrapText = true;
+            (this._postMatchTitleLabel as any).overflow = Label.Overflow.RESIZE_HEIGHT;
             (this._postMatchTitleLabel as any).enableOutline = true;
             (this._postMatchTitleLabel as any).outlineColor = new Color(accent.r, accent.g, accent.b, 220);
             (this._postMatchTitleLabel as any).outlineWidth = 3;
