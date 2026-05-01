@@ -59,16 +59,20 @@ function _schedulePump(): void {
     _pumpScheduled = true;
     director.once(Director.EVENT_AFTER_DRAW, () => {
         _pumpScheduled = false;
-        for (let i = 0; i < PER_TICK_BUDGET && _queue.length > 0; i++) {
-            const work = _queue.shift();
-            if (!work) break;
-            try {
-                work();
-            } catch (e) {
-                console.error(`${TAG} queued work threw: ${e}`);
+        try {
+            for (let i = 0; i < PER_TICK_BUDGET && _queue.length > 0; i++) {
+                const work = _queue.shift();
+                if (!work) break;
+                try {
+                    work();
+                } catch (e) {
+                    console.error(`${TAG} queued work threw: ${e}`);
+                }
             }
+            if (_queue.length > 0) _schedulePump();
+        } catch (e: any) {
+            console.error(`${TAG}:PUMP_THREW msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`);
         }
-        if (_queue.length > 0) _schedulePump();
     });
 }
 
@@ -149,11 +153,15 @@ export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOn
     const throwOnUnsafe = opts.throwOnUnsafe ?? isDev;
 
     director.on(Director.EVENT_AFTER_DRAW, () => {
-        _tickNum++;
-        _firstDrawCompleted = true;
-        _inAfterDrawWindow = true;
-        // Window closes at next event-loop turn (after AFTER_DRAW handlers fire).
-        Promise.resolve().then(() => { _inAfterDrawWindow = false; });
+        try {
+            _tickNum++;
+            _firstDrawCompleted = true;
+            _inAfterDrawWindow = true;
+            // Window closes at next event-loop turn (after AFTER_DRAW handlers fire).
+            Promise.resolve().then(() => { _inAfterDrawWindow = false; });
+        } catch (e: any) {
+            console.error(`${TAG}:WATCHER_THREW msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`);
+        }
     });
 
     // Monkey-patch addComponent to instrument Graphics creations during boot.

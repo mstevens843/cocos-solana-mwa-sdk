@@ -19,6 +19,7 @@
 
 import { BirdeyeClient } from './birdeye/BirdeyeClient';
 import { PriceUpdate, TokenRow } from './birdeye/types';
+import { JupiterPriceClient } from './jupiter/JupiterPriceClient';
 import { PRICE_FEED_POLL_MS } from './constants';
 import { TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW } from './ModeDefs';
 
@@ -28,6 +29,14 @@ export type PriceTickListener = (updates: Record<string, PriceUpdate>) => void;
 
 export class PriceFeed {
     private readonly _client: BirdeyeClient;
+    /**
+     * Lazy-init fallback price source. Birdeye `/defi/multi_price` has
+     * narrower coverage than its trending feed; squad picks that came from
+     * trending sometimes never resolve via multi_price (small-caps and
+     * pump.fun graduates), which would otherwise freeze each player card
+     * at +0.00% for the whole race. Jupiter fills those gaps.
+     */
+    private _jupiterClient: JupiterPriceClient | null = null;
     private _timer: number | null = null;
     private _lastMints: string[] = [];
     /** Part 9: currently-selected Birdeye `type` param (1h/24h/3d/7d). */
@@ -100,10 +109,24 @@ export class PriceFeed {
             console.log(`${TAG} getSpotPrices | EMPTY_MINTS returning {}`);
             return {};
         }
-        const resolved = await this._client.spotPriceMulti(mints);
-        const missing = mints.length - Object.keys(resolved).length;
-        console.log(`${TAG} getSpotPrices | DONE mints=${mints.length} resolved=${Object.keys(resolved).length} missing=${missing}`);
-        return resolved;
+        const birdeye = await this._client.spotPriceMulti(mints);
+        const missing = mints.filter((m) => !(m in birdeye));
+        if (missing.length === 0) {
+            console.log(`${TAG} getSpotPrices | DONE mints=${mints.length} birdeye=${Object.keys(birdeye).length} jupiter=0 still_missing=0`);
+            return birdeye;
+        }
+        // Jupiter fallback for the long tail Birdeye doesn't index. Lazy-init
+        // because most well-known mints resolve via Birdeye and the client is
+        // never needed.
+        if (!this._jupiterClient) this._jupiterClient = new JupiterPriceClient();
+        const jupiter = await this._jupiterClient.fetchPrices(missing);
+        // Birdeye wins on overlap (it can't happen since we only asked Jupiter
+        // for mints Birdeye missed, but spread order makes the precedence
+        // explicit — defensive against future contract drift).
+        const merged: Record<string, number> = { ...jupiter, ...birdeye };
+        const stillMissing = mints.length - Object.keys(merged).length;
+        console.log(`${TAG} getSpotPrices | DONE mints=${mints.length} birdeye=${Object.keys(birdeye).length} jupiter=${Object.keys(jupiter).length} total=${Object.keys(merged).length} still_missing=${stillMissing}`);
+        return merged;
     }
 
     /**

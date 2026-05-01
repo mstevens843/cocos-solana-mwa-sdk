@@ -15,6 +15,7 @@
 
 import { Holding } from './TokenDuelRpc';
 import { PriceFeed } from './PriceFeed';
+import { DEMO_FAKE_PRICES } from './DemoFlags';
 
 const TAG = '[PortfolioRace]';
 
@@ -89,6 +90,12 @@ export class PortfolioRace {
     private _consecutiveFetchErrors = 0;
     /** Phase F6 — last connection state we emitted, to avoid spam. */
     private _lastConnectionState: 'ok' | 'degraded' | 'lost' | null = null;
+    /**
+     * DEMO_FAKE_PRICES path — pre-computed per-mint final delta at t=windowMs.
+     * Each `_tick` interpolates from 0 → final with an eased S-curve + jitter,
+     * matching `LiveSquadBot.deltaAt` so player and bot animate the same way.
+     */
+    private _syntheticFinalDeltas: Map<string, number> = new Map();
 
     constructor(opts: PortfolioRaceOptions) {
         this._opts = opts;
@@ -106,7 +113,12 @@ export class PortfolioRace {
         this._running = true;
 
         this._mintKeys = this._collectMintKeys(this._opts.tokens);
-        console.log(`${TAG} start | tokens=${this._opts.tokens.length} mints=${this._mintKeys.length} windowMs=${this._opts.windowMs}`);
+        console.log(`${TAG} start | tokens=${this._opts.tokens.length} mints=${this._mintKeys.length} windowMs=${this._opts.windowMs} fake_prices=${DEMO_FAKE_PRICES}`);
+
+        if (DEMO_FAKE_PRICES) {
+            await this._startSynthetic();
+            return;
+        }
 
         // 1. Fetch entry prices at RACE START — NOT at squad-pick time.
         // Fairness invariant: entry = spot price in the moment the race begins,
@@ -174,11 +186,11 @@ export class PortfolioRace {
 
         // 3. Start polling + arm window timer.
         this._startedAt = Date.now();
-        this._scheduleNextPoll();
         if (this._opts.windowMs > 0) {
             this._windowTimer = setTimeout(() => void this._finalize(), this._opts.windowMs);
         }
-        // Immediate first tick so UI shows entry state at t=0.
+        // Immediate first tick so UI shows entry state at t=0. _tick will
+        // re-schedule itself at completion via _scheduleNextPoll.
         void this._tick();
     }
 
@@ -222,6 +234,12 @@ export class PortfolioRace {
 
     private _scheduleNextPoll(): void {
         if (!this._running || this._completed) return;
+        // Idempotent — clear any pending timer first. Without this, calling
+        // _scheduleNextPoll twice (e.g. once in start() before the immediate
+        // _tick(), and again at the end of that _tick) leaves two timers
+        // armed; both fire near-simultaneously and produce rapid-fire ticks
+        // that retripped the UIModelProxy 0x28 SIGSEGV under DEMO_FAKE_PRICES.
+        if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
         const interval = this._pollIntervalFor(this._opts.windowMs);
         this._pollTimer = setTimeout(() => void this._tick(), interval);
     }
@@ -244,17 +262,22 @@ export class PortfolioRace {
         const remaining = this._opts.windowMs > 0 ? Math.max(0, this._opts.windowMs - elapsed) : 0;
 
         let current: Record<string, number>;
-        try {
-            current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
-            this._consecutiveFetchErrors = 0;
+        if (DEMO_FAKE_PRICES) {
+            current = this._buildSyntheticCurrent(elapsed);
             this._emitConnectionState('ok');
-        } catch (e: any) {
-            this._consecutiveFetchErrors += 1;
-            const state: 'degraded' | 'lost' = this._consecutiveFetchErrors >= 3 ? 'lost' : 'degraded';
-            this._emitConnectionState(state);
-            console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} consecutive=${this._consecutiveFetchErrors} state=${state} error=${e?.message ?? e} — skipping tick`);
-            this._scheduleNextPoll();
-            return;
+        } else {
+            try {
+                current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
+                this._consecutiveFetchErrors = 0;
+                this._emitConnectionState('ok');
+            } catch (e: any) {
+                this._consecutiveFetchErrors += 1;
+                const state: 'degraded' | 'lost' = this._consecutiveFetchErrors >= 3 ? 'lost' : 'degraded';
+                this._emitConnectionState(state);
+                console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} consecutive=${this._consecutiveFetchErrors} state=${state} error=${e?.message ?? e} — skipping tick`);
+                this._scheduleNextPoll();
+                return;
+            }
         }
         // Phase F6 — per-mint stale tracking.
         for (const mint of this._mintKeys) {
@@ -292,12 +315,17 @@ export class PortfolioRace {
         if (this._completed) return;
         if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
         let current: Record<string, number>;
-        try {
-            current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
-        } catch (e: any) {
-            console.log(`${TAG} finalize | FINALIZE_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — completing with 0% (no end prices)`);
-            this._completeOnce(0);
-            return;
+        if (DEMO_FAKE_PRICES) {
+            // Final tick at progress=1, no jitter — matches LiveSquadBot.finalOutcome.
+            current = this._buildSyntheticCurrent(this._opts.windowMs, /* finalize */ true);
+        } else {
+            try {
+                current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
+            } catch (e: any) {
+                console.log(`${TAG} finalize | FINALIZE_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — completing with 0% (no end prices)`);
+                this._completeOnce(0);
+                return;
+            }
         }
         const snapshot = this._buildSnapshot(current, this._opts.windowMs, 0);
         console.log(`${TAG} finalize | final_portfolio=${snapshot.portfolioDeltaPct.toFixed(2)}% resolved=${snapshot.resolvedCount}/${this._mintKeys.length}`);
@@ -335,5 +363,83 @@ export class PortfolioRace {
         }
         const portfolioDeltaPct = resolved > 0 ? sumPct / resolved : 0;
         return { elapsedMs: elapsed, remainingMs: remaining, perToken, portfolioDeltaPct, resolvedCount: resolved };
+    }
+
+    // ── DEMO_FAKE_PRICES path ────────────────────────────────────────
+    // Mirrors LiveSquadBot's seeded random walk so the player and bot
+    // animate the same way during a recorded demo. Not used when the
+    // flag is off — see DemoFlags.ts.
+
+    private async _startSynthetic(): Promise<void> {
+        for (const mint of this._mintKeys) {
+            this._entryPrices[mint] = 1; // sentinel; only ratio matters
+            const seed = this._deterministicSeed(mint, this._opts.windowMs);
+            const prng = this._mulberry32(seed);
+            // baseMagnitude 1.5% gives visibly-alive cards without looking absurd
+            // over a 30s window. Eased S-curve in _buildSyntheticCurrent damps
+            // the early ticks; mid-race deltas land in the ±0.5–1.5% range.
+            const baseMagnitude = 1.5;
+            const direction = prng() > 0.5 ? 1 : -1;
+            this._syntheticFinalDeltas.set(mint, direction * baseMagnitude * prng());
+        }
+        console.log(`${TAG} _startSynthetic | seeded mints=${this._mintKeys.length} finals=[${this._mintKeys.map((m) => `${m.slice(0, 4)}=${(this._syntheticFinalDeltas.get(m) ?? 0).toFixed(2)}%`).join(',')}]`);
+
+        if (this._opts.onBeforeStart) {
+            try {
+                await this._opts.onBeforeStart();
+            } catch (e) {
+                console.log(`${TAG} _startSynthetic | onBeforeStart_error ${e} — continuing`);
+            }
+        }
+
+        this._startedAt = Date.now();
+        if (this._opts.windowMs > 0) {
+            this._windowTimer = setTimeout(() => void this._finalize(), this._opts.windowMs);
+        }
+        // 500ms defer mirrors the Birdeye fetch delay the original `start()`
+        // path had. Without it, _onRaceTick fires at elapsed=1ms while
+        // race-start halo Graphics is still draining, retripping the
+        // UIModelProxy 0x28 SIGSEGV.
+        setTimeout(() => void this._tick(), 500);
+    }
+
+    private _buildSyntheticCurrent(elapsedMs: number, finalize: boolean = false): Record<string, number> {
+        const windowMs = Math.max(1, this._opts.windowMs);
+        const progress = Math.max(0, Math.min(1, elapsedMs / windowMs));
+        const eased = progress * progress * (3 - 2 * progress);
+        const out: Record<string, number> = {};
+        for (const mint of this._mintKeys) {
+            const entry = this._entryPrices[mint] ?? 1;
+            const final = this._syntheticFinalDeltas.get(mint) ?? 0;
+            let jitter = 0;
+            if (!finalize) {
+                const jitterSeed = this._deterministicSeed(mint, Math.floor(elapsedMs / 100));
+                jitter = (this._mulberry32(jitterSeed)() - 0.5) * 0.4; // ±0.2%
+            }
+            const deltaPct = final * eased + jitter;
+            out[mint] = entry * (1 + deltaPct / 100);
+        }
+        return out;
+    }
+
+    private _deterministicSeed(mint: string, bucket: number): number {
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < mint.length; i++) {
+            h = (h ^ mint.charCodeAt(i)) >>> 0;
+            h = Math.imul(h, 16777619) >>> 0;
+        }
+        h = (h ^ bucket) >>> 0;
+        h = Math.imul(h, 16777619) >>> 0;
+        return h;
+    }
+
+    private _mulberry32(seed: number): () => number {
+        let t = seed >>> 0;
+        return () => {
+            t = (t + 0x6D2B79F5) | 0;
+            let r = Math.imul(t ^ (t >>> 15), 1 | t);
+            r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+            return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+        };
     }
 }

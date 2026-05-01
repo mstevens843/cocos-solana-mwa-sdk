@@ -28,8 +28,15 @@
 import { PriceFeed } from './PriceFeed';
 import { VETTED_MINTS, VettedMint, randomVettedTrio, randomTrioForDifficulty, BotDifficulty } from './VettedMints';
 import { BOT_DIFFICULTY_MULTIPLIERS } from './ModeDefs';
+import { DEMO_FAKE_PRICES } from './DemoFlags';
 
 const TAG = '[SquadBot]';
+
+// TODO: when DEMO_FAKE_PRICES === false, wire LiveSquadBot to poll real
+// Birdeye prices (mirroring PortfolioRace's live mode) so player + bot stay
+// symmetric. Today the bot is synthetic in both branches; the player honors
+// the flag, but the bot keeps its existing eased random walk regardless.
+// See assets/token-duel/scripts/DemoFlags.ts.
 
 export type { BotDifficulty } from './VettedMints';
 
@@ -109,7 +116,7 @@ export class LiveSquadBot {
         }
 
         this._startedAt = Date.now();
-        console.log(`${TAG} start | difficulty=${this._difficulty} mul=${diffMul.toFixed(2)} squad=[${this._squad.map((s) => `${s.symbol}(${s.seedVolatility.toFixed(1)}%→${(this._finalDeltas.get(s.mint) ?? 0).toFixed(2)}%)`).join(',')}] windowMs=${this._windowMs}`);
+        console.log(`${TAG} start | fake_prices=${DEMO_FAKE_PRICES} difficulty=${this._difficulty} mul=${diffMul.toFixed(2)} squad=[${this._squad.map((s) => `${s.symbol}(${s.seedVolatility.toFixed(1)}%→${(this._finalDeltas.get(s.mint) ?? 0).toFixed(2)}%)`).join(',')}] windowMs=${this._windowMs}`);
     }
 
     /**

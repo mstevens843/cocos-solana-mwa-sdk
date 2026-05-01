@@ -253,7 +253,7 @@ const pm = {
     // Mascot zone — center raised to free room for header above. Rings are
     // procedurally drawn from mascot._lpos.y (AppUI:10770) so glow follows.
     MASCOT_Y:         310,   // was 240 — center world 200; ~24 px above payout
-    MASCOT_GLOW_WH:   380,   // unchanged
+    MASCOT_GLOW_WH:   420,   // 2026-04-30 — bumped 380→420 to encompass the new 400 px halo disc
     MASCOT_BOX_WH:    340,   // unchanged
 
     // Reward punch — payout now sits near canvas vertical center.
@@ -312,11 +312,10 @@ pm.zones = {
         trophy:      -76,        // follow title shift
     },
     center: {                    // anchor: viewport vertical mid (panel-local 0)
-        // 2026-04-29 — slight upward nudge balances the now-lower hero block
-        // and leaves more vertical breathing room for bottom-zone stat grid.
-        // Ring bloom + floor shadow follow the mascot Y procedurally.
-        mascotGlow:       25,
-        mascotContainer:  25,
+        // 2026-04-30 — both at true center (was +25 nudge). User wants
+        // the mascot+glow stack dead-centered on screen.
+        mascotGlow:       0,
+        mascotContainer:  0,
     },
     bottom: {                    // anchor: viewport bottom + SAFE_AREA_BOT
         sameSquadBtn:    56,     // primary CTA, 56 px above safe-bottom

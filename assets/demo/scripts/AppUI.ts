@@ -293,6 +293,13 @@ export class AppUI extends Component {
     // green/red based on lead state; one-shot halo flash on lead reversal.
     private _raceAdvantageHaloNode: Node | null = null;
     private _raceAdvantageHaloOpacity: UIOpacity | null = null;
+    /**
+     * Last (r,g,b) actually applied to the halo via installSoftGlow. Used to
+     * skip redundant Graphics destroy/re-attach when _onRaceTick recomputes
+     * the same leader-state color tick after tick. Each unnecessary install
+     * is one more chance to retrip the UIModelProxy 0x28 SIGSEGV.
+     */
+    private _lastHaloColor: { r: number; g: number; b: number } | null = null;
     private _raceAdvantageBorderGfx: Graphics | null = null;
     private _raceAdvantageCaptionLabel: Label | null = null;
     private _raceAdvantageSubtextLabel: Label | null = null;
@@ -1180,15 +1187,47 @@ export class AppUI extends Component {
         }
         console.log(`${TAG} start | START`);
         console.log(`${TAG} start | CHK1 — entered start()`);
+        // 2026-04-30 — surface uncaught exceptions / promise rejections from
+        // anywhere in the app (tween updates, native binding callbacks, etc.)
+        // so per-frame [SE_ERROR] failures show their JS-side message + stack
+        // instead of dropping silently.
+        try {
+            const g: any = globalThis as any;
+            if (g && typeof g.addEventListener === 'function') {
+                g.addEventListener('error', (ev: any) => {
+                    console.log(`${TAG} GLOBAL_ERROR | msg=${ev?.message ?? ev?.error?.message ?? '(no msg)'} stack=${ev?.error?.stack ?? '(no stack)'} src=${ev?.filename ?? '?'}:${ev?.lineno ?? '?'}:${ev?.colno ?? '?'}`);
+                });
+                g.addEventListener('unhandledrejection', (ev: any) => {
+                    console.log(`${TAG} GLOBAL_UNHANDLED_REJECTION | reason=${ev?.reason?.message ?? ev?.reason ?? '(no reason)'} stack=${ev?.reason?.stack ?? '(no stack)'}`);
+                });
+                console.log(`${TAG} start | global error/rejection handlers installed`);
+            } else {
+                console.log(`${TAG} start | global error handler NOT supported on this runtime`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | global handler install threw: ${e?.message ?? e}`);
+        }
         // Frame heartbeat: log director update + draw ticks so we can see
         // whether the JS thread runs ANY frame after start() returns and
         // which engine phase the SIGSEGV occurs in.
         try {
             let beforeUpdN = 0, afterUpdN = 0, beforeDrawN = 0, afterDrawN = 0;
-            const onBeforeUpd = () => { beforeUpdN++; if (beforeUpdN <= 6) console.log(`${TAG} DIR_BEFORE_UPDATE n=${beforeUpdN}`); };
-            const onAfterUpd  = () => { afterUpdN++;  if (afterUpdN  <= 6) console.log(`${TAG} DIR_AFTER_UPDATE  n=${afterUpdN}`); };
-            const onBeforeDraw = () => { beforeDrawN++; if (beforeDrawN <= 6) console.log(`${TAG} DIR_BEFORE_DRAW   n=${beforeDrawN}`); };
-            const onAfterDraw  = () => { afterDrawN++;  if (afterDrawN  <= 6) console.log(`${TAG} DIR_AFTER_DRAW    n=${afterDrawN}`); };
+            const onBeforeUpd = () => {
+                try { beforeUpdN++; if (beforeUpdN <= 6) console.log(`${TAG} DIR_BEFORE_UPDATE n=${beforeUpdN}`); }
+                catch (e: any) { console.log(`${TAG} [FrameTrap:BEFORE_UPDATE_THREW] msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`); }
+            };
+            const onAfterUpd  = () => {
+                try { afterUpdN++;  if (afterUpdN  <= 6) console.log(`${TAG} DIR_AFTER_UPDATE  n=${afterUpdN}`); }
+                catch (e: any) { console.log(`${TAG} [FrameTrap:AFTER_UPDATE_THREW] msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`); }
+            };
+            const onBeforeDraw = () => {
+                try { beforeDrawN++; if (beforeDrawN <= 6) console.log(`${TAG} DIR_BEFORE_DRAW   n=${beforeDrawN}`); }
+                catch (e: any) { console.log(`${TAG} [FrameTrap:BEFORE_DRAW_THREW] msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`); }
+            };
+            const onAfterDraw  = () => {
+                try { afterDrawN++;  if (afterDrawN  <= 6) console.log(`${TAG} DIR_AFTER_DRAW    n=${afterDrawN}`); }
+                catch (e: any) { console.log(`${TAG} [FrameTrap:AFTER_DRAW_THREW] msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`); }
+            };
             director.on(Director.EVENT_BEFORE_UPDATE, onBeforeUpd);
             director.on(Director.EVENT_AFTER_UPDATE, onAfterUpd);
             director.on(Director.EVENT_BEFORE_DRAW, onBeforeDraw);
@@ -3467,9 +3506,13 @@ export class AppUI extends Component {
         try {
             let frameNum = 0;
             const frameHandler = () => {
-                frameNum++;
-                if (frameNum <= 5 || frameNum % 30 === 0) {
-                    console.log(`${TAG} frame | n=${frameNum} t=+${Date.now() - startedAt}ms — render alive`);
+                try {
+                    frameNum++;
+                    if (frameNum <= 5 || frameNum % 30 === 0) {
+                        console.log(`${TAG} frame | n=${frameNum} t=+${Date.now() - startedAt}ms — render alive`);
+                    }
+                } catch (e: any) {
+                    console.log(`${TAG} [FrameTrap:FRAME_PROBE_THREW] msg=${e?.message ?? e} stack=${e?.stack ?? '(no stack)'}`);
                 }
             };
             director.on(Director.EVENT_AFTER_DRAW, frameHandler);
@@ -4325,7 +4368,7 @@ export class AppUI extends Component {
      *  the eased _mipDuelBarPos[idx]. Mirrors _drawDuelBarFill but per-row. */
     private _drawMipDuelBarFill(idx: number): void {
         const g = this._mipDuelBarFills[idx];
-        if (!g) return;
+        if (!g || !g.isValid) return;
         const pos = this._mipDuelBarPos[idx] ?? 0;
         const halfW = AppUI.MIP_DUEL_BAR_HALF_W;
         const px = pos * halfW;
@@ -4351,7 +4394,7 @@ export class AppUI extends Component {
     /** Draw the duel-bar leading-tip glow with breathing alpha (1.5Hz). */
     private _drawMipDuelBarGlow(idx: number, now: number): void {
         const g = this._mipDuelBarGlows[idx];
-        if (!g) return;
+        if (!g || !g.isValid) return;
         const pos = this._mipDuelBarPos[idx] ?? 0;
         const halfW = AppUI.MIP_DUEL_BAR_HALF_W;
         const px = pos * halfW;
@@ -4398,7 +4441,7 @@ export class AppUI extends Component {
         const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
         for (let i = 0; i < this._mipMatches.length; i++) {
             const row = this._mipRowNodes[i];
-            if (!row || !row.active) continue;
+            if (!row || !row.isValid || !row.active) continue;
             // Ease duel-bar position toward target (lerp factor 0.12 ≈ 8-frame settle).
             const cur = this._mipDuelBarPos[i] ?? 0;
             const target = this._mipDuelBarTargetPos[i] ?? 0;
@@ -4409,7 +4452,7 @@ export class AppUI extends Component {
             const glow = this._mipCardGlows[i];
             const frac = this._mipRowFraction[i] ?? 1;
             const state = this._mipRowLeaderState[i] ?? 'pregame';
-            if (glow) {
+            if (glow && glow.isValid) {
                 let a = 0;
                 if (state === 'pregame') {
                     a = 36;
@@ -4425,7 +4468,7 @@ export class AppUI extends Component {
             // active rows; muted in pregame so the CTA doesn't shout before
             // the round starts mattering.
             const rg = this._mipResumeGlows[i];
-            if (rg) {
+            if (rg && rg.isValid) {
                 const a = state === 'pregame'
                     ? Math.round(20 + 25 * breatheSlow)
                     : Math.round(30 + 60 * breatheSlow);
@@ -5390,10 +5433,13 @@ export class AppUI extends Component {
             console.log(`${TAG} phase3 | mascot_apply CALLING setSpriteSheet (per-state)`);
             this._mascot?.setSpriteSheet(mascotFramesByState);
             this._postMatchMascot?.setSpriteSheet(mascotFramesByState);
-            this._landingMascot?.setSpriteSheet(mascotFramesByState);
-            this._raceMascot?.setSpriteSheet(mascotFramesByState);
+            // Landing + race intentionally stay on mascot-ref.png from Step 1:
+            // the Seedance idle/think frames bake in a light-gray halo (ffmpeg
+            // chroma-key is too tight) and contain no sparkles, while the ref
+            // artwork has clean alpha + sparkles painted in. Procedural idle
+            // bob in MascotController still runs over the single-frame ref.
             for (const tm of this._tutorialMascots) tm?.setSpriteSheet(mascotFramesByState);
-            console.log(`${TAG} phase3 | mascot UPGRADED to per-state frame sequences (4 + tutorial)`);
+            console.log(`${TAG} phase3 | mascot UPGRADED to per-state frame sequences (home+postmatch+tutorial; landing/race stay on ref)`);
         } else if (!mascotFrame) {
             console.log(`${TAG} phase3 | mascot FAILED — falling back to procedural body`);
             this._mascot?.showProceduralFallback();
@@ -7980,6 +8026,11 @@ export class AppUI extends Component {
 
     /** Build static card visuals once (caption text+color, halo soft glow, border seed). */
     private _initAdvantageCardVisuals(): void {
+        // Reset the halo-color memo so the next _setAdvantageHaloColor call
+        // performs a real install (this method runs on every race-panel
+        // open, after which the halo Graphics may have been destroyed by
+        // teardown).
+        this._lastHaloColor = null;
         if (this._raceAdvantageCaptionLabel) {
             this._raceAdvantageCaptionLabel.string = 'ROUND ADVANTAGE';
             this._raceAdvantageCaptionLabel.color = new Color(168, 174, 201);
@@ -8025,16 +8076,23 @@ export class AppUI extends Component {
         return;
     }
 
-    /** Re-color the soft halo — uses LandingFX.installSoftGlow's force flag. */
+    /** Re-color the soft halo — uses LandingFX.installSoftGlow's force flag.
+     *  Cached: skip when the color hasn't changed. Without the cache, every
+     *  _onRaceTick re-installs Graphics on the halo node even when the
+     *  leader-state hasn't flipped — retripping the UIModelProxy 0x28 bug
+     *  under fast tick cadences. */
     private _setAdvantageHaloColor(r: number, g: number, b: number): void {
         const node = this._raceAdvantageHaloNode;
         if (!node) return;
+        const last = this._lastHaloColor;
+        if (last && last.r === r && last.g === g && last.b === b) return;
         installSoftGlow(node, {
             color: new Color(r, g, b),
             peakAlpha: 28,
             rings: 14,
             force: true,
         });
+        this._lastHaloColor = { r, g, b };
     }
 
     /** One-shot halo brighten on lead reversal — surge then settle (~600ms).
@@ -11426,6 +11484,27 @@ export class AppUI extends Component {
         modeLabel?: string;     // Session D Part 6: "4p Pot" etc.
     }): void {
         if (!this._postMatchPanel) return;
+        // 2026-04-30 — pause the MIP per-frame tick while the post-match
+        // panel is up. _onGameOver → _teardownMatchRuntime tears down the
+        // local match's MIP row + cached Graphics/UIRenderer comps; the
+        // tick's existing `if (!row || !row.active)` guard catches null
+        // rows but not destroyed components — those throw via JSB on every
+        // frame. Same input-dispatcher-starvation symptom as the Birdeye
+        // SSL storm noted below; same pause-on-show pattern. Restart on
+        // _setActivePanel('mip') re-entry is already wired (4044 → 4683).
+        this._stopMipTick();
+        // 2026-04-30 — pause Birdeye trending poll while on post-match. The
+        // panel shows zero token logos; running the poll just queues 20 image
+        // fetches into hidden sprites, and SSL failures on a few of those URLs
+        // (irys.xyz, nftstorage.link) deliver rejections through Cocos's
+        // downloader that the engine logs as uncaught [SE_ERROR]. The
+        // resulting JS-thread storm starves the input dispatcher → CTA taps
+        // don't register. Resumed by _onPostMatchBack / _onPostMatchAgain.
+        if (this._feedPollTimer !== null) {
+            clearInterval(this._feedPollTimer as unknown as number);
+            this._feedPollTimer = null;
+            console.log(`${TAG} _showPostMatchPanel | feed_poll_paused`);
+        }
         this._tokenDuelPanel.active = false;
         this._postMatchPanel.active = true;
         // Re-entry safety: stop any in-flight pulse from a prior result show
@@ -11455,6 +11534,19 @@ export class AppUI extends Component {
         if (_backLink) _backLink.active = false;
         const ssBtnShow = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
         ensureInteractable(ssBtnShow, 'sameSquad');
+        // Defensive show-time reset on the two visible CTAs — a re-entry from
+        // a prior round (or a finalizer-stop race) can leave node.active or
+        // interactable in a half-state. Force both to a known-good state
+        // before the cascade pre-hide owns opacity. Idempotent.
+        const _resetCta = (name: string) => {
+            const n = this._postMatchPanel?.getChildByName(name);
+            if (!n) return;
+            n.active = true;
+            const btn = n.getComponent(Button);
+            if (btn) btn.interactable = true;
+        };
+        _resetCta('PostMatchSameSquadButton');
+        _resetCta('PostMatchAgainButton');
         // Cascade safety: cancel any in-flight beats from a prior result show
         // before we re-prep. Re-entry (back-to-back matches) would otherwise
         // double-fire setTimeouts.
@@ -11553,11 +11645,11 @@ export class AppUI extends Component {
             g.fillColor = new Color(0, 0, 0, 110);
             g.ellipse(0, -110, 110, 22);
             g.fill();
-            // 2026-04-29 game-over polish — halo further reduced
-            // (160→108 radius -32%, α 180→115 -36%) so the glow only
-            // highlights the mascot pocket, not the whole frame.
+            // 2026-04-30 — halo bumped to 200 r so the 340 px-wide mascot
+            // sits inside the colored disc with ~30 px breathing room on
+            // each side. Alpha 115 unchanged (still subtle, not flooding).
             g.fillColor = new Color(glow.r, glow.g, glow.b, 115);
-            g.circle(0, 0, 108);
+            g.circle(0, 0, 200);
             g.fill();
             const op = this._postMatchMascotGlowOpacity;
             Tween.stopAllByTarget(op);
@@ -11573,11 +11665,11 @@ export class AppUI extends Component {
             Tween.stopAllByTarget(glowNode);
             glowNode.setScale(1, 1, 1);
         }
-        // Staging pass: mascot is the centerpiece — 1.30× over the dimmed
-        // rings so the celebrate/lose animation is unmissable.
+        // Staging pass: mascot at 1.0× — matches landing/home idle size.
+        // (Was 1.30× as a "centerpiece"; user preferred the previous size.)
         const mascotContainer = this._postMatchPanel?.getChildByName('PostMatchMascotContainer');
         if (mascotContainer) {
-            mascotContainer.setScale(1.30, 1.30, 1);
+            mascotContainer.setScale(1.0, 1.0, 1);
             // Hide until Beat 3 — prevents the procedural idle bob from
             // showing before celebrate/lose plays.
             const mop = this._ensureOpacity(mascotContainer);
@@ -12098,6 +12190,25 @@ export class AppUI extends Component {
         this._scheduleRevealBeat(1700, beatCards);
         this._scheduleRevealBeat(2400, beatXpTrophy);
         this._scheduleRevealBeat(2700, beatCTAs);
+        // Safety net — if beat 7 is dropped by a re-entry / timer race, force
+        // the CTAs to a clickable state ~800ms after the cascade should end.
+        // Routed through _postMatchRevealTimers so re-entry clears it.
+        this._scheduleRevealBeat(3500, () => {
+            if (!this._postMatchPanel?.active) return;
+            const ensureLive = (name: string) => {
+                const n = this._postMatchPanel?.getChildByName(name);
+                if (!n) return;
+                n.active = true;
+                const op = this._ensureOpacity(n);
+                Tween.stopAllByTarget(op);
+                op.opacity = 255;
+                const btn = n.getComponent(Button);
+                if (btn) btn.interactable = true;
+            };
+            ensureLive('PostMatchSameSquadButton');
+            ensureLive('PostMatchAgainButton');
+            console.log(`${PMBTAG} CTA_SAFETY_NET | forced opacity=255 active=true interactable=true`);
+        });
 
         // Tap-to-skip finalizer — snaps every beat to its terminal state.
         this._postMatchCascadeFinalizer = () => {
@@ -12184,14 +12295,28 @@ export class AppUI extends Component {
         // Skip-suppress on PostMatch button taps so a fast tap doesn't race
         // the cascade-skip and mutate panel state out from under the button.
         if (this._postMatchPanel && !(this._postMatchPanel as any)._tapSkipBound) {
+            const ctaNames = new Set([
+                'PostMatchBackButton',
+                'PostMatchAgainButton',
+                'PostMatchSameSquadButton',
+                'PostMatchShareButton',
+            ]);
             this._postMatchPanel.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
                 const t = e.target as Node | null;
                 const tName = t?.name ?? 'null';
-                if (tName === 'PostMatchBackButton' ||
-                    tName === 'PostMatchAgainButton' ||
-                    tName === 'PostMatchSameSquadButton' ||
-                    tName === 'PostMatchShareButton') {
-                    console.log(`${PMBTAG} PANEL_TOUCH_END | SUPPRESS_SKIP target=${tName}`);
+                // Walk up the parent chain — event.target is the deepest hit
+                // node (often TitleLabel/SubtitleLabel children of a CTA), so
+                // a literal name match misses label-text taps and falls
+                // through to skip-finalizer, which Tween.stopAllByTarget's
+                // the CTAs mid-cascade and races the Button's CLICK emit.
+                let cur: Node | null = t;
+                let matched: string | null = null;
+                while (cur && cur !== this._postMatchPanel) {
+                    if (ctaNames.has(cur.name)) { matched = cur.name; break; }
+                    cur = cur.parent;
+                }
+                if (matched) {
+                    console.log(`${PMBTAG} PANEL_TOUCH_END | SUPPRESS_SKIP target=${tName} matched=${matched}`);
                     return;
                 }
                 console.log(`${PMBTAG} PANEL_TOUCH_END | RUN_SKIP target=${tName}`);
@@ -12759,6 +12884,32 @@ export class AppUI extends Component {
             clearTimeout(t as unknown as ReturnType<typeof setTimeout>);
         }
         this._postMatchRevealTimers = [];
+        // 2026-04-30 — stop persistent post-match tweens that aren't owned by
+        // _postMatchPanel itself. Tween.stopAllByTarget(panel) doesn't catch
+        // these because they target sibling UIOpacity / button nodes. Repeat-
+        // forever tweens on stale UIOpacity / Node handles are the most common
+        // per-frame [SE_ERROR] source on Cocos 3.8 native — clearing them on
+        // both panel re-entry and tap-to-skip eliminates the bleed.
+        try {
+            if (this._postMatchOutcomeBgOpacity) {
+                Tween.stopAllByTarget(this._postMatchOutcomeBgOpacity);
+            }
+            if (this._postMatchMascotGlowOpacity) {
+                Tween.stopAllByTarget(this._postMatchMascotGlowOpacity);
+            }
+            const ssBtn = this._postMatchPanel?.getChildByName('PostMatchSameSquadButton');
+            if (ssBtn) {
+                try { stopPulse(ssBtn); } catch (_) { /* tween not loaded */ }
+                Tween.stopAllByTarget(ssBtn);
+            }
+            const againBtn = this._postMatchPanel?.getChildByName('PostMatchAgainButton');
+            if (againBtn) {
+                try { stopPulse(againBtn); } catch (_) { /* tween not loaded */ }
+                Tween.stopAllByTarget(againBtn);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} _clearPostMatchRevealTimers | tween cleanup threw: ${e?.message ?? e}`);
+        }
     }
 
     /** Schedule a single beat in the post-match reveal cascade. */
@@ -12787,8 +12938,13 @@ export class AppUI extends Component {
         console.log(`${PMBTAG} HANDLER_FIRED back`);
         this._dumpAppState('post_match_back_enter');
         this._stopPostMatchPulseSync();
+        // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
+        // so no repeat-forever tween keeps ticking on a hidden node.
+        this._clearPostMatchRevealTimers();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
+        // Resume Birdeye polling now that we're back on Home (trade tab visible).
+        this._restartFeedPoll();
         console.log(`${TAG} _onPostMatchBack | BACK_TO_HOME`);
         this._dumpAppState('post_match_back_exit');
     }
@@ -12797,6 +12953,9 @@ export class AppUI extends Component {
         console.log(`${PMBTAG} HANDLER_FIRED again`);
         this._dumpAppState('post_match_again_enter');
         this._stopPostMatchPulseSync();
+        // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
+        // so no repeat-forever tween keeps ticking on a hidden node.
+        this._clearPostMatchRevealTimers();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Re-open picker so user can pick mode/wager again. Squad still intact.
@@ -12804,6 +12963,9 @@ export class AppUI extends Component {
             this._modePickerOverlay.active = true;
             this._refreshModePickerUi();
         }
+        // Resume Birdeye polling. ModePicker overlays the home/trade panel;
+        // the trade tab becomes visible again as soon as the user picks a mode.
+        this._restartFeedPoll();
         console.log(`${TAG} _onPostMatchAgain | RE_OPEN_PICKER`);
         this._dumpAppState('post_match_again_exit');
     }
