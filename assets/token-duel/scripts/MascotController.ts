@@ -100,25 +100,40 @@ export class MascotController extends Component {
     }
 
     update(dt: number): void {
-        // PROBE: confirm MascotController.update is reached after start.
-        const TAG_LOCAL = '[Mascot:update]';
-        if (((this as any)._frameNum = (((this as any)._frameNum ?? 0) + 1)) <= 3) {
-            console.log(`${TAG_LOCAL} n=${(this as any)._frameNum} state=${this._state} useSheet=${this._useSpriteSheet}`);
-        }
-        if (this._useSpriteSheet) {
-            this._cycleFrames(dt);
-            return;
-        }
-        if (this._state !== 'idle') return;
-        // The deferred _buildMascot (scheduleOnce in onLoad) hasn't fired on
-        // tick 1 yet, so the body/wand refs are still null. Bail until built —
-        // otherwise _twirl reads `null.angle` and throws every frame.
-        if (!this._wandNode) return;
-        this._idleTimer += dt;
-        this._idleWandCooldown -= dt;
-        if (this._idleWandCooldown <= 0) {
-            this._twirl(this._wandNode, 1, 0.8);
-            this._idleWandCooldown = 5 + Math.random() * 4;
+        // 2026-05-01 — wrap entire body so a single throw (e.g. assigning
+        // spriteFrame on a destroyed Sprite, or _twirl on a stale wand node)
+        // can't escalate to a 60 fps JSB error storm that starves input
+        // dispatch. AppUI keys the post-game-over storm investigation on this
+        // exact pattern. Throttle log to 1/sec/state to avoid self-spam.
+        try {
+            // PROBE: confirm MascotController.update is reached after start.
+            const TAG_LOCAL = '[Mascot:update]';
+            if (((this as any)._frameNum = (((this as any)._frameNum ?? 0) + 1)) <= 3) {
+                console.log(`${TAG_LOCAL} n=${(this as any)._frameNum} state=${this._state} useSheet=${this._useSpriteSheet}`);
+            }
+            if (this._useSpriteSheet) {
+                this._cycleFrames(dt);
+                return;
+            }
+            if (this._state !== 'idle') return;
+            // The deferred _buildMascot (scheduleOnce in onLoad) hasn't fired on
+            // tick 1 yet, so the body/wand refs are still null. Bail until built —
+            // otherwise _twirl reads `null.angle` and throws every frame.
+            if (!this._wandNode || !this._wandNode.isValid) return;
+            this._idleTimer += dt;
+            this._idleWandCooldown -= dt;
+            if (this._idleWandCooldown <= 0) {
+                this._twirl(this._wandNode, 1, 0.8);
+                this._idleWandCooldown = 5 + Math.random() * 4;
+            }
+        } catch (e: any) {
+            const now = Date.now();
+            const last = (this as any)._lastUpdateErrAt ?? 0;
+            if (now - last >= 1000) {
+                (this as any)._lastUpdateErrAt = now;
+                const stack = (e?.stack ?? '').split('\n').slice(0, 3).join(' | ');
+                console.log(`[TickErr] name=mascot state=${this._state} msg=${e?.message ?? e} stack=${stack}`);
+            }
         }
     }
 

@@ -17,20 +17,19 @@ import { Color } from 'cc';
 
 export const Palette = {
     bg: {
-        primary:   '#0B0E1A',
-        // 2026-04-27 UI overhaul: #151929 → #121826 per arena-UI spec.
-        surface:   '#121826',
-        card:      '#1E2438',
-        cardHover: '#252B42',
+        // 2026-04-30 v3 — wine eggplant rollout (Option 3, user-confirmed).
+        // Slightly transparent panels (alpha 235) sit over the purple/green
+        // game bg without competing with mascot's gold/violet/teal accents.
+        primary:   '#0A0410',  // drawer/modal backdrop
+        surface:   '#1A0820',  // primary card surface
+        card:      '#1A0820',  // canonical card body
+        cardHover: '#321448',  // hover lift
         // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
-        gradientTop: '#1A0B2E',  // deep purple at top
-        gradientBot: '#050810',  // near-black at bottom
-        // 2026-04-28 Hub-tab visibility upgrade — segmented-pill containers
-        // need edge contrast against the panel surface. pillTray sits ~6%
-        // brighter than `surface`; pillTrayHi gives the primary (violet) hub
-        // pill an extra step of contrast over secondary (teal) sub-pills.
-        pillTray:   '#1F2438',
-        pillTrayHi: '#262C44',
+        gradientTop: '#1A0B2E',
+        gradientBot: '#050810',
+        // Pill trays/chips: one step lighter than card so chips read as inset.
+        pillTray:   '#241030',
+        pillTrayHi: '#321448',
     },
     accent: {
         violet:    '#9945FF',  // Solana violet
@@ -44,15 +43,18 @@ export const Palette = {
         roseDim:   '#C13B6A',
     },
     text: {
-        hi:      '#F4F5F9',
-        mid:     '#A8AEC9',
-        lo:      '#5D6485',
-        inverse: '#0B0E1A',
+        // 2026-04-30 high-contrast pass: kill the blue-grey wash. Secondary
+        // text now resolves to warm-neutral whites at fixed alphas so labels
+        // read like a competitive HUD, not a muted dashboard.
+        hi:      '#FFFFFF',  // was '#F4F5F9' — pure white for titles/values
+        mid:     '#B8B8B8',  // was '#A8AEC9' — secondary readable (~72%)
+        lo:      '#8C8C8C',  // was '#5D6485' — last-resort tiny helper text
+        inverse: '#05070D',  // matches new bg.primary
     },
     status: {
         win:     '#14F195',
         loss:    '#FF4D4D',
-        neutral: '#A8AEC9',
+        neutral: '#B8B8B8',  // was '#A8AEC9' — match text.mid
         warn:    '#FFB454',
     },
     rank: {
@@ -150,8 +152,8 @@ export const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 } as const;
 // bucketed dense/default/feature; elevation is bucketed base/elevated/
 // interactive. Edge accent color stays per-card-semantic (Palette.cardEdge.*).
 export const Card = {
-    bgHex: Palette.bg.card,            // '#1E2438'
-    bgAlpha: 230,                      // ~90% — replaces 130/255 drift
+    bgHex: Palette.bg.card,            // 2026-04-30: now '#0A0D14' (was '#1E2438')
+    bgAlpha: 235,                      // ~92% — slightly denser for black-glass read
     radiusPx: 16,                      // asset-driven; tokenized for docs
     padding: {
         dense:   12,                   // leaderboard rows, history rows

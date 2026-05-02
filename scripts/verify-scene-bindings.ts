@@ -266,6 +266,7 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'RacePanel',              components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'RaceCountdownLabel',     components: ['cc.Label'] },
     { name: 'RaceHeroDeltaLabel',     components: ['cc.Label'] },
+    { name: 'RaceOpponentPortfolioDeltaLabel', components: ['cc.Label'] },
     { name: 'RacePlayerLevelChip',    components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'RacePlayerLevelChipLabel', components: ['cc.Label'] },
     { name: 'PlayerTokenContributionBar_0', components: ['cc.Graphics'] },
@@ -274,6 +275,15 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'OpponentTokenContributionBar_0', components: ['cc.Graphics'] },
     { name: 'OpponentTokenContributionBar_1', components: ['cc.Graphics'] },
     { name: 'OpponentTokenContributionBar_2', components: ['cc.Graphics'] },
+    // 2026-05-01 race-card restyle — circular token icons, hidden-by-default
+    // until AppUI _loadLogoInto succeeds. UITransform present at scene-gen
+    // even when _active=false, but the Sprite component is what AppUI binds.
+    { name: 'PlayerTokenLogo_0', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'PlayerTokenLogo_1', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'PlayerTokenLogo_2', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'OpponentTokenLogo_0', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'OpponentTokenLogo_1', components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'OpponentTokenLogo_2', components: ['cc.UITransform', 'cc.Sprite'] },
     { name: 'RaceCancelButton',       components: ['cc.Button'] },
 
     // ── UX overhaul Phase 2: procedural mascot on HomePanel ──
@@ -331,6 +341,13 @@ const REQUIRED: Array<{ name: string; components: string[]; note?: string }> = [
     { name: 'PickerDifficultyEasy',         components: ['cc.Button'] },
     { name: 'PickerDifficultyMedium',       components: ['cc.Button'] },
     { name: 'PickerDifficultyHard',         components: ['cc.Button'] },
+
+    // ── 2026-04-30 arena redesign — viewport-anchored picker chrome ──
+    { name: 'PickerBackButton',             components: ['cc.Button'] },
+    { name: 'ModePickerSubtitleLabel',      components: ['cc.Label'] },
+    { name: 'PickerSummaryConnector',       components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'BtnGlow_PickerStartButton',    components: ['cc.UITransform', 'cc.Sprite'] },
+    { name: 'Ripple_PickerStartButton',     components: ['cc.UITransform', 'cc.Sprite'] },
 
     // ── Phase H4 — LevelUpOverlay cinematic ──
     { name: 'LevelUpOverlay',               components: ['cc.UITransform', 'cc.Sprite', 'cc.Button'] },

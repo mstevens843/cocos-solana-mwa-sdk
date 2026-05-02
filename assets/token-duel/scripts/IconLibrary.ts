@@ -40,7 +40,9 @@ export type IconName =
     // Phase N3 — Notification system
     | 'bell'
     // Phase N4 — Disconnect (Home wallet sign-out; Phase 3 PNG = disconnect.png)
-    | 'disconnect';
+    | 'disconnect'
+    // Matches In Progress row (Phase 3 PNG = play.png)
+    | 'play';
 
 export interface IconAttachOptions {
     /** Logical size in points; defaults to 32. */
@@ -833,6 +835,17 @@ function drawDisconnect(g: Graphics, size: number, color: Color): void {
     g.stroke();
 }
 
+function drawPlay(g: Graphics, size: number, color: Color): void {
+    g.fillColor = color;
+    const r = size * 0.30;
+    const x0 = -r * 0.55;
+    g.moveTo(x0, r);
+    g.lineTo(x0 + r * 1.1, 0);
+    g.lineTo(x0, -r);
+    g.close();
+    g.fill();
+}
+
 /* ── Registry ─────────────────────────────────────────────────────────── */
 
 REG.medalGold   = { draw: (g, s, c) => drawMedal(g, s, c, colorFromHex(Palette.accent.violet)),  tintHex: Palette.rank.gold,   emoji: '🥇' };
@@ -884,3 +897,4 @@ REG.clipboard   = { draw: drawClipboard,    tintHex: Palette.text.mid,     emoji
 REG.bell        = { draw: drawBell,         tintHex: Palette.text.hi,      emoji: '🔔' };
 // Phase N4 additions:
 REG.disconnect  = { draw: drawDisconnect,   tintHex: Palette.status.loss,  emoji: '⏻' };
+REG.play        = { draw: drawPlay,         tintHex: Palette.text.hi,      emoji: '▶' };

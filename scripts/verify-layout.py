@@ -324,8 +324,22 @@ def verify_panel(nodes: list, panel_idx: int, panel_name: str, allowed: list[tup
                 # 2026-04-27 — full-canvas outcome tint behind PostMatchPanel
                 # content (graphics rect, alpha-tweened by AppUI).
                 'OutcomeBgTint',
+                # 2026-04-30 UX rebuild — FilterCard is a section-bg sprite
+                # that intentionally sits behind the 3 filter row labels +
+                # pill mounts + Hide-Full toggle (siblings on FindMatchPanel).
+                'FilterCard',
             }
             if na in CARD_BG_NAMES or nb in CARD_BG_NAMES:
+                continue
+            # 2026-04-30 — full-canvas content scrims (HomeContentScrim,
+            # FindMatchContentScrim, ...) sit behind every panel child by
+            # design and overlap them all. Skip any pair involving one
+            # rather than enumerating ~25 allowedOverlaps per panel.
+            if na.endswith('ContentScrim') or nb.endswith('ContentScrim'):
+                continue
+            # Full-canvas particle layers (FindMatchAmbientLayer, …) are
+            # 720×1280 spawn surfaces. Same bleed-by-design as scrims.
+            if na.endswith('AmbientLayer') or nb.endswith('AmbientLayer'):
                 continue
             if frozenset((na, nb)) in allow_exact:
                 continue

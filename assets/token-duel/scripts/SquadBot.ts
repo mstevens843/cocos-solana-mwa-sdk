@@ -47,6 +47,10 @@ export interface BotSquadEntry {
     seedVolatility: number;
     /** The bot's current delta for this token at the most-recent sample tick. */
     deltaPct: number;
+    /** Birdeye logo URI carried through from the VettedMint pool, used by the
+     *  in-race opponent token cards. Optional — empty when the vetted entry
+     *  has no logoUri populated yet. */
+    logoUri?: string;
 }
 
 export interface BotRaceOutcome {
@@ -93,6 +97,7 @@ export class LiveSquadBot {
             symbol: p.symbol,
             seedVolatility: 0,
             deltaPct: 0,
+            logoUri: p.logoUri,
         }));
 
         // Seed each token's synthetic final delta. We use the 24h change as

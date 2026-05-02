@@ -19,3 +19,19 @@
  *           Wiring the bot to real Birdeye prices is a separate change.
  */
 export const DEMO_FAKE_PRICES = true;
+
+/**
+ * DEBUG_POSTMATCH — verbose post-match panel diagnostics.
+ *
+ * `true`  → AppUI dumps button health (active / interactable / contentSize /
+ *           UIOpacity / world AABB / parent-chain inactive ancestor) at
+ *           250 / 750 / 2000 / 4000 ms after the post-match panel is shown,
+ *           plus a one-shot list of any Canvas children with a higher
+ *           siblingIndex than PostMatchPanel that are active and visible.
+ *           Used to diagnose "Home / Pick New Squad buttons not clickable"
+ *           on native Android. Default true for one APK build, then flip
+ *           to false once the issue is verified fixed.
+ *
+ * `false` → no diagnostic dumps, normal behavior.
+ */
+export const DEBUG_POSTMATCH = true;

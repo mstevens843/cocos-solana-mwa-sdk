@@ -55,6 +55,11 @@ export interface Holding {
     mint: string;      // base58 mint, or '' for native SOL / empty slot
     symbol: string;    // 'SOL', 'BONK', etc.; '---' for empty slot
     uiAmount: number;  // amount / 10**decimals
+    /** Birdeye logo URI for the token. Optional; populated when the holding
+     *  was sourced from a squad pick (TokenRow has logoUri) and consumed by
+     *  the in-race token cards to render the circular icon. Empty / absent
+     *  for wallet-discovered fallback holdings. */
+    logoUri?: string;
 }
 
 /** On-chain leaderboard entry. Matches the 41-byte Rust struct exactly. */

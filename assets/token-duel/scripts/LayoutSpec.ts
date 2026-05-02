@@ -111,20 +111,27 @@ export const FINDMATCH_LAYOUT = {
     CARD_PADDING:    16,
     HEADER_Y:       750,   // back link / level chip
     TITLE_Y:        695,   // own row, no overlap with mode pill
-    STATUS_Y:       655,   // LIVE SYSTEM . N LOBBIES ACTIVE
-    TABS_Y:         590,   // Open Lobbies / Live Now segmented pill
-    FILTER_CARD:  { x: 0, y: 460, w: 640, h: 220 },
-    MODE_ROW_Y:     510,
-    WINDOW_ROW_Y:   460,
-    WAGER_ROW_Y:    410,
-    HIDE_FULL_Y:    372,
-    PRIMARY_CTA_Y:  320,
-    PRIMARY_CTA_W:  640,
-    PRIMARY_CTA_H:   64,
-    ROW_BASE_Y:     200,   // first lobby card center
+    STATUS_Y:       655,   // LIVE SYSTEM . N LOBBIES ACTIVE — runtime opacity 153
+    // 2026-04-30 UX rebuild — tabs lifted 590→615 so the active-tab glow halo
+    // (~16px alpha falloff) clears the FilterCard top edge by 24px instead of
+    // overlapping it by 3px. Filter section restructured to label-above-pill
+    // blocks (Mode / Duration / Stake), pills widen 440→600 (5×120w segments).
+    TABS_Y:         615,
+    FILTER_CARD:  { x: 0, y: 406, w: 640, h: 324 },
+    MODE_LABEL_Y:   541,   // label sits above pill (left-anchored caption)
+    MODE_ROW_Y:     502,   // pill centerY
+    WINDOW_LABEL_Y: 453,
+    WINDOW_ROW_Y:   414,
+    WAGER_LABEL_Y:  365,
+    WAGER_ROW_Y:    326,
+    HIDE_FULL_Y:    274,
+    PRIMARY_CTA_Y:  184,   // anchored as section divider between filters and lobby list
+    PRIMARY_CTA_W:  680,
+    PRIMARY_CTA_H:   72,
+    ROW_BASE_Y:      54,   // first lobby card center
     ROW_STRIDE_Y:  -156,   // 140h card + 16 gap
     ROW_HEIGHT:     140,
-    PAGINATION_Y:  -380,
+    PAGINATION_Y:  -508,
 } as const;
 
 // 2026-04-29 PostMatch viewport-aware 3-zone resolver. Mirrors pm.zones
@@ -313,23 +320,24 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             homeLastResultMeta:  { x: 0,    y: -34,  w: 620, h: 18,  type: 'label' },
             homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 116, type: 'sprite' },
             homeTournamentBadge: { x: 0,    y: 460,  w: 680, h: 108, type: 'chip' },
-            // V6 (2026-04-28) — CTA scale-up. Find HERO (teal, 136h, +8 over
-            // secondary tier), Start (purple, 104h), MIP (charcoal ghost, 104h),
-            // Bot (gold full-width, 104h). Uniform 18px gaps. Mirrors LayoutSpec.cjs.
-            findMatchBtn:        { x: 0,    y: 320,  w: 680, h: 136, type: 'btnSuccess' },
+            // V7 (2026-05-01) — CTA scale-up to 1.75x. Find HERO (teal, 160h),
+            // Start (purple, 122h), MIP (charcoal ghost, 122h), Bot (gold
+            // full-width, 122h). Uniform 18px gaps. FIND top stays at y=388.
+            // Mirrors LayoutSpec.cjs home.* constants.
+            findMatchBtn:        { x: 0,    y: 308,  w: 680, h: 160, type: 'btnSuccess' },
             findMatchSubtitle:   { x: 0,    y: -36,  w: 620, h: 20,  type: 'label' },
             findMatchChevron:    { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
             findMatchCountBadge: { x: 244,  y: 360,  w: 96,  h: 36,  type: 'badge' },
             findMatchActivityDot:{ x: -296, y: 372,  w: 10,  h: 10,  type: 'badge' },
-            startMatchBtn:       { x: 0,    y: 182,  w: 680, h: 104, type: 'btnPrimary' },
+            startMatchBtn:       { x: 0,    y: 149,  w: 680, h: 122, type: 'btnPrimary' },
             startMatchSubtitle:  { x: 0,    y: -26,  w: 620, h: 20,  type: 'label' },
             startMatchChevron:   { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            matchesInProgressBtn:        { x: 0,    y: 60,  w: 680, h: 104, type: 'btnGhost' },
+            matchesInProgressBtn:        { x: 0,    y: 9,   w: 680, h: 122, type: 'btnGhost' },
             matchesInProgressSubtitle:   { x: 0,    y: -28, w: 620, h: 16,  type: 'label' },
             matchesInProgressChevron:    { x: 310,  y: 0,   w: 24,  h: 24,  type: 'label' },
-            matchesInProgressCountBadge: { x: 244,  y: 84,  w: 88,  h: 32,  type: 'badge' },
-            matchesInProgressActivityDot:{ x: -296, y: 84,  w: 10,  h: 10,  type: 'badge' },
-            botMatchBtn:         { x: 0,    y: -62,  w: 680, h: 104, type: 'btnWarn' },
+            matchesInProgressCountBadge: { x: 244,  y: 42,  w: 88,  h: 32,  type: 'badge' },
+            matchesInProgressActivityDot:{ x: -296, y: 42,  w: 10,  h: 10,  type: 'badge' },
+            botMatchBtn:         { x: 0,    y: -131, w: 680, h: 122, type: 'btnWarn' },
             botMatchSubtitle:    { x: 0,    y: -24,  w: 620, h: 16,  type: 'label' },
             botMatchSubtitleLine2: { x: 0,  y: -42,  w: 620, h: 14,  type: 'label' },
             botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
@@ -338,7 +346,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // in spec to avoid breaking AppUI's mascot lookup when Home is
             // active (mascot is reparented to the HomePanel only by intent).
             mascot:              { x: 0,    y: -820, w: 160, h: 180, type: 'mascot' },
-            homeStatus:          { x: 0,    y: -148, w: 460, h: 16,  type: 'label' },
+            homeStatus:          { x: 0,    y: -220, w: 460, h: 16,  type: 'label' },
         },
         allowedOverlaps: [
             ['NotificationBellButton',  'NotificationBellBadge'],
@@ -373,43 +381,54 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['HomeXpBarTrack',          'HomeXpBarFill'],
         ],
     },
+    // KEEP IN SYNC with LayoutSpec.cjs ModePickerOverlay (2026-04-30 arena redesign).
     ModePickerOverlay: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            title:             { x: 0,    y: 580,  w: 600, h: 48, type: 'label' },
-            titleDivider:      { x: 0,    y: 548,  w: 240, h: 2,  type: 'sprite' },
-            cancelBtn:         { x: 290,  y: 580,  w: 44,  h: 44, type: 'btnGhost' },
-            sectionMode:       { x: 0,    y: 490,  w: 580, h: 18, type: 'label' },
-            sectionDuration:   { x: 0,    y: 200,  w: 580, h: 18, type: 'label' },
-            sectionTrack:      { x: 0,    y: 90,   w: 580, h: 18, type: 'label' },
-            sectionDifficulty: { x: 0,    y: -30,  w: 580, h: 18, type: 'label' },
-            paperToggle:       { x: -100, y: 40,   w: 200, h: 52, type: 'btnPrimary' },
-            realToggle:        { x: 100,  y: 40,   w: 200, h: 52, type: 'btnGhost' },
-            summaryCard:       { x: 0,    y: -200, w: 600, h: 130, type: 'group' },
-            startBtn:          { x: 0,    y: -340, w: 580, h: 96,  type: 'btnPrimary' },
-            statusLbl:         { x: 0,    y: -440, w: 600, h: 20,  type: 'label' },
+            backBtn:           { x: -290, y: 580,  w: 92,  h: 44, type: 'btnGhost' },
+            cancelBtn:         { x:  314, y: 580,  w: 44,  h: 44, type: 'btnGhost' },
+            title:             { x: 0,    y: 500,  w: 600, h: 44, type: 'label' },
+            titleDivider:      { x: 0,    y: 472,  w: 220, h: 3,  type: 'sprite' },
+            subtitle:          { x: 0,    y: 440,  w: 600, h: 22, type: 'label' },
+            sectionMode:       { x: 0,    y: 400,  w: 580, h: 18, type: 'label' },
+            sectionDuration:   { x: 0,    y: 80,   w: 580, h: 18, type: 'label' },
+            sectionTrack:      { x: 0,    y: -24,  w: 580, h: 18, type: 'label' },
+            paperToggle:       { x: -105, y: -72,  w: 200, h: 52, type: 'btnPrimary' },
+            realToggle:        { x:  105, y: -72,  w: 200, h: 52, type: 'btnGhost' },
+            sectionDifficulty: { x: 0,    y: -116, w: 580, h: 18, type: 'label' },
+            summaryCard:       { x: 0,    y: -322, w: 640, h: 196, type: 'group' },
+            summaryConnector:  { x: 0,    y: -432, w: 16,  h: 14,  type: 'sprite' },
+            startBtn:          { x: 0,    y: -516, w: 640, h: 132, type: 'btnPrimary' },
+            statusLbl:         { x: 0,    y: -612, w: 620, h: 20,  type: 'label' },
         },
         templates: {
-            modeBtn:       { count: 4, w: 320, h: 96 },
-            windowBtn:     { count: 6, w: 92,  h: 44, y: 148, baseX: -275, gapX: 110 },
-            difficultyBtn: { count: 3, w: 168, h: 44, y: -90, baseX: -186, gapX: 186 },
+            modeBtn:       { count: 4, w: 280, h: 140 },
+            windowBtn:     { count: 6, w: 92,  h: 52, y: 28,   baseX: -275, gapX: 110 },
+            difficultyBtn: { count: 3, w: 184, h: 56, y: -172, baseX: -200, gapX: 200 },
         },
         allowedOverlaps: [
             ['PickerSummaryCard', 'PickerSummaryModeLabel'],
             ['PickerSummaryCard', 'PickerSummaryModifiersLabel'],
             ['PickerSummaryCard', 'PickerSummaryStakeLabel'],
             ['PickerSummaryCard', 'CardEdgeAccent'],
+            ['PickerSummaryCard', 'PickerSummaryGradient'],
+            ['ModePickerTitleLabel', 'PickerCancelButton'],
+            ['ModePickerTitleLabel', 'PickerBackButton'],
+            ['PickerStartButton', 'BtnGlow_PickerStartButton'],
+            ['PickerStartButton', 'Ripple_PickerStartButton'],
         ],
     },
     RacePanel: {
         canvas: { w: 720, h: 1800 },
         elements: {
             // Battle-UI top row (2026-04-26): [Lv chip] (Timer) [+0.00%]
+            // 2026-05-01 — Timer ring scaled +15% (132→152). Top edge of circle
+            // is pinned to its prior world Y, so center drops 9 px (720→711).
             racePlayerLevelChip: { x: -260, y: 720, w: 120, h: 40,   type: 'chip' },
-            timerRing:           { x: 0,    y: 720, w: 132, h: 132,  type: 'graphics' },
-            countdownLabel:      { x: 0,    y: 720, w: 100, h: 32,   type: 'label' },
+            timerRing:           { x: 0,    y: 711, w: 152, h: 152,  type: 'graphics' },
+            countdownLabel:      { x: 0,    y: 711, w: 115, h: 37,   type: 'label' },
             heroDelta:           { x: 240,  y: 720, w: 220, h: 80,   type: 'label' },
-            playerTokenRow:      { x: 0,    y: 540, w: UNIFORM_LAYOUT.CONTENT_W, h: 110,  type: 'group' },
+            playerTokenRow:      { x: 0,    y: 540, w: UNIFORM_LAYOUT.CONTENT_W, h: 132,  type: 'group' },
             opponentSubtitle:    { x: 0,    y: 410, w: 620, h: 64,   type: 'label' },
             duelBarContainer:    { x: 0,    y: 300, w: 680, h: 80,   type: 'group' },
             advantageHalo:       { x: 0,    y: 110, w: 420, h: 200,  type: 'graphics' },
@@ -418,12 +437,16 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             opponentDelta:       { x: 0,    y: 110, w: 300, h: 90,   type: 'label' },
             advantageSubtext:    { x: 0,    y: 42,  w: 300, h: 24,   type: 'label' },
             opponentIdentityCard:{ x: 0,    y: -20,  w: 280, h: 44,   type: 'sprite' },
-            opponentTokenRow:    { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 110,  type: 'group' },
+            opponentTokenRow:    { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 132,  type: 'group' },
+            // 2026-05-01 — bot PnL pushed to -310 to mirror player PnL distance
+            // from cards (180 px center-to-center, matching heroDelta↔playerTokenRow).
+            opponentPortfolioDelta: { x: -240, y: -310, w: 220, h: 80, type: 'label' },
             opponentCard:        { x: 0,    y: -400, w: 640, h: 110, type: 'sprite' },
             opponentStrip:       { x: 0,    y: -406, w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
-            cancelBtn:           { x: 0,    y: -260, w: 140, h: 36,  type: 'btnGhost' },
-            hintLabel:           { x: 0,    y: -310, w: 620, h: 24,  type: 'label' },
-            mascot:              { x: 260,  y: -460, w: 120, h: 160, type: 'mascot' },
+            // 2026-05-01 — Forfeit / Home pushed -260 → -380 to clear bot-PnL row.
+            cancelBtn:           { x: 0,    y: -380, w: 140, h: 36,  type: 'btnGhost' },
+            hintLabel:           { x: 0,    y: -430, w: 620, h: 24,  type: 'label' },
+            mascot:              { x: 260,  y: -540, w: 120, h: 160, type: 'mascot' },
             vignette:            { x: 0,    y: 0,    w: 720, h: 1280, type: 'graphics' },
         },
         allowedOverlaps: [
@@ -444,19 +467,23 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     SettingsPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // Phase 30 — premium settings redesign. KEEP IN SYNC with LayoutSpec.cjs.
-            sheetBg:       { x: 0,    y: -40,  w: 692, h: 1180, type: 'sprite' },
+            // Phase 30 / 2026-04-30 polish — premium settings redesign. KEEP IN
+            // SYNC with LayoutSpec.cjs. Wallet h 124→96 (single identity row),
+            // Account h 232→200 (tighter rhythm), Danger Zone pulled up; sheet
+            // grew to full canvas to kill parent-panel bleed at edges.
+            sheetBg:       { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite' },
+            sheetGlow:     { x: 0,    y: 446,  w: 220, h: 220,  type: 'sprite' },
             backLink:      { x: UNIFORM_HEADER.BACK_LINK.x, y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:       { x: UNIFORM_HEADER.BACK_BTN.x,  y: UNIFORM_HEADER.BACK_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             title:         { x: 0,    y: UNIFORM_HEADER.TITLE_Y, w: 400, h: 44, type: 'label' },
-            walletCard:    { x: 0,    y: 424,  w: UNIFORM_LAYOUT.CONTENT_W, h: 124, type: 'group' },
-            profileCard:   { x: 0,    y: 264,  w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
-            quickPlayCard: { x: 0,    y: 36,   w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
-            audioCard:       { x: 0,    y: -192, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
-            accountCard:     { x: 0,    y: -414, w: UNIFORM_LAYOUT.CONTENT_W, h: 232, type: 'group' },
-            dangerZoneLabel: { x: 0,    y: -566, w: 200, h: 14, type: 'label' },
-            deleteBtn:       { x: 0,    y: -598, w: 320, h: 44, type: 'btnGhost' },
-            status:          { x: 0,    y: -625, w: 640, h: 20, type: 'label' },
+            walletCard:    { x: 0,    y: 446,  w: UNIFORM_LAYOUT.CONTENT_W, h: 96,  type: 'group' },
+            profileCard:   { x: 0,    y: 308,  w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
+            quickPlayCard: { x: 0,    y: 88,   w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
+            audioCard:       { x: 0,    y: -132, w: UNIFORM_LAYOUT.CONTENT_W, h: 148, type: 'group' },
+            accountCard:     { x: 0,    y: -322, w: UNIFORM_LAYOUT.CONTENT_W, h: 200, type: 'group' },
+            dangerZoneLabel: { x: 0,    y: -436, w: 200, h: 14, type: 'label' },
+            deleteBtn:       { x: 0,    y: -468, w: 320, h: 44, type: 'btnGhost' },
+            status:          { x: 0,    y: -510, w: 640, h: 20, type: 'label' },
         },
         allowedOverlaps: [
             ['BackLinkLabel', 'BackButton'],
@@ -469,15 +496,19 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['SettingsSheetBg', 'AccountSettingsCard'],
             ['SettingsSheetBg', 'DeleteAccountSettingsButton'],
             ['SettingsSheetBg', 'DangerZoneLabel'],
+            ['SettingsSheetBg', 'SettingsSheetGlow'],
+            ['SettingsSheetGlow', 'WalletCard'],
         ],
     },
     LeaderboardPanel: {
         canvas: { w: 720, h: 1280 },
         RUNTIME_TOP_EDGE: 748,
         elements: {
+            leaderboardContentScrim: { x: 0, y: 0, w: 720, h: 1280, type: 'sprite' },
             backLink:         { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            title:            { x: 0,    y: 680,  w: 400, h: 44,  type: 'label' },
+            // 2026-04-30 — collapsed two-sibling title back into one inline-emoji label.
+            title:            { x: 0,    y: 680,  w: 360, h: 44,  type: 'label' },
             personalRankCard: { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 100, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
         },
@@ -486,6 +517,10 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
+            // 2026-04-30 UX rebuild — full-canvas scrim kills BackgroundFX bleed
+            // (mirrors HomeContentScrim). MUST render first; sits behind every
+            // other FindMatchPanel child. Color = Palette.bg.primary @ alpha 110.
+            findMatchContentScrim: { x: 0, y: 0, w: 720, h: 1280, type: 'sprite' },
             // 2026-04-29 god-tier UX rebuild — strict top-to-bottom flow,
             // dominant primary CTA, FilterCard glass container, 4 tall cards.
             backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: FINDMATCH_LAYOUT.HEADER_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
@@ -494,16 +529,19 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             refreshBtn:     { x: 280,  y: FINDMATCH_LAYOUT.TITLE_Y,  w: 56,  h: 44, type: 'btnGhost' },
             countLabel:     { x: -80,  y: FINDMATCH_LAYOUT.STATUS_Y, w: 540, h: 22, type: 'label' },
             liveCountPulseDot:  { x: -300, y: FINDMATCH_LAYOUT.STATUS_Y, w: 14,  h: 14,  type: 'sprite' },
-            // FilterCard — glass container that visually groups the 3 filter rows
-            // and the Hide-Full toggle. 1px outer stroke, alpha-220 bg.
+            // FilterCard — flat dim section that visually groups the 3 filter
+            // blocks and the Hide-Full toggle. Subtle bg contrast (alpha ~110),
+            // no floating-card edge — reads as a section of the page.
             filterCard:     { x: FINDMATCH_LAYOUT.FILTER_CARD.x, y: FINDMATCH_LAYOUT.FILTER_CARD.y, w: FINDMATCH_LAYOUT.FILTER_CARD.w, h: FINDMATCH_LAYOUT.FILTER_CARD.h, type: 'sprite' },
-            // Filter rows (label LEFT, pill mount RIGHT of label, no overflow).
-            fmModeLabel:        { x: -280, y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 80,  h: 22, type: 'label' },
-            fmWindowLabel:      { x: -280, y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 80,  h: 22, type: 'label' },
-            fmWagerLabel:       { x: -280, y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 80,  h: 22, type: 'label' },
-            segmentMountMode:   { x: 80,   y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 440, h: 44, type: 'group' },
-            segmentMountWindow: { x: 80,   y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 440, h: 44, type: 'group' },
-            segmentMountWager:  { x: 80,   y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 440, h: 44, type: 'group' },
+            // 2026-04-30 UX rebuild — label-above-pill block layout. Each
+            // filter is a 2-line block: left-anchored caption then a 600w pill
+            // spanning the FilterCard. Inter-block gap 16px.
+            fmModeLabel:        { x: -300, y: FINDMATCH_LAYOUT.MODE_LABEL_Y,   w: 200, h: 22, type: 'label' },
+            fmWindowLabel:      { x: -300, y: FINDMATCH_LAYOUT.WINDOW_LABEL_Y, w: 200, h: 22, type: 'label' },
+            fmWagerLabel:       { x: -300, y: FINDMATCH_LAYOUT.WAGER_LABEL_Y,  w: 200, h: 22, type: 'label' },
+            segmentMountMode:   { x: 0,    y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 600, h: 44, type: 'group' },
+            segmentMountWindow: { x: 0,    y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 600, h: 44, type: 'group' },
+            segmentMountWager:  { x: 0,    y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 600, h: 44, type: 'group' },
             hideFullToggle:     { x: 240,  y: FINDMATCH_LAYOUT.HIDE_FULL_Y,  w: 120, h: 28, type: 'btnPrimary' },
             // Top-right level chip; AppUI applies UIOpacity 178 (~70%) so it
             // does not compete with the title for visual weight.
@@ -553,34 +591,44 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             matchSetupCard:  { x: 0,    y: 462,  w: UNIFORM_LAYOUT.CONTENT_W, h: 80, type: 'group' },
             // ready-state underline at matchSetupCard bottom (y = 462 - 40 + 1 = 423).
             matchSetupReadyGlow: { x: 0, y: 423, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
-            // 2026-04-29 god-tier UX pass — frame top 417→405 (gap 17 below
-            // mission card), h 540→528. Bottom unchanged at -123.
-            feedFrameCard:   { x: 0,    y: 141,  w: 712, h: 528, type: 'sprite' },
-            // 2026-04-29 — Row 1 re-balanced (priority width on search, no overflow on LIVE).
-            // Y shifted 387→375 to follow new FEED_FRAME_TOP (405 vs 417).
-            search:          { x: 18,   y: 375,  w: 332, h: 44, type: 'editbox' },
-            searchClear:     { x: 168,  y: 375,  w: 32,  h: 32, type: 'btnGhost' },
-            feedTabDropdown: { x: -250, y: 375,  w: 180, h: 44, type: 'btnGhost' },
-            watchlistStar:   { x: 218,  y: 375,  w: 44,  h: 44, type: 'btnGhost' },
-            cancelWatchlist: { x: 218,  y: 375,  w: 36,  h: 36, type: 'btnGhost' },
-            liveIndicator:   { x: 292,  y: 375,  w: 80,  h: 24, type: 'label' },
-            minLiqDropdown:    { x: -16,  y: 331,  w: 110, h: 32,  type: 'chip' },
-            columnsBtn:        { x: 270,  y: 331,  w: 96,  h: 32,  type: 'chip' },
-            feedColumnHeaders: { x: 0,    y: 293,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
-            feedScrollView:    { x: 0,    y: 79,   w: UNIFORM_LAYOUT.CONTENT_W, h: 380, type: 'scrollview' },
-            // 2026-04-29b flagship rebalance — panel h 230→296; squad becomes hero region.
-            squadPanel:        { x: 0,    y: -283, w: UNIFORM_LAYOUT.CONTENT_W, h: 296, type: 'group' },
-            squadHeaderEyebrow:{ x: 0,    y: -156, w: 360, h: 14,  type: 'label' },
-            squadHeaderLabel:  { x: 0,    y: -180, w: 420, h: 28,  type: 'label' },
-            squadHeaderRule:   { x: 0,    y: -202, w: 240, h: 1,   type: 'sprite' },
-            // 2026-04-30 — stake chip stacked ABOVE the full-width CTA.
+            // 2026-05-01 squad-select pass — frame h 528→448 (-80) so the
+            // squad section can absorb 80 px of reclaimed space. Top stays
+            // at 405; bottom shifts -123 → -43.
+            feedFrameCard:   { x: 0,    y: 181,  w: 712, h: 448, type: 'sprite' },
+            // 2026-04-30 — Row 1 grown 44→60h. Trending + Search are the
+            // hero controls; Watchlist/LIVE scaled up proportionally. Row 2
+            // (filter chips) stays small as secondary controls. Headers +
+            // scroll shifted down to absorb the extra height.
+            search:          { x: 18,   y: 365,  w: 360, h: 60, type: 'editbox' },
+            searchClear:     { x: 192,  y: 365,  w: 36,  h: 36, type: 'btnGhost' },
+            feedTabDropdown: { x: -260, y: 365,  w: 180, h: 60, type: 'btnGhost' },
+            watchlistStar:   { x: 240,  y: 365,  w: 52,  h: 52, type: 'btnGhost' },
+            cancelWatchlist: { x: 240,  y: 365,  w: 44,  h: 44, type: 'btnGhost' },
+            liveIndicator:   { x: 312,  y: 365,  w: 80,  h: 28, type: 'label' },
+            minLiqDropdown:    { x: -16,  y: 311,  w: 110, h: 32,  type: 'chip' },
+            columnsBtn:        { x: 270,  y: 311,  w: 96,  h: 32,  type: 'chip' },
+            feedColumnHeaders: { x: 0,    y: 273,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
+            // 2026-05-01 — scroll h 360→320 (fits shorter feed frame); ~2.5
+            // visible rows at new feedRow.h=120.
+            feedScrollView:    { x: 0,    y: 85,   w: UNIFORM_LAYOUT.CONTENT_W, h: 320, type: 'scrollview' },
+            // 2026-05-01 squad-select pass — soft ambient halo behind the
+            // 3 slot pillars. Single sprite (no Graphics) keeps SIGSEGV risk zero.
+            squadAmbientGlow:  { x: 0,    y: -266, w: 720, h: 220, type: 'sprite' },
+            squadPanel:        { x: 0,    y: -243, w: 720, h: 376, type: 'group' },
+            // 2026-05-01 r2.1 — eyebrow font 16 (h=18), label font 30 (h=38)
+            squadHeaderEyebrow:{ x: 0,    y: -88,  w: 360, h: 18,  type: 'label' },
+            squadHeaderLabel:  { x: 0,    y: -120, w: 460, h: 38,  type: 'label' },
+            squadHeaderRule:   { x: 0,    y: -150, w: 240, h: 1,   type: 'sprite' },
+            // 2026-05-01 r3 — half-width chunky stake pill (320×84) centered
+            // below the CTA, single-line "0.05 SOL ▾" at 32pt gold. Helper
+            // text gets its own row below the pill, always visible.
             wagerRowDivider:   { x: 0,    y: -400, w: 680, h: 1,   type: 'sprite' },
-            wagerValueButton:  { x: -240, y: -432, w: 200, h: 36,  type: 'btnGhost' },
-            wagerStartButton:  { x:    0, y: -480, w: 640, h: 64,  type: 'btnPrimary' },
-            wagerLockChip:     { x: -240, y: -432, w: 200, h: 36,  type: 'chip' },
-            wagerBotChip:      { x: -240, y: -432, w: 200, h: 36,  type: 'chip' },
-            wagerHintLabel:    { x: 0,    y: -528, w: 600, h: 22,  type: 'label' },
-            wagerDropdown:     { x: -240, y: -414, w: 360, h: 360, type: 'group' },
+            wagerStartButton:  { x:    0, y: -456, w: 640, h: 64,  type: 'btnPrimary' },
+            wagerValueButton:  { x:    0, y: -548, w: 320, h: 84,  type: 'btnGhost' },
+            wagerLockChip:     { x:    0, y: -548, w: 320, h: 84,  type: 'chip' },
+            wagerBotChip:      { x:    0, y: -548, w: 320, h: 84,  type: 'chip' },
+            wagerHintLabel:    { x:    0, y: -616, w: 600, h: 28,  type: 'label' },
+            wagerDropdown:     { x:    0, y: -380, w: 360, h: 360, type: 'group' },
             stakeHeaderLabel:  { x: 0,    y: -395, w: 280, h: 18,  type: 'label' },
             stakeValueLabel:   { x: 0,    y: -420, w: 300, h: 28,  type: 'label' },
             stakeSlider:       { x: 0,    y: -455, w: 560, h: 14,  type: 'graphics' },
@@ -592,7 +640,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             holding3Label:     { x: 0,    y: -550, w: 200, h: 50,  type: 'label' },
             gameArea:          { x: 0,    y: 0,    w: 720, h: 1000,type: 'group' },
             gameOverLabel:     { x: 0,    y: 0,    w: 680, h: 180, type: 'label' },
-            status:            { x: 0,    y: -580, w: 688, h: 22,  type: 'label' },
+            status:            { x: 0,    y: -2000, w: 688, h: 22,  type: 'label' },
             rowActionPopover:  { x: 0,    y: 0,    w: 260, h: 110, type: 'group' },
             rowActionPickBtn:  { x: 0,    y:  26,  w: 240, h: 44,  type: 'btnPrimary' },
             rowActionChartBtn: { x: 0,    y: -26,  w: 240, h: 44,  type: 'btnGhost' },
@@ -602,6 +650,24 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['ChangeLabel',   'DeltaLabel'],
             ['LogoSprite',    'CheckboxSprite'],
             ['LogoSprite',    'CheckmarkIcon'],
+            // 2026-05-01 squad-select pass.
+            ['SquadAmbientGlow', 'SquadPanel'],
+            ['SquadAmbientGlow', 'SquadHeaderLabel'],
+            ['SquadAmbientGlow', 'SquadHeaderRule'],
+            ['SquadAmbientGlow', 'SquadSlot_0'],
+            ['SquadAmbientGlow', 'SquadSlot_1'],
+            ['SquadAmbientGlow', 'SquadSlot_2'],
+            ['SlotGlowHalo', 'SlotIndexLabel'],
+            ['SlotGlowHalo', 'SilhouettePlus'],
+            ['SlotGlowHalo', 'LogoSprite'],
+            ['SlotGlowHalo', 'SymbolLabel'],
+            ['SlotGlowHalo', 'DeltaLabel'],
+            ['SlotGlowHalo', 'ScoreBadge'],
+            ['SlotGlowHalo', 'PerformanceBar'],
+            ['SlotGlowHalo', 'RemoveButton'],
+            ['SlotGlowHalo', 'GradientTop'],
+            // 2026-05-01 r3 — stake pill and hint moved to separate rows;
+            // status moved off-canvas. No remaining intentional overlaps.
         ],
     },
     PortfolioPanel: {
@@ -629,7 +695,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         elements: {
             listContainer:         { x:    0, y:  -90, w: 360, h: 920, type: 'group' },
-            cardHeaderLabel:       { x: -180, y:  608, w: 220, h:  30, type: 'label' },
+            cardHeaderLabel:       { x: -178, y:  608, w: 196, h:  30, type: 'label' },
             cardMarkAllReadButton: { x:   90, y:  608, w: 110, h:  28, type: 'btnGhost' },
             cardCloseButton:       { x:  168, y:  608, w:  36, h:  36, type: 'btnGhost' },
             cardHeaderDivider:     { x:    0, y:  580, w: 356, h:   1, type: 'sprite' },

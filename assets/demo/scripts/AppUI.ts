@@ -16,6 +16,8 @@ import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, Dash
 import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
 import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
 import { installGraphicsCreationWatcher, enqueuePostDraw } from '../../token-duel/scripts/safeGraphics';
+import { runEnterMatchCinematic, runEnterMatchImpact, destroyEnterMatchOverlay, EnterMatchHandle } from '../../token-duel/scripts/EnterMatchTransition';
+import { runFighterPickIn, runFighterPickOut, cancelAllFighterPicks, FighterTokenData, FighterPickInOptions, FighterPickOutOptions } from '../../token-duel/scripts/FighterPickTransition';
 import { MWAManager } from '../../solana-mwa/scripts/MWAManager';
 import { SolanaRpc } from '../../solana-mwa/scripts/SolanaRpc';
 import { buildMemoTransaction } from '../../solana-mwa/scripts/TransactionBuilder';
@@ -30,6 +32,7 @@ import { PriceFeed } from '../../token-duel/scripts/PriceFeed';
 import { TokenSquad } from '../../token-duel/scripts/TokenSquad';
 import { BirdeyeClient } from '../../token-duel/scripts/birdeye/BirdeyeClient';
 import { Candle, FeedTab, OhlcvType, TokenRow } from '../../token-duel/scripts/birdeye/types';
+import { DEBUG_POSTMATCH } from '../../token-duel/scripts/DemoFlags';
 import { trendingUrl, gainersUrl, newListingsUrl, smartMoneyUrl, searchUrl, pathOf } from '../../token-duel/scripts/birdeye/endpoints';
 import { computeScore, formatScore } from '../../token-duel/scripts/TokenScore';
 import { Watchlist } from '../../token-duel/scripts/Watchlist';
@@ -181,6 +184,7 @@ export class AppUI extends Component {
     private _racePanel: Node | null = null;
     private _raceCountdownLabel: Label | null = null;
     private _raceHeroDeltaLabel: Label | null = null;
+    private _raceOpponentPortfolioDeltaLabel: Label | null = null;
     private _raceHeroSubtitleLabel: Label | null = null;
     private _raceTokenCards: Node[] = [];
     private _raceTokenSymbolLabels: Label[] = [];
@@ -255,6 +259,11 @@ export class AppUI extends Component {
     private _raceUiTimerStartedAtMs: number = 0;
     private _raceUiTimerDurationMs: number = 0;
     private _raceUiTimerActive: boolean = false;
+    // 2026-05-01 — Throttle map for per-tick exception logging. JSB invocation
+    // failures from per-frame schedules don't surface through window.onerror,
+    // so each tick body wraps itself in try/catch and reports here. Throttled
+    // to 1 log/sec/key so we don't add to the storm we're trying to stop.
+    private _tickErrLastAt: { [key: string]: number } = {};
     private _screenVignetteNode: Node | null = null;
     private _screenVignetteGraphics: Graphics | null = null;
     private _vignetteBaseAlpha: number = 0;
@@ -278,11 +287,13 @@ export class AppUI extends Component {
     private _playerDuelTokenSyms: Label[] = [];
     private _playerDuelTokenDeltas: Label[] = [];
     private _playerDuelTokenBars: Graphics[] = [];
+    private _playerDuelTokenLogos: (Sprite | null)[] = [];
     private _opponentDuelTokenCards: Node[] = [];
     private _opponentDuelTokenSprites: Sprite[] = [];
     private _opponentDuelTokenSyms: Label[] = [];
     private _opponentDuelTokenDeltas: Label[] = [];
     private _opponentDuelTokenBars: Graphics[] = [];
+    private _opponentDuelTokenLogos: (Sprite | null)[] = [];
     /** Per-card last rendered delta — used to detect sign flip / large swings. */
     private _playerLastTokenDelta: number[] = [0, 0, 0];
     private _opponentLastTokenDelta: number[] = [0, 0, 0];
@@ -300,6 +311,17 @@ export class AppUI extends Component {
      * is one more chance to retrip the UIModelProxy 0x28 SIGSEGV.
      */
     private _lastHaloColor: { r: number; g: number; b: number } | null = null;
+    /** 2026-05-01 — Graphics on the RaceAdvantageHalo node. We paint concentric
+     *  rounded-rect rings directly (no installSoftGlow / addComponent) so the
+     *  halo can carry green/red glow + per-tick pulse without retripping the
+     *  UIModelProxy 0x28 SIGSEGV. */
+    private _raceAdvantageHaloGfx: Graphics | null = null;
+    /** Pulse multiplier (1.0 baseline; tweens 1.0 → 1.6 → 1.0 on each meaningful
+     *  gap move, ~320 ms). _paintAdvantageHalo scales ring alpha by this. */
+    private _haloPulseIntensity: number = 1.0;
+    /** Cached last-painted (r,g,b,intensity) so we skip redundant clear/redraws
+     *  when nothing changed tick-to-tick. */
+    private _lastHaloPaint: { r: number; g: number; b: number; intensity: number } | null = null;
     private _raceAdvantageBorderGfx: Graphics | null = null;
     private _raceAdvantageCaptionLabel: Label | null = null;
     private _raceAdvantageSubtextLabel: Label | null = null;
@@ -335,6 +357,14 @@ export class AppUI extends Component {
     private _countdownOverlay: Node | null = null;
     private _countdownBigLabel: Label | null = null;
     private _countdownSquadLabel: Label | null = null;
+    // Enter-match cinematic — handle to the runtime-built morph/orb overlay so
+    // we can hand it to runEnterMatchImpact at countdown end and destroy it
+    // on forfeit-during-cinematic re-entries.
+    private _enterMatchHandle: EnterMatchHandle | null = null;
+    // Reveal-progress carrier (0 → 1 over ~800ms during _playRaceStartCinematic)
+    // multiplied into the duel bar fill + per-token bars so they sweep in from
+    // 0 instead of jumping to value on first tick.
+    private _raceRevealProgress: number = 1;
     // Block 8 — signing overlay
     private _signingOverlay: Node | null = null;
     private _signingSpinnerLabel: Label | null = null;
@@ -1115,9 +1145,18 @@ export class AppUI extends Component {
     // cards + faint "+" silhouette behind "Pick +". Hidden on filled slots.
     private _squadSlotIndexLabels: (Label | null)[] = [];
     private _squadSlotSilhouettes: (Label | null)[] = [];
+    // 2026-05-01 squad-select pass — per-slot back-layer halo Sprite (tinted
+    // teal when filled, violet on hover). Driven by _renderSquad.
+    private _squadSlotGlowHalos: (Sprite | null)[] = [];
     // Tracks per-slot filled state across renders so we can pop only on
     // empty → filled transitions (game-feel polish 2026-04-26).
     private _squadSlotPrevFilled: boolean[] = [false, false, false];
+    // Fighter-pick cinematic state: kill-switch, slots whose render is
+    // owned by the cinematic, and a serial queue for back-to-back picks.
+    private _fighterPickCinematicEnabled: boolean = true;
+    private _slotsPendingLanding: Set<number> = new Set();
+    private _activePickQueue: Array<() => Promise<void>> = [];
+    private _pickQueueRunning: boolean = false;
     // 2026-04-27 UI overhaul — fired-once flag for the "squad full" pulse;
     // resets to false when the squad drops back below 3 filled slots.
     private _squadFullPulseFired: boolean = false;
@@ -1525,6 +1564,7 @@ export class AppUI extends Component {
         if (this._racePanel) {
             this._raceCountdownLabel     = this._racePanel.getChildByName('RaceCountdownLabel')?.getComponent(Label) ?? null;
             this._raceHeroDeltaLabel     = this._racePanel.getChildByName('RaceHeroDeltaLabel')?.getComponent(Label) ?? null;
+            this._raceOpponentPortfolioDeltaLabel = this._racePanel.getChildByName('RaceOpponentPortfolioDeltaLabel')?.getComponent(Label) ?? null;
             // Battle-UI polish: heroSubtitle removed in favor of compact top row.
             this._raceHeroSubtitleLabel  = null;
             this._racePlayerLevelChip    = this._racePanel.getChildByName('RacePlayerLevelChip') ?? null;
@@ -1589,6 +1629,7 @@ export class AppUI extends Component {
                     this._playerDuelTokenDeltas.push(pCard.getChildByName(`PlayerTokenDeltaLabel_${i}`)?.getComponent(Label) as Label);
                     const pBar = pCard.getChildByName(`PlayerTokenContributionBar_${i}`)?.getComponent(Graphics);
                     if (pBar) this._playerDuelTokenBars.push(pBar);
+                    this._playerDuelTokenLogos.push(pCard.getChildByName(`PlayerTokenLogo_${i}`)?.getComponent(Sprite) ?? null);
                 }
                 const oCard = this._opponentTokenRow?.getChildByName(`OpponentTokenCard_${i}`);
                 if (oCard) {
@@ -1599,12 +1640,14 @@ export class AppUI extends Component {
                     this._opponentDuelTokenDeltas.push(oCard.getChildByName(`OpponentTokenDeltaLabel_${i}`)?.getComponent(Label) as Label);
                     const oBar = oCard.getChildByName(`OpponentTokenContributionBar_${i}`)?.getComponent(Graphics);
                     if (oBar) this._opponentDuelTokenBars.push(oBar);
+                    this._opponentDuelTokenLogos.push(oCard.getChildByName(`OpponentTokenLogo_${i}`)?.getComponent(Sprite) ?? null);
                 }
             }
             this._opponentHeroDeltaLabel    = this._racePanel.getChildByName('OpponentDeltaHeroLabel')?.getComponent(Label) ?? null;
             this._opponentSubtitleGapLabel  = this._racePanel.getChildByName('OpponentSubtitleGapLabel')?.getComponent(Label) ?? null;
             // Round Advantage card (2026-04-29) — halo + border + caption + subtext.
             this._raceAdvantageHaloNode      = this._racePanel.getChildByName('RaceAdvantageHalo') ?? null;
+            this._raceAdvantageHaloGfx       = this._raceAdvantageHaloNode?.getComponent(Graphics) ?? null;
             this._raceAdvantageBorderGfx     = this._racePanel.getChildByName('RaceAdvantageBorder')?.getComponent(Graphics) ?? null;
             this._raceAdvantageCaptionLabel  = this._racePanel.getChildByName('RaceAdvantageCaption')?.getComponent(Label) ?? null;
             this._raceAdvantageSubtextLabel  = this._racePanel.getChildByName('RaceAdvantageSubtext')?.getComponent(Label) ?? null;
@@ -2120,7 +2163,9 @@ export class AppUI extends Component {
             // banner. Mount the rank-#1 badge here so the gold square sits behind
             // the rank label inside the slim card.
             const topPlayerCardN = this._leaderboardPanel.getChildByName('TopPlayerCard');
-            if (topPlayerCardN) this._mountRankBadge(topPlayerCardN, 1, -250, 64, 40);
+            // 2026-04-30 UX polish — rank column standardized at x=-300 (matches
+            // LBRow_*); crown moves to the RIGHT of the rank badge in scene spec.
+            if (topPlayerCardN) this._mountRankBadge(topPlayerCardN, 1, -300, 64, 40);
             // 2026-04-29 v2 — runtime safety net: if the scene still has the
             // legacy ModeTabsContainer sprite (older library/ cache, pre-rebuild
             // device), hide it so it cannot leak past the runtime LBModePill's
@@ -2433,9 +2478,18 @@ export class AppUI extends Component {
                 const scroll = this._pfHistoryView.getChildByName('PortfolioHistoryScroll');
                 const content = scroll?.getChildByName('view')?.getChildByName('content');
                 if (content) {
+                    // Recolor each row away from the scene's hardcoded navy
+                    // (22,28,44,255) — clashes with the purple/green gradient
+                    // backdrop. Translucent dark-violet sits in the same hue
+                    // family as Palette.bg.gradientTop so rows feel native.
+                    const rowBg = new Color(26, 8, 32, 200);
                     for (let i = 0; i < 30; i++) {
                         const row = content.getChildByName(`MatchHistoryRow_${i}`);
-                        if (row) this._pfHistoryRows.push(row);
+                        if (row) {
+                            const sp = row.getComponent(Sprite);
+                            if (sp) sp.color = rowBg;
+                            this._pfHistoryRows.push(row);
+                        }
                     }
                 }
                 this._pfHistoryView.active = false;
@@ -2551,12 +2605,39 @@ export class AppUI extends Component {
             this._pickerCancelButton = this._modePickerOverlay.getChildByName('PickerCancelButton')?.getComponent(Button) ?? null;
             this._pickerCancelButton?.node.on(Button.EventType.CLICK, () => this._onPickerCancel(), this);
             if (this._pickerCancelButton) addPressPop(this._pickerCancelButton);
+            // 2026-04-30 arena redesign — top-bar Back chip. v1 closes the
+            // overlay (same as Cancel); a future multi-step picker can route
+            // this to a previous sub-step without changing call sites.
+            const pickerBackButton = this._modePickerOverlay.getChildByName('PickerBackButton')?.getComponent(Button) ?? null;
+            pickerBackButton?.node.on(Button.EventType.CLICK, () => this._onPickerCancel(), this);
+            if (pickerBackButton) addPressPop(pickerBackButton);
             this._pickerStatusLabel = this._modePickerOverlay.getChildByName('PickerStatusLabel')?.getComponent(Label) ?? null;
             // Lock-in summary card — 3 child labels (mode / modifiers / stake).
             const summaryCard = this._modePickerOverlay.getChildByName('PickerSummaryCard');
             this._pickerSummaryModeLabel      = summaryCard?.getChildByName('PickerSummaryModeLabel')?.getComponent(Label) ?? null;
             this._pickerSummaryModifiersLabel = summaryCard?.getChildByName('PickerSummaryModifiersLabel')?.getComponent(Label) ?? null;
             this._pickerSummaryStakeLabel     = summaryCard?.getChildByName('PickerSummaryStakeLabel')?.getComponent(Label) ?? null;
+            // 2026-04-30 immersive redesign — ambient FX one-time wiring.
+            // Center radial soft-glow + breathing gold pulse on the stake hero.
+            // Routed through LandingFX → safeGraphics queue (SIGSEGV-safe).
+            const backdrop = this._modePickerOverlay.getChildByName('ModePickerBackdrop');
+            const centerGlow = backdrop?.getChildByName('ModePickerCenterGlow');
+            if (centerGlow) {
+                installSoftGlow(centerGlow, {
+                    color: new Color(153, 69, 255), // Palette.accent.violet
+                    peakAlpha: 70,
+                    rings: 12,
+                });
+            }
+            if (this._pickerSummaryStakeLabel) {
+                addGlowPulse(this._pickerSummaryStakeLabel.node, 230, 2.4);
+            }
+            // 2026-05-01 staging polish — summary card breathes as the focus
+            // anchor before the CTA. 1.2% scale, 2.8s period reads as alive,
+            // not wobbling. addIdlePulse is idempotent.
+            if (summaryCard) {
+                addIdlePulse(summaryCard, 1.012, 2.8);
+            }
             // Phase E — difficulty toggle.
             const diffMap: Array<[BotDifficulty, string]> = [
                 ['easy',   'PickerDifficultyEasy'],
@@ -2925,12 +3006,15 @@ export class AppUI extends Component {
             // _buildSegmentedPill (mode tier), mounted into SegmentMount_Mode /
             // Window / Wager. The pill provides its own active fill, halo, and
             // sliding underline, so the prior chip + glow scaffolding is gone.
+            // 2026-04-30 UX rebuild — pills widen 440→600 (label moves above
+            // each pill so the row no longer competes with a left-anchored
+            // caption). 5 segments × 120w each gives clean breathing room.
             const fmModeMount = this._findMatchPanel.getChildByName('FindMatchSegmentMountMode');
             if (fmModeMount) {
                 const pill = this._buildSegmentedPill(fmModeMount, {
                     name: 'FindMatchModeFilterPill',
                     tier: 'mode',
-                    width: 440, height: 44, y: 0,
+                    width: 600, height: 44, y: 0,
                     segments: [
                         { key: 'all',     label: 'All' },
                         { key: 'oneVone', label: '1v1' },
@@ -2949,7 +3033,7 @@ export class AppUI extends Component {
                 const pill = this._buildSegmentedPill(fmWindowMount, {
                     name: 'FindMatchWindowFilterPill',
                     tier: 'mode',
-                    width: 440, height: 44, y: 0,
+                    width: 600, height: 44, y: 0,
                     segments: [
                         { key: 'all', label: 'All' },
                         { key: '30s', label: '30s' },
@@ -2968,7 +3052,7 @@ export class AppUI extends Component {
                 const pill = this._buildSegmentedPill(fmWagerMount, {
                     name: 'FindMatchWagerFilterPill',
                     tier: 'mode',
-                    width: 440, height: 44, y: 0,
+                    width: 600, height: 44, y: 0,
                     segments: [
                         { key: 'all',   label: 'All' },
                         { key: 'low',   label: 'Low' },
@@ -3014,6 +3098,12 @@ export class AppUI extends Component {
                         (subLbl as any)._overflow = 1;
                         (subLbl as any)._enableWrapText = false;
                     }
+                    // 2026-04-30 UX rebuild — sub-line ("Your lobby · 1/2 players · …")
+                    // drops to ~70% opacity so the card hierarchy reads cleanly:
+                    // top mode/wager/track row stays bright, sub-line is supporting.
+                    let subOp = subNode.getComponent(UIOpacity);
+                    if (!subOp) subOp = subNode.addComponent(UIOpacity);
+                    subOp.opacity = 178;
                 }
                 const joinBtn = row.getChildByName(`MatchCardJoinButton_${i}`)?.getComponent(Button);
                 joinBtn?.node.on(Button.EventType.CLICK, () => this._onMatchCardJoinClick(i), this);
@@ -3056,6 +3146,12 @@ export class AppUI extends Component {
                 // 2026-04-28 polish — slow signal flicker so the header reads
                 // as a "live wire" rather than a static count.
                 try { addSignalFlicker(this._findMatchCountLabel.node, 220, 3.0); } catch (_) { /* ignore */ }
+                // 2026-04-30 UX rebuild — drop status row to ~60% opacity so
+                // "LIVE SYSTEM · N ACTIVE" reads as ambient context, not a
+                // peer of the title.
+                let countOp = this._findMatchCountLabel.node.getComponent(UIOpacity);
+                if (!countOp) countOp = this._findMatchCountLabel.node.addComponent(UIOpacity);
+                countOp.opacity = 153;
             }
             this._findMatchEmptyMascotNode = this._findMatchPanel.getChildByName('FindMatchEmptyMascot') ?? null;
             if (this._findMatchEmptyMascotNode) {
@@ -3074,6 +3170,13 @@ export class AppUI extends Component {
             this._findMatchFilterCard       = this._findMatchPanel.getChildByName('FilterCard') ?? null;
             this._findMatchTabUnderline     = this._findMatchPanel.getChildByName('TabActiveUnderline') ?? null;
             this._findMatchLiveCountPulseDot = this._findMatchPanel.getChildByName('FindMatchLiveCountPulseDot') ?? null;
+            // 2026-04-30 UX rebuild — drop pulse dot to ~60% opacity so it
+            // sits in the same ambient band as the count label.
+            if (this._findMatchLiveCountPulseDot) {
+                let dotOp = this._findMatchLiveCountPulseDot.getComponent(UIOpacity);
+                if (!dotOp) dotOp = this._findMatchLiveCountPulseDot.addComponent(UIOpacity);
+                dotOp.opacity = 153;
+            }
             // 2026-04-29 god-tier rebuild — count label position + alignment now
             // owned by the scene spec (left-anchored, x=-80, y=655). Pulse dot
             // sits at x=-300, same y. The previous runtime override (-220/-232)
@@ -3384,6 +3487,8 @@ export class AppUI extends Component {
             // 2026-04-28 fighter-card redesign — empty-state chrome.
             const slotIdxLbl = node?.getChildByName('SlotIndexLabel')?.getComponent(Label) ?? null;
             const silhouetteLbl = node?.getChildByName('SilhouettePlus')?.getComponent(Label) ?? null;
+            // 2026-05-01 squad-select pass — back-layer halo sprite per slot.
+            const haloSpr = node?.getChildByName('SlotGlowHalo')?.getComponent(Sprite) ?? null;
             if (btn && symLbl) {
                 this._squadSlotButtons.push(btn);
                 this._squadSlotLabels.push(symLbl);
@@ -3395,6 +3500,7 @@ export class AppUI extends Component {
                 this._squadSlotEdges.push(edgeSpr);
                 this._squadSlotIndexLabels.push(slotIdxLbl);
                 this._squadSlotSilhouettes.push(silhouetteLbl);
+                this._squadSlotGlowHalos.push(haloSpr);
                 const idx = i;
                 btn.node.on(Button.EventType.CLICK, () => this._onSquadSlotTap(idx), this);
                 // 2026-04-27 UI overhaul — tap-feedback on the pillar card.
@@ -3612,6 +3718,12 @@ export class AppUI extends Component {
     private _showHome(): void {
         console.log(`${TAG} _showHome | ENTRY`);
         console.log(`${TAG} _showHome | switching to home panel`);
+        // Cancel any in-flight fighter-pick cinematics so navigating away
+        // doesn't leave overlays orphaned or rows stuck at opacity 0.
+        try { cancelAllFighterPicks(); } catch (_) { /* ignore */ }
+        this._slotsPendingLanding.clear();
+        this._activePickQueue.length = 0;
+        this._pickQueueRunning = false;
         // Clear any stale picker mode flags — back-out from a join confirm,
         // resume confirm, or bot match shouldn't leak into a fresh "Start
         // Match" tap.
@@ -3771,6 +3883,22 @@ export class AppUI extends Component {
             else this._pauseCurrentLocalMatch();
         }
         this._hideRacePanel();
+        // 2026-05-01 — Belt-and-braces: kill every per-frame scheduler this
+        // match could have started, regardless of whether _hideRacePanel's
+        // early-return path skipped them. _duelBarUpdate is otherwise only
+        // stopped from inside _hideRacePanel (which early-returns when the
+        // race panel is already inactive), so reentrant teardown leaves it
+        // looping on a destroyed Graphics — JSB throws every frame, the JS
+        // thread starves the input dispatcher, and PostMatch CTA taps never
+        // register. Same story for the MIP tick if a settlement-network
+        // delay leaves it running between teardown and _showPostMatchPanel.
+        try { this._stopDuelBarLoop(); } catch (_) { /* idempotent */ }
+        try { this._stopMipTick(); } catch (_) { /* idempotent */ }
+        // Cinematic teardown — if the user forfeits while the orb is still
+        // mid-flight, destroy it now so the next match's start can build a
+        // fresh overlay without colliding with the stale one.
+        destroyEnterMatchOverlay(this._enterMatchHandle);
+        this._enterMatchHandle = null;
         (this as any)._pendingPaperBotMatch = false;
         this._pendingRealMatch = false;
         this._raceRunningInBackground = false;
@@ -3812,6 +3940,22 @@ export class AppUI extends Component {
         );
     }
 
+    // 2026-05-01 — Throttled per-tick exception logger. Each per-frame
+    // scheduler wraps its body in try/catch and routes here. Throttled to
+    // 1 log/sec per `key` so adding diagnostics doesn't itself flood logcat
+    // and exacerbate input-dispatcher starvation. Logs name + message + first
+    // 3 stack frames in one line for easy adb logcat grep.
+    private _logTickErr(key: string, e: unknown): void {
+        const now = Date.now();
+        const last = this._tickErrLastAt[key] ?? 0;
+        if (now - last < 1000) return;
+        this._tickErrLastAt[key] = now;
+        const err = e as Error | undefined;
+        const msg = err?.message ?? String(e);
+        const stack = (err?.stack ?? '').split('\n').slice(0, 3).join(' | ');
+        console.log(`[TickErr] name=${key} msg=${msg} stack=${stack}`);
+    }
+
     private _setPreGameContextActive(active: boolean): void {
         const sub = this._tokenDuelPanel?.getChildByName('SubtitleLabel');
         const subToggled = !!sub;
@@ -3836,7 +3980,10 @@ export class AppUI extends Component {
             this._renderHoldings(holdings);
             this._offerHeroPickIfSupported();
             const short = `${pubkey.substring(0, 4)}…${pubkey.substring(pubkey.length - 4)}`;
-            if (this._tokenDuelStatus) this._tokenDuelStatus.string = `Holdings loaded (${short})`;
+            // 2026-05-01 r3 — do NOT write to _tokenDuelStatus; it sits at the
+            // same baseline as _wagerHintLabel and produces overlapping text.
+            // The wager hint owns the bottom-row status copy now.
+            console.log(`${TAG} holdings_loaded short=${short}`);
             console.log(`${TAG} _loadHoldings | SUCCESS symbols=[${holdings.map(h => h.symbol).join(', ')}]`);
         } catch (e: any) {
             const msg = e?.message ?? String(e);
@@ -3984,6 +4131,74 @@ export class AppUI extends Component {
             }
         } catch (e: any) {
             console.log(`[LayoutDiag][panel] THREW src=${source} ${e?.message ?? e}`);
+        }
+    }
+
+    /**
+     * 2026-05-01 — On-device diagnostic for "Home / Pick New Squad buttons
+     * not clickable". Dumps state of each visible CTA + the panel itself, plus
+     * any Canvas siblings that could intercept input. Scheduled at four
+     * timestamps after show by `_showPostMatchPanel`. Gated by DEBUG_POSTMATCH.
+     */
+    private _dumpPostMatchButtonHealth(label: string): void {
+        try {
+            const panel = this._postMatchPanel;
+            if (!panel) {
+                console.log(`[ButtonHealth] ${label} panel=null`);
+                return;
+            }
+            const dumpNode = (n: Node | null | undefined, key: string) => {
+                if (!n) {
+                    console.log(`[ButtonHealth] ${label} ${key}=null`);
+                    return;
+                }
+                const ut = n.getComponent(UITransform);
+                const op = n.getComponent(UIOpacity);
+                const btn = n.getComponent(Button);
+                const wp = new Vec3();
+                n.getWorldPosition(wp);
+                const r = ut?.getBoundingBoxToWorld();
+                // Walk up parent chain to the Canvas; report first inactive ancestor.
+                let cur: Node | null = n.parent;
+                let firstInactive: string | null = null;
+                while (cur) {
+                    if (!cur.active) { firstInactive = cur.name; break; }
+                    cur = cur.parent;
+                }
+                console.log(
+                    `[ButtonHealth] ${label} ${key} ` +
+                    `valid=${n.isValid} active=${n.active} activeInHier=${n.activeInHierarchy} ` +
+                    `interactable=${btn?.interactable ?? 'noBtn'} ` +
+                    `opacity=${op?.opacity ?? 'noOp'} ` +
+                    `contentSize=${ut ? `${ut.contentSize.width}x${ut.contentSize.height}` : 'noUT'} ` +
+                    `worldPos=(${wp.x.toFixed(1)},${wp.y.toFixed(1)}) ` +
+                    `aabb=${r ? `(${r.x.toFixed(1)},${r.y.toFixed(1)},${r.width.toFixed(1)}x${r.height.toFixed(1)})` : 'none'} ` +
+                    `firstInactiveAncestor=${firstInactive ?? 'none'}`
+                );
+            };
+            dumpNode(panel.getChildByName('PostMatchSameSquadButton'), 'sameSquad');
+            dumpNode(panel.getChildByName('PostMatchAgainButton'),     'again');
+            dumpNode(panel,                                            'panel');
+            // Sibling overlap check (one-shot at @250ms only — list is the
+            // same all four times).
+            if (label === '@250ms') {
+                const canvas = panel.parent;
+                if (canvas) {
+                    const myIdx = panel.getSiblingIndex();
+                    const above: string[] = [];
+                    for (const sib of canvas.children) {
+                        if (sib === panel) continue;
+                        if (sib.getSiblingIndex() <= myIdx) continue;
+                        if (!sib.active) continue;
+                        const sop = sib.getComponent(UIOpacity);
+                        if (sop && sop.opacity === 0) continue;
+                        above.push(`${sib.name}(idx=${sib.getSiblingIndex()})`);
+                    }
+                    console.log(`[ButtonHealth] ${label} canvasChildrenAbovePanel=[${above.join(',')}] myIdx=${myIdx} totalSiblings=${canvas.children.length}`);
+                }
+            }
+        } catch (e: any) {
+            console.log(`[ButtonHealth] ${label} THREW ${e?.message ?? e}`);
         }
     }
 
@@ -4357,7 +4572,7 @@ export class AppUI extends Component {
     /** Draw the static duel-bar track (rounded background channel) for row idx. */
     private _drawMipDuelBarTrack(idx: number): void {
         const g = this._mipDuelBarTracks[idx];
-        if (!g) return;
+        if (!g || !g.isValid) return;
         g.clear();
         g.fillColor = new Color(255, 255, 255, 24);
         g.roundRect(-AppUI.MIP_DUEL_BAR_HALF_W, -4, AppUI.MIP_DUEL_BAR_HALF_W * 2, 8, 4);
@@ -4423,7 +4638,7 @@ export class AppUI extends Component {
     /** Draw the static center splitter — vertical 2px line. */
     private _drawMipDuelBarCenterTick(idx: number): void {
         const g = this._mipDuelBarTicks[idx];
-        if (!g) return;
+        if (!g || !g.isValid) return;
         g.clear();
         g.fillColor = new Color(168, 174, 201, 200);
         g.rect(-1, -10, 2, 20);
@@ -4434,50 +4649,56 @@ export class AppUI extends Component {
      *  pulse card glow alpha (when remaining<20%) + ring stroke width.
      *  2026-04-29 v2: also drives resume-button glow halo (slow 2.5s breathe). */
     private _mipFrameTick = (_dt: number): void => {
-        const now = performance.now();
-        const breathe = 0.5 + 0.5 * Math.sin((now / 1000) * 1.5 * Math.PI * 2);
-        // 2026-04-29 v2 — slower 2.5s cycle for the resume glow so it reads
-        // as "confident" rather than "needy".
-        const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
-        for (let i = 0; i < this._mipMatches.length; i++) {
-            const row = this._mipRowNodes[i];
-            if (!row || !row.isValid || !row.active) continue;
-            // Ease duel-bar position toward target (lerp factor 0.12 ≈ 8-frame settle).
-            const cur = this._mipDuelBarPos[i] ?? 0;
-            const target = this._mipDuelBarTargetPos[i] ?? 0;
-            this._mipDuelBarPos[i] = cur + (target - cur) * 0.12;
-            this._drawMipDuelBarFill(i);
-            this._drawMipDuelBarGlow(i, now);
-            // Card glow alpha — breathes when remaining<20%, steady otherwise.
-            const glow = this._mipCardGlows[i];
-            const frac = this._mipRowFraction[i] ?? 1;
-            const state = this._mipRowLeaderState[i] ?? 'pregame';
-            if (glow && glow.isValid) {
-                let a = 0;
-                if (state === 'pregame') {
-                    a = 36;
-                } else if (frac < 0.2) {
-                    // Urgent — wide breathing pulse.
-                    a = Math.round(48 + 64 * breathe);
-                } else {
-                    a = state === 'winning' || state === 'losing' ? 56 : 36;
+        try {
+            const now = performance.now();
+            const breathe = 0.5 + 0.5 * Math.sin((now / 1000) * 1.5 * Math.PI * 2);
+            // 2026-04-29 v2 — slower 2.5s cycle for the resume glow so it reads
+            // as "confident" rather than "needy".
+            const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
+            for (let i = 0; i < this._mipMatches.length; i++) {
+                const row = this._mipRowNodes[i];
+                if (!row || !row.isValid || !row.active) continue;
+                // Ease duel-bar position toward target (lerp factor 0.12 ≈ 8-frame settle).
+                const cur = this._mipDuelBarPos[i] ?? 0;
+                const target = this._mipDuelBarTargetPos[i] ?? 0;
+                this._mipDuelBarPos[i] = cur + (target - cur) * 0.12;
+                this._drawMipDuelBarFill(i);
+                this._drawMipDuelBarGlow(i, now);
+                // Card glow alpha — breathes when remaining<20%, steady otherwise.
+                const glow = this._mipCardGlows[i];
+                const frac = this._mipRowFraction[i] ?? 1;
+                const state = this._mipRowLeaderState[i] ?? 'pregame';
+                if (glow && glow.isValid) {
+                    let a = 0;
+                    if (state === 'pregame') {
+                        a = 36;
+                    } else if (frac < 0.2) {
+                        // Urgent — wide breathing pulse.
+                        a = Math.round(48 + 64 * breathe);
+                    } else {
+                        a = state === 'winning' || state === 'losing' ? 56 : 36;
+                    }
+                    glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, a);
                 }
-                glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, a);
+                // Resume glow halo — alpha breathes 30→90 on a 2.5s cycle for
+                // active rows; muted in pregame so the CTA doesn't shout before
+                // the round starts mattering.
+                const rg = this._mipResumeGlows[i];
+                if (rg && rg.isValid) {
+                    const a = state === 'pregame'
+                        ? Math.round(20 + 25 * breatheSlow)
+                        : Math.round(30 + 60 * breatheSlow);
+                    rg.color = new Color(rg.color.r, rg.color.g, rg.color.b, a);
+                }
+                // Ring stroke pulse when remaining<20% — driven by lineWidth.
+                if (frac < 0.2 && frac > 0) {
+                    this._updateMipRing(i, frac, 5 + 2 * breathe);
+                }
             }
-            // Resume glow halo — alpha breathes 30→90 on a 2.5s cycle for
-            // active rows; muted in pregame so the CTA doesn't shout before
-            // the round starts mattering.
-            const rg = this._mipResumeGlows[i];
-            if (rg && rg.isValid) {
-                const a = state === 'pregame'
-                    ? Math.round(20 + 25 * breatheSlow)
-                    : Math.round(30 + 60 * breatheSlow);
-                rg.color = new Color(rg.color.r, rg.color.g, rg.color.b, a);
-            }
-            // Ring stroke pulse when remaining<20% — driven by lineWidth.
-            if (frac < 0.2 && frac > 0) {
-                this._updateMipRing(i, frac, 5 + 2 * breathe);
-            }
+        } catch (e) {
+            // 2026-05-01 — swallow + throttled-log so a single bad row doesn't
+            // turn into a 26 fps JS-thread storm that starves input dispatch.
+            this._logTickErr('mip', e);
         }
     };
 
@@ -4605,7 +4826,7 @@ export class AppUI extends Component {
      *  so `_mipFrameTick` can pulse it (5↔7) when remaining < 20%. */
     private _updateMipRing(idx: number, fraction: number, lineWidth: number = 5): void {
         const g = this._mipRingGraphics[idx];
-        if (!g) return;
+        if (!g || !g.isValid) return;
         const f = Math.max(0, Math.min(1, fraction));
         const col = f > 0.5 ? new Color(48, 198, 155, 255)
                   : f > 0.2 ? new Color(232, 176, 70, 255)
@@ -4891,17 +5112,18 @@ export class AppUI extends Component {
             // its flame badge is gone. HomeTournamentBadge keeps its sword.
             { panel: this._homePanel, name: 'HomeTournamentBadge',    icon: 'sword',  size: 36, offsetX: -310 },
             // CTA trio — IconBadge sits left of each label so the icon reads first.
-            { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 72, offsetX: -200 },
+            { panel: this._homePanel, name: 'StartMatchButton',       icon: 'sword',  size: 84, offsetX: -200 },
             { panel: this._landingPanel, name: 'ConnectButton',       icon: 'sword',  size: 72, offsetX: -200 },
-            { panel: this._homePanel, name: 'FindMatchButton',        icon: 'flag',   size: 72, offsetX: -200 },
-            { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 72, offsetX: -200 },
+            { panel: this._homePanel, name: 'FindMatchButton',        icon: 'flag',   size: 84, offsetX: -200 },
+            { panel: this._homePanel, name: 'MatchesInProgressButton', icon: 'play',  size: 84, offsetX: -200 },
+            { panel: this._homePanel, name: 'BotMatchButton',         icon: 'robot',  size: 84, offsetX: -200 },
             // Right cluster (Disconnect · Hub · Settings · Bell). Phase N4:
             // Disconnect (power) replaces the former user-icon Portfolio
             // shortcut; trophy now opens the merged Portfolio+Leaderboard hub.
-            { panel: this._homePanel, name: 'DisconnectButton',       icon: 'disconnect', size: 30, offsetX: 0 },
-            { panel: this._homePanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 30, offsetX: 0 },
-            { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 30, offsetX: 0 },  // home top-right gear, 64×64
-            { panel: this._homePanel, name: 'NotificationBellButton', icon: 'bell',   size: 30, offsetX: 0 },
+            { panel: this._homePanel, name: 'DisconnectButton',       icon: 'disconnect', size: 45, offsetX: 0 },
+            { panel: this._homePanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 45, offsetX: 0 },
+            { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 45, offsetX: 0 },  // home top-right gear, 64×64
+            { panel: this._homePanel, name: 'NotificationBellButton', icon: 'bell',   size: 45, offsetX: 0 },
 
             // TokenDuel top-bar (3 solo-icon buttons + Help glyph, 40×36 cells) —
             // icons 28 so they stop reading as dots inside the button. Leaderboard
@@ -5108,10 +5330,12 @@ export class AppUI extends Component {
         wire(this._homePanel, 'MatchesInProgressButton', 'secondary');
         wire(this._homePanel, 'BotMatchButton',          'secondary');
 
-        // Periodic shimmer sweep stays on the home hero only — it's the
-        // single tier-1 surface that visually shouts "instant play."
+        // Periodic shimmer sweep — Home FindMatch + Token-Picker WagerStart.
+        // Both are tier-1 commit CTAs and share the same teal/glow/shimmer chrome.
         const findMatchHero = this._homePanel?.getChildByName('FindMatchButton') ?? null;
         try { addShimmerSweep(findMatchHero, 0.9, 3.6); } catch (_) { /* tween not loaded */ }
+        const wagerStartHero = this._tokenDuelPanel?.getChildByName('WagerStartButton') ?? null;
+        try { addShimmerSweep(wagerStartHero, 0.9, 3.6); } catch (_) { /* tween not loaded */ }
 
         // Token Duel — WagerStart is the high-stakes commit hero.
         wire(this._tokenDuelPanel, 'WagerStartButton',  'primary');
@@ -5177,23 +5401,6 @@ export class AppUI extends Component {
         // if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
         // if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 110 });
         // if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
-
-        // Soften the 6 depth-gradient plates ~50% so their hard rectangular
-        // edges stop reading as horizontal bands. They still imply depth at
-        // the very top / very bottom but no longer compete with the hero.
-        const GRAD_DIM: ReadonlyArray<readonly [string, number]> = [
-            ['BgGradientTopOuter', 0.45], ['BgGradientTopMid', 0.45], ['BgGradientTopInner', 0.55],
-            ['BgGradientBotOuter', 0.45], ['BgGradientBotMid', 0.45], ['BgGradientBotInner', 0.55],
-        ];
-        for (const [name, factor] of GRAD_DIM) {
-            const n = lp.getChildByName(name);
-            const sp = n?.getComponent(Sprite);
-            if (sp) {
-                const c = sp.color.clone();
-                c.a = Math.round(c.a * factor);
-                sp.color = c;
-            }
-        }
 
         // Edge vignette overlay — sits between gradient stack and content.
         // Subtle corner darken focuses the eye on the center hero.
@@ -5293,6 +5500,8 @@ export class AppUI extends Component {
             'bell', 'check', 'clock', 'crown',
             // Phase N4 — disconnect.png in resources/icons.
             'disconnect',
+            // play.png — Matches In Progress row icon.
+            'play',
         ];
 
         // Kill switches — flip a flag to bypass each loader path. Default ALL
@@ -5480,6 +5689,14 @@ export class AppUI extends Component {
         if (this._feedTabDropdownLabel) {
             console.log(`${TAG} phase3 | step=_updateFeedTabDropdownLabel`);
             this._updateFeedTabDropdownLabel(this._currentFeedTab as any);
+        }
+        // If Trophies subtab was opened while Phase 3 was still loading,
+        // medalGold/Silver/Bronze hit the NO_PNG_YET branch and the card
+        // middles stayed blank. Now that the medal sprites are registered,
+        // re-render so empty slots swap to the cc.Sprite path.
+        if (this._pfTrophyTiles.length > 0 && this._pfTrophyEntries.length > 0) {
+            console.log(`${TAG} phase3 | step=_renderTrophyPage (medal pop)`);
+            this._renderTrophyPage();
         }
         console.log(`${TAG} phase3 | EXIT — all assets applied`);
     }
@@ -6020,7 +6237,7 @@ export class AppUI extends Component {
         // the user's SPL balances, same as v1 behavior).
         const squadHoldings: Holding[] = [];
         for (const s of this._squad.slots) {
-            if (s) squadHoldings.push({ mint: s.address, symbol: s.symbol, uiAmount: 0 });
+            if (s) squadHoldings.push({ mint: s.address, symbol: s.symbol, uiAmount: 0, logoUri: s.logoUri });
         }
         // Pad to 3 for the game loop's assumption. If the squad had 1 pick we
         // repeat it so blocks don't cycle through empty '---' tiles.
@@ -6076,8 +6293,6 @@ export class AppUI extends Component {
         // betting-duel Phase 3: show RacePanel before the race starts so entry
         // state renders at t=0 instead of popping in after the first tick.
         this._dumpAppState('start_game_before_show_race');
-        this._showRacePanel(gameHoldings);
-        this._dumpAppState('start_game_after_show_race');
 
         // betting-duel Phase 5: pick up race duration from the ModePicker window row.
         const windowDef = TIME_WINDOWS[this._pickerSelectedWindow] ?? TIME_WINDOWS[DEFAULT_TIME_WINDOW];
@@ -6118,30 +6333,57 @@ export class AppUI extends Component {
             onPriceRecovered: (mint) => this._onPriceRecovered(mint),
             onConnectionState: (state) => this._onConnectionState(state),
         });
-        // Block 3: 3-2-1-GO countdown before race starts. Race is shown
-        // (via _showRacePanel above) so the user sees entry state in the
-        // background; countdown is the top-of-stack attention grabber.
+        // Enter-match cinematic chain. Sequence:
+        //   1. runEnterMatchCinematic (phases 2-3): collapse setup UI + morph
+        //      Enter Match button into a steady glowing orb at canvas center.
+        //   2. On orb-steady (~1200ms): mount RacePanel behind the orb so
+        //      entry state renders at t=0, then drop the 3/2/1 countdown ON
+        //      TOP of the orb (countdown overlay is brought to front in
+        //      _showCountdown).
+        //   3. On countdown done: runEnterMatchImpact (phase 5) — particle
+        //      burst + canvas zoom punch + orb dissolve, fired in parallel
+        //      with _playRaceStartCinematic (phase 6) which staggers the race
+        //      UI into view (timer → hero → tokens L→R → opp R→L → YOU LEAD
+        //      → progress bars).
+        //   4. ~800ms after countdown done: PortfolioRace.start() begins
+        //      polling. Defer is unchanged from the legacy flow.
         const squadSyms = gameHoldings.map((h) => h?.symbol || '?').filter((s) => s !== '?');
-        this._showCountdown(squadSyms, () => {
+        const enterBtn = this._startGameButton?.node ?? null;
+        const enterPanel = this._tokenDuelPanel ?? null;
+        // Tear down any leftover overlay (defensive — should be null after a
+        // clean game cycle, but a forfeit-during-cinematic could leave one).
+        destroyEnterMatchOverlay(this._enterMatchHandle);
+        this._enterMatchHandle = null;
+        const onCountdownDone = () => {
             this._dumpAppState('start_game_countdown_done');
-            // Stage 2G — fly-in cinematic (~800ms) before PortfolioRace.start().
+            runEnterMatchImpact(this._enterMatchHandle).finally(() => {
+                this._enterMatchHandle = null;
+            });
             this._playRaceStartCinematic();
-            // SQUADS_HIDDEN_UNTIL_RACE_START — flush any queued opponent
-            // squad payloads now that the race is actually starting. Real
-            // matches buffer them from join-time; paper matches no-op.
             if (this._activeRealMatchPda) {
                 void import('../../token-duel/scripts/SpectatorRpc')
                     .then((m) => m.releasePreRaceBuffer(this._activeRealMatchPda as string))
                     .catch(() => { /* dynamic-import error already logged */ });
             }
-            // `start()` is async (awaits Birdeye). Fire-and-forget; any tap
-            // events before entry prices resolve are gated by the PortfolioRace
-            // `_running` flag. Defer start by the cinematic duration so the
-            // race doesn't tick during the reveal.
             setTimeout(() => {
                 this._dumpAppState('start_game_before_race_start');
                 this._game?.start().catch((e) => console.log(`${TAG} onStartGame | START_ERROR error=${e}`));
             }, 800);
+        };
+        runEnterMatchCinematic({
+            sourceButton: enterBtn,
+            panelToCollapse: enterPanel,
+            canvasNode: this.node,
+        }).then((handle) => {
+            this._enterMatchHandle = handle;
+            console.log(`${TAG} onStartGame | enter_match_cinematic_ready, mounting RacePanel`);
+            this._showRacePanel(gameHoldings);
+            this._dumpAppState('start_game_after_show_race');
+            this._showCountdown(squadSyms, onCountdownDone);
+        }).catch((e) => {
+            console.log(`${TAG} onStartGame | enter_match_cinematic_error err=${e} — falling back to direct flow`);
+            this._showRacePanel(gameHoldings);
+            this._showCountdown(squadSyms, onCountdownDone);
         });
     }
 
@@ -6817,6 +7059,10 @@ export class AppUI extends Component {
             }
             this._lastRoundGap = 0;
             this._lastRenderedOpponentDeltaPct = 0;
+            // 2026-05-01 — reset halo pulse state so a fresh race starts at
+            // baseline intensity and the first paint isn't skipped by the cache.
+            this._haloPulseIntensity = 1.0;
+            this._lastHaloPaint = null;
             if (this._raceAdvantageSubtextLabel) {
                 this._raceAdvantageSubtextLabel.string = 'Waiting for prices…';
                 this._raceAdvantageSubtextLabel.color = new Color(168, 174, 201);
@@ -6842,6 +7088,11 @@ export class AppUI extends Component {
         if (this._raceHeroDeltaLabel) {
             this._raceHeroDeltaLabel.string = '+0.00%';
             this._raceHeroDeltaLabel.color  = new Color(255, 255, 255);
+        }
+        if (this._raceOpponentPortfolioDeltaLabel) {
+            this._raceOpponentPortfolioDeltaLabel.string = '+0.00%';
+            this._raceOpponentPortfolioDeltaLabel.color  = new Color(255, 255, 255);
+            this._raceOpponentPortfolioDeltaLabel.node.active = this._isDuelLayout;
         }
         if (this._raceHeroSubtitleLabel) this._raceHeroSubtitleLabel.string = 'Fetching entry prices…';
         this._dumpAppState('show_race_panel_about_to_activate');
@@ -7204,6 +7455,16 @@ export class AppUI extends Component {
                     dtLbl.string = '—';
                     dtLbl.color = new Color(168, 174, 201);
                 }
+                const logoSpr = this._playerDuelTokenLogos[i] ?? null;
+                if (logoSpr) {
+                    const url = h?.logoUri ?? '';
+                    if (url) {
+                        if (!logoSpr.node.active) logoSpr.node.active = true;
+                        this._loadLogoInto(logoSpr, url);
+                    } else if (logoSpr.node.active) {
+                        logoSpr.node.active = false;
+                    }
+                }
                 if (info) {
                     this._applyDuelTokenCardFeedback(
                         this._playerDuelTokenCards[i],
@@ -7234,6 +7495,13 @@ export class AppUI extends Component {
         let oppDeltaForDuel: number | null = null;
         let oppPerTokenForDuel: Record<string, number> | null = null;
         let oppSymbolsForDuel: string[] | null = null;
+        let oppLogoUrisForDuel: (string | undefined)[] | null = null;
+
+        // Default-hide the bot portfolio % label; only the 1v1 paper branch
+        // below re-activates it. Keeps the 4p/8p and live branches clean.
+        if (this._raceOpponentPortfolioDeltaLabel) {
+            this._raceOpponentPortfolioDeltaLabel.node.active = false;
+        }
 
         if (this._pickerSelectedTrack === 'paper' && this._liveSquadBot && (this._raceOpponentCard?.active || this._isDuelLayout)) {
             // 1v1 paper: live bot delta (legacy big card OR duel layout).
@@ -7241,6 +7509,7 @@ export class AppUI extends Component {
             oppDeltaForDuel = botSnap.portfolioDeltaPct;
             oppPerTokenForDuel = botSnap.perTokenDeltas;
             oppSymbolsForDuel = this._liveSquadBot.getSquad().map(s => s.symbol);
+            oppLogoUrisForDuel = this._liveSquadBot.getSquad().map(s => s.logoUri);
             if (this._raceOpponentCard?.active && this._raceOpponentDelta) {
                 const s = botSnap.portfolioDeltaPct >= 0 ? '+' : '';
                 this._raceOpponentDelta.string = `${s}${botSnap.portfolioDeltaPct.toFixed(2)}%`;
@@ -7259,6 +7528,13 @@ export class AppUI extends Component {
                     this._raceOpponentGap.string = 'neck and neck';
                     this._raceOpponentGap.color = new Color(200, 200, 210);
                 }
+            }
+            if (this._isDuelLayout && this._raceOpponentPortfolioDeltaLabel) {
+                const botPct = botSnap.portfolioDeltaPct;
+                const s = botPct >= 0 ? '+' : '';
+                this._raceOpponentPortfolioDeltaLabel.string = `${s}${botPct.toFixed(2)}%`;
+                this._raceOpponentPortfolioDeltaLabel.color = botPct >= 0 ? green : red;
+                this._raceOpponentPortfolioDeltaLabel.node.active = true;
             }
         } else if (this._pickerSelectedTrack === 'paper' && this._liveSquadBots.length > 1) {
             // 2026-04-27 — 4p / 8p multi-bot. Compute ranks once, then dispatch
@@ -7325,6 +7601,7 @@ export class AppUI extends Component {
                     oppDeltaForDuel = botSnap.portfolioDeltaPct;
                     oppPerTokenForDuel = botSnap.perTokenDeltas;
                     oppSymbolsForDuel = bot.getSquad().map((s) => s.symbol);
+                    oppLogoUrisForDuel = bot.getSquad().map((s) => s.logoUri);
                     if (this._opponentIdentityName)  this._opponentIdentityName.string  = `Bot ${idx + 1}`;
                     if (this._opponentIdentityLevel) this._opponentIdentityLevel.string = `${ranksuffix(rankOf.get(idx) ?? 0)} of ${players.length}`;
                 }
@@ -7375,6 +7652,16 @@ export class AppUI extends Component {
                     } else if (dtLbl) {
                         dtLbl.string = '—';
                         dtLbl.color = new Color(168, 174, 201);
+                    }
+                    const logoSpr = this._opponentDuelTokenLogos[i] ?? null;
+                    if (logoSpr) {
+                        const url = oppLogoUrisForDuel?.[i] ?? '';
+                        if (url) {
+                            if (!logoSpr.node.active) logoSpr.node.active = true;
+                            this._loadLogoInto(logoSpr, url);
+                        } else if (logoSpr.node.active) {
+                            logoSpr.node.active = false;
+                        }
                     }
                     if (Number.isFinite(v as number)) {
                         this._applyDuelTokenCardFeedback(
@@ -7454,11 +7741,13 @@ export class AppUI extends Component {
         const cache = isPlayer ? this._playerLastTokenDelta : this._opponentLastTokenDelta;
         const prev = cache[slot] ?? 0;
 
-        // 1) Sprite tint — subtle wash by sign.
+        // 1) Sprite tint — subtle wash by sign. 2026-05-01 — base recolored
+        // to bg.cardHover purple (player 50/20/72, opponent 38/16/56) so the
+        // resting card reads purple in line with the squad / picker cards.
         if (sprite) {
-            const baseR = isPlayer ? 30 : 21;
-            const baseG = isPlayer ? 36 : 25;
-            const baseB = isPlayer ? 56 : 41;
+            const baseR = isPlayer ? 50 : 38;
+            const baseG = isPlayer ? 20 : 16;
+            const baseB = isPlayer ? 72 : 56;
             if (deltaPct > 0.5) {
                 // Lerp toward win green.
                 sprite.color = new Color(
@@ -7544,41 +7833,48 @@ export class AppUI extends Component {
      * wall-clock elapsed since `_raceUiTimerStartedAtMs`.
      */
     private _onRaceUiTimerTick(): void {
-        if (!this._raceUiTimerActive) return;
-        const total = this._raceUiTimerDurationMs;
-        if (total <= 0) return;
-        const elapsed = Date.now() - this._raceUiTimerStartedAtMs;
-        const remaining = Math.max(0, total - elapsed);
-        const progress = Math.max(0, Math.min(1, elapsed / total));
-        this._drawTimerRing(progress);
-        if (this._raceCountdownLabel) {
-            this._raceCountdownLabel.string = this._formatRemainingTime(remaining);
-        }
-        if (remaining <= 0) {
-            this._raceUiTimerActive = false;
-            this.unschedule(this._onRaceUiTimerTick);
+        try {
+            if (!this._raceUiTimerActive) return;
+            const total = this._raceUiTimerDurationMs;
+            if (total <= 0) return;
+            const elapsed = Date.now() - this._raceUiTimerStartedAtMs;
+            const remaining = Math.max(0, total - elapsed);
+            const progress = Math.max(0, Math.min(1, elapsed / total));
+            this._drawTimerRing(progress);
+            if (this._raceCountdownLabel && this._raceCountdownLabel.isValid) {
+                this._raceCountdownLabel.string = this._formatRemainingTime(remaining);
+            }
+            if (remaining <= 0) {
+                this._raceUiTimerActive = false;
+                this.unschedule(this._onRaceUiTimerTick);
+            }
+        } catch (e) {
+            this._logTickErr('raceUi', e);
         }
     }
 
     private _drawTimerRing(progress: number): void {
         const g = this._raceTimerRing;
-        if (!g) return;
+        if (!g || !g.isValid) return;
         const p = Math.max(0, Math.min(1, progress));
         const col = this._timerRingColor(p);
+        // 2026-05-01 — radius 60→69 and lineWidth 8→9 (1.15× scale). Box w/h
+        // bumped 132→152 in LayoutSpec with center dropped 9 px so the top edge
+        // of the circle stays pinned to its prior world Y.
         g.clear();
         // Faint background track (full circle).
-        g.lineWidth = 8;
+        g.lineWidth = 9;
         g.strokeColor = new Color(col.r, col.g, col.b, 40);
-        g.circle(0, 0, 60);
+        g.circle(0, 0, 69);
         g.stroke();
         // Remaining portion of the ring (drains clockwise from top).
         const remain = 1 - p;
         if (remain > 0) {
-            g.lineWidth = 8;
+            g.lineWidth = 9;
             g.strokeColor = col;
             const start = -Math.PI / 2;
             const end   = start + remain * Math.PI * 2;
-            g.arc(0, 0, 60, start, end, false);
+            g.arc(0, 0, 69, start, end, false);
             g.stroke();
         }
     }
@@ -7810,35 +8106,44 @@ export class AppUI extends Component {
 
     /** Per-frame: spring integrate, then redraw fill + glow. Bound via .bind(this) on schedule. */
     private _duelBarUpdate = (_dt?: number): void => {
-        if (!this._isDuelLayout) return;
-        const now = Date.now();
-        const dt = Math.max(0, Math.min(1 / 30, (now - this._duelBarLastTickAt) / 1000));
-        this._duelBarLastTickAt = now;
+        try {
+            if (!this._isDuelLayout) return;
+            const now = Date.now();
+            const dt = Math.max(0, Math.min(1 / 30, (now - this._duelBarLastTickAt) / 1000));
+            this._duelBarLastTickAt = now;
 
-        // Revert overtake transient when its window expires.
-        if (this._duelBarOvertakeUntil && now > this._duelBarOvertakeUntil) {
-            this._duelBarOvertakeUntil = 0;
-            this._setDuelBarTuning(this._lastFiveActivated ? 9.0 : 6.0, 1.0);
+            // Revert overtake transient when its window expires.
+            if (this._duelBarOvertakeUntil && now > this._duelBarOvertakeUntil) {
+                this._duelBarOvertakeUntil = 0;
+                this._setDuelBarTuning(this._lastFiveActivated ? 9.0 : 6.0, 1.0);
+            }
+
+            const omega = this._duelBarOmega;
+            const zeta = this._duelBarZeta;
+            const accel = omega * omega * (this._duelBarTargetPos - this._duelBarPos)
+                        - 2 * zeta * omega * this._duelBarVel;
+            this._duelBarVel += accel * dt;
+            this._duelBarPos += this._duelBarVel * dt;
+
+            this._drawDuelBarTrack();
+            this._drawDuelBarFill();
+            this._drawDuelBarGlow(now);
+            this._drawDuelBarCenterTick();
+            this._positionDuelBarLeadingPp();
+        } catch (e) {
+            // 2026-05-01 — was the prime suspect for the 26 fps JSB error storm
+            // observed after game-over. _hideRacePanel early-returns when the
+            // race panel is already inactive, so this loop could survive past
+            // teardown and touch destroyed Graphics. Now also stopped eagerly
+            // in _teardownMatchRuntime; this catch is the last line of defense.
+            this._logTickErr('duel', e);
         }
-
-        const omega = this._duelBarOmega;
-        const zeta = this._duelBarZeta;
-        const accel = omega * omega * (this._duelBarTargetPos - this._duelBarPos)
-                    - 2 * zeta * omega * this._duelBarVel;
-        this._duelBarVel += accel * dt;
-        this._duelBarPos += this._duelBarVel * dt;
-
-        this._drawDuelBarTrack();
-        this._drawDuelBarFill();
-        this._drawDuelBarGlow(now);
-        this._drawDuelBarCenterTick();
-        this._positionDuelBarLeadingPp();
     };
 
     /** Draw the static track (rounded background channel). */
     private _drawDuelBarTrack(): void {
         const g = this._duelBarTrackGraphics;
-        if (!g) return;
+        if (!g || !g.isValid) return;
         // Track is static; only redraw if cleared. Cheap to redraw, so just do it.
         g.clear();
         g.fillColor = new Color(255, 255, 255, 20);
@@ -7849,8 +8154,12 @@ export class AppUI extends Component {
     /** Draw the fill bar from center toward winning side. */
     private _drawDuelBarFill(): void {
         const g = this._duelBarFillGraphics;
-        if (!g) return;
-        const pos = this._duelBarPos;
+        if (!g || !g.isValid) return;
+        // Reveal-progress carrier (Phase 6): bar sweeps 0 → value over 800ms
+        // at race start. Defaults to 1 outside the cinematic so the live tick
+        // paints at full magnitude.
+        const reveal = this._raceRevealProgress;
+        const pos = this._duelBarPos * reveal;
         const halfW = AppUI.DUEL_BAR_HALF_W;
         const px = pos * halfW;
 
@@ -7900,7 +8209,7 @@ export class AppUI extends Component {
      *  receding from the leading tip toward center for "speed lines". */
     private _drawDuelBarGlow(now: number): void {
         const g = this._duelBarGlowGraphics;
-        if (!g) return;
+        if (!g || !g.isValid) return;
         const pos = this._duelBarPos;
         const halfW = AppUI.DUEL_BAR_HALF_W;
         const px = pos * halfW;
@@ -7945,7 +8254,7 @@ export class AppUI extends Component {
     /** Draw the center splitter — vertical 2px line. */
     private _drawDuelBarCenterTick(): void {
         const g = this._duelBarCenterTickGraphics;
-        if (!g) return;
+        if (!g || !g.isValid) return;
         g.clear();
         g.fillColor = new Color(168, 174, 201, 200);
         g.rect(-1, -16, 2, 32);
@@ -7955,7 +8264,8 @@ export class AppUI extends Component {
     /** Position the leading-pp label above the leading bar tip. */
     private _positionDuelBarLeadingPp(): void {
         const lbl = this._duelBarLeadingPpLabel;
-        if (!lbl) return;
+        if (!lbl || !lbl.isValid) return;
+        if (!lbl.node || !lbl.node.isValid) return;
         const pos = this._duelBarPos;
         const px = pos * AppUI.DUEL_BAR_HALF_W;
         // Hide in neck-and-neck.
@@ -7976,8 +8286,13 @@ export class AppUI extends Component {
         const GREEN_R = 51,  GREEN_G = 204, GREEN_B = 85;
         const RED_R   = 255, RED_G   = 85,  RED_B   = 85;
         const NEUTRAL_R = 168, NEUTRAL_G = 174, NEUTRAL_B = 201;
-        const isAhead  = !waitingForPrices && gap >  0.04;
-        const isBehind = !waitingForPrices && gap < -0.04;
+        // 2026-05-01 — only the literal "0.00 pp" rendering stays neutral;
+        // the displayed value rounds to 2dp, so anything ≥ ±0.005 already
+        // shows as ±0.01 and must read green/red. Removed the prior 0.04
+        // dead-band that was leaving tiny but nonzero gaps grey.
+        const renderedZero = Math.abs(gap) < 0.005;
+        const isAhead  = !waitingForPrices && !renderedZero && gap > 0;
+        const isBehind = !waitingForPrices && !renderedZero && gap < 0;
         const r = waitingForPrices ? NEUTRAL_R : (isAhead ? GREEN_R : isBehind ? RED_R : NEUTRAL_R);
         const g = waitingForPrices ? NEUTRAL_G : (isAhead ? GREEN_G : isBehind ? RED_G : NEUTRAL_G);
         const b = waitingForPrices ? NEUTRAL_B : (isAhead ? GREEN_B : isBehind ? RED_B : NEUTRAL_B);
@@ -8003,9 +8318,10 @@ export class AppUI extends Component {
                 .call(() => { this._lastRenderedOpponentDeltaPct = gap; })
                 .start();
         }
-        // Border stays neutral slate (drawn once in _initAdvantageCardVisuals);
-        // only the outer halo bloom carries the leader-state color.
-        this._setAdvantageHaloColor(r, g, b);
+        // 2026-05-01 — the outer halo carries leader-state color AND a
+        // per-tick pulse triggered on every meaningful gap change. Border
+        // fill stays pure black (set once in _drawStaticAdvantageBorder).
+        this._paintAdvantageHalo(r, g, b, this._haloPulseIntensity);
         if (this._raceAdvantageSubtextLabel) {
             this._raceAdvantageSubtextLabel.string = waitingForPrices
                 ? 'Waiting for prices…'
@@ -8015,9 +8331,14 @@ export class AppUI extends Component {
             this._raceAdvantageSubtextLabel.color = cardColor;
         }
         if (!waitingForPrices) {
+            // Pulse on any meaningful value movement (rounded to 2dp). The
+            // lead-flip flash stacks on top by also bumping opacity in
+            // _flashAdvantageHalo.
+            const moved = Math.abs(gap - this._lastRoundGap) > 0.005;
+            if (moved) this._pulseAdvantageHalo(r, g, b);
             const flipped =
-                (this._lastRoundGap < -0.04 && gap >  0.04) ||
-                (this._lastRoundGap >  0.04 && gap < -0.04);
+                (this._lastRoundGap < -0.005 && gap >  0.005) ||
+                (this._lastRoundGap >  0.005 && gap < -0.005);
             if (flipped) this._flashAdvantageHalo();
         }
         this._lastRoundGap = gap;
@@ -8060,12 +8381,72 @@ export class AppUI extends Component {
         const h = ut?.contentSize.height ?? 180;
         gfx.clear();
         gfx.lineWidth = 2;
-        gfx.fillColor   = new Color(14, 18, 30, 245);
+        // 2026-05-01 — middle card fill goes pure black per the palette pass;
+        // wine eggplant (26,8,32) was reading too purple against the new bot-PnL
+        // mirror at the bottom of the screen.
+        gfx.fillColor   = new Color(0, 0, 0, 245);
         gfx.strokeColor = new Color(66, 76, 102, 220);
         gfx.roundRect(-w / 2, -h / 2, w, h, 24);
         gfx.fill();
         gfx.stroke();
         this._lastAdvantageBorderColor = { r: 66, g: 76, b: 102 };
+    }
+
+    /** 2026-05-01 — Paint concentric rounded-rect rings into the halo Graphics
+     *  so the middle card carries a green/red glow without re-using the
+     *  installSoftGlow path (which trips the UIModelProxy 0x28 SIGSEGV under
+     *  fast tick cadences). Skips a redraw when (r,g,b,intensity) is unchanged. */
+    private _paintAdvantageHalo(r: number, g: number, b: number, intensity: number): void {
+        const gfx = this._raceAdvantageHaloGfx;
+        if (!gfx) return;
+        const last = this._lastHaloPaint;
+        if (last && last.r === r && last.g === g && last.b === b
+            && Math.abs(last.intensity - intensity) < 0.02) return;
+        const ut = gfx.node.getComponent(UITransform);
+        const haloW = ut?.contentSize.width  ?? 420;
+        const haloH = ut?.contentSize.height ?? 200;
+        const cardW = 320;
+        const cardH = 180;
+        const rings = 10;
+        const peakAlpha = Math.min(255, Math.round(80 * intensity));
+        gfx.clear();
+        gfx.fillColor = new Color(r, g, b, 0);
+        for (let i = 0; i < rings; i++) {
+            const t = i / (rings - 1);
+            const w = cardW + (haloW - cardW) * t;
+            const h = cardH + (haloH - cardH) * t;
+            const a = Math.max(0, Math.round(peakAlpha * (1 - t)));
+            if (a <= 0) continue;
+            gfx.lineWidth = 2;
+            gfx.strokeColor = new Color(r, g, b, a);
+            gfx.roundRect(-w / 2, -h / 2, w, h, 24 + Math.round(t * 4));
+            gfx.stroke();
+        }
+        this._lastHaloPaint = { r, g, b, intensity };
+    }
+
+    /** 2026-05-01 — Pulse halo intensity 1.0 → 1.6 → 1.0 over ~320 ms. Triggered
+     *  on every meaningful gap movement (Δ > 0.005 pp) so the glow throbs
+     *  whenever the live PnL number moves. */
+    private _pulseAdvantageHalo(r: number, g: number, b: number): void {
+        const carrier = { v: this._haloPulseIntensity };
+        Tween.stopAllByTarget(carrier);
+        tween(carrier)
+            .to(0.16, { v: 1.6 }, {
+                easing: 'quartOut',
+                onUpdate: () => {
+                    this._haloPulseIntensity = carrier.v;
+                    this._paintAdvantageHalo(r, g, b, carrier.v);
+                },
+            })
+            .to(0.16, { v: 1.0 }, {
+                easing: 'quadIn',
+                onUpdate: () => {
+                    this._haloPulseIntensity = carrier.v;
+                    this._paintAdvantageHalo(r, g, b, carrier.v);
+                },
+            })
+            .start();
     }
 
     /** No-op stub. Border is now painted once in _drawStaticAdvantageBorder
@@ -8336,7 +8717,45 @@ export class AppUI extends Component {
      */
     private _playRaceStartCinematic(): void {
         if (!this._racePanel) return;
-        // Token cards (3 or 5): y_base - 80, opacity 0 → original, staggered 80ms.
+        // Phase 6 — staggered reveal in strict order:
+        //   t=0    timer (RaceCountdownLabel) scale 0.8→1.0 + fade in
+        //   t=80   hero delta % slides from +10px above
+        //   t=160  player tokens L→R stagger (100ms apart, slide from x-60)
+        //   t=160+100×n  opponent tokens mirrored R→L stagger (slide from x+60)
+        //   t=460  YOU LEAD / YOU TRAIL subtitle fades in
+        //   t=0..800   progress bars sweep 0 → value via _raceRevealProgress
+
+        if (this._raceCountdownLabel) {
+            const node = this._raceCountdownLabel.node;
+            const op = this._ensureOpacity(node);
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(op);
+            node.setScale(new Vec3(0.8, 0.8, 1));
+            op.opacity = 0;
+            tween(node).to(0.20, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' }).start();
+            tween(op).to(0.20, { opacity: 255 }, { easing: 'cubicOut' }).start();
+        }
+
+        if (this._raceHeroDeltaLabel) {
+            const node = this._raceHeroDeltaLabel.node;
+            const op = this._ensureOpacity(node);
+            const target = node.position.clone();
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(op);
+            node.setPosition(new Vec3(target.x, target.y + 10, target.z));
+            node.setScale(new Vec3(1, 1, 1));
+            op.opacity = 0;
+            tween(node)
+                .delay(0.08)
+                .to(0.20, { position: target }, { easing: 'cubicOut' })
+                .start();
+            tween(op)
+                .delay(0.08)
+                .to(0.20, { opacity: 255 }, { easing: 'cubicOut' })
+                .start();
+        }
+
+        const playerStaggerStartSec = 0.16;
         for (let i = 0; i < this._raceTokenCards.length; i++) {
             const card = this._raceTokenCards[i];
             if (!card || !card.active) continue;
@@ -8345,60 +8764,90 @@ export class AppUI extends Component {
             Tween.stopAllByTarget(card);
             Tween.stopAllByTarget(op);
             op.opacity = 0;
-            card.setPosition(new Vec3(target.x, target.y - 80, target.z));
-            const delay = i * 0.08;
+            card.setPosition(new Vec3(target.x - 60, target.y, target.z));
+            const delay = playerStaggerStartSec + i * 0.10;
             tween(card)
                 .delay(delay)
-                .to(0.4, { position: target }, { easing: 'quartOut' })
+                .to(0.22, { position: target }, { easing: 'quartOut' })
                 .start();
             tween(op)
                 .delay(delay)
-                .to(0.4, { opacity: 255 })
+                .to(0.22, { opacity: 255 }, { easing: 'cubicOut' })
                 .start();
         }
-        // Opponent card / strip: y_base + 80, opacity 0 → original (300ms delay).
-        const oppNodes: Node[] = [];
-        if (this._raceOpponentCard?.active) oppNodes.push(this._raceOpponentCard);
-        if (this._raceOpponentStrip?.active) oppNodes.push(this._raceOpponentStrip);
-        for (const n of oppNodes) {
+
+        const oppCount = this._opponentDuelTokenCards.length;
+        for (let i = 0; i < oppCount; i++) {
+            const card = this._opponentDuelTokenCards[i];
+            if (!card || !card.active) continue;
+            const op = this._ensureOpacity(card);
+            const target = card.position.clone();
+            Tween.stopAllByTarget(card);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            card.setPosition(new Vec3(target.x + 60, target.y, target.z));
+            const fromRightIdx = oppCount - 1 - i;
+            const delay = playerStaggerStartSec + fromRightIdx * 0.10;
+            tween(card)
+                .delay(delay)
+                .to(0.22, { position: target }, { easing: 'quartOut' })
+                .start();
+            tween(op)
+                .delay(delay)
+                .to(0.22, { opacity: 255 }, { easing: 'cubicOut' })
+                .start();
+        }
+
+        const oppContainerNodes: Node[] = [];
+        if (this._raceOpponentCard?.active) oppContainerNodes.push(this._raceOpponentCard);
+        if (this._raceOpponentStrip?.active) oppContainerNodes.push(this._raceOpponentStrip);
+        for (const n of oppContainerNodes) {
             const op = this._ensureOpacity(n);
             const target = n.position.clone();
             Tween.stopAllByTarget(n);
             Tween.stopAllByTarget(op);
             op.opacity = 0;
-            n.setPosition(new Vec3(target.x, target.y + 80, target.z));
+            n.setPosition(new Vec3(target.x + 40, target.y, target.z));
             tween(n)
-                .delay(0.3)
-                .to(0.3, { position: target }, { easing: 'quartOut' })
+                .delay(0.16)
+                .to(0.30, { position: target }, { easing: 'quartOut' })
                 .start();
             tween(op)
-                .delay(0.3)
-                .to(0.3, { opacity: 255 })
+                .delay(0.16)
+                .to(0.30, { opacity: 255 }, { easing: 'cubicOut' })
                 .start();
         }
-        // Hero delta: scale 0.3 + opacity 0 → 1 + 255 over 500ms (backOut).
-        if (this._raceHeroDeltaLabel) {
-            const node = this._raceHeroDeltaLabel.node;
+
+        if (this._opponentSubtitleGapLabel) {
+            const node = this._opponentSubtitleGapLabel.node;
             const op = this._ensureOpacity(node);
-            Tween.stopAllByTarget(node);
             Tween.stopAllByTarget(op);
-            node.setScale(new Vec3(0.3, 0.3, 1));
             op.opacity = 0;
-            tween(node)
-                .to(0.5, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
-                .start();
-            tween(op)
-                .to(0.5, { opacity: 255 })
-                .start();
+            tween(op).delay(0.46).to(0.20, { opacity: 255 }, { easing: 'cubicOut' }).start();
         }
-        // Vignette fades in its baseline over 500ms (driven by next tick anyway).
+
+        // Reveal-progress carrier — multiplied into _drawDuelBarFill and the
+        // per-token bar fills inside _applyDuelTokenCardFeedback. Resets to 0
+        // here, tweens to 1 over 800ms; live tick draws sample whatever value
+        // the carrier holds when they paint.
+        const revealCarrier = { v: 0 };
+        this._raceRevealProgress = 0;
+        Tween.stopAllByTarget(revealCarrier);
+        tween(revealCarrier)
+            .to(0.80, { v: 1 }, {
+                easing: 'cubicOut',
+                onUpdate: () => { this._raceRevealProgress = revealCarrier.v; },
+            })
+            .call(() => { this._raceRevealProgress = 1; })
+            .start();
+
         if (this._screenVignetteNode) {
             const op = this._ensureOpacity(this._screenVignetteNode);
             Tween.stopAllByTarget(op);
             op.opacity = 0;
             tween(op).to(0.5, { opacity: 255 }).start();
         }
-        console.log(`${TAG} _playRaceStartCinematic | FLY_IN tokens=${this._raceTokenCards.filter((c) => c?.active).length} opp_nodes=${oppNodes.length}`);
+        console.log(`${TAG} _playRaceStartCinematic | FLY_IN player_tokens=${this._raceTokenCards.filter((c) => c?.active).length} opp_tokens=${this._opponentDuelTokenCards.filter((c) => c?.active).length} opp_containers=${oppContainerNodes.length}`);
     }
 
     private _fmtPrice(p: number): string {
@@ -8630,16 +9079,34 @@ export class AppUI extends Component {
             return;
         }
         this._countdownOverlay.active = true;
+        // Bring the countdown overlay to the front of its parent so it paints
+        // above the runtime-built EnterMatchOverlay (which is also a Canvas
+        // child). Without this the orb would obscure the digits.
+        try { this._countdownOverlay.setSiblingIndex(-1); } catch (_) { /* no parent */ }
         if (this._countdownSquadLabel) {
             this._countdownSquadLabel.string = squadSymbols.length > 0 ? squadSymbols.join(' · ') : 'Your squad';
+            // Fade in the squad label after the first digit lands. +10px slide
+            // so it reads as anticipating into place rather than popping.
+            const sqNode = this._countdownSquadLabel.node;
+            const sqOp = this._ensureOpacity(sqNode);
+            const sqStart = sqNode.position.clone();
+            Tween.stopAllByTarget(sqOp);
+            Tween.stopAllByTarget(sqNode);
+            sqOp.opacity = 0;
+            sqNode.setPosition(new Vec3(sqStart.x, sqStart.y - 10, sqStart.z));
+            tween(sqOp).delay(0.20).to(0.30, { opacity: 180 }, { easing: 'cubicOut' }).start();
+            tween(sqNode).delay(0.20).to(0.30, { position: sqStart }, { easing: 'cubicOut' }).start();
         }
-        // Stage 2H — color ramp coral → amber → lime → emerald, with a 100ms
-        // white flash on each transition so each digit "pops" before settling.
-        const steps: Array<{ text: string; color: Color; haptic: HapticType }> = [
-            { text: '3',   color: new Color(236, 88, 122),  haptic: HapticType.SOFT   },
-            { text: '2',   color: new Color(232, 176, 70),  haptic: HapticType.SOFT   },
-            { text: '1',   color: new Color(166, 232, 70),  haptic: HapticType.MEDIUM },
-            { text: 'GO!', color: new Color(48, 198, 155),  haptic: HapticType.HEAVY  },
+        // Phase 4 — refined countdown:
+        //   "3" → white                 (calm, neutral)
+        //   "2" → green  (48,198,155)   (gathering energy)
+        //   "1" → red flash  (236,88,122) for 80ms, settle to green (96,220,88)
+        //         (tension → release; hand-off into the impact burst)
+        // No "GO!" step — phase 5 (runEnterMatchImpact) replaces it visually.
+        const steps: Array<{ text: string; flashColor: Color | null; finalColor: Color; haptic: HapticType }> = [
+            { text: '3', flashColor: null, finalColor: new Color(255, 255, 255), haptic: HapticType.SOFT   },
+            { text: '2', flashColor: null, finalColor: new Color(48,  198, 155), haptic: HapticType.SOFT   },
+            { text: '1', flashColor: new Color(236, 88, 122), finalColor: new Color(96, 220, 88), haptic: HapticType.MEDIUM },
         ];
         let i = 0;
         const tick = () => {
@@ -8653,31 +9120,42 @@ export class AppUI extends Component {
             if (this._countdownBigLabel) {
                 const lbl = this._countdownBigLabel;
                 lbl.string = step.text;
-                lbl.color = new Color(255, 255, 255);
+                lbl.color = step.flashColor ?? step.finalColor;
                 const node = lbl.node;
-                node.scale = new Vec3(0.6, 0.6, 1);
-                tween(node).to(0.35, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
-                    .to(0.15, { scale: new Vec3(1, 1, 1) })
+                const op = this._ensureOpacity(node);
+                Tween.stopAllByTarget(node);
+                Tween.stopAllByTarget(op);
+                node.scale = new Vec3(1.4, 1.4, 1);
+                op.opacity = 0;
+                // Fast fade-in (100ms), then 1.4 → 1.0 scale (400ms cubicOut),
+                // then long fade-out (300ms) so the next digit can ride in
+                // while this one's tail is still releasing.
+                tween(op).to(0.10, { opacity: 255 }, { easing: 'cubicOut' }).start();
+                tween(node)
+                    .to(0.40, { scale: new Vec3(1, 1, 1) }, { easing: 'cubicOut' })
                     .start();
-                // 100ms white flash, then lerp to target color over 150ms.
-                const colorCarrier = { r: 255, g: 255, b: 255 };
-                Tween.stopAllByTarget(colorCarrier);
-                tween(colorCarrier)
-                    .delay(0.1)
-                    .to(0.15, { r: step.color.r, g: step.color.g, b: step.color.b }, {
-                        onUpdate: () => {
-                            lbl.color = new Color(
-                                Math.round(colorCarrier.r),
-                                Math.round(colorCarrier.g),
-                                Math.round(colorCarrier.b),
-                            );
-                        },
-                    })
-                    .start();
+                tween(op).delay(0.30).to(0.30, { opacity: 0 }, { easing: 'cubicIn' }).start();
+                // Optional flash: "1" pops red for 80ms then settles green.
+                if (step.flashColor) {
+                    const carrier = { r: step.flashColor.r, g: step.flashColor.g, b: step.flashColor.b };
+                    Tween.stopAllByTarget(carrier);
+                    tween(carrier)
+                        .delay(0.08)
+                        .to(0.22, { r: step.finalColor.r, g: step.finalColor.g, b: step.finalColor.b }, {
+                            onUpdate: () => {
+                                lbl.color = new Color(
+                                    Math.round(carrier.r),
+                                    Math.round(carrier.g),
+                                    Math.round(carrier.b),
+                                );
+                            },
+                        })
+                        .start();
+                }
             }
             try { Haptics.fire(step.haptic); } catch (_) { /* editor no-op */ }
-            try { playSound(step.text === 'GO!' ? 'stack' : 'tap'); } catch (_) { /* missing asset */ }
-            setTimeout(tick, step.text === 'GO!' ? 450 : 550);
+            try { playSound('tap'); } catch (_) { /* missing asset */ }
+            setTimeout(tick, 600);
         };
         tick();
     }
@@ -9065,7 +9543,7 @@ export class AppUI extends Component {
             if (!spr) continue;
             spr.color = tab === active
                 ? new Color(28, 92, 78, 255)
-                : new Color(28, 34, 48, 255);
+                : new Color(36, 16, 48, 255);
         }
     }
 
@@ -9141,7 +9619,7 @@ export class AppUI extends Component {
             if (!spr) continue;
             spr.color = key === active
                 ? new Color(48, 198, 155, 255)
-                : new Color(28, 34, 48, 255);
+                : new Color(36, 16, 48, 255);
         }
     }
 
@@ -9230,7 +9708,7 @@ export class AppUI extends Component {
             return;
         }
         const anyIn = Watchlist.size() > 0;
-        if (spr) spr.color = anyIn ? new Color(70, 52, 14, 255) : new Color(28, 34, 48, 255);
+        if (spr) spr.color = anyIn ? new Color(70, 52, 14, 255) : new Color(36, 16, 48, 255);
         const btn = this._tokenDuelPanel?.getChildByName('WatchlistStarButton');
         if (btn) this._ensureIconBadge(btn, anyIn ? 'star' : 'starOutline', { size: 32, offsetX: 0 });
     }
@@ -9563,11 +10041,12 @@ export class AppUI extends Component {
             const logo = this._feedRowLogoSprites[i];
             if (logo?.node) {
                 logo.node.active = true;
-                // Defensive: re-assert spec size (64×64 per LayoutSpec.cjs
-                // feedRow.logo) in case scene cache lags after the
-                // 2026-04-29b flagship rebalance trim from 96→64.
+                // Defensive: re-assert spec size (60×60 per LayoutSpec.cjs
+                // feedRow.logo) in case scene cache lags. Slimmed 72→60 in
+                // the 2026-05-01 squad-select pass so the row recedes as a
+                // discovery surface (squad pillars carry the page weight).
                 const logoUT = logo.node.getComponent(UITransform);
-                if (logoUT) logoUT.setContentSize(64, 64);
+                if (logoUT) logoUT.setContentSize(60, 60);
             }
             this._loadLogoInto(logo, row.logoUri);
 
@@ -9798,11 +10277,31 @@ export class AppUI extends Component {
         }
         if (this._pickTargetSlot != null && !this._squad.slots[this._pickTargetSlot]) {
             const targetSlot = this._pickTargetSlot;
-            this._flyPickGhost(this._feedRowNodes[i] ?? null, targetSlot, row);
-            this._squad.setAt(targetSlot, row);
-            this._pickTargetSlot = null;
+            const sourceRowNode = this._feedRowNodes[i] ?? null;
+            const targetSlotNode = this._squadSlotButtons[targetSlot]?.node ?? null;
+            if (this._fighterPickCinematicEnabled && sourceRowNode && targetSlotNode && !this._isInBulkPickMode()) {
+                this._slotsPendingLanding.add(targetSlot);
+                this._squad.setAt(targetSlot, row);
+                this._pickTargetSlot = null;
+                this._renderFeedRows(this._currentFeedRows);
+                this._enqueueFighterPickIn({
+                    canvasNode: this.node,
+                    panelNode: this._tokenDuelPanel ?? this.node,
+                    sourceRowNode,
+                    targetSlotNode,
+                    tokenData: this._toFighterTokenData(row, sourceRowNode),
+                    onLanded: () => {
+                        this._slotsPendingLanding.delete(targetSlot);
+                        this._renderSquad();
+                    },
+                });
+            } else {
+                this._flyPickGhost(sourceRowNode, targetSlot, row);
+                this._squad.setAt(targetSlot, row);
+                this._pickTargetSlot = null;
+                this._renderFeedRows(this._currentFeedRows);
+            }
             console.log(`${TAG} _onFeedRowTap | PICK_TARGET_DROP symbol="${row.symbol}" slot=${targetSlot}`);
-            this._renderFeedRows(this._currentFeedRows);
             return;
         }
         this._rowActionPendingRow = row;
@@ -9844,17 +10343,58 @@ export class AppUI extends Component {
         } else {
             let placedAt = -1;
             const sourceNode = this._findFeedRowNodeByAddress(row.address);
+            const useCinematic = this._fighterPickCinematicEnabled && !this._isInBulkPickMode() && !!sourceNode;
             if (this._pickTargetSlot != null && !this._squad.slots[this._pickTargetSlot]) {
                 placedAt = this._pickTargetSlot;
-                this._flyPickGhost(sourceNode, placedAt, row);
-                this._squad.setAt(this._pickTargetSlot, row);
-                this._pickTargetSlot = null;
+                const targetSlotNode = this._squadSlotButtons[placedAt]?.node ?? null;
+                if (useCinematic && targetSlotNode) {
+                    this._slotsPendingLanding.add(placedAt);
+                    this._squad.setAt(this._pickTargetSlot, row);
+                    this._pickTargetSlot = null;
+                    this._enqueueFighterPickIn({
+                        canvasNode: this.node,
+                        panelNode: this._tokenDuelPanel ?? this.node,
+                        sourceRowNode: sourceNode,
+                        targetSlotNode,
+                        tokenData: this._toFighterTokenData(row, sourceNode!),
+                        onLanded: () => {
+                            this._slotsPendingLanding.delete(placedAt);
+                            this._renderSquad();
+                        },
+                    });
+                } else {
+                    this._flyPickGhost(sourceNode, placedAt, row);
+                    this._squad.setAt(this._pickTargetSlot, row);
+                    this._pickTargetSlot = null;
+                }
             } else {
                 // Predict the slot Squad.add will choose (left-to-right indexOf null)
-                // so the ghost-flight can target it before the model commits.
+                // so the cinematic / ghost-flight can target it before the model commits.
                 const predictedSlot = this._squad.slots.indexOf(null);
-                if (predictedSlot >= 0) this._flyPickGhost(sourceNode, predictedSlot, row);
-                placedAt = this._squad.add(row);
+                const targetSlotNode = predictedSlot >= 0 ? (this._squadSlotButtons[predictedSlot]?.node ?? null) : null;
+                if (useCinematic && predictedSlot >= 0 && targetSlotNode) {
+                    placedAt = this._squad.add(row);
+                    if (placedAt === predictedSlot) {
+                        this._slotsPendingLanding.add(placedAt);
+                        this._enqueueFighterPickIn({
+                            canvasNode: this.node,
+                            panelNode: this._tokenDuelPanel ?? this.node,
+                            sourceRowNode: sourceNode,
+                            targetSlotNode,
+                            tokenData: this._toFighterTokenData(row, sourceNode!),
+                            onLanded: () => {
+                                this._slotsPendingLanding.delete(placedAt);
+                                this._renderSquad();
+                            },
+                        });
+                    } else if (placedAt >= 0) {
+                        // Fallback: placement diverged from prediction (race condition).
+                        this._flyPickGhost(sourceNode, placedAt, row);
+                    }
+                } else {
+                    if (predictedSlot >= 0) this._flyPickGhost(sourceNode, predictedSlot, row);
+                    placedAt = this._squad.add(row);
+                }
             }
             console.log(`${TAG} _onRowActionPick | TOGGLE_ON symbol="${row.symbol}" slot=${placedAt}`);
             if (placedAt < 0) {
@@ -9892,13 +10432,32 @@ export class AppUI extends Component {
     }
 
     private _onSquadSlotRemove(i: number): void {
-        if (!this._squad.slots[i]) return;
-        console.log(`${TAG} _onSquadSlotRemove | index=${i} symbol=${this._squad.slots[i]?.symbol}`);
+        const slotData = this._squad.slots[i];
+        if (!slotData) return;
+        console.log(`${TAG} _onSquadSlotRemove | index=${i} symbol=${slotData.symbol}`);
         const slotNode = this._squadSlotButtons[i]?.node ?? null;
-        if (slotNode) {
-            try { addPressPop(slotNode); } catch (_) { /* ignore */ }
+        if (!this._fighterPickCinematicEnabled || this._isInBulkPickMode() || !slotNode) {
+            if (slotNode) { try { addPressPop(slotNode); } catch (_) { /* ignore */ } }
+            this._squad.clearAt(i);
+            return;
         }
-        this._squad.clearAt(i);
+        const targetRowNode = this._findFeedRowNodeByAddress(slotData.address);
+        this._slotsPendingLanding.add(i);
+        // Hide slot card immediately so the hero card is the only visible
+        // representation while the reverse cinematic plays.
+        const op = slotNode.getComponent(UIOpacity) ?? slotNode.addComponent(UIOpacity);
+        op.opacity = 0;
+        this._enqueueFighterPickOut({
+            canvasNode: this.node,
+            panelNode: this._tokenDuelPanel ?? this.node,
+            sourceSlotNode: slotNode,
+            targetRowNode,
+            tokenData: this._toFighterTokenData(slotData, slotNode),
+            onLanded: () => {
+                this._slotsPendingLanding.delete(i);
+                this._squad.clearAt(i);
+            },
+        });
     }
 
     /** Locate the FeedRow node currently rendering a given mint, if any. */
@@ -9907,6 +10466,53 @@ export class AppUI extends Component {
         const idx = this._currentFeedRows.findIndex((r) => r.address === address);
         if (idx < 0) return null;
         return this._feedRowNodes[idx] ?? null;
+    }
+
+    /**
+     * True when the user is in the multi-checkbox batch-pick mode. The
+     * fighter cinematic is bypassed in this mode so 2-3 batched picks don't
+     * queue up 3+ seconds of animation; the legacy 180ms ghost-fly stays.
+     */
+    private _isInBulkPickMode(): boolean {
+        return this._squadPickChecked.size > 0;
+    }
+
+    /**
+     * Pull the fields the cinematic needs out of a TokenRow, plus a reference
+     * (not a clone) to the row's logo SpriteFrame for the hero card. The
+     * SpriteFrame reference is intentional — cloning it triggers the
+     * sprites-need-_spriteFrame-reference UIModelProxy bug per safeGraphics.
+     */
+    private _toFighterTokenData(row: TokenRow, sourceNode: Node): FighterTokenData {
+        const logoSprite = sourceNode.getChildByName('LogoSprite')?.getComponent(Sprite) ?? null;
+        return {
+            symbol: row.symbol ?? '',
+            changePct: row.change24hPct ?? 0,
+            liquidityUsd: row.liquidity ?? 0,
+            volumeUsd: row.volume24hUsd ?? 0,
+            priceUsd: row.priceUsd ?? 0,
+            logoSpriteFrame: logoSprite?.spriteFrame ?? null,
+        };
+    }
+
+    private _enqueueFighterPickIn(opts: FighterPickInOptions): void {
+        this._activePickQueue.push(() => runFighterPickIn(opts));
+        void this._drainPickQueue();
+    }
+
+    private _enqueueFighterPickOut(opts: FighterPickOutOptions): void {
+        this._activePickQueue.push(() => runFighterPickOut(opts));
+        void this._drainPickQueue();
+    }
+
+    private async _drainPickQueue(): Promise<void> {
+        if (this._pickQueueRunning) return;
+        this._pickQueueRunning = true;
+        while (this._activePickQueue.length > 0) {
+            const fn = this._activePickQueue.shift()!;
+            try { await fn(); } catch (e) { console.warn(`${TAG} _drainPickQueue | fighterPick threw:`, e); }
+        }
+        this._pickQueueRunning = false;
     }
 
     /**
@@ -9999,10 +10605,23 @@ export class AppUI extends Component {
             const edge     = this._squadSlotEdges[i]     ?? null;
             const idxLbl   = this._squadSlotIndexLabels[i] ?? null;
             const silhouette = this._squadSlotSilhouettes[i] ?? null;
+            const haloSpr  = this._squadSlotGlowHalos[i]  ?? null;
             const slot = slots[i];
             const slotNode = btn?.node ?? null;
             const wasFilled = this._squadSlotPrevFilled[i] ?? false;
             const isFilled = !!slot;
+            // Cinematic owns this slot until landing — keep it hidden so the
+            // populated card doesn't pop in before the hero card lands.
+            if (this._slotsPendingLanding.has(i) && slotNode) {
+                const op = slotNode.getComponent(UIOpacity) ?? slotNode.addComponent(UIOpacity);
+                op.opacity = 0;
+                this._squadSlotPrevFilled[i] = isFilled;
+                continue;
+            }
+            if (slotNode) {
+                const op = slotNode.getComponent(UIOpacity);
+                if (op && op.opacity !== 255) op.opacity = 255;
+            }
             // Slot card stays visible always — empty slots show "+" drop zone.
             if (slotNode && !slotNode.active) slotNode.active = true;
             const removeBtn = slotNode?.getChildByName('RemoveButton') ?? null;
@@ -10051,6 +10670,13 @@ export class AppUI extends Component {
                         : new Color(153, 69, 255, 130);
                 }
                 if (removeBtn) removeBtn.active = false;
+                // 2026-05-01 squad-select pass — halo dim by default, brightens
+                // to violet when this slot is the active pick target.
+                if (haloSpr) {
+                    haloSpr.color = targeted
+                        ? new Color(153, 69, 255, 90)   // violet hover
+                        : new Color(20, 241, 149, 0);   // hidden when idle
+                }
                 // 2026-04-30 — gentle idle pulse on empty slots so the user's
                 // eye is drawn to "tap me" zones. Idempotent — addIdlePulse
                 // returns early if already pulsing.
@@ -10062,8 +10688,8 @@ export class AppUI extends Component {
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
                 if (slotSpr) {
                     slotSpr.color = targeted
-                        ? new Color(36, 30, 56, 240)        // violet-tinted target
-                        : new Color(22, 26, 40, 240);       // empty drop zone
+                        ? new Color(50, 20, 72, 240)        // violet-tinted target
+                        : new Color(16, 4, 24, 240);        // empty drop zone
                 }
             } else {
                 const d = slot.change24hPct;
@@ -10122,6 +10748,16 @@ export class AppUI extends Component {
                     }
                 }
                 if (removeBtn) removeBtn.active = true;
+                // 2026-05-01 squad-select pass — filled card halo: teal when
+                // positive 24h%, rose when negative, slate when flat. Alpha
+                // bumps to 80 so the card visibly elevates above the panel bg.
+                if (haloSpr) {
+                    haloSpr.color = d > 0
+                        ? new Color(20, 241, 149, 80)
+                        : d < 0
+                            ? new Color(255, 77, 77, 80)
+                            : new Color(140, 140, 140, 50);
+                }
                 // 2026-04-30 — stop the empty-slot idle pulse the moment a
                 // token lands so the "anchored / committed" read isn't fighting
                 // a breathing animation.
@@ -10134,7 +10770,7 @@ export class AppUI extends Component {
                 // Combined with the brighter commitment-ring edge above this
                 // gives the Clash/FIFA "heavy locked unit" read.
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
-                if (slotSpr) slotSpr.color = new Color(20, 24, 38, 240);
+                if (slotSpr) slotSpr.color = new Color(16, 4, 24, 240);
                 // Slot pop on empty → filled transition. Subtle 1.03 lock-in
                 // pop (the 1.08 finale fires only when the squad hits 3/3).
                 if (!wasFilled && slotNode) {
@@ -10220,7 +10856,7 @@ export class AppUI extends Component {
     private _highlightActiveStakeChip(active: '001' | '010' | '100'): void {
         // Session 12: emerald accent when active, chrome-bg when idle.
         const colorActive = new Color(48, 198, 155, 255);
-        const colorInactive = new Color(28, 34, 48, 255);
+        const colorInactive = new Color(36, 16, 48, 255);
         for (const [kind, btn] of this._stakeChipButtons) {
             const spr = btn.node.getComponent(Sprite);
             if (spr) spr.color = kind === active ? colorActive : colorInactive;
@@ -11006,7 +11642,7 @@ export class AppUI extends Component {
                         : new Color(180, 190, 210, 255);
             }
             const spr = btn.node.getComponent(Sprite);
-            if (spr) spr.color = disabledByFeed ? new Color(22, 26, 36, 255) : new Color(28, 34, 48, 255);
+            if (spr) spr.color = disabledByFeed ? new Color(16, 4, 24, 255) : new Color(36, 16, 48, 255);
             btn.interactable = !disabledByFeed;
         }
     }
@@ -11552,6 +12188,23 @@ export class AppUI extends Component {
         // double-fire setTimeouts.
         this._clearPostMatchRevealTimers();
         this._postMatchCascadeSkipped = false;
+        // 2026-05-01 — Diagnostic dumps for the "buttons not clickable" bug.
+        // Schedules four button-health snapshots after show. Gated by
+        // DEBUG_POSTMATCH so we can flip it off once verified fixed without
+        // ripping the code out. The 4000 ms tick lands AFTER the 3500 ms
+        // CTA_SAFETY_NET so we can see whether the safety-net actually fires
+        // and what state it leaves the buttons in. NOTE: pushed AFTER
+        // _clearPostMatchRevealTimers so the dumps survive the clear.
+        if (DEBUG_POSTMATCH) {
+            const dumpAtMs = (ms: number) => {
+                const t = setTimeout(() => this._dumpPostMatchButtonHealth(`@${ms}ms`), ms);
+                this._postMatchRevealTimers.push(t as unknown as number);
+            };
+            dumpAtMs(250);
+            dumpAtMs(750);
+            dumpAtMs(2000);
+            dumpAtMs(4000);
+        }
         // UX Phase 2b: route celebrate/lose/think to the PostMatchMascot. The
         // results screen must NEVER show 'idle' — pick exactly one of the
         // outcome states. `force=true` replays the animation when the previous
@@ -12278,6 +12931,17 @@ export class AppUI extends Component {
                 const op = this._ensureOpacity(n);
                 Tween.stopAllByTarget(op);
                 op.opacity = 255;
+                // 2026-05-01 — Tap-to-skip routes through this finalizer. The
+                // prior version stopped tweens and restored opacity, but did
+                // NOT restore Button.interactable or node.active. If the user
+                // tapped the panel during beats 0–6 (before beat 7 wired
+                // interactable=true), the buttons stayed frozen non-interactive
+                // until the 3500 ms CTA_SAFETY_NET fired. Force them clickable
+                // immediately on every finalize so the user can tap right after
+                // skipping. Idempotent.
+                n.active = true;
+                const btn = n.getComponent(Button);
+                if (btn) btn.interactable = true;
             };
             snapCTA(ctaPrimary);
             snapCTA(ctaSecondary);
@@ -12295,31 +12959,32 @@ export class AppUI extends Component {
         // Skip-suppress on PostMatch button taps so a fast tap doesn't race
         // the cascade-skip and mutate panel state out from under the button.
         if (this._postMatchPanel && !(this._postMatchPanel as any)._tapSkipBound) {
-            const ctaNames = new Set([
-                'PostMatchBackButton',
-                'PostMatchAgainButton',
-                'PostMatchSameSquadButton',
-                'PostMatchShareButton',
-            ]);
             this._postMatchPanel.on(Node.EventType.TOUCH_END, (e: EventTouch) => {
-                const t = e.target as Node | null;
-                const tName = t?.name ?? 'null';
-                // Walk up the parent chain — event.target is the deepest hit
-                // node (often TitleLabel/SubtitleLabel children of a CTA), so
-                // a literal name match misses label-text taps and falls
-                // through to skip-finalizer, which Tween.stopAllByTarget's
-                // the CTAs mid-cascade and races the Button's CLICK emit.
-                let cur: Node | null = t;
-                let matched: string | null = null;
-                while (cur && cur !== this._postMatchPanel) {
-                    if (ctaNames.has(cur.name)) { matched = cur.name; break; }
-                    cur = cur.parent;
-                }
-                if (matched) {
-                    console.log(`${PMBTAG} PANEL_TOUCH_END | SUPPRESS_SKIP target=${tName} matched=${matched}`);
+                // 2026-05-01 — AABB hit-test, not parent-chain walk. On native
+                // Android, e.target is the deepest hit node which can be a
+                // visual descendant (BtnGlow / TopHighlight / TitleLabel) that
+                // is NOT a child of the Button node — they overlap visually
+                // but are siblings under PostMatchPanel. The prior name-set
+                // walk failed in that case and fell through to skip-finalizer,
+                // which Tween.stopAllByTarget'd the CTAs mid-cascade and raced
+                // the Button's CLICK emit. AABB checks if the world tap point
+                // lies inside either visible CTA's UITransform rect — robust
+                // to whatever child happens to be the deepest hit node.
+                const wp = e.getUILocation();
+                const tName = (e.target as Node | null)?.name ?? 'null';
+                const inAABB = (n: Node | null | undefined): boolean => {
+                    if (!n || !n.isValid || !n.active) return false;
+                    const ut = n.getComponent(UITransform);
+                    if (!ut) return false;
+                    return ut.getBoundingBoxToWorld().contains(wp);
+                };
+                const ssBtn    = this._postMatchPanel!.getChildByName('PostMatchSameSquadButton');
+                const againBtn = this._postMatchPanel!.getChildByName('PostMatchAgainButton');
+                if (inAABB(ssBtn) || inAABB(againBtn)) {
+                    console.log(`${PMBTAG} PANEL_TOUCH_END | SUPPRESS_SKIP_AABB target=${tName} wp=${wp.x.toFixed(1)},${wp.y.toFixed(1)}`);
                     return;
                 }
-                console.log(`${PMBTAG} PANEL_TOUCH_END | RUN_SKIP target=${tName}`);
+                console.log(`${PMBTAG} PANEL_TOUCH_END | RUN_SKIP target=${tName} wp=${wp.x.toFixed(1)},${wp.y.toFixed(1)}`);
                 this._skipPostMatchReveal();
             });
             (this._postMatchPanel as any)._tapSkipBound = true;
@@ -12348,7 +13013,7 @@ export class AppUI extends Component {
         const drawBar = (pct: number, fill: Color) => {
             g.clear();
             // Dark track behind.
-            g.fillColor = new Color(28, 32, 48, 220);
+            g.fillColor = new Color(36, 16, 48, 220);
             g.roundRect(-halfW, -trackH / 2, trackW, trackH, radius);
             g.fill();
             // Accent fill on top, clamped 0..1.
@@ -12555,6 +13220,105 @@ export class AppUI extends Component {
         setY('PostMatchStatusLabel',         botAnchor + Z.bottom.status);
 
         console.log(`${TAG} _relayoutPostMatchToViewport | vw=${vw} vh=${vh} topAnchor=${topAnchor.toFixed(1)} botAnchor=${botAnchor.toFixed(1)}`);
+    }
+
+    /**
+     * 2026-04-30 immersive redesign — resize the ModePickerOverlay's panel
+     * UTransform + backdrop sprites to view.getVisibleSize() so the dark
+     * base, top violet gradient, and center glow always fill the viewport.
+     * Without this, FIXED_WIDTH at 720 leaves a ~280px bleed band on tall
+     * (19.5:9+) viewports: purple TokenDuelPanel header showing through at
+     * the top, green race strip at the bottom. Mirrors the pattern proven
+     * in _relayoutPostMatchToViewport (same root cause, same fix).
+     *
+     * Idempotent — safe to call on every show or every refresh.
+     */
+    private _relayoutModePickerToViewport(): void {
+        if (!this._modePickerOverlay) return;
+        const vs = view.getVisibleSize();
+        const vw = vs.width;
+        const vh = vs.height;
+
+        // Panel UTransform = scrim sprite size. The panel-level cc.Sprite
+        // draws against the panel's own UTransform, so resizing here grows
+        // the dark base scrim to fill the viewport without touching child Y's.
+        const panelUT = this._modePickerOverlay.getComponent(UITransform);
+        if (panelUT) panelUT.setContentSize(vw, vh);
+
+        // 2026-05-01 staging polish — full-viewport violet wash. Extended
+        // from top-half (vh/2) to full vh and recentered at y=0 so on tall
+        // devices the title block no longer sits above the gradient's top
+        // edge with the dark base bleeding through. The wash now covers
+        // the whole panel uniformly; alpha bumped 140→170 in scene-gen so
+        // the violet stays perceptible end to end.
+        const backdrop = this._modePickerOverlay.getChildByName('ModePickerBackdrop');
+        const gradientTop = backdrop?.getChildByName('ModePickerGradientTop');
+        if (gradientTop) {
+            const gUT = gradientTop.getComponent(UITransform);
+            if (gUT) gUT.setContentSize(vw, vh);
+            const gp = gradientTop.position;
+            gradientTop.setPosition(gp.x, 0, gp.z);
+        }
+
+        // Center radial glow — keep fixed-size halo (480×480) but recenter
+        // to a slight upward offset so it sits behind the mode-tile grid.
+        const centerGlow = backdrop?.getChildByName('ModePickerCenterGlow');
+        if (centerGlow) {
+            const cp = centerGlow.position;
+            centerGlow.setPosition(cp.x, vh * 0.0625, cp.z);
+        }
+
+        // 2026-04-30 arena redesign — anchor the top bar/header to the
+        // viewport top and the summary/CTA/footer to the viewport bottom.
+        // Design Y values are tuned to a 1280-tall canvas; the headroom
+        // delta below pushes top items further up and bottom items further
+        // down so a 19.5:9+ device fills its full height with no dead band.
+        const DESIGN_H = 1280;
+        const headroom = Math.max(0, (vh - DESIGN_H) / 2);
+        const overlay = this._modePickerOverlay;
+        const setY = (name: string, y: number) => {
+            const n = overlay.getChildByName(name);
+            if (!n) return;
+            const p = n.position;
+            n.setPosition(p.x, y, p.z);
+        };
+        // Top zone — headroom pushes the band closer to the safe-area top.
+        // 2026-05-01 staging polish: sectionMode + the four Mode_* cards now
+        // ride with headroom too, so the entire header→mode block translates
+        // as one unit on tall devices. Previously sectionMode/mode cards
+        // stayed at design-canvas Y while the title block moved up, opening
+        // a ~140px dead band on 19.5:9+ frames — exactly the gap users saw.
+        setY('PickerBackButton',         580 + headroom);
+        setY('PickerCancelButton',       580 + headroom);
+        setY('ModePickerTitleLabel',     500 + headroom);
+        setY('ModePickerTitleDivider',   472 + headroom);
+        setY('ModePickerSubtitleLabel',  440 + headroom);
+        setY('PickerSectionLabel_Mode',  400 + headroom);
+        setY('Mode_oneVone',             310 + headroom);
+        setY('Mode_trio',                310 + headroom);
+        setY('Mode_fourPlayer',          160 + headroom);
+        setY('Mode_eightPlayer',         160 + headroom);
+        // Bottom zone — headroom pushes the band closer to the safe-area
+        // bottom. Difficulty section is middle-zone and handled by SHIFT in
+        // _refreshModePickerUi separately, so the Bot/Guest collapse keeps
+        // working independently of viewport anchoring.
+        // 2026-05-01 round 2 — constant +80 lift on every bottom-anchored Y
+        // so the CTA + status microcopy aren't pinned against the viewport
+        // bottom safe area on the user's device. Without this, on vh=1560
+        // the CTA's bottom edge sat ~58px from the screen edge, reading as
+        // "touching." +80 buys ~138px breathing room across all viewports.
+        const BOTTOM_LIFT = 80;
+        setY('PickerSummaryCard',        -322 - headroom + BOTTOM_LIFT);
+        setY('PickerSummaryConnector',   -432 - headroom + BOTTOM_LIFT);
+        setY('PickerStartButton',        -516 - headroom + BOTTOM_LIFT);
+        setY('PickerStatusLabel',        -612 - headroom + BOTTOM_LIFT);
+        // CTA hero glow halo is a sibling of the button; mkBtnHero anchors
+        // it at the same (x,y). Keep them aligned so the halo bloom hugs
+        // the button on every viewport.
+        const btnGlow = overlay.getChildByName('BtnGlow_PickerStartButton');
+        if (btnGlow) btnGlow.setPosition(0, -516 - headroom + BOTTOM_LIFT, 0);
+
+        console.log(`${TAG} _relayoutModePickerToViewport | vw=${vw} vh=${vh} headroom=${headroom.toFixed(1)}`);
     }
 
     /**
@@ -13786,16 +14550,34 @@ export class AppUI extends Component {
     }
 
     private _onNotifMarkAllReadTap(): void {
-        const marked = NotificationStore.instance.markAllRead();
-        console.log(`${TAG} _onNotifMarkAllReadTap | marked=${marked}`);
-        if (marked === 0) return;
-        // Force-paint immediately so the user sees rows dim within <100ms;
-        // the store's _fanout will re-render again, which is harmless.
-        // _renderNotificationList reconciles MarkAllRead enabled state from
-        // getUnreadCount() — no need to disable here separately.
-        this._renderNotificationList();
-        // Transient confirmation toast — emitted via a synthetic notification
-        // straight to the toast queue so it surfaces but never persists.
+        const visibleCount = this._notifRowIds.filter((x) => !!x).length;
+        if (visibleCount === 0) return;
+        console.log(`${TAG} _onNotifMarkAllReadTap | clearing count=${visibleCount}`);
+        // Animate every visible row out in parallel (slide right + fade) so the
+        // sweep reads as deliberate before the list snaps to empty-state.
+        for (let i = 0; i < this._notifRows.length; i++) {
+            if (!this._notifRowIds[i]) continue;
+            const row = this._notifRows[i];
+            if (!row || !row.active) continue;
+            const op = row.getComponent(UIOpacity) ?? row.addComponent(UIOpacity);
+            const restingY = row.position.y;
+            const startX = row.position.x;
+            Tween.stopAllByTarget(row);
+            Tween.stopAllByTarget(op);
+            tween(row)
+                .to(0.16, { position: new Vec3(startX + 120, restingY, 0) }, { easing: 'cubicIn' })
+                .start();
+            tween(op)
+                .to(0.16, { opacity: 0 }, { easing: 'cubicIn' })
+                .call(() => { row.setPosition(0, restingY, 0); op.opacity = 255; })
+                .start();
+        }
+        // After the exit tween, dismiss everything → store fan-out → re-render shows empty group.
+        this.scheduleOnce(() => {
+            NotificationStore.instance.dismissAll();
+        }, 0.18);
+        // Transient confirmation toast — synthetic notification straight to the toast
+        // queue so it surfaces but never persists.
         const queue = this._notifToastQueue;
         if (queue) {
             const transient: Notification = {
@@ -13830,18 +14612,39 @@ export class AppUI extends Component {
         const list = NotificationStore.instance.getRecent(50);
         const n = list.find((x) => x.id === id);
         if (!n) return;
-        // Mark read first (idempotent — store no-ops if already read).
+        // Mark read first so backend sync fires; dismiss removes from local visible list.
         NotificationStore.instance.markRead(id);
-        // If the notification has a deep-link, dispatch it and close the panel.
         const handler = this._resolveNotifTapHandler(n);
         if (handler) {
             try { handler(n); } catch (e) { console.log(`${TAG} _onNotifRowTap | dispatch error ${e}`); }
+            NotificationStore.instance.dismiss(id);
             this._hideNotificationPanel();
             return;
         }
-        // No deep-link — just re-render so the read state is reflected
-        // (dim opacity + accent edge off + dot off). Panel stays open.
-        this._renderNotificationList();
+        // No deep-link: animate row out, then dismiss → re-render reflows remaining items.
+        this._animateRowDismiss(rowIdx, id);
+    }
+
+    private _animateRowDismiss(rowIdx: number, id: string): void {
+        const row = this._notifRows[rowIdx];
+        if (!row) { NotificationStore.instance.dismiss(id); return; }
+        const op = row.getComponent(UIOpacity) ?? row.addComponent(UIOpacity);
+        const restingY = row.position.y;
+        const startX = row.position.x;
+        Tween.stopAllByTarget(row);
+        Tween.stopAllByTarget(op);
+        tween(row)
+            .to(0.16, { position: new Vec3(startX + 120, restingY, 0) }, { easing: 'cubicIn' })
+            .start();
+        tween(op)
+            .to(0.16, { opacity: 0 }, { easing: 'cubicIn' })
+            .call(() => {
+                // Reset before dismiss so when this pooled row gets reused for a remaining item, it renders correctly.
+                row.setPosition(0, restingY, 0);
+                op.opacity = 255;
+                NotificationStore.instance.dismiss(id);
+            })
+            .start();
     }
 
     /** Returns a tap handler for the given notification (used by both panel rows and toast taps). */
@@ -13981,8 +14784,8 @@ export class AppUI extends Component {
             if (row) row.active = false;
             this._notifRowIds[rowIdx] = null;
         }
-        // Reconcile MarkAllRead enabled state with current unread count.
-        this._setMarkAllReadEnabled(NotificationStore.instance.getUnreadCount() > 0);
+        // "Mark all read" now clears the list — enable whenever any item is visible.
+        this._setMarkAllReadEnabled(items.length > 0);
     }
 
     private _refreshNotificationBadge(): void {
@@ -15062,6 +15865,10 @@ export class AppUI extends Component {
     }
 
     private _refreshModePickerUi(): void {
+        // 2026-04-30 immersive redesign — fill the viewport on every refresh
+        // so opening the picker on a tall device never leaves a bleed band.
+        this._relayoutModePickerToViewport();
+
         // Guest OR bot mode hides the Paper/Real toggle (always paper); the
         // wager chip row was retired in the lock-in redesign — stake info now
         // lives in PickerSummaryCard's stake label, which is always visible.
@@ -15080,22 +15887,30 @@ export class AppUI extends Component {
             if (trackHdr) trackHdr.active = true;
             for (const btn of this._pickerWagerButtons.values()) btn.node.active = true;
         }
-        // Lock-in redesign — when Track row is hidden, shift everything below
-        // it UP by 80 px so we don't leave a gap. Idempotent: each call sets
-        // absolute position from the known base. Smaller shift than Phase 23
-        // (was 150) because wagerReadout was retired and summaryCard is more
-        // compact than the loose wager-readout strip.
+        // 2026-04-30 arena redesign — only the middle-zone Difficulty band
+        // shifts when Track is hidden. Summary card / CTA / footer are now
+        // anchored to the viewport bottom by _relayoutModePickerToViewport
+        // and stay put regardless of Track visibility (the visual gap above
+        // them communicates "you're committing to this" instead of feeling
+        // like a dropped layout).
         const SHIFT = hideTrack ? 80 : 0;
         const setY = (n: Node | null | undefined, baseY: number) => {
             if (!n) return;
             const p = n.position;
             n.setPosition(p.x, baseY + SHIFT, p.z);
         };
-        setY(this._modePickerOverlay?.getChildByName('PickerSectionLabel_Difficulty'), -30);
-        for (const btn of this._pickerDifficultyButtons.values()) setY(btn.node, -90);
-        setY(this._modePickerOverlay?.getChildByName('PickerSummaryCard'), -200);
-        setY(this._modePickerOverlay?.getChildByName('PickerStartButton'), -340);
-        setY(this._modePickerOverlay?.getChildByName('PickerStatusLabel'), -440);
+        // 2026-05-01 staging polish — Y bases match LayoutSpec retune
+        // (sectionDifficulty -140→-116, difficultyBtn -200→-172).
+        setY(this._modePickerOverlay?.getChildByName('PickerSectionLabel_Difficulty'), -116);
+        for (const btn of this._pickerDifficultyButtons.values()) setY(btn.node, -172);
+
+        // 2026-04-30 — color constants pulled from Theme.Palette so we don't
+        // drift away from the rest of the app. tealActive = Solana teal at
+        // full opacity (selected); pillIdle = Palette.bg.pillTray (#1F2438).
+        const tealActive = new Color(20, 241, 149, 255);   // Palette.accent.teal
+        const pillIdle   = new Color(31, 36, 56, 255);     // Palette.bg.pillTray
+        const violetActive = new Color(153, 69, 255, 255); // Palette.accent.violet (Real toggle)
+
         // Stage 3 mode rebalance: scene keys ARE ModeIds now.
         const sceneToModeId: Record<string, string> = {
             oneVone:     'oneVone',
@@ -15106,10 +15921,18 @@ export class AppUI extends Component {
         for (const [key, btn] of this._pickerModeButtons) {
             const modeId = sceneToModeId[key] ?? 'oneVone';
             const spr = btn.node.getComponent(Sprite);
+            const isSelected = modeId === this._pickerSelectedMode;
             if (spr) {
-                spr.color = modeId === this._pickerSelectedMode
-                    ? new Color(48, 198, 155, 255)
-                    : new Color(28, 34, 48, 255);
+                spr.color = isSelected ? tealActive : pillIdle;
+            }
+            // 2026-05-01 staging polish — only the selected mode card breathes
+            // (1.04 scale, 1.6s). Unselected cards stop their pulse and reset
+            // scale so the active selection reads as the primary decision.
+            // addIdlePulse + stopPulse are idempotent.
+            if (isSelected) {
+                addIdlePulse(btn.node, 1.04, 1.6);
+            } else {
+                stopPulse(btn.node);
             }
         }
         // Wager tint. betting-duel: 8 chips. wagerKeys[i] → tier sceneToTierIdx[i].
@@ -15120,31 +15943,33 @@ export class AppUI extends Component {
             if (!btn) continue;
             const spr = btn.node.getComponent(Sprite);
             if (spr) spr.color = sceneToTierIdx[w] === this._pickerSelectedWagerIndex
-                ? new Color(48, 198, 155, 255)
-                : new Color(28, 34, 48, 255);
+                ? tealActive
+                : pillIdle;
         }
-        // Part 9: TimeWindow chip tint
+        // Duration chip tint
         for (const [wk, btn] of this._pickerWindowButtons) {
             const spr = btn.node.getComponent(Sprite);
-            if (spr) spr.color = wk === this._pickerSelectedWindow ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
+            if (spr) spr.color = wk === this._pickerSelectedWindow ? tealActive : pillIdle;
         }
-        // Track tint
+        // Track toggle — Real selected gets Solana violet so Paper/Real
+        // visually differ at a glance.
         const paperSpr = this._pickerPaperToggle?.node.getComponent(Sprite);
         const realSpr = this._pickerRealToggle?.node.getComponent(Sprite);
-        if (paperSpr) paperSpr.color = this._pickerSelectedTrack === 'paper' ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
-        if (realSpr)  realSpr.color  = this._pickerSelectedTrack === 'real'  ? new Color(48, 198, 155, 255) : new Color(28, 34, 48, 255);
+        if (paperSpr) paperSpr.color = this._pickerSelectedTrack === 'paper' ? tealActive : pillIdle;
+        if (realSpr)  realSpr.color  = this._pickerSelectedTrack === 'real'  ? violetActive : pillIdle;
         // Phase E — difficulty tint. Greyed when track=Real (host always
         // picks human opponents; difficulty only kicks in on the bot fallback).
         const difficultyVisible = this._pickerSelectedTrack === 'paper';
+        const greyed = new Color(50, 56, 72, 180);
         for (const [d, btn] of this._pickerDifficultyButtons) {
             const spr = btn.node.getComponent(Sprite);
             if (!spr) continue;
             if (!difficultyVisible) {
-                spr.color = new Color(50, 56, 72, 180);
+                spr.color = greyed;
             } else {
                 spr.color = d === this._pickerSelectedDifficulty
-                    ? new Color(48, 198, 155, 255)
-                    : new Color(28, 34, 48, 255);
+                    ? tealActive
+                    : pillIdle;
             }
         }
         // Lock-in summary card — three labels (mode / modifiers / stake)
@@ -15220,9 +16045,15 @@ export class AppUI extends Component {
                 }
             }
             if (this._wagerHintLabel) {
+                // 2026-05-01 r3 — single label, always visible, state-based.
+                // Lock chip occupies the pill row so hint stays at -616.
                 this._wagerHintLabel.string = ready
-                    ? `Resuming your lobby · ${wagerLabel} · tap to re-enter`
+                    ? '✓ Squad ready · tap RESUME MATCH'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to resume`;
+                this._wagerHintLabel.color = ready
+                    ? new Color(20, 241, 149, 255)
+                    : new Color(168, 174, 201, 230);
+                this._wagerHintLabel.node.setPosition(0, -616, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -15249,9 +16080,15 @@ export class AppUI extends Component {
                 }
             }
             if (this._wagerHintLabel) {
+                // 2026-05-01 r3 — single label, always visible, state-based.
+                // Lock chip occupies the pill row so hint stays at -616.
                 this._wagerHintLabel.string = ready
-                    ? `Joining ${hostShort}'s match · ${wagerLabel} · tap Join to commit`
+                    ? '✓ Squad ready · tap JOIN MATCH'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to join`;
+                this._wagerHintLabel.color = ready
+                    ? new Color(20, 241, 149, 255)
+                    : new Color(168, 174, 201, 230);
+                this._wagerHintLabel.node.setPosition(0, -616, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -15278,9 +16115,16 @@ export class AppUI extends Component {
                 }
             }
             if (this._wagerHintLabel) {
+                // 2026-05-01 r3 — BOT MODE: pill row is EMPTY (no stake
+                // selector, no lock chip), so pull the hint UP to where
+                // the pill would sit (y=-548) instead of leaving a gap.
                 this._wagerHintLabel.string = ready
-                    ? 'Paper · vs Bots · free practice · tap to start'
+                    ? '✓ Squad ready · tap START BOT MATCH'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to play bots`;
+                this._wagerHintLabel.color = ready
+                    ? new Color(20, 241, 149, 255)
+                    : new Color(168, 174, 201, 230);
+                this._wagerHintLabel.node.setPosition(0, -548, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -15291,6 +16135,9 @@ export class AppUI extends Component {
         if (this._wagerValueButton) this._wagerValueButton.node.active = true;
         if (this._wagerLockChip) this._wagerLockChip.active = false;
         if (this._wagerBotChip) this._wagerBotChip.active = false;
+        // 2026-05-01 r3 — single-line "0.05 SOL  ▾" on the half-width
+        // chunky stake pill (32pt gold bold, set at scene-gen). Runtime
+        // updates the amount when user picks a tier from the dropdown.
         if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
         if (this._matchSetupStakeLabel) this._matchSetupStakeLabel.string = `Stake: ${label}`;
         if (this._wagerStartButton) {
@@ -15300,11 +16147,17 @@ export class AppUI extends Component {
             }
         }
         if (this._wagerHintLabel) {
+            // 2026-05-01 r3 — single label, always visible, state-based copy
+            // (one or the other, never two competing labels in this row).
             this._wagerHintLabel.string = ready
-                ? `Ready · ${label} · tap to start your match`
+                ? '✓ Squad ready · tap LOCK IN SQUAD'
                 : filled === 2
-                    ? 'Pick your final token to lock in your squad'
+                    ? 'Pick your final token to lock in'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
+            this._wagerHintLabel.color = ready
+                ? new Color(20, 241, 149, 255)
+                : new Color(168, 174, 201, 230);
+            this._wagerHintLabel.node.setPosition(0, -616, 0);
         }
         this._syncWagerStartPulse(ready);
     }
@@ -15328,16 +16181,18 @@ export class AppUI extends Component {
         // overlay at full alpha and the read would be off.
         let opacity = node.getComponent(UIOpacity);
         if (!opacity) opacity = node.addComponent(UIOpacity);
-        // 2026-04-29 token-picker rebuild — incomplete-squad opacity 130→180 so
-        // the "Pick N more" label reads clearly. The brief calls for the CTA to
-        // be "disabled/secondary but still readable"; 130 was too dim to read as
-        // anything but broken.
-        opacity.opacity = ready ? 255 : 180;
+        // 2026-05-01 squad-select pass — tri-state opacity per squad fill so
+        // the CTA visually progresses 0 → 1-2 → 3:
+        //   0/3: opacity 130 (dim, "do nothing here yet")
+        //   1-2: opacity 200 (semi-active, "you're getting there")
+        //   3/3: opacity 255 (full, ready, glow halo via idle-pulse below)
+        // Replaces the prior 2-state on/off (180 vs 255).
+        const filled = this._squad.filled;
+        opacity.opacity = ready ? 255 : (filled === 0 ? 130 : 200);
         // 2026-04-28 polish — pulse at 2/3 (anticipation) AND 3/3 (ready).
         // 2/3 uses the subtler addAlmostReadyPulse (1.015 / 2.5s) so it
         // reads as "finish your squad" without competing with the 3/3
         // call-to-action. Swap kinds on transition rather than stacking.
-        const filled = this._squad.filled;
         const desired: 'none' | 'almost' | 'ready' = ready ? 'ready' : (filled === 2 ? 'almost' : 'none');
         if (desired === this._wagerStartPulseKind) return;
         // stopPulse clears both the tween and the ButtonFX pulseSet registry —
@@ -16963,7 +17818,7 @@ export class AppUI extends Component {
                 const lbl = b.node.getChildByName('Label')?.getComponent(Label);
                 if (lbl) lbl.string = (k === activeKey ? '▣  ' : '   ') + optLabels[k];
                 const spr = b.node.getComponent(Sprite);
-                if (spr) spr.color = k === activeKey ? new Color(28, 92, 78, 255) : new Color(28, 34, 48, 255);
+                if (spr) spr.color = k === activeKey ? new Color(28, 92, 78, 255) : new Color(36, 16, 48, 255);
             }
         };
         paint(this._qpModeOptionButtons, uiMode);
@@ -17947,7 +18802,7 @@ export class AppUI extends Component {
                 // rankIcon already maps rank 4+ to 'starBurst'. The function
                 // ref is cached during the dynamic import in _refreshTrophies
                 // so prev/next clicks render without re-importing.
-                IconLibrary.attach(emojiN, this._rankIconFn(t.rank), { size: 90 });
+                IconLibrary.attach(emojiN, this._rankIconFn(t.rank), { size: 110 });
             }
             if (winsValue) winsValue.string = `${Math.max(0, t.wins)}`;
             if (winsLabel) winsLabel.string = t.wins === 1 ? 'win' : 'wins';
@@ -18955,8 +19810,9 @@ export class AppUI extends Component {
 
     /**
      * Phase 30 — apply ON/OFF state to a Preferences toggle row using a real
-     * toggle switch: track recolors (teal ↔ slate), knob slides ±12px (180ms
-     * backOut), icon pulses 1.0 → 1.18 → 1.0 (220ms total).
+     * toggle switch: track recolors (teal ↔ slate), knob slides ±10 px (180ms
+     * backOut, 2026-04-30 — was ±12 with 52-wide track; switch slimmed to 44),
+     * icon pulses 1.0 → 1.18 → 1.0 (220ms total).
      */
     private _setPrefRowState(rowName: string, on: boolean, iconName: IconName): void {
         const card = this._settingsPanel?.getChildByName('AudioSettingsCard');
@@ -18971,8 +19827,8 @@ export class AppUI extends Component {
 
         const knobNode = row.getChildByName(`${rowName}SwitchKnob`);
         if (knobNode) {
-            const trackX = trackNode?.position.x ?? 254;
-            const targetX = on ? trackX + 12 : trackX - 12;
+            const trackX = trackNode?.position.x ?? 256;
+            const targetX = on ? trackX + 10 : trackX - 10;
             Tween.stopAllByTarget(knobNode);
             tween(knobNode)
                 .to(0.18, { position: new Vec3(targetX, knobNode.position.y, 0) }, { easing: 'backOut' })

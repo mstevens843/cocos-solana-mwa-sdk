@@ -11,17 +11,15 @@
 
 const Palette = {
     bg: {
-        primary:   '#0B0E1A',
-        // 2026-04-27 UI overhaul: #151929 → #121826 per arena-UI spec.
-        surface:   '#121826',
-        card:      '#1E2438',
-        cardHover: '#252B42',
-        // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
-        gradientTop: '#1A0B2E',  // deep purple at top
-        gradientBot: '#050810',  // near-black at bottom
-        // 2026-04-28 Hub-tab visibility upgrade — see Theme.ts for rationale.
-        pillTray:   '#1F2438',
-        pillTrayHi: '#262C44',
+        // 2026-04-30 v3 — wine eggplant rollout — keep in sync with Theme.ts.
+        primary:   '#0A0410',
+        surface:   '#1A0820',
+        card:      '#1A0820',
+        cardHover: '#321448',
+        gradientTop: '#1A0B2E',
+        gradientBot: '#050810',
+        pillTray:   '#241030',
+        pillTrayHi: '#321448',
     },
     accent: {
         violet:    '#9945FF',
@@ -35,15 +33,16 @@ const Palette = {
         roseDim:   '#C13B6A',
     },
     text: {
-        hi:      '#F4F5F9',
-        mid:     '#A8AEC9',
-        lo:      '#5D6485',
-        inverse: '#0B0E1A',
+        // 2026-04-30 high-contrast pass — keep in sync with Theme.ts.
+        hi:      '#FFFFFF',  // was '#F4F5F9'
+        mid:     '#B8B8B8',  // was '#A8AEC9'
+        lo:      '#8C8C8C',  // was '#5D6485'
+        inverse: '#05070D',
     },
     status: {
         win:     '#14F195',
         loss:    '#FF4D4D',
-        neutral: '#A8AEC9',
+        neutral: '#B8B8B8',  // was '#A8AEC9' — match text.mid
         warn:    '#FFB454',
     },
     rank: {
@@ -130,8 +129,8 @@ const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 };
 // One canonical body color, one 9-slice corner radius, three padding
 // buckets, three elevation tiers. Edge color stays per-card semantic.
 const Card = {
-    bgHex: Palette.bg.card,            // '#1E2438'
-    bgAlpha: 230,                      // ~90%
+    bgHex: Palette.bg.card,            // 2026-04-30: now '#0A0D14' (was '#1E2438')
+    bgAlpha: 235,                      // ~92% — denser for black-glass
     radiusPx: 16,
     padding: {
         dense:   12,

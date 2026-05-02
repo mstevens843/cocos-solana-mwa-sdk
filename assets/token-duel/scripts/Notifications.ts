@@ -208,6 +208,24 @@ export class NotificationStore {
         return true;
     }
 
+    dismissAll(): number {
+        const now = Date.now();
+        let count = 0;
+        for (const n of this._list) {
+            if (n.dismissedAt === null) {
+                n.dismissedAt = now;
+                if (n.readAt === null) n.readAt = now;
+                count += 1;
+            }
+        }
+        if (count > 0) {
+            console.log(`${TAG} dismissAll | count=${count}`);
+            this._persist();
+            this._fanout();
+        }
+        return count;
+    }
+
     /** Visible (non-dismissed) notifications, newest first. */
     getRecent(limit: number = 20): Notification[] {
         return this._list.filter((n) => n.dismissedAt === null).slice(0, limit);
