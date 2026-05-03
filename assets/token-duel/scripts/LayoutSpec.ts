@@ -426,10 +426,13 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     RacePanel: {
         canvas: { w: 720, h: 1800 },
         elements: {
-            // Battle-UI top row (2026-04-26): [Lv chip] (Timer) [+0.00%]
+            // Battle-UI top row (2026-04-26): (Timer) [+0.00%]
             // 2026-05-01 — Timer ring scaled +15% (132→152). Top edge of circle
             // is pinned to its prior world Y, so center drops 9 px (720→711).
-            racePlayerLevelChip: { x: -260, y: 720, w: 120, h: 40,   type: 'chip' },
+            // 2026-05-02 — RacePlayerLevelChip moved from top-left corner to
+            // centered above PlayerTokenCardsRow (mirrors OpponentIdentityCard
+            // above OpponentTokenCardsRow). Width grew 120→200 for "YOU · Lv N".
+            racePlayerLevelChip: { x: 0,    y: 625, w: 200, h: 40,   type: 'chip' },
             timerRing:           { x: 0,    y: 711, w: 152, h: 152,  type: 'graphics' },
             countdownLabel:      { x: 0,    y: 711, w: 115, h: 37,   type: 'label' },
             heroDelta:           { x: 240,  y: 720, w: 220, h: 80,   type: 'label' },
@@ -467,6 +470,15 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['RaceAdvantageBorder', 'RaceAdvantageCaption'],
             ['RaceAdvantageBorder', 'OpponentDeltaHeroLabel'],
             ['RaceAdvantageBorder', 'RaceAdvantageSubtext'],
+            // 2026-05-02 — RacePlayerLevelChip moved to y=625 as squad header
+            // above PlayerTokenCardsRow (mirror of OpponentIdentityCard above
+            // OpponentTokenCardsRow). Tight band between timer ring bottom
+            // (y=635) and row container top (y=606) makes some bbox overlap
+            // unavoidable; visually clean because the timer-ring lower rim is
+            // empty pixels and the row container's upper band sits above the
+            // actual cards.
+            ['RacePlayerLevelChip', 'PlayerTokenCardsRow'],
+            ['RacePlayerLevelChip', 'RaceTimerRing'],
         ],
     },
     SettingsPanel: {
@@ -514,7 +526,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             // 2026-04-30 — collapsed two-sibling title back into one inline-emoji label.
             title:            { x: 0,    y: 680,  w: 360, h: 44,  type: 'label' },
-            personalRankCard: { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 100, type: 'group' },
+            // 2026-05-02 polish — header helper lines: scoring legitimacy + weekly reset.
+            scoringHelper:    { x: 0,    y: 588,  w: 600, h: 18,  type: 'label' },
+            seasonHelper:     { x: 0,    y: 570,  w: 600, h: 16,  type: 'label' },
+            // 2026-05-02 polish — h grew 100→160 to host the new SublineLabel.
+            personalRankCard: { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 160, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
         },
         allowedOverlaps: [['BackLinkLabel', 'BackButton']],

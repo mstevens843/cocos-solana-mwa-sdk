@@ -35,3 +35,17 @@ export const DEMO_FAKE_PRICES = true;
  * `false` → no diagnostic dumps, normal behavior.
  */
 export const DEBUG_POSTMATCH = true;
+
+/**
+ * USE_POSTMATCH_V2 — Attempt 9 ground-up rebuild.
+ *
+ * `true`  → AppUI._showPostMatchPanel routes to PostMatchPanelV2 (a fresh
+ *           code-built panel parented to Canvas root with raw TOUCH_END
+ *           CTAs that bypass the broken Button.CLICK pipeline). The
+ *           scene-baked PostMatchPanel stays active=false forever.
+ *
+ * `false` → original (broken) PostMatchPanel runs. Rollback path.
+ *
+ * See ~/.claude/plans/cozy-wobbling-goose.md.
+ */
+export const USE_POSTMATCH_V2 = true;

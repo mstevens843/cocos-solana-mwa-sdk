@@ -1324,11 +1324,12 @@ function generate() {
     // feel; preserves gold + halo identity.
     style(sb, title, { bold: true, color: GOLD(), spacing: 3 });
 
-    // 2026-04-29 demo-ready pass — subtitle 22 → 18pt + Palette.text.mid color
-    // (184, 184, 184). Reads as supporting microcopy under the gold title
-    // instead of a competing line.
+    // 2026-05-02 polish — subtitle restored to 22pt with cool lavender tint
+    // (#C9C7FF α200) so it reads as a designed line under the gold title,
+    // not a footnote. Hero band now feels intentional cap-to-cap.
     const sub = mkLabel(sb, 'SubtitleLabel', lpN, 'Outperform. Or get outperformed.',
-        18, LE.subtitle.y, LE.subtitle.w, LE.subtitle.h, 184, 184, 184);
+        22, LE.subtitle.y, LE.subtitle.w, LE.subtitle.h, 201, 199, 255);
+    style(sb, sub, { color: cl(201, 199, 255, 200) });
 
     // 2026-04-27 UX upgrade — violet radial bloom behind mascot.
     // 2026-04-29 demo-ready pass: scene Sprite color alpha 80 → 0. The
@@ -1347,11 +1348,15 @@ function generate() {
     // 2026-04-29 demo-ready pass: scene Sprite color alpha 130 → 0 so the
     // black bar never paints. installSoftEllipse renders a soft Graphics
     // pedestal on the same node — reads as ground, not a sliced bar.
+    // 2026-05-02 polish — installSoftEllipse is disabled (Fix 10E), so the
+    // shadow node carries the platform itself: the existing rounded-rect
+    // sprite tinted deep purple at α140 reads as a soft pedestal under the
+    // mascot. No Graphics work needed.
     const mascotShadow = sb.e.length;
     sb.node('MascotShadow', lpN, [], [], v3(LE.mascotShadow.x, LE.mascotShadow.y, 0));
     const mascotShadowUT  = sb.ut(mascotShadow, LE.mascotShadow.w, LE.mascotShadow.h);
-    const mascotShadowSpr = sb.spr(mascotShadow, 0, 0, 0);
-    sb.e[mascotShadowSpr]._color = cl(0, 0, 0, 0);
+    const mascotShadowSpr = sb.spr(mascotShadow, 8, 6, 28);
+    sb.e[mascotShadowSpr]._color = cl(8, 6, 28, 140);
     sb.e[mascotShadow]._components = [rf(mascotShadowUT), rf(mascotShadowSpr)];
 
     // Mascot container — Empty Node; AppUI.start() adds MascotController
@@ -1389,7 +1394,7 @@ function generate() {
     // shared with FindMatch / StartMatch on Home).
     const { glow: connectGlow, btn: connectBtn } = mkBtnHeroLayered(sb,
         'ConnectButton', lpN,
-        'Enter the Duel', 'Stake SOL · Win SOL',
+        'Enter the Duel', 'Pick tokens · Beat the field · Win SOL',
         LE.connectBtn.x, LE.connectBtn.y, LE.connectBtn.w, LE.connectBtn.h,
         255, 210, 74,
         { tier: 'primary', gradient: true, titleFs: 28, subFs: 16 });
@@ -1415,9 +1420,14 @@ function generate() {
     // "🔒 Secure · Non-custodial · You control your wallet". With trust line
     // moved 18 px lower (24 px clearance below the smaller CTA), the longer
     // copy fits without competing with the button. Font stays 11pt microcopy.
+    // 2026-05-02 polish — chip-row LEFT. Copy trimmed (drop "Secure ·" since
+    // 🔒 + non-custodial already conveys it), font 11→12pt, color #9C9AC0 α210
+    // matches the new neutral chip palette.
     const trustLine = mkLabel(sb, 'TrustLineLabel', lpN,
-        '🔒  Secure · Non-custodial · You control your wallet',
-        11, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 150, 220, 180);
+        '🔒  Non-custodial · you control your wallet',
+        12, LE.trustLine.y, LE.trustLine.w, LE.trustLine.h, 156, 154, 192);
+    style(sb, trustLine, { color: cl(156, 154, 192, 210) });
+    sb.e[trustLine]._lpos.x = LE.trustLine.x;
 
     // 2026-04-28 hackathon UX — "live system" sub-CTA cue between trust line
     // and Guest button. Teal-tinted (20, 241, 149 ≈ Theme.accent.teal). Static —
@@ -1426,9 +1436,13 @@ function generate() {
     // 2026-04-28 polish — emoji replaced with a live Sprite dot whose alpha
     // pulses at runtime via LandingFX.addGlowPulse for "alive" cue.
     // 2026-04-29 dominance pass — font 12 → 11 to match shortened trust line.
+    // 2026-05-02 polish — chip-row RIGHT. Same neutral treatment as TrustLine
+    // (font 12pt color #9C9AC0 α210) so the two chips read as a paired row.
     const liveSignal = mkLabel(sb, 'LiveSignalLabel', lpN,
         'Live now · Join in seconds',
-        11, LE.liveSignalLabel.y, LE.liveSignalLabel.w, LE.liveSignalLabel.h, 20, 241, 149);
+        12, LE.liveSignalLabel.y, LE.liveSignalLabel.w, LE.liveSignalLabel.h, 156, 154, 192);
+    style(sb, liveSignal, { color: cl(156, 154, 192, 210) });
+    sb.e[liveSignal]._lpos.x = LE.liveSignalLabel.x;
 
     // Sibling green dot (8×8, teal #14F195) parked left of the label text.
     // The label is horizontally centered; "Live now · Join in seconds" at
@@ -1436,7 +1450,7 @@ function generate() {
     // as a leading bullet.
     const liveDotN = sb.e.length;
     sb.node('LiveSignalDot', lpN, [], [],
-        v3(-118, LE.liveSignalLabel.y + 1, 0));
+        v3(LE.liveSignalDot.x, LE.liveSignalDot.y, 0));
     const liveDotUT  = sb.ut(liveDotN, 8, 8);
     const liveDotSpr = sb.spr(liveDotN, 20, 241, 149);
     sb.e[liveDotSpr]._color = cl(20, 241, 149, 230);
@@ -1448,13 +1462,26 @@ function generate() {
     // and made it look glitchy). Title font dropped to 18pt so it stays
     // visibly tertiary; AppUI raises opacity 110 → 180 so it no longer reads
     // as "broken/disabled".
+    // 2026-05-02 polish — Reconnect compacted to a 520×52 ghost pill. Subtitle
+    // string blanked + child renamed to 'ReconnectStatusInline' so AppUI can
+    // drive Connecting…/Connection failed inline (replaces retired ConnectionStatusPill).
     const { btn: reconnBtn } = mkBtnHeroLayered(sb,
         'ReconnectButton', lpN,
-        '⟳  Reconnect', 'Continue with saved wallet',
+        '⟳  Reconnect', '',
         LE.reconnBtn.x, LE.reconnBtn.y, LE.reconnBtn.w, LE.reconnBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
-        { tier: 'secondary', ghost: true, titleFs: 18, subFs: 12 });
+        { tier: 'secondary', ghost: true, titleFs: 16, subFs: 11 });
     sb.e[reconnBtn]._active = false;
+    // Rename the subtitle child so AppUI binding maps cleanly. Walk the
+    // children array because mkBtnHeroLayered's index math is conditional
+    // on `gradient` and easy to break with a future refactor.
+    for (const childRef of (sb.e[reconnBtn]._children ?? [])) {
+        const child = sb.e[childRef.__id__];
+        if (child && child._name === 'SubtitleLabel') {
+            child._name = 'ReconnectStatusInline';
+            break;
+        }
+    }
 
     // SECONDARY — Play as Guest (teal, two-line layered, defers visually
     // to Connect via tier-locked glow strength).
@@ -1464,7 +1491,7 @@ function generate() {
     // 40 so it reads as clearly secondary.
     const { glow: guestGlow, btn: guestBtn } = mkBtnHeroLayered(sb,
         'PlayAsGuestButton', lpN,
-        '👤  Play as Guest', 'Practice with bots · no wallet needed',
+        'Play as Guest', 'Practice with bots · no wallet needed',
         LE.playAsGuestBtn.x, LE.playAsGuestBtn.y, LE.playAsGuestBtn.w, LE.playAsGuestBtn.h,
         VAR('success').r, VAR('success').g, VAR('success').b,
         { tier: 'secondary', titleFs: 22, subFs: 13 });
@@ -1476,6 +1503,10 @@ function generate() {
         LE.connectionStatusPill.x, LE.connectionStatusPill.y,
         LE.connectionStatusPill.w, LE.connectionStatusPill.h,
         { bgAlpha: 90 });
+    // 2026-05-02 polish — pill retired. Status now lives inline on Reconnect
+    // (see _setConnectionPill in AppUI.ts → ReconnectStatusInline). Node kept
+    // active=false so its __id__ slot stays valid for any latent references.
+    sb.e[statusPill]._active = false;
 
     // Patch LandingPanel children — render order matters.
     // Title halo + mascot glow/shadow render as decorative anchors below
@@ -5283,6 +5314,16 @@ function generate() {
     const lbSubtitle = mkLabel(sb, 'LeaderboardSubtitleLabel', lbN, '1v1 Duel · This Week', 22,
         LP.subtitle.y, LP.subtitle.w, LP.subtitle.h, 184, 184, 184);
 
+    // 2026-05-02 polish — header helper lines: scoring legitimacy + weekly reset
+    // context. Static; AppUI does not rewrite. Tones match textMid / textLo so
+    // they read as ambient context, not body copy.
+    const lbScoringHelper = mkLabel(sb, 'LeaderboardScoringHelperLabel', lbN,
+        'Points from wins, streaks, and performance', 13,
+        LP.scoringHelper.y, LP.scoringHelper.w, LP.scoringHelper.h, 168, 174, 201);
+    const lbSeasonHelper = mkLabel(sb, 'LeaderboardSeasonHelperLabel', lbN,
+        'Resets Monday 00:00 UTC', 12,
+        LP.seasonHelper.y, LP.seasonHelper.w, LP.seasonHelper.h, 130, 138, 168);
+
     // 2026-04-29 v2: ModeTabsContainer (asymmetric left-anchored x=-90 sprite) deleted.
     // Runtime LBModePill (AppUI._buildSegmentedPill, tier='mode') fully owns the visual;
     // the scene-bound container leaked past the pill's left edge.
@@ -5400,12 +5441,12 @@ function generate() {
     const esUT = sb.ut(esN, ES.w, ES.h);
     const esIcon = mkLabel(sb, 'IconLabel', esN, '🏆', 96,
         ESC.icon.y, ESC.icon.w, ESC.icon.h, 255, 210, 74);
-    const esTitle = mkLabel(sb, 'TitleLabel', esN, 'No competition yet', 24,
+    const esTitle = mkLabel(sb, 'TitleLabel', esN, 'No matches settled yet', 24,
         ESC.title.y, ESC.title.w, ESC.title.h, 255, 210, 74);
     style(sb, esTitle, { bold: true });
-    const esSub = mkLabel(sb, 'SubtitleLabel', esN, 'Be the first to climb the leaderboard', 14,
+    const esSub = mkLabel(sb, 'SubtitleLabel', esN, 'Be the first to climb this leaderboard', 14,
         ESC.sub.y, ESC.sub.w, ESC.sub.h, 184, 184, 184);
-    const esCta = mkBtnXY(sb, 'EmptyStartMatchButton', esN, 'Start a Match',
+    const esCta = mkBtnXY(sb, 'EmptyStartMatchButton', esN, 'Play Match',
         ESC.cta.x, ESC.cta.y, ESC.cta.w, ESC.cta.h, 20, 241, 149,
         { tier: 'secondary' });
     style(sb, esCta, { bold: true });
@@ -5429,31 +5470,37 @@ function generate() {
     sb.e[prcHeader]._lpos = v3(PRC.header.x, PRC.header.y, 0);
     sb.e[sb.e[prcHeader]._components[1].__id__]._horizontalAlign = 0;
     style(sb, prcHeader, { bold: true });
-    const prcRank = mkLabel(sb, 'RankLabel', prcN, 'Not ranked yet · win to climb', 22,
+    const prcRank = mkLabel(sb, 'RankLabel', prcN, 'Not yet ranked', 22,
         PRC.rank.y, PRC.rank.w, PRC.rank.h, 255, 255, 255);
     sb.e[prcRank]._lpos = v3(PRC.rank.x, PRC.rank.y, 0);
     sb.e[sb.e[prcRank]._components[1].__id__]._horizontalAlign = 0;
     style(sb, prcRank, { bold: true });
+    // 2026-05-02 polish — motivational subline between rank and stats. AppUI
+    // sets per-state copy ("Win 1 match to enter the leaderboard" / "Climb the
+    // ranks to enter the Top 10") and toggles _active=false when ranked.
+    const prcSubline = mkLabel(sb, 'SublineLabel', prcN, 'Win 1 match to enter the leaderboard', 14,
+        PRC.subline.y, PRC.subline.w, PRC.subline.h, 168, 174, 201);
+    sb.e[prcSubline]._lpos = v3(PRC.subline.x, PRC.subline.y, 0);
+    sb.e[sb.e[prcSubline]._components[1].__id__]._horizontalAlign = 0;
     const prcStats = mkLabel(sb, 'StatsLabel', prcN, 'W–L —  ·  Level —  ·  P/L —', 14,
         PRC.stats.y, PRC.stats.w, PRC.stats.h, 184, 184, 184);
     sb.e[prcStats]._lpos = v3(PRC.stats.x, PRC.stats.y, 0);
     sb.e[sb.e[prcStats]._components[1].__id__]._horizontalAlign = 0;
     // 2026-04-29 v2: tier 'secondary' → 'primary' so the YOU footer reads as
     // "act here" rather than a dim ghost button. Color stays teal (action).
-    // 2026-04-30 UX polish — label "Play your first match" → "Play match" so
-    // the button text fits inside the 240w chip without crowding/clipping. The
-    // surrounding "Not yet ranked · win to climb" copy already explains the why.
-    const prcCta = mkBtnXY(sb, 'PlayCTAButton', prcN, 'Play match',
+    // 2026-05-02 polish — label "Play match" → "Play Match" (Title Case).
+    const prcCta = mkBtnXY(sb, 'PlayCTAButton', prcN, 'Play Match',
         PRC.cta.x, PRC.cta.y, PRC.cta.w, PRC.cta.h, 20, 241, 149,
         { tier: 'primary' });
     sb.e[prcN]._components = [rf(prcUT), rf(prcSpr)];
-    sb.e[prcN]._children = [rf(prcEdge), rf(prcHeader), rf(prcRank), rf(prcStats), rf(prcCta)];
+    sb.e[prcN]._children = [rf(prcEdge), rf(prcHeader), rf(prcRank), rf(prcSubline), rf(prcStats), rf(prcCta)];
     sb.e[prcN]._active = false;
 
     sb.e[lbN]._children = [
         // Scrim FIRST so it z-orders behind every other panel child.
         rf(lbScrimN),
         rf(lbBackLink), rf(lbBackBtn), rf(lbTitle), rf(lbSubtitle),
+        rf(lbScoringHelper), rf(lbSeasonHelper),
         ...lbTabIndices.map(rf),
         rf(lbThisWeekChip),
         rf(tpcN),
@@ -5806,8 +5853,10 @@ function generate() {
     sb.e[pfEmptyStateN]._children = [rf(pfEmptyTitle), rf(pfEmptySub), rf(pfEmptyCta)];
     sb.e[pfEmptyStateN]._active = false;
 
-    const pfHint = mkLabel(sb, 'PortfolioHintLabel', pfN, 'Real mode stats update after your first match', 12,
-        PFE.hint.y, PFE.hint.w, PFE.hint.h, 184, 184, 184);
+    // 2026-05-02 trophies polish: PortfolioHintLabel removed entirely. The
+    // floating "Real mode stats update after your first match" string was
+    // bleeding into the History/Trophies subtabs; the runtime helper under
+    // the Stats mode-pill now owns that copy with proper subtab gating.
     const pfStatus = mkLabel(sb, 'PortfolioStatusLabel', pfN, '', 14,
         PFE.status.y, PFE.status.w, PFE.status.h, 184, 184, 184);
 
@@ -5909,7 +5958,7 @@ function generate() {
     sb.node('PortfolioTrophiesView', pfN, [], [], v3(PFE.trophiesView.x, PFE.trophiesView.y, 0));
     sb.ut(pfTrophiesViewN, PFE.trophiesView.w, PFE.trophiesView.h);
     const pfTrophiesEmpty = mkLabel(sb, 'PortfolioTrophiesEmptyLabel', pfTrophiesViewN,
-        'No trophies yet — win a weekly season to earn your first',
+        'No trophies yet — win matches this week to earn your first trophy.',
         14, PFE.trophiesEmpty.y, PFE.trophiesEmpty.w, PFE.trophiesEmpty.h, 184, 184, 184);
 
     // Header band — title + subtitle + (right-aligned) pagination row.
@@ -5917,7 +5966,7 @@ function generate() {
         'Weekly Trophies', 22, PFE.trophiesHeaderTitle.y,
         PFE.trophiesHeaderTitle.w, PFE.trophiesHeaderTitle.h, 220, 200, 140);
     const pfTrophiesHeaderSubtitle = mkLabel(sb, 'PortfolioTrophiesHeaderSubtitle', pfTrophiesViewN,
-        'Your best performances by week', 12, PFE.trophiesHeaderSubtitle.y,
+        'Your best weekly records', 12, PFE.trophiesHeaderSubtitle.y,
         PFE.trophiesHeaderSubtitle.w, PFE.trophiesHeaderSubtitle.h, 184, 184, 184);
     const pfTrophiesPagePrev = mkBtnXY(sb, 'PortfolioTrophiesPagePrev', pfTrophiesViewN, '‹',
         PFE.trophiesPagePrev.x, PFE.trophiesPagePrev.y,
@@ -5935,6 +5984,42 @@ function generate() {
     sb.e[pfTrophiesPageLabel]._active = false;
     sb.e[pfTrophiesPageNext]._active = false;
 
+    // ───── BEST WEEK featured strip ─────
+    // Full-content-width banner (660×64) anchored between header and grid.
+    // Children: card body sprite + 2-px gold top-edge accent + medal icon
+    // (left) + "BEST WEEK" eyebrow (gold) + main label "Week #N · X wins"
+    // (white). AppUI hides the strip when the player has zero trophies and
+    // rebinds the label + icon per render in _renderTrophyPage.
+    const pfTrophiesFS = PFE.trophiesFeaturedStrip;
+    const pfFeaturedStripN = sb.e.length;
+    sb.node('PortfolioTrophiesFeaturedStrip', pfTrophiesViewN, [], [],
+        v3(pfTrophiesFS.x, pfTrophiesFS.y, 0));
+    const pfFeaturedStripUT = sb.ut(pfFeaturedStripN, pfTrophiesFS.w, pfTrophiesFS.h);
+    const pfFeaturedStripSpr = cardBodySpr(sb, pfFeaturedStripN);
+    const pfFeaturedStripEdge = mkCardEdge(sb, pfFeaturedStripN,
+        pfTrophiesFS.w, pfTrophiesFS.h, 255, 210, 74);
+    // Medal icon node — IconLibrary.attach swaps in a 'trophy' sprite at runtime.
+    const pfFeaturedIconN = sb.e.length;
+    sb.node('FeaturedIcon', pfFeaturedStripN, [], [], v3(-280, 0, 0));
+    const pfFeaturedIconUT = sb.ut(pfFeaturedIconN, 48, 48);
+    sb.e[pfFeaturedIconN]._components = [rf(pfFeaturedIconUT)];
+    // BEST WEEK eyebrow — gold caps, sits above the main label.
+    const pfFeaturedEyebrow = mkLabel(sb, 'FeaturedEyebrow', pfFeaturedStripN,
+        'BEST WEEK', 12, 14, 200, 14, 255, 210, 74);
+    sb.e[pfFeaturedEyebrow]._lpos = v3(-100, 14, 0);
+    // Main label — runtime-set to "Week #N · X wins".
+    const pfFeaturedMain = mkLabel(sb, 'FeaturedMain', pfFeaturedStripN,
+        'Week #— · 0 wins', 18, -10, 460, 24, 255, 255, 255);
+    sb.e[pfFeaturedMain]._lpos = v3(-100, -10, 0);
+    sb.e[pfFeaturedStripN]._components = [rf(pfFeaturedStripUT), rf(pfFeaturedStripSpr)];
+    sb.e[pfFeaturedStripN]._children = [
+        rf(pfFeaturedStripEdge),
+        rf(pfFeaturedIconN),
+        rf(pfFeaturedEyebrow),
+        rf(pfFeaturedMain),
+    ];
+    sb.e[pfFeaturedStripN]._active = false;
+
     const PTT = LAYOUT.PortfolioPanel.templates.trophyTile;
     const pfTrophyTileIndices = [];
     for (let row = 0; row < PTT.rows; row++) {
@@ -5946,6 +6031,10 @@ function generate() {
             sb.node(`TrophyTile_${i}`, pfTrophiesViewN, [], [], v3(tx, ty, 0));
             const tUT = sb.ut(tN, PTT.w, PTT.h);
             const tSpr = cardBodySpr(sb, tN);
+            // TIER eyebrow — runtime sets "GOLD TROPHY" / "SILVER TROPHY" /
+            // "BRONZE TROPHY" / "STANDARD TROPHY" with matching tint.
+            const tierLbl = mkLabel(sb, 'TierEyebrow', tN, '', 11,
+                PTT.tierEyebrow.y, PTT.tierEyebrow.w, PTT.tierEyebrow.h, 255, 210, 74);
             // WEEK eyebrow — small dim caps above the icon ("WEEK #6").
             const eyebrowLbl = mkLabel(sb, 'WeekEyebrow', tN, 'WEEK #0', 11,
                 PTT.weekEyebrow.y, PTT.weekEyebrow.w, PTT.weekEyebrow.h, 184, 184, 184);
@@ -5959,31 +6048,40 @@ function generate() {
             // Small label ("wins") under the big number.
             const winsLbl = mkLabel(sb, 'WinsLabel', tN, 'wins', 12,
                 PTT.winsLabel.y, PTT.winsLabel.w, PTT.winsLabel.h, 184, 184, 184);
-            // Top-edge stripe — placeholder gold; AppUI re-tints per rank
-            // (gold/silver/bronze/purple) in _renderTrophyPage.
+            // Descriptor — empty by default; AppUI sets "Best week" only on
+            // the gold tile (sorted by wins desc, top-left position).
+            const descLbl = mkLabel(sb, 'Descriptor', tN, '', 11,
+                PTT.descriptor.y, PTT.descriptor.w, PTT.descriptor.h, 168, 174, 201);
+            // Top-edge stripe — placeholder gold; AppUI re-tints per tier
+            // (gold/silver/bronze/standard purple) in _renderTrophyPage.
             const tEdge = mkCardEdge(sb, tN, PTT.w, PTT.h, 255, 210, 74);
             sb.e[tN]._components = [rf(tUT), rf(tSpr)];
-            sb.e[tN]._children = [rf(eyebrowLbl), rf(emojiLbl), rf(winsValueLbl), rf(winsLbl), rf(tEdge)];
+            sb.e[tN]._children = [
+                rf(tierLbl), rf(eyebrowLbl), rf(emojiLbl),
+                rf(winsValueLbl), rf(winsLbl), rf(descLbl), rf(tEdge),
+            ];
             sb.e[tN]._active = false;
             pfTrophyTileIndices.push(tN);
         }
     }
 
-    // Footer band — two-line caption explaining reset cadence + ghost Share
-    // button. AppUI._onTrophyShareClick stubs out the action with a toast.
+    // Footer band — two-line caption explaining reset cadence + Share Weekly
+    // Record button. AppUI._onTrophyShareClick copies a brag string to the
+    // clipboard and shows a "Copied to clipboard!" toast.
     const pfTrophiesFooterLine1 = mkLabel(sb, 'PortfolioTrophiesFooterLine1', pfTrophiesViewN,
-        'Trophies are based on your weekly performance', 11, PFE.trophiesFooterLine1.y,
+        'Weekly trophies reset every Monday at 00:00 UTC.', 11, PFE.trophiesFooterLine1.y,
         PFE.trophiesFooterLine1.w, PFE.trophiesFooterLine1.h, 184, 184, 184);
     const pfTrophiesFooterLine2 = mkLabel(sb, 'PortfolioTrophiesFooterLine2', pfTrophiesViewN,
-        'New week starts every Monday 00:00 UTC', 11, PFE.trophiesFooterLine2.y,
+        'Your best weeks stay in your trophy room.', 11, PFE.trophiesFooterLine2.y,
         PFE.trophiesFooterLine2.w, PFE.trophiesFooterLine2.h, 184, 184, 184);
-    const pfTrophiesShareBtn = mkBtn(sb, 'PortfolioTrophiesShareButton', pfTrophiesViewN, 'Share',
+    const pfTrophiesShareBtn = mkBtn(sb, 'PortfolioTrophiesShareButton', pfTrophiesViewN, 'Share Weekly Record',
         PFE.trophiesShareBtn.y, PFE.trophiesShareBtn.w, PFE.trophiesShareBtn.h, 20, 70, 90, { tier: 'tertiary' });
 
     sb.e[pfTrophiesViewN]._children = [
         rf(pfTrophiesEmpty),
         rf(pfTrophiesHeaderTitle), rf(pfTrophiesHeaderSubtitle),
         rf(pfTrophiesPagePrev), rf(pfTrophiesPageLabel), rf(pfTrophiesPageNext),
+        rf(pfFeaturedStripN),
         ...pfTrophyTileIndices.map(rf),
         rf(pfTrophiesFooterLine1), rf(pfTrophiesFooterLine2),
         rf(pfTrophiesShareBtn),
@@ -6003,7 +6101,7 @@ function generate() {
         rf(pfGroupAct), rf(xpCardN),
         rf(pfEmptyStateN),
         rf(pfHistoryViewN), rf(pfTrophiesViewN),
-        rf(pfHint), rf(pfStatus),
+        rf(pfStatus),
     ];
     sb.e[pfN]._active = false;
 

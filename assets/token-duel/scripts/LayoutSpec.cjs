@@ -397,8 +397,13 @@ const home = {
 // RACE_SAFE_AREA_EXTRA = 90 (defined in generate-scenes.js); panel-local y
 // maps to world y - 90. Canvas is oversized 720×1800.
 const race = {
-    // Top header row: Lv chip + circular countdown ring + hero delta.
+    // Top header row: circular countdown ring + hero delta.
+    // 2026-05-02 — Lv chip moved out of top row down to PLAYER_HEADER_CHIP_Y.
     TOP_HEADER_Y:        720,
+
+    // Player squad chip ("YOU · Lv N") — centered above PlayerTokenCardsRow,
+    // mirrors OpponentIdentityCard above OpponentTokenCardsRow. 2026-05-02.
+    PLAYER_HEADER_CHIP_Y: 625,
 
     // Player-side token row (3 cards side-by-side, duel layout).
     PLAYER_TOKEN_ROW_Y:  540,
@@ -478,8 +483,8 @@ const landing = {
     // the redundant tagline + support line (down to one dominant idea).
     // 2026-04-29 demo-ready pass: subtitle pulled tighter to title (432 → 438)
     // so they read as a tighter cap-to-cap unit; mascot zone unchanged.
-    TITLE_Y:          480,
-    SUBTITLE_Y:       438,    // 2026-04-29 demo-ready: 432 → 438 (tighter cap-to-cap)
+    TITLE_Y:          512,    // 2026-05-02 polish: 480 → 512 (tighter to canvas top, less hero dead space)
+    SUBTITLE_Y:       460,    // 2026-05-02 polish: 438 → 460 (track new TITLE_Y, +22 spacing for larger 22pt font)
     MASCOT_Y:         250,    // 2026-04-28 polish: 300 → 250 (anchor toward CTA)
 
     // CTA card backdrop (semi-translucent dark surface w/ violet edge).
@@ -496,10 +501,10 @@ const landing = {
     // bands. Reconnect width restored to UNIFORM (was 560), opacity raised
     // in AppUI.
     CONNECT_Y:        -18,    // PRIMARY — Enter the Duel (h=108, was 126)
-    TRUST_Y:          -104,   // 2026-04-29 demo-ready: -86 → -104 (24 px clearance below CTA bottom -72)
-    LIVE_SIGNAL_Y:    -128,   // 2026-04-29 demo-ready: -112 → -128 (cascade + breathing)
+    TRUST_Y:          -121,   // 2026-05-02 polish: -104 → -121 (clean midpoint between CTA bottom -72 and Guest top -156, paired with LiveSignal in 2-column row)
+    LIVE_SIGNAL_Y:    -121,   // 2026-05-02 polish: -128 → -121 (paired Y with TrustLine for 2-column chip row; X moves to +150)
     GUEST_Y:          -196,   // 2026-04-29 demo-ready: -186 → -196 (clear new live signal)
-    RECONNECT_Y:      -296,   // 2026-04-29 demo-ready: -282 → -296 (16 px clearance below Guest bottom -236)
+    RECONNECT_Y:      -272,   // 2026-05-02 polish: -296 → -272 (compact pill closer to Guest)
 
     // Bottom status footer.
     STATUS_PILL_Y:    -540,   // 2026-04-29 demo-ready: -555 → -540 (lift off home indicator)
@@ -596,18 +601,21 @@ const portfolio = {
     HISTORY_GAP_Y:        -124,
     HISTORY_LOAD_MORE_Y:  -260,
 
-    // Trophies view — 3×2 grid of TrophyTile with header band above + footer
-    // band below. Tile w/h bumped to 220×260 (gap 16) so each card carries a
-    // WEEK eyebrow + 90-px medal/star icon + big win count + label without the
-    // empty-space feel of the prior 200×200 layout.
-    // Block height: 2*260 + 16 = 536. Top row centerY 150 → bottom -126 →
-    // block clears 280..-256 → leaves room for header (~360..420) and
-    // footer (-300..-380) inside the 936-tall CONTENT zone.
-    TROPHY_GRID_BASE_Y:        150,
+    // Trophies view — 3×2 grid of TrophyTile with header band above, BEST WEEK
+    // featured strip between header and grid, + footer band below. Tile w/h is
+    // 220×260 (gap 16). Featured strip is 660×64 anchored centerY=318 so it
+    // slots between the subtitle (~y=392) and the grid top (centerY=130 → top
+    // edge 260) with comfortable breathing room. Block geometry: top row
+    // centerY 130 → top edge 260; bottom row centerY -146 → bottom edge -276;
+    // footer line1 at -300 → 24-px clearance.
+    TROPHY_GRID_BASE_Y:        130,
     TROPHY_GRID_STRIDE_Y:      -276,
     TROPHY_EMPTY_Y:            _PZ.content.centerY,               // -4
     TROPHY_HEADER_TITLE_Y:     420,
     TROPHY_HEADER_SUBTITLE_Y:  392,
+    TROPHY_FEATURED_STRIP_Y:   318,
+    TROPHY_FEATURED_STRIP_W:   680,   // matches UNIFORM_LAYOUT.CONTENT_W
+    TROPHY_FEATURED_STRIP_H:    64,
     TROPHY_PAGE_ROW_Y:         420,
     TROPHY_FOOTER_LINE1_Y:     -300,
     TROPHY_FOOTER_LINE2_Y:     -324,
@@ -648,8 +656,8 @@ const leaderboard = {
     EMPTY_STATE_Y:    150,
 
     // Sticky-bottom personal rank card ("YOU" footer). Sits below CONTENT zone.
-    PERSONAL_RANK_Y:  -446,                                        // re-centered for h=148 (was -440)
-    PERSONAL_RANK_H:  148,                                         // bigger CTA + padding (was 130)
+    PERSONAL_RANK_Y:  -446,                                        // re-centered for h=160 (was -440 → -446 → -446)
+    PERSONAL_RANK_H:  160,                                         // grew 148→160 to host the new SublineLabel ("Win 1 match…" / "Climb…")
 
     // Status footer.
     STATUS_Y:         -740,
@@ -885,7 +893,7 @@ const LayoutSpec = {
             title:               { x: 0,   y: landing.TITLE_Y,    w: 680, h: 78,  type: 'label',      notes: '2026-04-29 dominance pass: 64pt → 68pt; bbox h 72→78. Token Duel — display, gold + letter-spacing 3 + halo behind' },
             // 2026-04-27 UX upgrade — gold halo behind title for shimmer.
             titleGlow:           { x: 0,   y: landing.TITLE_Y,    w: 720, h: 140, type: 'sprite',     notes: 'gold radial halo behind TitleLabel; alpha-pulsed by LandingFX.addGlowPulse' },
-            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 26,  type: 'label',      notes: '2026-04-29 demo-ready: 22→18pt subtle (Palette.text.mid). Reads as supporting microcopy under the gold title.' },
+            subtitle:            { x: 0,   y: landing.SUBTITLE_Y, w: 680, h: 32,  type: 'label',      notes: '2026-05-02 polish: 18→22pt + color #C9C7FF α200; bbox h 26→32 to fit larger font. Reads as a designed subtitle, not a footnote.' },
             mascot:              { x: 0,   y: landing.MASCOT_Y,   w: 280, h: 280, type: 'mascot',     notes: '2026-04-29 demo-ready: w/h 320→280. Mascot supports the title; no longer dominates the page.' },
             // 2026-04-27 UX upgrade — soft drop-shadow ellipse below mascot.
             mascotShadow:        { x: 0,   y: landing.MASCOT_Y - 150, w: 240, h: 28, type: 'sprite', notes: '2026-04-29 demo-ready: w 280→240, scene alpha 130→0. Sprite painted invisible — installSoftEllipse renders a soft Graphics ellipse on top via enqueuePostDraw. Reads as a pedestal, not a black bar.' },
@@ -896,12 +904,12 @@ const LayoutSpec = {
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
             connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 108, type: 'btnPrimary', notes: '2026-04-29 demo-ready: h 126→108 (substantial, not bloated). PRIMARY — gradient + glow + chevron; "Stake SOL · Win SOL". Title fontSize override 28pt + paddingX override 28 passed from generate-scenes.js call site (does not touch ButtonTierSpec.primary which other primary CTAs depend on).' },
             connectChevron:      { x: 296, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: '2026-04-29 demo-ready: x 290→296 (track new paddingX), › 42→36pt (proportional to smaller button), bbox 28/32 → 24/28.' },
-            trustLine:           { x: 0,   y: landing.TRUST_Y,     w: 640, h: 20,  type: 'label',      notes: '2026-04-29 demo-ready: copy restored to full "🔒 Secure · Non-custodial · You control your wallet" (was shortened); font stays 11pt microcopy. Green-tinted for reassurance.' },
-            // 2026-04-28 hackathon UX — "live system" cue sits between trust line and Guest button.
-            liveSignalLabel:     { x: 0,    y: landing.LIVE_SIGNAL_Y,     w: 640, h: 20, type: 'label',     notes: '"Live now · Join in seconds" — energy cue under Connect; teal-tinted' },
-            liveSignalDot:       { x: -118, y: landing.LIVE_SIGNAL_Y + 1, w: 8,   h: 8,  type: 'sprite',    notes: '2026-04-28 polish — leading green dot pulsed by LandingFX.addGlowPulse' },
+            trustLine:           { x: -150, y: landing.TRUST_Y,     w: 280, h: 28,  type: 'label',      notes: '2026-05-02 polish: 2-column chip row LEFT. x 0→-150, w 640→280, h 20→28, font 11→12pt, color #9C9AC0 α210, copy trimmed to "🔒 Non-custodial · you control your wallet".' },
+            // 2026-05-02 polish — TrustLine + LiveSignal form a 2-column chip row.
+            liveSignalLabel:     { x:  150, y: landing.LIVE_SIGNAL_Y,     w: 280, h: 28, type: 'label',     notes: '2026-05-02 polish: 2-column chip row RIGHT. x 0→+150, w 640→280, h 20→28, font 11→12pt, color #9C9AC0 α210. Paired with TrustLine.' },
+            liveSignalDot:       { x:   30, y: landing.LIVE_SIGNAL_Y,     w: 8,   h: 8,  type: 'sprite',    notes: '2026-05-02 polish: x -118→+30 (sit at left edge of LiveSignalLabel chip). Pulsed by LandingFX.addGlowPulse.' },
             playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 80,  type: 'btnSuccess', notes: '2026-04-29 demo-ready: h 88→80; same width as Connect (UNIFORM rule), shorter so Connect remains visibly dominant. Body opacity dropped to 180 + halo alpha 40 in AppUI.' },
-            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: 64,  type: 'btnGhost',   notes: '2026-04-29 demo-ready: w 560→UNIFORM (consistent button widths), runtime opacity 110→180, +1 px violet outline alpha 60 (mkBtnHeroLayered ghost outline opt) so dark-on-dark ghost reads as deliberate, not glitchy. Title fontSize override 18pt to match tertiary feel.' },
+            reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 520, h: 52,  type: 'btnGhost',   notes: '2026-05-02 polish: compact pill (w UNIFORM→520, h 64→52). Title centered (subtitle repurposed as ReconnectStatusInline status holder).' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 180, h: 40, type: 'chip',      notes: '2026-04-29 demo-ready: w 200→180; faint pill background (Palette.bg.card alpha 90) so the chip reads as part of the layout, not a floating label. Lifted to -540 to clear the home indicator.' },
         },
         allowedOverlaps: [
@@ -1242,13 +1250,16 @@ const LayoutSpec = {
     RacePanel: {
         canvas: { w: 720, h: 1800 },
         elements: {
-            // 2026-04-26 battle-UI polish — top row is one horizontal band:
+            // 2026-04-26 battle-UI polish — top row was one horizontal band:
             //   [Lv pill]  ( Timer )  [+0.00%]
             // Player identity card (wallet truncation) is dropped — wallet
-            // shows in post-match summary instead. Lv pill stays small/low-
-            // emphasis on the left; hero delta moves to the right side.
-            racePlayerLevelChip: { x: -260, y: race.TOP_HEADER_Y, w: 120, h: 40, type: 'chip',
-                notes: 'small Lv pill, top-left of duel battle UI' },
+            // shows in post-match summary instead.
+            // 2026-05-02 — RacePlayerLevelChip moved out of the top row and
+            // centered above PlayerTokenCardsRow as a "YOU · Lv N" squad
+            // header (mirrors OpponentIdentityCard above the bot row). Width
+            // 120 → 200 to fit "YOU · Lv 12".
+            racePlayerLevelChip: { x: 0, y: race.PLAYER_HEADER_CHIP_Y, w: 200, h: 40, type: 'chip',
+                notes: 'YOU · Lv N squad header, centered above PlayerTokenCardsRow' },
 
             // Timer + countdown (centered top row).
             // 2026-05-01 — scaled +15% (radius 60→69, box 132→152). Top edge of
@@ -1455,8 +1466,17 @@ const LayoutSpec = {
             ['OpponentSubtitleGapLabel','RaceOpponentStrip'],
             ['OpponentIdentityCard',  'RaceOpponentCard'],
             ['OpponentIdentityCard',  'RaceOpponentStrip'],
-            // Player Lv chip — small pill on top row, internal label child.
+            // Player Lv chip — small pill, internal label child.
             ['RacePlayerLevelChip', 'RacePlayerLevelChipLabel'],
+            // 2026-05-02 — chip moved to y=625 as squad header above
+            // PlayerTokenCardsRow (mirror of OpponentIdentityCard above
+            // OpponentTokenCardsRow). Tight vertical band between timer ring
+            // (bottom y=635) and row container (top y=606) makes some bbox
+            // overlap unavoidable; both pairs are visually clean because the
+            // timer-ring lower rim is empty pixels and the row container's
+            // upper band sits above the actual cards.
+            ['RacePlayerLevelChip', 'PlayerTokenCardsRow'],
+            ['RacePlayerLevelChip', 'RaceTimerRing'],
             // Identity card internal labels (opponent only — player identity
             // card was dropped 2026-04-26 in favor of the small Lv chip).
             ['OpponentIdentityCard', 'OpponentIdentityNameLabel'],
@@ -2124,6 +2144,11 @@ const LayoutSpec = {
             // Subtitle line under title — "{mode} · This Week" / "All modes · This Week".
             // 2026-04-29 v2: h 24 → 28 to fit larger subtitle font.
             subtitle:        { x: 0,    y: leaderboard.SUBTITLE_Y, w: 520, h: 28,  type: 'label' },
+            // 2026-05-02 polish — header helper lines: scoring legitimacy +
+            // weekly reset context. Both static, set once at start(). Stack
+            // under subtitle inside the 70 px gap to MODE_TABS_Y.
+            scoringHelper:   { x: 0,    y: leaderboard.SUBTITLE_Y - 28, w: 600, h: 18, type: 'label' },
+            seasonHelper:    { x: 0,    y: leaderboard.SUBTITLE_Y - 46, w: 600, h: 16, type: 'label' },
             // Standalone "This Week" chip on the right of the segmented control.
             // Node name kept as LBTab_season (modeU8=4) so the existing handler still binds.
             // 2026-04-29 v2: ModeTabsContainer (x=-90, asymmetric left-anchored sprite)
@@ -2159,10 +2184,14 @@ const LayoutSpec = {
             // "act here" (was reading as a footer the user could ignore).
             personalRankCard: { x: 0,   y: leaderboard.PERSONAL_RANK_Y, w: UNIFORM_LAYOUT.CONTENT_W, h: leaderboard.PERSONAL_RANK_H, type: 'group',
                 children: {
-                    header: { x: -290, y: 54,  w: 140, h: 18, type: 'label' },
-                    rank:   { x: -100, y: 26,  w: 440, h: 28, type: 'label' },
-                    stats:  { x: -100, y: -2,  w: 440, h: 22, type: 'label' },
-                    cta:    { x: 200,  y: -50, w: 240, h: 52, type: 'btnPrimary' },
+                    header:  { x: -290, y: 60,  w: 140, h: 18, type: 'label' },
+                    rank:    { x: -100, y: 32,  w: 440, h: 28, type: 'label' },
+                    // 2026-05-02 polish — motivational subline between rank
+                    // and stats: "Win 1 match to enter the leaderboard" or
+                    // "Climb the ranks to enter the Top 10". Hidden when ranked.
+                    subline: { x: -100, y: 8,   w: 440, h: 18, type: 'label' },
+                    stats:   { x: -100, y: -16, w: 440, h: 22, type: 'label' },
+                    cta:     { x: 200,  y: -54, w: 240, h: 52, type: 'btnPrimary' },
                 },
             },
             status:          { x: 0,    y: leaderboard.STATUS_Y, w: 600, h: 22,  type: 'label' },
@@ -2944,12 +2973,20 @@ const LayoutSpec = {
             trophiesEmpty:          { x: 0, y: portfolio.TROPHY_EMPTY_Y, w: 0, h: 24, type: 'label' },
             trophiesHeaderTitle:    { x: 0,    y: portfolio.TROPHY_HEADER_TITLE_Y,    w: 360, h: 28, type: 'label' },
             trophiesHeaderSubtitle: { x: 0,    y: portfolio.TROPHY_HEADER_SUBTITLE_Y, w: 480, h: 18, type: 'label' },
+            // BEST WEEK featured strip — full-content-width banner sitting
+            // between header subtitle and the 3×2 grid. Renders the player's
+            // top week as a single row (medal icon + eyebrow + main label).
+            // AppUI hides it when the player has zero trophies.
+            trophiesFeaturedStrip:  { x: 0,    y: portfolio.TROPHY_FEATURED_STRIP_Y,
+                                      w: portfolio.TROPHY_FEATURED_STRIP_W,
+                                      h: portfolio.TROPHY_FEATURED_STRIP_H,
+                                      type: 'group' },
             trophiesPagePrev:       { x: 232,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 32,  h: 32, type: 'btnGhost' },
             trophiesPageLabel:      { x: 280,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 80,  h: 18, type: 'label' },
             trophiesPageNext:       { x: 328,  y: portfolio.TROPHY_PAGE_ROW_Y,        w: 32,  h: 32, type: 'btnGhost' },
             trophiesFooterLine1:    { x: 0,    y: portfolio.TROPHY_FOOTER_LINE1_Y,    w: 600, h: 16, type: 'label' },
             trophiesFooterLine2:    { x: 0,    y: portfolio.TROPHY_FOOTER_LINE2_Y,    w: 600, h: 16, type: 'label' },
-            trophiesShareBtn:       { x: 0,    y: portfolio.TROPHY_SHARE_BTN_Y,       w: 160, h: 40, type: 'btnGhost' },
+            trophiesShareBtn:       { x: 0,    y: portfolio.TROPHY_SHARE_BTN_Y,       w: 240, h: 44, type: 'btnGhost' },
         },
         templates: {
             // Hero P/L card — focal point. Big colored value + edge accent
@@ -2983,21 +3020,26 @@ const LayoutSpec = {
                 footer: { x:    0, y: -28, w: 270, h: 16 },
             },
             // 11 — 6 trophy tiles in a 3×2 grid (220×260, 16-px gap).
-            // Tile internals (top→bottom): WEEK eyebrow at +108 (small caps,
-            // dim), 120-px Emoji icon (rendered at IconLibrary size 90) at +30,
-            // big WinsValue label at -60 (28-pt bold white "12"), small
-            // WinsLabel at -94 ("wins"). Top-edge stripe is recolored per-rank
-            // at runtime in AppUI._renderTrophyPage (gold/silver/bronze/purple).
+            // Tile internals (top→bottom): TierEyebrow at +120 (e.g. "GOLD
+            // TROPHY", tinted gold/silver/bronze/standard at runtime), WEEK
+            // eyebrow at +98 (small caps dim, "WEEK #6"), 120-px Emoji icon
+            // (rendered at IconLibrary size 110) at +30, big WinsValue label
+            // at -60 (28-pt bold white "12"), small WinsLabel at -94 ("wins"),
+            // Descriptor at -118 (only the gold tile uses it: "Best week").
+            // Top-edge stripe is recolored per-tier at runtime in
+            // AppUI._renderTrophyPage (gold/silver/bronze/standard purple).
             trophyTile: {
                 count: 6, w: 220, h: 260, gap: 16,
                 cols: 3, rows: 2,
                 gridXOffset: -1, // (col - 1) * (w + gap) — cols [-236, 0, 236]
                 gridYBase:   portfolio.TROPHY_GRID_BASE_Y,
                 gridYStride: portfolio.TROPHY_GRID_STRIDE_Y,
-                weekEyebrow: { x: 0, y: 108, w: 200, h: 14 },
-                emoji:       { x: 0, y: 30,  w: 120, h: 120 },
+                tierEyebrow: { x: 0, y: 120, w: 200, h: 14 },
+                weekEyebrow: { x: 0, y:  98, w: 200, h: 14 },
+                emoji:       { x: 0, y:  30, w: 120, h: 120 },
                 winsValue:   { x: 0, y: -60, w: 200, h: 36 },
                 winsLabel:   { x: 0, y: -94, w: 200, h: 16 },
+                descriptor:  { x: 0, y: -118, w: 200, h: 14 },
             },
             // 30-row pool inside PortfolioHistoryView's ScrollView. AppUI
             // toggles _active per row + writes labels (Date/Mode/Placement/

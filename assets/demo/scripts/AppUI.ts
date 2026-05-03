@@ -32,7 +32,8 @@ import { PriceFeed } from '../../token-duel/scripts/PriceFeed';
 import { TokenSquad } from '../../token-duel/scripts/TokenSquad';
 import { BirdeyeClient } from '../../token-duel/scripts/birdeye/BirdeyeClient';
 import { Candle, FeedTab, OhlcvType, TokenRow } from '../../token-duel/scripts/birdeye/types';
-import { DEBUG_POSTMATCH } from '../../token-duel/scripts/DemoFlags';
+import { DEBUG_POSTMATCH, USE_POSTMATCH_V2 } from '../../token-duel/scripts/DemoFlags';
+import { PostMatchPanelV2, PostMatchOutcome as PostMatchOutcomeV2 } from './PostMatchPanelV2';
 import { trendingUrl, gainersUrl, newListingsUrl, smartMoneyUrl, searchUrl, pathOf } from '../../token-duel/scripts/birdeye/endpoints';
 import { computeScore, formatScore } from '../../token-duel/scripts/TokenScore';
 import { Watchlist } from '../../token-duel/scripts/Watchlist';
@@ -587,6 +588,9 @@ export class AppUI extends Component {
     // Session D Part 7: mode-filter tabs on LeaderboardPanel.
     private _lbTabButtons: Map<string, Button> = new Map();
     private _lbFilterMode: number = 0; // 0=1v1, 1=4p, 2=8p, 3=BR10
+    // 2026-05-02 polish — top-3 stagger animation timers; cleared on rapid
+    // tab swaps so a fast tap does not stack overlapping fade-ins.
+    private _lbStaggerTimers: number[] = [];
 
     // Session D Part 8: Settings panel bindings.
     private _settingsPanel: Node | null = null;
@@ -633,6 +637,12 @@ export class AppUI extends Component {
     private _pfTrophyPagePrevBtn: Button | null = null;
     private _pfTrophyPageNextBtn: Button | null = null;
     private _pfTrophyShareBtn: Button | null = null;
+    // Trophy room polish — BEST WEEK featured strip refs (gold trophy hero
+    // banner above the 3×2 grid). _renderTrophyPage rebinds icon + label per
+    // render; strip stays hidden when entries.length === 0.
+    private _pfTrophyFeaturedStrip: Node | null = null;
+    private _pfTrophyFeaturedIcon: Node | null = null;
+    private _pfTrophyFeaturedLabel: Label | null = null;
     // Cached after the first dynamic-import of TrophyRpc so _renderTrophyPage
     // (called both on fresh fetch and on prev/next without re-importing) can
     // resolve rank icons synchronously.
@@ -1280,6 +1290,11 @@ export class AppUI extends Component {
     private _pickedHeroSig: string | null = null;
     private _sessionDeltas: Record<string, number> | null = null;
 
+    // 2026-05-02 attempt 9 — ground-up rebuild of post-match panel.
+    // Code-built panel parented to Canvas root, raw TOUCH_END CTAs that
+    // bypass the broken Button.CLICK pipeline. Gated by USE_POSTMATCH_V2.
+    private _postMatchPanelV2: PostMatchPanelV2 | null = null;
+
     // RPC
     private _rpc!: SolanaRpc;
 
@@ -1297,7 +1312,7 @@ export class AppUI extends Component {
                 (globalThis as any).__fileSinkInstalled = true;
                 const __sinkBuf: string[] = [];
                 const __sinkPath = __native.fileUtils.getWritablePath() + 'td-attempt7.log';
-                const __TAGS = /^\[(BOOT_ATTEMPT_7|SE_ERROR_TRAP|StaleTween|TickErr|PostMatchBtn|ButtonHealth|AppUI|TWEEN_TRACKER|TouchTrace|StormTrap|MatchTickerRpc|MatchRpc|TokenDuelRpc|HwBack)\b/;
+                const __TAGS = /^\[(BOOT_ATTEMPT_7|SE_ERROR_TRAP|StaleTween|TickErr|PostMatchBtn|ButtonHealth|AppUI|TWEEN_TRACKER|TouchTrace|StormTrap|MatchTickerRpc|MatchRpc|TokenDuelRpc|HwBack|PostMatchPanelV2)\b/;
                 const __flush = () => {
                     if (!__sinkBuf.length) return;
                     try {
@@ -1339,7 +1354,7 @@ export class AppUI extends Component {
         for (let __bs = 0; __bs < 20; __bs++) {
             console.log(`[BOOT_ATTEMPT_7] iter=${__bs} t=${Date.now()} ver=stage-e-v1`);
         }
-        console.log(`${TAG} BUILD_STAMP v=2026-04-30-T1100-fix11-pill-node-budgeted — _buildSegmentedPill / _mountRankBadge / _mountPersonalRankBorder now route every addComponent(Graphics) through enqueuePostDraw with atomic Node+Graphics work units. Removes ~36 unsafe tick-0 Graphics attaches; spreads them across ~6 AFTER_DRAW ticks. Lying "// safe: post-boot" annotations removed. Watcher auto-throws unsafe attaches in dev (EDITOR||DEBUG); production warns. Lint loophole closed.`);
+        console.log(`${TAG} BUILD_STAMP v=2026-05-02-T2300-race-squad-headers — RacePlayerLevelChip moved from top-left corner to centered above PlayerTokenCardsRow as "YOU · Lv N" squad header (mirrors OpponentIdentityCard "BOT · Lv N" above bot row). Per-card sprite tint split into cool cyan-indigo (player 32/56/100) vs warm slate-purple (bot 48/22/60). Thin top-edge accent stripe (cyan player / muted slate bot) drawn into existing per-card bar Graphics — no new addComponent calls. Token bars unchanged.`);
         // Boot-phase watcher: logs every Graphics component creation during
         // the first 8 ticks with phase context. If the engine SIGSEGVs, the
         // last `[SafeGraphics] addComponent` log line names the trigger Node.
@@ -1496,8 +1511,9 @@ export class AppUI extends Component {
                 try {
                     if (ev.keyCode !== KeyCode.MOBILE_BACK) return;
                     const pmActive = !!this._postMatchPanel?.activeInHierarchy;
-                    console.log(`[HwBack] KEY_DOWN postMatchActive=${pmActive}`);
-                    if (pmActive) {
+                    const v2Active = !!this._postMatchPanelV2?.isVisible();
+                    console.log(`[HwBack] KEY_DOWN postMatchActive=${pmActive} v2Active=${v2Active}`);
+                    if (pmActive || v2Active) {
                         this._onPostMatchBack();
                         ev.propagationStopped = true;
                     }
@@ -1508,6 +1524,23 @@ export class AppUI extends Component {
             console.log(`${TAG} start | HW_BACK_HANDLER installed (attempt 8 Option A)`);
         } catch (e: any) {
             console.log(`${TAG} start | HW_BACK_HANDLER install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 9 — instantiate PostMatchPanelV2 and force the
+        // scene-baked PostMatchPanel to active=false so it never renders or
+        // dispatches touches. V2's root parents to Canvas (this.node).
+        try {
+            if (USE_POSTMATCH_V2) {
+                this._postMatchPanelV2 = new PostMatchPanelV2(this.node);
+                console.log(`${TAG} start | POSTMATCH_V2 instantiated`);
+                // Defensive: keep the scene panel hidden permanently.
+                const scenePM = this.node.getChildByName('PostMatchPanel');
+                if (scenePM) {
+                    scenePM.active = false;
+                    console.log(`${TAG} start | scene PostMatchPanel forced inactive (V2 owns post-match)`);
+                }
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | POSTMATCH_V2 init threw: ${e?.message ?? e}`);
         }
         // Frame heartbeat: log director update + draw ticks so we can see
         // whether the JS thread runs ANY frame after start() returns and
@@ -2816,6 +2849,10 @@ export class AppUI extends Component {
                 this._pfTrophyPagePrevBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyPagePrev(), this);
                 this._pfTrophyPageNextBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyPageNext(), this);
                 this._pfTrophyShareBtn?.node.on(Button.EventType.CLICK, () => this._onTrophyShareClick(), this);
+                // BEST WEEK featured strip — banner above the grid.
+                this._pfTrophyFeaturedStrip = trophiesView.getChildByName('PortfolioTrophiesFeaturedStrip') ?? null;
+                this._pfTrophyFeaturedIcon = this._pfTrophyFeaturedStrip?.getChildByName('FeaturedIcon') ?? null;
+                this._pfTrophyFeaturedLabel = this._pfTrophyFeaturedStrip?.getChildByName('FeaturedMain')?.getComponent(Label) ?? null;
             }
             this._pfHistoryView = this._portfolioPanel.getChildByName('PortfolioHistoryView') ?? null;
             if (this._pfHistoryView) {
@@ -8026,11 +8063,14 @@ export class AppUI extends Component {
         for (const row of this._raceOpponentRows) row.active = false;
         this._dumpAppState('srp_after_clear_bot_state');
 
-        // Battle-UI polish: only seed the small Lv pill (wallet name shows in
-        // post-match summary, not gameplay top row).
+        // Battle-UI polish: seed the squad chip ("YOU · Lv N") above the
+        // player token row. 2026-05-02 — chip moved out of top-row corner to
+        // sit directly above PlayerTokenCardsRow as a squad header (mirror of
+        // OpponentIdentityCard above OpponentTokenCardsRow). Wallet name
+        // shows in post-match summary, not gameplay top row.
         if (this._isDuelLayout && this._racePlayerLevelLabel) {
             const lvlSrc = this.node.getChildByName('HomePanel')?.getChildByName('HomeLevelChip')?.getChildByName('HomeLevelChipLabel')?.getComponent(Label);
-            this._racePlayerLevelLabel.string = lvlSrc?.string || 'Lv 1';
+            this._racePlayerLevelLabel.string = `YOU · ${lvlSrc?.string || 'Lv 1'}`;
         }
         this._dumpAppState('srp_after_level_chip');
 
@@ -8874,13 +8914,15 @@ export class AppUI extends Component {
         const cache = isPlayer ? this._playerLastTokenDelta : this._opponentLastTokenDelta;
         const prev = cache[slot] ?? 0;
 
-        // 1) Sprite tint — subtle wash by sign. 2026-05-01 — base recolored
-        // to bg.cardHover purple (player 50/20/72, opponent 38/16/56) so the
-        // resting card reads purple in line with the squad / picker cards.
+        // 1) Sprite tint — subtle wash by sign. 2026-05-02 — base hues split
+        // into cool cyan-leaning indigo for the player squad (32/56/100) and
+        // warm slate-purple for the bot squad (48/22/60). Side-by-side they
+        // read as distinct teams within 1 second; both still sit in the
+        // dark-arena palette and don't bleed into the green/coral bar colors.
         if (sprite) {
-            const baseR = isPlayer ? 50 : 38;
-            const baseG = isPlayer ? 20 : 16;
-            const baseB = isPlayer ? 72 : 56;
+            const baseR = isPlayer ? 32  : 48;
+            const baseG = isPlayer ? 56  : 22;
+            const baseB = isPlayer ? 100 : 60;
             if (deltaPct > 0.5) {
                 // Lerp toward win green.
                 sprite.color = new Color(
@@ -8931,6 +8973,19 @@ export class AppUI extends Component {
             // Filled portion centered.
             bar.fillColor = new Color(col.r, col.g, col.b, 220);
             bar.roundRect(-halfW, -3, w, 6, 3);
+            bar.fill();
+            // 2026-05-02 — team-accent stripe at the top edge of the card,
+            // drawn into the same Graphics to avoid any new addComponent
+            // (per Cocos safety rules). Cyan for player squad, muted slate
+            // for bot squad. Constant per side, paints over sprite tint.
+            const cardH = card.getComponent(UITransform)?.contentSize.height ?? 132;
+            const barY = bar.node.position.y;
+            const topYInBarSpace = (cardH / 2) - barY - 4;
+            const accent = isPlayer
+                ? new Color(92,  212, 255, 220)   // #5CD4FF cyan, bright
+                : new Color(120, 100, 150, 180);  // muted slate, lower alpha
+            bar.fillColor = accent;
+            bar.roundRect(-100, topYInBarSpace - 1.5, 200, 3, 1.5);
             bar.fill();
         }
 
@@ -11379,6 +11434,16 @@ export class AppUI extends Component {
         return `${addr.substring(0, 4)}…${addr.substring(addr.length - 4)}`;
     }
 
+    // 2026-05-02 leaderboard polish — username preference scaffold. The map is
+    // empty today (no on-chain username system yet); a future populator can
+    // hydrate it from a profile RPC and every leaderboard renderer picks up
+    // human-readable handles automatically. Fallback is the wallet shortform.
+    private _usernameByPubkey: Map<string, string> = new Map();
+    private _fmtPlayerLabel(pubkey: string): string {
+        const handle = this._usernameByPubkey.get(pubkey);
+        return handle ?? this._fmtMintShort(pubkey);
+    }
+
     /**
      * Session 14: row-tap behavior branches on mode.
      *   squadPickMode  → toggle pick check (honors 3-max rule).
@@ -13328,6 +13393,43 @@ export class AppUI extends Component {
         totalPlayers?: number;  // Session D Part 6: mode N
         modeLabel?: string;     // Session D Part 6: "4p Pot" etc.
     }): void {
+        // 2026-05-02 attempt 9 — V2 panel routes here. V2 is a code-built
+        // panel parented to Canvas root; CTAs use raw TOUCH_END (NOT the
+        // broken Button.CLICK pipeline). Original panel below is rollback.
+        if (USE_POSTMATCH_V2 && this._postMatchPanelV2) {
+            this._stopMipTick();
+            if (this._feedPollTimer !== null) {
+                clearInterval(this._feedPollTimer as unknown as number);
+                this._feedPollTimer = null;
+                console.log(`${TAG} _showPostMatchPanel | feed_poll_paused (v2)`);
+            }
+            // Compute per-token breakdown string from session deltas if available.
+            let perTokenBreakdown: string | undefined;
+            const deltas = this._sessionDeltas;
+            if (deltas) {
+                const parts: string[] = [];
+                for (const k of Object.keys(deltas)) {
+                    const v = deltas[k];
+                    parts.push(`${k.slice(0, 3).toUpperCase()} ${v >= 0 ? '+' : ''}${v.toFixed(2)}%`);
+                }
+                if (parts.length) perTokenBreakdown = parts.join(' · ');
+            }
+            const playerPct = (outcome.playerHeight - 1_000_000) / 10_000;
+            const oppPct = (outcome.opponentHeight - 1_000_000) / 10_000;
+            const v2Outcome: PostMatchOutcomeV2 = {
+                ...outcome,
+                playerDeltaPct: playerPct,
+                opponentDeltaPct: oppPct,
+                perTokenBreakdown,
+            };
+            this._postMatchPanelV2.show(v2Outcome, {
+                onBack: () => this._onPostMatchBack(),
+                onAgain: () => this._onPostMatchAgain(),
+                onShare: () => this._onPostMatchShare(),
+            });
+            console.log(`${TAG} _showPostMatchPanel | V2_SHOW won=${outcome.won} sol=${(outcome.payoutLamports / 1e9).toFixed(3)}`);
+            return;
+        }
         if (!this._postMatchPanel) return;
         // 2026-04-30 — pause the MIP per-frame tick while the post-match
         // panel is up. _onGameOver → _teardownMatchRuntime tears down the
@@ -14949,6 +15051,8 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
+        // 2026-05-02 attempt 9 — hide V2 panel if it's the active one.
+        if (USE_POSTMATCH_V2 && this._postMatchPanelV2) this._postMatchPanelV2.hide();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
         // Resume Birdeye polling now that we're back on Home (trade tab visible).
@@ -14964,6 +15068,8 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
+        // 2026-05-02 attempt 9 — hide V2 panel if it's the active one.
+        if (USE_POSTMATCH_V2 && this._postMatchPanelV2) this._postMatchPanelV2.hide();
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Re-open picker so user can pick mode/wager again. Squad still intact.
@@ -18654,6 +18760,15 @@ export class AppUI extends Component {
                 g.roundRect(-w / 2, -h / 2, w, h, 8);
                 g.stroke();
             }
+            // 2026-05-02 polish — subtle outer halo on the podium ranks. Painted
+            // inside the same Graphics that draws the badge, so no new
+            // addComponent(Graphics) and no extra enqueuePostDraw block.
+            if (rankNum <= 3) {
+                g.lineWidth = 1;
+                g.strokeColor = new Color(tint.r, tint.g, tint.b, 70);
+                g.roundRect(-w / 2 - 2, -h / 2 - 2, w + 4, h + 4, 10);
+                g.stroke();
+            }
         };
 
         const existing = parent.getChildByName('RankBadge');
@@ -18739,6 +18854,17 @@ export class AppUI extends Component {
         this._hideAllTopLevelPanelsExcept('leaderboard');
         this._leaderboardPanel.active = true;
         this._dumpPanelLayout(this._leaderboardPanel, 'show_leaderboard');
+        // 2026-05-02 polish — fresh entry replays the crown glint and makes the
+        // PersonalRankCard slide-up reveal trigger again, so re-opening the
+        // leaderboard always feels like an arrival, not a re-show.
+        (this._leaderboardPanel as any).__crownGlintShown = false;
+        const prc = this._leaderboardPanel.getChildByName('PersonalRankCard');
+        if (prc) (prc as any).__lastActiveTick = false;
+        // 2026-05-02 polish — defensive sibling-dedupe: if the scene ever ends
+        // up with more than one LeaderboardSubtitleLabel (suspected source of
+        // the "this Week" ghost-text artifact on top of the #1 row), keep the
+        // first and hide the rest.
+        this._dedupeSubtitleLabels();
         // 2026-04-28 tab-system desync fix: re-assert every runtime pill on
         // the panel into a known-good visible+synced state. Replaces the
         // ad-hoc HubTabStrip visibility guard that lived here previously.
@@ -18751,6 +18877,22 @@ export class AppUI extends Component {
         }
         // Session D Part 8: personal rank card below the rows.
         await this._refreshPersonalRankCard();
+        // 2026-05-02 polish — staggered podium reveal on every fresh entry.
+        this._playLeaderboardStagger();
+    }
+
+    /** 2026-05-02 polish — keep one LeaderboardSubtitleLabel; hide duplicates.
+     *  Defensive guard against a stale sibling causing the "this Week" ghost
+     *  text artifact behind the #1 row. */
+    private _dedupeSubtitleLabels(): void {
+        const panel = this._leaderboardPanel;
+        if (!panel) return;
+        let kept = false;
+        for (const child of panel.children) {
+            if (child.name !== 'LeaderboardSubtitleLabel') continue;
+            if (!kept) { kept = true; continue; }
+            child.active = false;
+        }
     }
 
     /**
@@ -18770,12 +18912,26 @@ export class AppUI extends Component {
         }
         await this._refreshPersonalRankCard();
         // 2026-04-28 tab-system content transition: fade the now-active row
-        // strip in so mode swaps feel like a swap, not a flash. Top player
-        // card + each rank row fade together. Personal rank card is
+        // strip in so mode swaps feel like a swap, not a flash. 2026-05-02
+        // polish — podium ranks (top card + #2 + #3) stagger in for a brief
+        // sense of arrival; the rest fade together. Personal rank card is
         // user-anchored and not part of the swap.
-        const topCard = this._leaderboardPanel?.getChildByName('TopPlayerCard');
+        this._playLeaderboardStagger();
+    }
+
+    /** 2026-05-02 polish — staggered podium reveal. Top card immediate, #2
+     *  at 60ms, #3 at 120ms; rows 4-10 fade together. Timers tracked so a
+     *  rapid tab tap can clear queued reveals before they fire on stale state. */
+    private _playLeaderboardStagger(): void {
+        for (const id of this._lbStaggerTimers) clearTimeout(id);
+        this._lbStaggerTimers = [];
+        const topCard = this._leaderboardPanel?.getChildByName('TopPlayerCard') ?? null;
         if (topCard) this._animateViewIn(topCard);
-        for (const n of this._lbRowNodes) this._animateViewIn(n);
+        const row2 = this._lbRowNodes[0] ?? null;
+        const row3 = this._lbRowNodes[1] ?? null;
+        if (row2) this._lbStaggerTimers.push(setTimeout(() => this._animateViewIn(row2), 60) as unknown as number);
+        if (row3) this._lbStaggerTimers.push(setTimeout(() => this._animateViewIn(row3), 120) as unknown as number);
+        for (let i = 2; i < this._lbRowNodes.length; i++) this._animateViewIn(this._lbRowNodes[i]);
     }
 
     /**
@@ -18791,23 +18947,28 @@ export class AppUI extends Component {
         const pubkey = mwa?.connectedPubkey ?? null;
         if (!pubkey) {
             card.active = false;
+            (card as any).__lastActiveTick = false;
             console.log(`${TAG} _refreshPersonalRankCard | HIDE no_pubkey`);
             return;
         }
+        const wasActive = !!(card as any).__lastActiveTick;
         card.active = true;
+        (card as any).__lastActiveTick = true;
 
         const rankL = card.getChildByName('RankLabel')?.getComponent(Label);
+        const subL = card.getChildByName('SublineLabel')?.getComponent(Label);
         const statsL = card.getChildByName('StatsLabel')?.getComponent(Label);
         const ctaN = card.getChildByName('PlayCTAButton');
 
         let inTop10 = false;
-        let rankStr = 'Not yet ranked · win to climb';
+        let rankStr = 'Not yet ranked';
         try {
             const entries = await fetchLeaderboard(this._tdRpc, this._lbFilterMode);
             const mine = entries.findIndex((e) => e.player === pubkey);
             if (mine >= 0) {
-                const mode = modeFromU8(this._lbFilterMode);
-                rankStr = `Rank #${mine + 1} on ${mode.label}`;
+                // 2026-05-02 polish — drop "on {mode}" suffix; the active mode
+                // pill above already communicates which leaderboard this is.
+                rankStr = `Rank #${mine + 1}`;
                 inTop10 = true;
             }
         } catch (e) {
@@ -18815,21 +18976,44 @@ export class AppUI extends Component {
         }
 
         let statsStr = 'W–L —  ·  Level —  ·  P/L —';
+        let userWins = 0;
         try {
             const stats = await loadRealStats(this._tdRpc, pubkey);
             if (stats.loaded) {
                 const pnlSol = Number(stats.profitLamports) / 1e9;
                 const pnlSign = pnlSol >= 0 ? '+' : '−';
                 statsStr = `W–L ${stats.wins}-${stats.losses}  ·  Level ${stats.level}  ·  P/L ${pnlSign}${Math.abs(pnlSol).toFixed(3)} SOL`;
+                userWins = stats.wins ?? 0;
             }
         } catch (e) {
             console.log(`${TAG} _refreshPersonalRankCard | STATS_ERR ${e}`);
         }
 
+        // 2026-05-02 polish — motivational subline. Only shown when unranked:
+        //   zero wins → "Win 1 match to enter the leaderboard" (clear next step)
+        //   ≥1 win    → "Climb the ranks to enter the Top 10" (already playing,
+        //               just not in the top yet — fallback because user height
+        //               outside top-10 is not in the LeaderboardEntry payload).
+        let sublineStr = '';
+        if (!inTop10) {
+            sublineStr = userWins === 0
+                ? 'Win 1 match to enter the leaderboard'
+                : 'Climb the ranks to enter the Top 10';
+        }
+
         if (rankL) rankL.string = rankStr;
+        if (subL) {
+            subL.string = sublineStr;
+            subL.node.active = sublineStr !== '';
+        }
         if (statsL) statsL.string = statsStr;
         if (ctaN) ctaN.active = !inTop10;
-        console.log(`${TAG} _refreshPersonalRankCard | mode=${this._lbFilterMode} pubkey=${pubkey.substring(0, 8)}… rank="${rankStr}" cta=${!inTop10}`);
+
+        // Slide-up reveal only on inactive→active transition so swapping mode
+        // tabs while the card is already shown does not retrigger the tween.
+        if (!wasActive) this._animateViewIn(card);
+
+        console.log(`${TAG} _refreshPersonalRankCard | mode=${this._lbFilterMode} pubkey=${pubkey.substring(0, 8)}… rank="${rankStr}" sub="${sublineStr}" cta=${!inTop10}`);
     }
 
     /** Highlight the active mode tab (teal) and dim the others. The standalone
@@ -18866,6 +19050,9 @@ export class AppUI extends Component {
         if (subtitleL) {
             const label = modeFromU8(this._lbFilterMode).label;
             subtitleL.string = `${label} · This Week`;
+            // 2026-05-02 polish — clamp to bbox so a long mode label cannot
+            // bleed past the right edge into the #1 row area.
+            (subtitleL as any).overflow = Label.Overflow.SHRINK;
         }
         let entries: ModeLeaderboardEntry[] = [];
         try {
@@ -18902,6 +19089,11 @@ export class AppUI extends Component {
     private _onLeaderboardBackClick(): void {
         if (!this._leaderboardPanel) return;
         console.log(`${TAG} _onLeaderboardBackClick | CLOSE`);
+        // 2026-05-02 polish — clear pending stagger reveals + reset glint
+        // gating so the next entry replays cleanly without stale tweens.
+        for (const id of this._lbStaggerTimers) clearTimeout(id);
+        this._lbStaggerTimers = [];
+        (this._leaderboardPanel as any).__crownGlintShown = false;
         this._leaderboardPanel.active = false;
         // Phase N4: a fresh hub re-entry should always land on Portfolio.
         this._hubActiveTab = 'portfolio';
@@ -18933,12 +19125,20 @@ export class AppUI extends Component {
             const playerL = top.getChildByName('PlayerLabel')?.getComponent(Label);
             const scoreL = top.getChildByName('ScoreLabel')?.getComponent(Label);
             const elapsedL = top.getChildByName('ElapsedLabel')?.getComponent(Label);
-            if (playerL) playerL.string = this._fmtMintShort(leader.player);
+            // 2026-05-02 polish — username preference (empty map today; future
+            // populator switches every leaderboard row to handle-first naming).
+            if (playerL) playerL.string = this._fmtPlayerLabel(leader.player);
             // 2026-04-29 v2 — score string is pre-formatted by the caller so the
             // mode-tab path can carry " PTS" while the season path keeps its
             // "5w" (wins) shorthand. ScoreLabel is right-aligned in scene gen.
-            if (scoreL) scoreL.string = leader.score;
+            if (scoreL) {
+                this._tweenScoreCountUp(scoreL, leader.score);
+            }
             if (elapsedL) elapsedL.string = this._fmtElapsed(leader.elapsedSec);
+            // 2026-05-02 polish — one-shot crown glint per panel open. Gated
+            // via __crownGlintShown on the panel; cleared in back handler so
+            // a fresh re-entry replays the highlight.
+            this._maybePlayCrownGlint(top);
         }
     }
 
@@ -18963,7 +19163,7 @@ export class AppUI extends Component {
             // number reads clearly against gold/silver/bronze fills.
             rankL.color = new Color(244, 245, 249, 255);
         }
-        if (playerL) playerL.string = this._fmtMintShort(entry.player);
+        if (playerL) playerL.string = this._fmtPlayerLabel(entry.player);
         // 2026-04-29 v2 — score is pre-formatted (mode tab carries " PTS"; the
         // season path emits "5w"). Renderer stays format-agnostic.
         if (scoreL) scoreL.string = entry.score;
@@ -18977,6 +19177,64 @@ export class AppUI extends Component {
              : `${Math.floor(diffSec / 86400)}d ago`;
     }
 
+    /** 2026-05-02 polish — one-shot crown highlight on leaderboard entry.
+     *  Tweens the existing CrownLabel UIOpacity from full → soft so the
+     *  podium reveal lands with a brief glint. Gated so re-rendering after
+     *  a tab tap does not loop the animation; cleared on panel re-open. */
+    private _maybePlayCrownGlint(topCard: Node | null): void {
+        if (!topCard) return;
+        const panel = this._leaderboardPanel as any;
+        if (!panel || panel.__crownGlintShown) return;
+        const crown = topCard.getChildByName('CrownLabel');
+        if (!crown) return;
+        const op = crown.getComponent(UIOpacity) ?? crown.addComponent(UIOpacity);
+        Tween.stopAllByTarget(op);
+        op.opacity = 255;
+        tween(op)
+            .to(0.18, { opacity: 255 }, { easing: 'cubicOut' })
+            .to(0.36, { opacity: 200 }, { easing: 'cubicInOut' })
+            .start();
+        panel.__crownGlintShown = true;
+    }
+
+    /** 2026-05-02 polish — quick count-up on the TopPlayerCard score so the
+     *  number lands instead of just appearing. Parses leading digits out of
+     *  the pre-formatted "+N PTS" / "Nw" string and tweens via a counter
+     *  object, rewriting `string` each frame. Skips if unchanged or not
+     *  numeric (season "5w" still parses fine). */
+    private _tweenScoreCountUp(scoreL: Label, target: string): void {
+        if (!scoreL) return;
+        const parseLeadingInt = (s: string): number | null => {
+            const m = s.match(/-?\d+/);
+            return m ? parseInt(m[0], 10) : null;
+        };
+        const targetN = parseLeadingInt(target);
+        const currentN = parseLeadingInt(scoreL.string ?? '');
+        if (targetN === null || currentN === null || targetN === currentN) {
+            scoreL.string = target;
+            return;
+        }
+        const tplMatch = target.match(/^(\D*)(-?\d+)(.*)$/);
+        if (!tplMatch) {
+            scoreL.string = target;
+            return;
+        }
+        const prefix = tplMatch[1];
+        const suffix = tplMatch[3];
+        const counter = { v: currentN };
+        Tween.stopAllByTarget(counter);
+        tween(counter)
+            .to(0.22, { v: targetN }, {
+                easing: 'cubicOut',
+                onUpdate: () => {
+                    if (!scoreL.isValid) return;
+                    scoreL.string = `${prefix}${Math.round(counter.v)}${suffix}`;
+                },
+            })
+            .call(() => { if (scoreL.isValid) scoreL.string = target; })
+            .start();
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  Part 10 pt2 — Season tab (🏆 This Week) render path
     // ═══════════════════════════════════════════════════════════════
@@ -18988,7 +19246,10 @@ export class AppUI extends Component {
      */
     private async _refreshSeasonTab(): Promise<void> {
         const subtitleL = this._leaderboardPanel?.getChildByName('LeaderboardSubtitleLabel')?.getComponent(Label);
-        if (subtitleL) subtitleL.string = 'All modes · This Week';
+        if (subtitleL) {
+            subtitleL.string = 'All modes · This Week';
+            (subtitleL as any).overflow = Label.Overflow.SHRINK;
+        }
         let season: SeasonState | null = null;
         try {
             season = await getCurrentSeason(this._tdRpc);
@@ -20593,15 +20854,22 @@ export class AppUI extends Component {
     }
 
     /**
-     * Trophies redesign — render the current page slice into the 6-tile
-     * pool. Each tile gets:
-     *   - WEEK eyebrow caption
-     *   - 90-pt rank icon (medalGold / medalSilver / medalBronze / starBurst)
-     *   - big WinsValue ("12") + "wins" label
-     *   - top-edge stripe re-tinted gold/silver/bronze for ranks 1-3 and
-     *     purple for rank 4+
+     * Trophy room — render the current page slice into the 6-tile pool with
+     * tier hierarchy. Entries are sorted by wins desc (weekId desc on ties)
+     * so the player's best week always lands top-left and the BEST WEEK
+     * featured strip above the grid sources from sorted[0].
+     *
+     * Tile decoration is tier-driven (NOT the on-chain rank field, which is
+     * the player's weekly leaderboard placement, a different concept):
+     *   - tier 0 (best week)  → GOLD TROPHY   + gold edge   + medalGold  + "Best week"
+     *   - tier 1 (2nd best)   → SILVER TROPHY + silver edge + medalSilver
+     *   - tier 2 (3rd best)   → BRONZE TROPHY + bronze edge + medalBronze
+     *   - tier ≥3             → STANDARD      + purple edge + starBurst
+     *
      * Pagination chrome (prev / label / next) only shows when the merged
-     * list overflows a single page.
+     * list overflows a single page. Per-tile UIOpacity is tweened 0→255 with
+     * a small per-index stagger so the grid reads as a curated reveal; the
+     * gold tile gets a one-shot scale pop on top for "trophy unlock" feel.
      */
     private _renderTrophyPage(): void {
         const PAGE = 6;
@@ -20610,35 +20878,92 @@ export class AppUI extends Component {
         if (this._pfTrophyPage < 0) this._pfTrophyPage = 0;
         if (this._pfTrophyPage > totalPages - 1) this._pfTrophyPage = totalPages - 1;
         const start = this._pfTrophyPage * PAGE;
-        const slice = entries.slice(start, start + PAGE);
+        // Tier ordering — best wins first; weekId desc breaks ties so the
+        // most-recent strong week wins the gold spot.
+        const sorted = entries.slice().sort((a, b) => (b.wins - a.wins) || (b.weekId - a.weekId));
+        const tierByMint = new Map<string, number>();
+        sorted.forEach((t, idx) => tierByMint.set(t.mint, idx));
+        const slice = sorted.slice(start, start + PAGE);
+
+        const TIER_COLOR = [
+            new Color(255, 210,  74, 255),   // gold
+            new Color(216, 221, 240, 255),   // silver
+            new Color(224, 138,  74, 255),   // bronze
+            new Color(170, 120, 255, 255),   // standard purple
+        ];
+        const TIER_LABEL = ['GOLD TROPHY', 'SILVER TROPHY', 'BRONZE TROPHY', 'STANDARD TROPHY'];
+        const TIER_ICON: Array<'medalGold' | 'medalSilver' | 'medalBronze' | 'starBurst'> =
+            ['medalGold', 'medalSilver', 'medalBronze', 'starBurst'];
 
         for (let i = 0; i < this._pfTrophyTiles.length; i++) {
             const tile = this._pfTrophyTiles[i];
             const t = slice[i];
             if (!t) { tile.active = false; continue; }
             tile.active = true;
-            const eyebrow = tile.getChildByName('WeekEyebrow')?.getComponent(Label);
-            const emojiN = tile.getChildByName('Emoji');
+            const tier = Math.min(3, tierByMint.get(t.mint) ?? 99);
+            const tierColor = TIER_COLOR[tier];
+            const tierLabelText = TIER_LABEL[tier];
+            const tierIconName = TIER_ICON[tier];
+
+            const tierEye   = tile.getChildByName('TierEyebrow')?.getComponent(Label);
+            const eyebrow   = tile.getChildByName('WeekEyebrow')?.getComponent(Label);
+            const emojiN    = tile.getChildByName('Emoji');
             const winsValue = tile.getChildByName('WinsValue')?.getComponent(Label);
             const winsLabel = tile.getChildByName('WinsLabel')?.getComponent(Label);
-            const edgeSpr = tile.getChildByName('CardEdgeAccent')?.getComponent(Sprite);
-            if (eyebrow) eyebrow.string = `WEEK #${t.weekId}`;
-            if (emojiN && this._rankIconFn) {
-                // rankIcon already maps rank 4+ to 'starBurst'. The function
-                // ref is cached during the dynamic import in _refreshTrophies
-                // so prev/next clicks render without re-importing.
-                IconLibrary.attach(emojiN, this._rankIconFn(t.rank), { size: 110 });
-            }
+            const descLbl   = tile.getChildByName('Descriptor')?.getComponent(Label);
+            const edgeSpr   = tile.getChildByName('CardEdgeAccent')?.getComponent(Sprite);
+
+            if (tierEye)   { tierEye.string = tierLabelText; tierEye.color = tierColor; }
+            if (eyebrow)   eyebrow.string = `WEEK #${t.weekId}`;
+            if (emojiN)    IconLibrary.attach(emojiN, tierIconName, { size: 110 });
             if (winsValue) winsValue.string = `${Math.max(0, t.wins)}`;
             if (winsLabel) winsLabel.string = t.wins === 1 ? 'win' : 'wins';
-            if (edgeSpr) {
-                // Per-rank stripe: gold / silver / bronze / purple (rank 4+).
-                const c = t.rank === 1 ? new Color(255, 210,  74, 255)
-                        : t.rank === 2 ? new Color(216, 221, 240, 255)
-                        : t.rank === 3 ? new Color(224, 138,  74, 255)
-                        :                new Color(170, 120, 255, 255);
-                edgeSpr.color = c;
+            if (descLbl)   descLbl.string = (tier === 0) ? 'Best week' : '';
+            if (edgeSpr)   edgeSpr.color = tierColor;
+
+            // Stagger the reveal so the grid reads as a curated cascade
+            // rather than 6 cards landing in lockstep. UIOpacity composes
+            // with the parent view's _animateViewIn fade — both end at 255.
+            const op = tile.getComponent(UIOpacity) ?? tile.addComponent(UIOpacity);
+            Tween.stopAllByTarget(op);
+            op.opacity = 0;
+            tween(op).delay(0.05 + i * 0.05).to(0.20, { opacity: 255 }).start();
+
+            // Gold tile gets a one-shot scale pop on top of the fade — the
+            // "soft shimmer" beat without an extra Graphics halo (Cocos
+            // graphics rules: avoid raw addComponent(Graphics) on hot paths).
+            if (tier === 0) {
+                Tween.stopAllByTarget(tile);
+                tile.setScale(0.94, 0.94, 1);
+                tween(tile)
+                    .delay(0.10)
+                    .to(0.18, { scale: new Vec3(1.04, 1.04, 1) }, { easing: 'cubicOut' })
+                    .to(0.14, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'cubicInOut' })
+                    .start();
+            } else {
+                tile.setScale(1, 1, 1);
             }
+        }
+
+        // BEST WEEK featured strip — sourced from sorted[0] (the global gold
+        // trophy, regardless of which page the player is currently on).
+        const gold = sorted[0];
+        if (this._pfTrophyFeaturedStrip) {
+            this._pfTrophyFeaturedStrip.active = !!gold;
+            if (gold) {
+                if (this._pfTrophyFeaturedIcon) {
+                    IconLibrary.attach(this._pfTrophyFeaturedIcon, 'trophy', { size: 48 });
+                }
+                if (this._pfTrophyFeaturedLabel) {
+                    const winLbl = gold.wins === 1 ? 'win' : 'wins';
+                    this._pfTrophyFeaturedLabel.string = `Week #${gold.weekId} · ${gold.wins} ${winLbl}`;
+                }
+            }
+        }
+
+        // Share button — hidden when there's nothing to share.
+        if (this._pfTrophyShareBtn) {
+            this._pfTrophyShareBtn.node.active = entries.length > 0;
         }
 
         // Pagination chrome — show only when more than one page exists.
@@ -20676,9 +21001,43 @@ export class AppUI extends Component {
         this._renderTrophyPage();
     }
 
+    /**
+     * Trophy room — copy a brag-worthy summary of the player's best week to
+     * the system clipboard so they can paste it into Discord / X / etc.
+     * Mirrors _onCopyPubkey: reads navigator.clipboard from the WebView/JSB
+     * shim, fires soft haptics + a toast on success, falls back to a
+     * "Clipboard unavailable" toast if writeText is missing.
+     */
     private _onTrophyShareClick(): void {
-        console.log(`${TAG} _onTrophyShareClick | page=${this._pfTrophyPage} total=${this._pfTrophyEntries.length}`);
-        showToast('Share coming soon');
+        const sorted = this._pfTrophyEntries.slice()
+            .sort((a, b) => (b.wins - a.wins) || (b.weekId - a.weekId));
+        const gold = sorted[0];
+        if (!gold) {
+            showToast('No trophies yet to share');
+            return;
+        }
+        const winLbl = gold.wins === 1 ? 'win' : 'wins';
+        const text = `Token Duel · Week #${gold.weekId} · ${gold.wins} ${winLbl} 🏆`;
+        const onOk = () => {
+            try { Haptics.fire(HapticType.SOFT); } catch (_) { /* editor no-op */ }
+            playSound('tap');
+            showToast('Copied to clipboard!');
+        };
+        try {
+            const nav = (globalThis as any).navigator;
+            if (nav?.clipboard?.writeText) {
+                nav.clipboard.writeText(text).then(onOk).catch((e: any) => {
+                    console.log(`${TAG} _onTrophyShareClick | clipboard FAIL ${e}`);
+                    showToast('Copy failed');
+                });
+                return;
+            }
+            console.log(`${TAG} _onTrophyShareClick | navigator.clipboard unavailable`);
+            showToast('Clipboard unavailable');
+        } catch (e) {
+            console.log(`${TAG} _onTrophyShareClick | ERROR ${e}`);
+            showToast('Copy failed');
+        }
     }
 
     /**
