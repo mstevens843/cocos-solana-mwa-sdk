@@ -165,6 +165,44 @@ pub const WAGER_TIERS: [u64; 8] = [
     5_000_000_000, // 5 SOL      — index 7 (betting-duel)
 ];
 
+/// $SKR (Solana Mobile Seeker) wager tiers in atoms (10^6 = 1 SKR).
+/// MUST match client `WAGER_TIERS_SKR_ATOMS` in `WagerCurrency.ts`.
+/// Append-only: pre-existing SKR matches with `wager_tier: 0..N` resolve
+/// against the entries below.
+pub const WAGER_TIERS_SKR_ATOMS: [u64; 6] = [
+    100_000_000,    // 100 SKR    — index 0
+    500_000_000,    // 500 SKR    — index 1
+    1_000_000_000,  // 1k SKR     — index 2
+    5_000_000_000,  // 5k SKR     — index 3
+    10_000_000_000, // 10k SKR    — index 4
+    25_000_000_000, // 25k SKR    — index 5
+];
+
+/// Canonical $SKR mint on Solana mainnet-beta. Source:
+/// https://blog.solanamobile.com/post/skr-is-live (2026-01-21).
+pub const SKR_MINT_MAINNET: Pubkey = pubkey!("SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3");
+
+/// Devnet test-SKR mint (created by `scripts/setup-devnet-skr.sh` from the
+/// admin keypair `8FAPokEsm1CFbSsJ53DM8Bfe7QBmSN4TDrAQR2qXdcXe`).
+/// Provisioned 2026-05-02. Decimals=6, initial supply=100M held by treasury.
+/// Mirror in `WagerCurrency.ts::SKR_MINT_DEVNET`.
+pub const SKR_MINT_DEVNET: Pubkey = pubkey!("EL1pCD9yEqkbivjRjYuhRWtUxqPmgKK8xHmZcqqPDFC1");
+
+/// SKR token decimals. Hard-coded so the program enforces it on
+/// `transfer_checked`. Both mainnet and devnet test mints MUST be 6 decimals.
+pub const SKR_DECIMALS: u8 = 6;
+
+/// Seed for per-match SPL token escrow. Owns the TokenAccount that holds
+/// SKR (or any other future SPL wager) until settle. Distinct seed from
+/// `MATCH_ESCROW_SEED` so an SKR match never collides with the existing
+/// SOL system-account escrow.
+/// Keyed by `[b"match_escrow_token", match_pda]`.
+pub const MATCH_ESCROW_TOKEN_SEED: &[u8] = b"match_escrow_token";
+
+/// Seed for the protocol's per-mint treasury TokenAccount (rake sink for
+/// SPL-wagered matches). Keyed by `[b"treasury_token", mint_pubkey]`.
+pub const TREASURY_TOKEN_SEED: &[u8] = b"treasury_token";
+
 /// Legacy flat-rake constant used by Part-1 solo settle.rs + compute_1v1_payout
 /// for the Session-A prototype. For multiplayer matches Part 13 uses per-player
 /// level-scaled rake via `rake_bps_for_level` — see `compute_mode_payout`.
@@ -336,12 +374,24 @@ pub struct MatchAccount {
     /// NOT part of the PDA seed. `MatchCounter.seq` is already globally
     /// unique, so windows can share the seq space without collisions.
     pub time_window: u8,
+    /// betting-duel branch (post-Part-14): wager currency mint.
+    /// `Pubkey::default()` (all zeros) = native SOL — set by the SOL-only
+    /// `join_match::handler_create` path. Any other value identifies the SPL
+    /// mint set by `join_match_skr::handler_create_skr`. Settle / cancel
+    /// dispatch on this field client-side to pick the right transfer ix.
+    ///
+    /// Existing pre-upgrade Match PDAs do NOT have this field. The
+    /// program's first deploy carrying this struct invalidates old account
+    /// data — devnet wipe required (see plan: shiny-fluttering-fox.md +
+    /// betting-duel SKR plan).
+    pub wager_mint: Pubkey,
 }
 
 impl MatchAccount {
-    // 1+1+8+2+1+1 + (32*10) + (4*10) + 1 + 8+8+8 + 1 + 8 + 1 + 1 + 1 = 411
+    // 1+1+8+2+1+1 + (32*10) + (4*10) + 1 + 8+8+8 + 1 + 8 + 1 + 1 + 1 + 32 = 443
+    // The trailing +32 is `wager_mint` (added on betting-duel branch for SKR).
     pub const SPACE: usize = 1 + 1 + 8 + 2 + 1 + 1 + (32 * MATCH_MAX_PLAYERS)
-        + (4 * MATCH_MAX_PLAYERS) + 1 + 8 + 8 + 8 + 1 + 8 + 1 + 1 + 1;
+        + (4 * MATCH_MAX_PLAYERS) + 1 + 8 + 8 + 8 + 1 + 8 + 1 + 1 + 1 + 32;
 
     /// Returns the slot index for `player` in the match, or None if not enrolled.
     pub fn slot_of(&self, player: &Pubkey) -> Option<usize> {

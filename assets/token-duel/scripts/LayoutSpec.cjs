@@ -687,6 +687,44 @@ const mip = {
 
     // Footer.
     STATUS_Y:         -740,
+
+    // 2026-05-02 — "Live Battle" v3 hero geometry (only applied when n=1).
+    // Hero grows row 0 to 660×420 with a big-timer centerpiece, animated leader
+    // chip, dominant Resume CTA. Stack rows (n>=2) keep the standard row template
+    // above. Constants are read by _applyMipHeroLayout in AppUI.ts and applied
+    // via setContentSize + setPosition at runtime — generator scaffolds rows at
+    // the standard 680×144.
+    HERO: {
+        CARD_W:           660,
+        CARD_H:           420,    // was 260 in prior hero pass
+        GLOW_OUTSET:      16,     // → 692×452 cardGlow
+        Y:                -260,   // row0 center; leaves ~150px header → card gap
+        VS_Y:             160,    // VS line vertical inside card (32pt)
+        LIVE_Y:           160,    // LIVE cluster on VS baseline
+        LIVE_DOT_X:       260,    // pull dot inward to clear bigger label
+        LIVE_LABEL_X:     298,
+        LIVE_DOT_SIZE:    16,     // bumped from 12
+        LIVE_LABEL_SIZE:  18,     // pt, bumped from 14
+        VS_LABEL_SIZE:    32,     // pt, bumped from 26
+        TIMER_BIG_Y:      40,     // big-timer label center
+        TIMER_BIG_H:      80,
+        TIMER_BIG_SIZE:   64,     // pt, gold bold
+        PHASE_Y:          -28,    // phase microcopy below big timer
+        PHASE_SIZE:       18,     // pt, slate
+        LEADER_Y:         -78,    // animated leader chip below phase
+        LEADER_SIZE:      22,     // pt, bumped from 14 stack
+        PROGRESS_Y:       -150,   // pulled to lower zone
+        PROGRESS_H:       8,      // bumped from 6
+        ACTION_Y:         -185,   // Resume + Ranks baseline
+        RESUME_X:         222,
+        RESUME_W:         200,    // bumped from 116
+        RESUME_H:         64,     // bumped from 44
+        RESUME_GLOW_W:    260,    // bumped from 150
+        RESUME_GLOW_H:    96,     // bumped from 72
+        DETAILS_X:        -244,
+        DETAILS_W:        48,     // shrunk from 84 (icon-only on hero)
+        DETAILS_H:        36,
+    },
 };
 
 const LayoutSpec = {
@@ -2025,6 +2063,16 @@ const LayoutSpec = {
             ['MIPLiveDot', 'MIPLiveLabel'],
             // Resume glow halo sits under the button.
             ['MIPResumeGlow', 'MIPResumeBtn'],
+            // 2026-05-02 — "Live Battle" v3 hero overlays. Big-timer + big-phase
+            // + animated leader chip sit visually above the card surface. Header
+            // live-dot rides next to the subtitle.
+            ['MIPCardBg',    'MIPBigTimer'],
+            ['MIPCardBg',    'MIPBigPhase'],
+            ['MIPCardGlow',  'MIPBigTimer'],
+            ['MIPCardGlow',  'MIPBigPhase'],
+            ['MIPTapTarget', 'MIPBigTimer'],
+            ['MIPTapTarget', 'MIPBigPhase'],
+            ['Subtitle',     'MIPHeaderLiveDot'],
         ],
     },
 
@@ -2492,13 +2540,23 @@ const LayoutSpec = {
                 notes: '2026-05-02 token-picker UX — moved up 12 px to clear new taller CTA top edge (-400). 12 px below squad ambient bottom (-376), 12 px above CTA top (-400).' },
             wagerStartButton:   { x:    0, y: -444, w: 640, h: 88, type: 'btnPrimary',
                 notes: '2026-05-02 token-picker UX — h 64→88 for more gravity on the primary action; y -456→-444 keeps halo bottom (-500) at the same 6-px clearance above stake-pill top (-506).' },
-            wagerValueButton:   { x:    0, y: -542, w: 240, h: 72, type: 'btnGhost',
-                notes: '2026-05-02 Pass 2 — stacked WAGER caption + value: h 56→72, y -534→-542. Top edge -506 keeps the 6 px clearance below CTA halo bottom (-500). Body alpha bumped at scene-gen so the chip reads as a "locked parameter" container, not transparent ghost.' },
-            wagerLockChip:      { x:    0, y: -542, w: 240, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (JOIN MODE).' },
-            wagerBotChip:       { x:    0, y: -542, w: 240, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (BOT MODE).' },
+            // betting-duel ($SKR): split the stake pill into a side-by-side
+            // currency-picker + amount-picker pair, both centered as a unit.
+            // Currency button (-130) sits left of amount button (+130); each
+            // 240→200 wide so the two pills + 60 px gap = 460 width fits in the
+            // 640 grid above. Y stays at -542 so the row alignment under the CTA
+            // halo doesn't shift.
+            wagerCurrencyButton:{ x: -130, y: -542, w: 200, h: 72, type: 'btnGhost',
+                notes: 'betting-duel ($SKR) — left half of the stake pill row. Caption "WAGER IN", body shows currency code + ▾. Click toggles `_wagerCurrencyDropdown`.' },
+            wagerValueButton:   { x: +130, y: -542, w: 200, h: 72, type: 'btnGhost',
+                notes: 'betting-duel ($SKR) — right half of the stake pill row. Caption "WAGER", body shows tier amount + currency + ▾. Was centered (x=0, w=240); shrunk to 200 / shifted right to make room for the new currency picker.' },
+            wagerLockChip:      { x: +130, y: -542, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (JOIN MODE). x/w match wagerValueButton.' },
+            wagerBotChip:       { x: +130, y: -542, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (BOT MODE). x/w match wagerValueButton.' },
             wagerHintLabel:     { x:    0, y: -616, w: 600, h: 28, type: 'label',      notes: '2026-05-01 r3 — own row BELOW the stake pill (y -616, gap 26 px below pill bottom -590). Always visible with state-based copy (Pick X more / Squad ready). Centered.' },
-            wagerDropdown:      { x:    0, y: -380, w: 360, h: 360, type: 'group',
-                notes: '2026-05-01 r3 — re-anchored above the centered stake pill (x=0).' },
+            wagerDropdown:      { x: +130, y: -380, w: 360, h: 360, type: 'group',
+                notes: 'betting-duel — anchor follows wagerValueButton (right column).' },
+            wagerCurrencyDropdown: { x: -130, y: -380, w: 240, h: 130, type: 'group',
+                notes: 'betting-duel — currency picker popover, anchored above wagerCurrencyButton. 2 rows (SOL + SKR).' },
             // 8c — Legacy stake cluster (kept for node-name bindings; force-hidden
             // at scene-gen so verifier sees real state. AppUI._hideLegacyBettingDuelNodes
             // is belt-and-suspenders.)
@@ -2697,6 +2755,13 @@ const LayoutSpec = {
                 count: 8, rowH: 42, padding: 12, w: 340, h: 38,
                 labels: ['0.01 SOL', '0.05 SOL', '0.1 SOL', '0.25 SOL',
                          '0.5 SOL',  '1 SOL',    '5 SOL',   '0.001 · INTRO'],
+            },
+            // betting-duel ($SKR) — currency picker popover rows. AppUI swaps
+            // the wagerDropdownRow labels at runtime when SKR is selected
+            // (100/500/1k/5k/10k/25k SKR — see WagerCurrency.ts).
+            wagerCurrencyDropdownRow: {
+                count: 2, rowH: 50, padding: 12, w: 220, h: 46,
+                labels: ['SOL', 'SKR'],
             },
             // 8d — popover row/option templates.
             // 6 feed-tab options stacked top-to-bottom (50-px stride).

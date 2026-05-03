@@ -180,7 +180,14 @@ export interface MWAError {
     // "WALLET_HUNG" (no reply within SIGN_TIMEOUT_MS — #11),
     // "WALLET_AUTH_MISMATCH" (Pass 13: wallet rejected a cached authToken it
     //     didn't issue — user picked a different wallet in the OS picker than
-    //     the one that authorized; see KNOWN_ISSUES #17),
+    //     the one that authorized OR the wallet's process was killed and lost
+    //     the token; see KNOWN_ISSUES #17. Pass 14 transparently auto-recovers
+    //     by re-authorizing with the same wallet; this code now only surfaces
+    //     when the recovery picker is dismissed by the user.),
+    // "WALLET_CHANGED" (Pass 14: auto-recovery succeeded but returned a
+    //     different pubkey — user genuinely picked a different wallet during
+    //     the recovery prompt. Caller should treat this as "switch accounts"
+    //     not "session expired".),
     // "INVALID_PAYLOADS", "NOT_SUBMITTED", "INSUFFICIENT_FUNDS_FOR_RENT".
     code: string;
     message: string;        // human-readable error description

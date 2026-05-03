@@ -744,6 +744,70 @@ export class MWAManager extends Component {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    //  AUTH RECOVERY (Pass 14 — KNOWN_ISSUES #17)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Transparent recovery from `WALLET_AUTH_MISMATCH`. The wallet rejected
+     * its own previously-issued cached `authToken` on `reauthorize` (the
+     * wallet's process was killed, its session expired, or its local token
+     * store was rotated — see KNOWN_ISSUES.md #17). The cached state on the
+     * Cocos side is verifiably dead; the only way forward is to authorize
+     * fresh and try again.
+     *
+     * Caller invokes the privileged op; on `lastError.code === 'WALLET_AUTH_MISMATCH'`,
+     * caller invokes this helper. We wipe the dead token, call `authorize()`
+     * (deep-link if `connectedWalletPackage` is known, else OS picker), and
+     * verify the new pubkey matches. If so, return `true` — caller retries
+     * the op once. If pubkey changed (user genuinely picked a different
+     * wallet), set `WALLET_CHANGED` and return `false`. If re-auth itself
+     * failed/dismissed, preserve `WALLET_AUTH_MISMATCH` and return `false`.
+     *
+     * Bounded to one retry per call site to prevent popup loops.
+     */
+    private async _recoverFromAuthMismatch(opName: string): Promise<boolean> {
+        if (this.lastError?.code !== 'WALLET_AUTH_MISMATCH') return false;
+
+        const originalPubkey = this.connectedPubkey;
+        const targetPackage = this.connectedWalletPackage;
+        console.log(`${TAG} ${opName} | RECOVERY_START WALLET_AUTH_MISMATCH detected — transparent re-auth pubkey=${originalPubkey.slice(0, 8)}… target=${targetPackage || '(picker)'}`);
+        this._updateStatus('Refreshing wallet session…');
+
+        // Wipe the dead token. Keep connectedPubkey/isConnected so UI doesn't
+        // flash "disconnected" — authorize() overwrites both on success.
+        try { this._cache.clear(originalPubkey); } catch (_) { /* ignore */ }
+        this.authToken = '';
+        this.lastError = null;
+
+        let authResult: AuthorizeResult | AuthorizeSiwsResult | null = null;
+        try {
+            authResult = await this.authorize(targetPackage);
+        } catch (e) {
+            console.log(`${TAG} ${opName} | RECOVERY_FAIL re-auth threw err=${e}`);
+            this.lastError = { code: 'WALLET_AUTH_MISMATCH', message: 'Re-auth failed during recovery' };
+            return false;
+        }
+
+        if (!authResult || !authResult.pubkey) {
+            console.log(`${TAG} ${opName} | RECOVERY_FAIL re-auth returned null (user dismissed?)`);
+            this.lastError = { code: 'WALLET_AUTH_MISMATCH', message: 'Re-auth dismissed during recovery' };
+            return false;
+        }
+
+        if (authResult.pubkey !== originalPubkey) {
+            console.log(`${TAG} ${opName} | RECOVERY_FAIL pubkey_mismatch was=${originalPubkey.slice(0, 8)} now=${authResult.pubkey.slice(0, 8)}`);
+            this.lastError = {
+                code: 'WALLET_CHANGED',
+                message: `Different wallet selected (${authResult.pubkey.slice(0, 8)}…). Reconnect to switch accounts.`,
+            };
+            return false;
+        }
+
+        console.log(`${TAG} ${opName} | RECOVERY_OK same pubkey, retrying original op`);
+        return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     //  SIGN MESSAGE
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -759,6 +823,18 @@ export class MWAManager extends Component {
      * @returns Base64-encoded signature string, or empty string on failure
      */
     async signMessage(message: string): Promise<string> {
+        // Pass 14: clear stale lastError on entry.
+        this.lastError = null;
+        const result = await this._signMessageInner(message);
+        if (result.length > 0) return result;
+        // Pass 14: transparent recovery on stale-token mismatch.
+        if (await this._recoverFromAuthMismatch('signMessage')) {
+            return await this._signMessageInner(message);
+        }
+        return result;
+    }
+
+    private async _signMessageInner(message: string): Promise<string> {
         console.log(`${TAG} signMessage | START message_len=${message.length} is_connected=${this.isConnected}`);
 
         if (!this.isConnected || !this.connectedPubkey) {
@@ -779,7 +855,6 @@ export class MWAManager extends Component {
         }
 
         this._updateStatus('Signing message...');
-        this.lastError = null;
 
         try {
             // Encode message as base64 payload
@@ -845,6 +920,18 @@ export class MWAManager extends Component {
      * @returns Array of base64-encoded signatures, or empty array on failure
      */
     async signMessages(payloads: Uint8Array[]): Promise<string[]> {
+        // Pass 14: clear stale lastError on entry.
+        this.lastError = null;
+        const result = await this._signMessagesInner(payloads);
+        if (result.length > 0) return result;
+        // Pass 14: transparent recovery on stale-token mismatch.
+        if (await this._recoverFromAuthMismatch('signMessages')) {
+            return await this._signMessagesInner(payloads);
+        }
+        return result;
+    }
+
+    private async _signMessagesInner(payloads: Uint8Array[]): Promise<string[]> {
         console.log(`${TAG} signMessages | START payload_count=${payloads.length} is_connected=${this.isConnected}`);
 
         if (!this.isConnected || !this.connectedPubkey) {
@@ -924,6 +1011,20 @@ export class MWAManager extends Component {
      * @returns Array of signed transaction bytes as Uint8Arrays
      */
     async signTransactions(transactions: Uint8Array[]): Promise<Uint8Array[]> {
+        // Pass 14: clear stale lastError on entry so a leftover code from a
+        // prior op can't masquerade as this op's failure cause.
+        this.lastError = null;
+        const result = await this._signTransactionsInner(transactions);
+        if (result.length > 0) return result;
+        // Pass 14: transparent recovery on stale-token mismatch
+        // (KNOWN_ISSUES #17). One retry max per call site.
+        if (await this._recoverFromAuthMismatch('signTransactions')) {
+            return await this._signTransactionsInner(transactions);
+        }
+        return result;
+    }
+
+    private async _signTransactionsInner(transactions: Uint8Array[]): Promise<Uint8Array[]> {
         console.log(`${TAG} signTransactions | START tx_count=${transactions.length} is_connected=${this.isConnected}`);
 
         if (!this.isConnected || !this.connectedPubkey) {
@@ -1088,6 +1189,24 @@ export class MWAManager extends Component {
      * See `signAndSendTransactionNative` for caveats (Backpack crashes).
      */
     async signAndSendTransactionsNative(transactions: Uint8Array[], options?: {
+        minContextSlot?: number;
+        commitment?: string;
+        skipPreflight?: boolean;
+        maxRetries?: number;
+        waitForCommitment?: boolean;
+    }): Promise<string[]> {
+        // Pass 14: clear stale lastError on entry.
+        this.lastError = null;
+        const result = await this._signAndSendTransactionsNativeInner(transactions, options);
+        if (result.length > 0) return result;
+        // Pass 14: transparent recovery on stale-token mismatch.
+        if (await this._recoverFromAuthMismatch('signAndSendTransactionsNative')) {
+            return await this._signAndSendTransactionsNativeInner(transactions, options);
+        }
+        return result;
+    }
+
+    private async _signAndSendTransactionsNativeInner(transactions: Uint8Array[], options?: {
         minContextSlot?: number;
         commitment?: string;
         skipPreflight?: boolean;

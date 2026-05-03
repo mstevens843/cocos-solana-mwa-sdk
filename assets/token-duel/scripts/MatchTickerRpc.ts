@@ -66,9 +66,30 @@ export async function fetchRecentMatches(
         const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
             { dataSize: MATCH_ACCOUNT_DATA_SIZE },
         ]);
-        const parsed = raw
-            .map((r) => ({ state: parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64)), pda: r.pubkey }))
-            .filter((x): x is { state: NonNullable<ReturnType<typeof parseMatchAccount>>; pda: string } => x.state !== null)
+        // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap. The
+        // post-game-over engine [SE_ERROR] storm fires immediately after
+        // this getProgramAccounts returns, which means parseMatchAccount or
+        // b64ToBytes is throwing on one of the returned accounts and the
+        // throw is escaping into a scheduled callback path. Wrapping each
+        // call in a try/catch surfaces the offender by PDA and lets the
+        // healthy accounts still be processed.
+        // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage G.
+        const decoded: { state: NonNullable<ReturnType<typeof parseMatchAccount>>; pda: string }[] = [];
+        for (const r of raw) {
+            try {
+                const bytes = b64ToBytes(r.dataBase64);
+                const state = parseMatchAccount(r.pubkey, bytes);
+                if (state) {
+                    decoded.push({ state, pda: r.pubkey });
+                } else {
+                    console.log(`[StormTrap] phase=parseMatchAccount pda=${r.pubkey.slice(0, 8)} result=null bytes=${bytes.length}`);
+                }
+            } catch (e: any) {
+                const stk = (e?.stack ?? '').split('\n').slice(0, 4).map((s: string) => s.trim()).join(' | ');
+                console.log(`[StormTrap] phase=parseMatchAccount pda=${r.pubkey.slice(0, 8)} ERROR=${e?.message ?? e} stack=${stk}`);
+            }
+        }
+        const parsed = decoded
             .filter((x) => x.state.status === 0 || x.state.status === 1)
             .sort((a, b) => Number(b.state.createdAt - a.state.createdAt))
             .slice(0, limit);

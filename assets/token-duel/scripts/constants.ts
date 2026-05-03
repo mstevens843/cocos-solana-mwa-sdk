@@ -73,6 +73,8 @@ export const SEEDS = {
     // Part 10 Bundle 3 — retention PDAs
     DAILY_CHALLENGE: new TextEncoder().encode('daily_challenge'),
     SEASON: new TextEncoder().encode('season'),
+    // betting-duel — $SKR (SPL-token) wager escrow PDA seed.
+    MATCH_ESCROW_TOKEN: new TextEncoder().encode('match_escrow_token'),
 };
 
 // ─── Birdeye (off-chain data) ────────────────────────────────────────────
@@ -128,6 +130,10 @@ export const ED25519_PROGRAM_ID = 'Ed25519SigVerify111111111111111111111111111';
 /** Instructions sysvar address — read by `settle_match_verified` to find
  *  the Ed25519 precompile ix at index 0. */
 export const SYSVAR_INSTRUCTIONS_ID = 'Sysvar1nstructions1111111111111111111111111';
+
+/** Rent sysvar — required by Anchor `init` / `init_if_needed` constraints
+ *  on token / ATA accounts. */
+export const SYSVAR_RENT_ID = 'SysvarRent111111111111111111111111111111111';
 
 // ═══════════════════════════════════════════════════════════════════
 // Part 11 Bundle B — NFT trophies (Metaplex Bubblegum cNFT)

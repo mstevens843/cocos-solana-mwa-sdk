@@ -71,4 +71,11 @@ pub enum GameError {
     VerifiedSettleRequired,
     #[msg("Match is already settled — force-settle cannot run twice")]
     MatchAlreadyClosed,
+    // betting-duel — SPL token wagers (SKR)
+    #[msg("Wager mint is not whitelisted (must be SKR_MINT_DEVNET or SKR_MINT_MAINNET)")]
+    InvalidWagerMint,
+    #[msg("Match is SOL-only — call the native-SOL ix path instead")]
+    NotSplMatch,
+    #[msg("Match is SPL-token only — call the SKR ix path instead")]
+    NotSolMatch,
 }

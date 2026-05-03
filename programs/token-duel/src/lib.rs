@@ -184,4 +184,49 @@ pub mod token_duel {
     ) -> Result<()> {
         instructions::pay_season::handler(ctx, season_id)
     }
+
+    // ─── betting-duel — $SKR (SPL-token) wager path ─────────────────────
+    //
+    // Twin instructions for matches wagered in $SKR (Solana Mobile's
+    // SPL token). Settle path requires the verified Ed25519 receipt
+    // (no unverified equivalent — paper-mode is SOL-only). See
+    // `instructions/join_match_skr.rs`, `settle_match_skr.rs`,
+    // `cancel_match_skr.rs` for full handler docs.
+
+    /// Create a new $SKR-wagered Match. Mirrors `join_match_create` but
+    /// transfers SPL atoms (not lamports) into a per-match TokenAccount
+    /// escrow. The mint must be on the `SKR_MINT_*` whitelist in state.rs.
+    pub fn join_match_create_skr(
+        ctx: Context<JoinMatchCreateSkr>,
+        mode: u8,
+        wager_tier: u8,
+        xp_bucket: u16,
+        time_window: u8,
+        seq: u64,
+    ) -> Result<()> {
+        instructions::join_match_skr::handler_create_skr(ctx, mode, wager_tier, xp_bucket, time_window, seq)
+    }
+
+    /// Join an existing Waiting $SKR match. The mint passed in accounts
+    /// is checked against `match_account.wager_mint`.
+    pub fn join_match_join_skr(ctx: Context<JoinMatchJoinSkr>) -> Result<()> {
+        instructions::join_match_skr::handler_join_skr(ctx)
+    }
+
+    /// Verified-receipt settle for $SKR matches. Identical Ed25519
+    /// validation to `settle_match_verified`; payouts flow through SPL
+    /// `transfer_checked` to recipient ATAs.
+    pub fn settle_match_verified_skr<'info>(
+        ctx: Context<'_, '_, '_, 'info, SettleMatchVerifiedSkr<'info>>,
+        height: u32,
+        signed_at: i64,
+    ) -> Result<()> {
+        instructions::settle_match_skr::handler(ctx, height, signed_at)
+    }
+
+    /// Cancel + refund an unfilled $SKR Waiting match. Same timeout
+    /// semantics as `cancel_match`; tokens flow back to the creator's ATA.
+    pub fn cancel_match_skr(ctx: Context<CancelMatchSkr>) -> Result<()> {
+        instructions::cancel_match_skr::handler(ctx)
+    }
 }

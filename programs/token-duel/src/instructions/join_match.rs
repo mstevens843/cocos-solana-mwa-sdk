@@ -60,6 +60,9 @@ pub fn handler_create(
     m.bump = ctx.bumps.match_account;
     m.escrow_bump = ctx.bumps.match_escrow;
     m.time_window = time_window;
+    // betting-duel: native-SOL match. The SPL twin in `join_match_skr.rs`
+    // writes the actual mint here for SKR-wagered matches.
+    m.wager_mint = Pubkey::default();
 
     // Transfer wager from player → match escrow.
     let cpi = CpiContext::new(

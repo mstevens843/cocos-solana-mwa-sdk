@@ -5,7 +5,7 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen, Size } from 'cc';
+import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen, Size, input, Input, KeyCode, EventKeyboard, HorizontalTextAlignment, VerticalTextAlignment } from 'cc';
 // UX overhaul: Phase 1+2 helpers — central theme, procedural icons, panel
 // transitions, mascot. All runtime-only; no asset deps.
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
@@ -40,6 +40,13 @@ import { renderCandles, lookbackFor } from '../../token-duel/scripts/Candlestick
 import { Stats } from '../../token-duel/scripts/Stats';
 import { runPaperBotMatch, resolveRealMatchAction, waitForOpponent, waitForSettlement, buildSettleMatchTxFor, buildForceSettleTxFor, joinOrCreateWithRetry } from '../../token-duel/scripts/Matchmaker';
 import { WAGER_TIERS_LAMPORTS, WAGER_TIERS_LABELS, WAGER_DISPLAY_TO_TIER, MODES, TIME_WINDOWS, TimeWindowId, DEFAULT_TIME_WINDOW, BOT_DIFFICULTY_MULTIPLIERS, streakBonusFor } from '../../token-duel/scripts/ModeDefs';
+import {
+    WAGER_TIERS_SKR_LABELS,
+    WAGER_TIERS_SKR_ATOMS,
+    WAGER_DISPLAY_TO_TIER_SKR,
+    isSkrAvailable,
+    type WagerCurrency,
+} from '../../token-duel/scripts/WagerCurrency';
 import { MatchBrowser, MatchBrowserFilters } from '../../token-duel/scripts/MatchBrowser';
 import { BotDifficulty, VettedMint } from '../../token-duel/scripts/VettedMints';
 import { NotificationStore, Notification, NotificationKind } from '../../token-duel/scripts/Notifications';
@@ -796,6 +803,15 @@ export class AppUI extends Component {
     private _pickerSelectedMode: string = 'oneVone';
     private _pickerSelectedWagerIndex: number = 1; // default 0.05 SOL
     private _pickerSelectedTrack: 'paper' | 'real' = 'paper';
+    /** betting-duel ($SKR) — wager currency picker. Defaults to SOL. */
+    private _pickerSelectedWagerCurrency: WagerCurrency = 'SOL';
+    private _wagerCurrencyButton: Button | null = null;
+    private _wagerCurrencyValueLabel: Label | null = null;
+    private _wagerCurrencyIconSprite: Sprite | null = null;
+    private _wagerCurrencyDropdown: Node | null = null;
+    private _wagerCurrencyDropdownRows: Button[] = [];
+    private _solIconSpriteFrame: SpriteFrame | null = null;
+    private _skrIconSpriteFrame: SpriteFrame | null = null;
     // betting-duel polish — Wager control row on TokenDuelPanel.
     private _wagerValueButton: Button | null = null;
     private _wagerValueLabel: Label | null = null;
@@ -944,6 +960,19 @@ export class AppUI extends Component {
     private _mipResumePulsing: boolean[] = [];
     /** 2026-05-02 — small ghost details button per row; opens LiveStandingsOverlay. */
     private _mipDetailsButtons: Button[] = [];
+    /** 2026-05-02 — "Live Battle" v3 hero refs. Per-row big-timer/big-phase
+     *  scaffolded for symmetry; only row 0 activates when n=1. Header LIVE dot
+     *  pulses in sync with row dots. PrevLeaderHeight + PositiveStreak feed the
+     *  animated leader chip + Resume-glow streak boost on the hero card. */
+    private _mipBigTimerLabels: (Label | null)[] = [];
+    private _mipBigPhaseLabels: (Label | null)[] = [];
+    private _mipHeaderLiveDot: Sprite | null = null;
+    private _mipPrevLeaderHeight: number[] = [0, 0, 0, 0, 0, 0];
+    private _mipPositiveStreak: number[] = [0, 0, 0, 0, 0, 0];
+    private _mipLeaderTween: any[] = [null, null, null, null, null, null];
+    /** Active when row 0 is in hero mode (n=1) — drives the chip-update scale
+     *  pop + cleanup on transition out. */
+    private _mipHeroActive: boolean = false;
     // ── 2026-05-02 — Live Standings overlay refs (10 fixed row slots) ──
     private _liveStandingsOverlay: Node | null = null;
     private _liveStandingsCard: Node | null = null;
@@ -1227,10 +1256,73 @@ export class AppUI extends Component {
     private _pickedHeroSig: string | null = null;
     private _sessionDeltas: Record<string, number> | null = null;
 
+    // 2026-05-02 attempt 8 — runtime touch overlays parented to Canvas root
+    // (not PostMatchPanel). They sit on top of the existing Button nodes and
+    // dispatch raw TOUCH_END to the same handlers, bypassing whatever is
+    // killing Button.CLICK on the original CTAs. Per plan ~/.claude/plans/cozy-wobbling-goose.md.
+    private _postMatchHomeOverlay: Node | null = null;
+    private _postMatchAgainOverlay: Node | null = null;
+    private _postMatchOverlayInstalled = false;
+
     // RPC
     private _rpc!: SolanaRpc;
 
     start(): void {
+        // 2026-05-02 attempt 7 rev 2 — Stage E: file-sink for diagnostic
+        // logs. logcat ringbuffer cannot retain boot-time lines while the
+        // post-game-over [SE_ERROR] storm runs at ~240 KB/sec. Mirror tagged
+        // console.log lines into a file under the app sandbox so eviction
+        // speed is irrelevant. User pulls via:
+        //   adb shell run-as <pkg> cat files/td-attempt7.log > /tmp/...
+        // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage E.
+        try {
+            const __native: any = (globalThis as any).jsb || (globalThis as any).native;
+            if (__native?.fileUtils && !(globalThis as any).__fileSinkInstalled) {
+                (globalThis as any).__fileSinkInstalled = true;
+                const __sinkBuf: string[] = [];
+                const __sinkPath = __native.fileUtils.getWritablePath() + 'td-attempt7.log';
+                const __TAGS = /^\[(BOOT_ATTEMPT_7|SE_ERROR_TRAP|StaleTween|TickErr|PostMatchBtn|ButtonHealth|AppUI|TWEEN_TRACKER|TouchTrace|StormTrap|MatchTickerRpc|MatchRpc|TokenDuelRpc|HwBack|PostMatchOverlay)\b/;
+                const __flush = () => {
+                    if (!__sinkBuf.length) return;
+                    try {
+                        const prev = __native.fileUtils.isFileExist(__sinkPath)
+                            ? __native.fileUtils.getStringFromFile(__sinkPath) : '';
+                        __native.fileUtils.writeStringToFile(prev + __sinkBuf.join('\n') + '\n', __sinkPath);
+                        __sinkBuf.length = 0;
+                    } catch (_) { /* never throw from sink */ }
+                };
+                const __origLog = console.log.bind(console);
+                (globalThis as any).__fileSinkOrigLog = __origLog;
+                console.log = function (...args: any[]) {
+                    try {
+                        const line = args.map((a: any) => { try { return String(a); } catch (_) { return '<u>'; } }).join(' ');
+                        if (__TAGS.test(line)) {
+                            __sinkBuf.push(`${Date.now()} ${line}`);
+                            if (__sinkBuf.length >= 25) __flush();
+                        }
+                    } catch (_) { /* never throw from sink */ }
+                    return __origLog(...args);
+                };
+                try { __native.fileUtils.writeStringToFile(`# td-attempt7 cold-start ${Date.now()}\n`, __sinkPath); } catch (_) { /* ok */ }
+                setInterval(__flush, 2000);
+                console.log(`${TAG} start | FILE_SINK installed at ${__sinkPath}`);
+            } else if ((globalThis as any).__fileSinkInstalled) {
+                console.log(`${TAG} start | FILE_SINK already installed`);
+            } else {
+                console.log(`${TAG} start | FILE_SINK NOT installed: jsb.fileUtils unavailable`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | FILE_SINK install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 7 — Stage B: 20-iteration boot stamp BEFORE any
+        // other code. Designed to survive worst-case logcat ringbuffer
+        // eviction caused by the post-game-over [SE_ERROR] storm. If user
+        // grep's for BOOT_ATTEMPT_7 and sees fewer than 20 lines, eviction
+        // is even worse than estimated and Stage C trap is mandatory. Per
+        // plan ~/.claude/plans/cozy-wobbling-goose.md Stage B.
+        for (let __bs = 0; __bs < 20; __bs++) {
+            console.log(`[BOOT_ATTEMPT_7] iter=${__bs} t=${Date.now()} ver=stage-e-v1`);
+        }
         console.log(`${TAG} BUILD_STAMP v=2026-04-30-T1100-fix11-pill-node-budgeted — _buildSegmentedPill / _mountRankBadge / _mountPersonalRankBorder now route every addComponent(Graphics) through enqueuePostDraw with atomic Node+Graphics work units. Removes ~36 unsafe tick-0 Graphics attaches; spreads them across ~6 AFTER_DRAW ticks. Lying "// safe: post-boot" annotations removed. Watcher auto-throws unsafe attaches in dev (EDITOR||DEBUG); production warns. Lint loophole closed.`);
         // Boot-phase watcher: logs every Graphics component creation during
         // the first 8 ticks with phase context. If the engine SIGSEGVs, the
@@ -1277,6 +1369,129 @@ export class AppUI extends Component {
             }
         } catch (e: any) {
             console.log(`${TAG} start | global handler install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 7 — Stage C: trap the engine's [SE_ERROR]
+        // emission to capture the JS-side stack at the moment of throw.
+        // Per AppUI.ts:262-266 comment, JSB invocation failures from
+        // per-frame schedules do NOT surface through window.onerror, but
+        // the engine routes them through cc.error before raising. By
+        // overriding cc.error we get one more stack frame (the call-site
+        // that scheduled the failing tick) than the minified
+        // cc.js:1:345418 alone provides. Capped at first 10 captures so
+        // the trap itself cannot become a thrower or a logcat firehose.
+        // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage C.
+        try {
+            const ccGlobal = (globalThis as any).cc;
+            if (ccGlobal && typeof ccGlobal.error === 'function' && !(ccGlobal as any).__attempt7Trapped) {
+                (ccGlobal as any).__attempt7Trapped = true;
+                let __trapN = 0;
+                const _origCcError = ccGlobal.error;
+                ccGlobal.error = function (this: any, ...args: any[]) {
+                    try {
+                        if (__trapN < 10) {
+                            const argStr = args.map((a: any) => {
+                                try { return String(a); } catch (_) { return '<unstringifiable>'; }
+                            }).join(' | ');
+                            if (argStr.indexOf('[SE_ERROR]') >= 0 || argStr.indexOf('Invoking function') >= 0) {
+                                __trapN++;
+                                const myStack = (new Error().stack ?? '').split('\n').slice(0, 10).map((s: string) => s.trim()).join(' | ');
+                                console.log(`[SE_ERROR_TRAP] n=${__trapN} arg=${argStr.slice(0, 300)} my_stack=${myStack}`);
+                            }
+                        }
+                    } catch (_) { /* never throw from logger */ }
+                    return _origCcError.apply(this, args);
+                };
+                console.log(`${TAG} start | SE_ERROR_TRAP installed (attempt 7, max 10 captures)`);
+            } else if (ccGlobal && (ccGlobal as any).__attempt7Trapped) {
+                console.log(`${TAG} start | SE_ERROR_TRAP already installed, skipping`);
+            } else {
+                console.log(`${TAG} start | SE_ERROR_TRAP NOT installed: cc=${!!ccGlobal} cc.error=${typeof ccGlobal?.error}`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | SE_ERROR_TRAP install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 7 rev 3 — Stage H: Stage C's cc.error hook
+        // captured zero [SE_ERROR] events in the latest log. The engine
+        // emits [SE_ERROR] via native console.error (NOT cc.error), so we
+        // need a parallel trap on globalThis.console.error. Capped at 10
+        // captures, prefix-filtered to engine markers so app code is not
+        // spammed. Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage H.
+        try {
+            if (!(globalThis as any).__attempt7ConsoleErrorTrapped) {
+                (globalThis as any).__attempt7ConsoleErrorTrapped = true;
+                let __cetN = 0;
+                const _origConsoleError = console.error.bind(console);
+                console.error = function (...args: any[]) {
+                    try {
+                        if (__cetN < 10) {
+                            const argStr = args.map((a: any) => { try { return String(a); } catch (_) { return '<u>'; } }).join(' | ');
+                            if (
+                                argStr.indexOf('[SE_ERROR]') >= 0 ||
+                                argStr.indexOf('Invoking function') >= 0 ||
+                                argStr.indexOf('System.register') >= 0
+                            ) {
+                                __cetN++;
+                                const myStack = (new Error().stack ?? '').split('\n').slice(0, 12).map((s: string) => s.trim()).join(' | ');
+                                _origConsoleError(`[SE_ERROR_TRAP] n=${__cetN} via=console.error arg=${argStr.slice(0, 300)} my_stack=${myStack}`);
+                            }
+                        }
+                    } catch (_) { /* never throw from logger */ }
+                    return _origConsoleError(...args);
+                };
+                console.log(`${TAG} start | SE_ERROR_TRAP installed via console.error (attempt 7 rev 3, max 10 captures)`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | SE_ERROR_TRAP console.error install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 7 rev 3 — Stage F: canvas-root touch trace.
+        // Logs every TOUCH_START dispatched to the canvas at capture phase
+        // so we can see whether taps reach the canvas at all and what node
+        // they target. Reveals whether post-game-over touch loss is at the
+        // native input dispatcher level or at the Button.click subscription
+        // level. Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage F.
+        try {
+            const { NodeEventType: __NETT } = require('cc');
+            const __canvas = this.node;
+            if (__canvas && !(__canvas as any).__attempt7TouchTraceInstalled) {
+                (__canvas as any).__attempt7TouchTraceInstalled = true;
+                __canvas.on(__NETT.TOUCH_START, (ev: any) => {
+                    try {
+                        const loc = ev?.getUILocation ? ev.getUILocation() : { x: -1, y: -1 };
+                        const target: any = ev?.target;
+                        const targetName = target?.name ?? '?';
+                        const targetActive = target?.active;
+                        const targetHier = target?.activeInHierarchy;
+                        const parentName = target?.parent?.name ?? '?';
+                        console.log(`[TouchTrace] CANVAS_TOUCH_START ui=(${(loc.x ?? 0).toFixed?.(1) ?? loc.x},${(loc.y ?? 0).toFixed?.(1) ?? loc.y}) target=${targetName} parent=${parentName} active=${targetActive} hier=${targetHier}`);
+                    } catch (_) { /* never throw from trace */ }
+                }, this, true /* useCapture */);
+                console.log(`${TAG} start | TOUCH_TRACE installed on Canvas (attempt 7 rev 3)`);
+            }
+        } catch (e: any) {
+            console.log(`${TAG} start | TOUCH_TRACE install threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-02 attempt 8 — Option A: Android hardware-back fallback for
+        // post-match panel. Hardware BACK goes through Android key-event
+        // pipeline, not Cocos touch dispatcher, so it works even when the JS
+        // thread is starved by the [SE_ERROR] storm. Gated by
+        // PostMatchPanel.activeInHierarchy so other panels keep default behavior.
+        try {
+            input.on(Input.EventType.KEY_DOWN, (ev: EventKeyboard) => {
+                try {
+                    if (ev.keyCode !== KeyCode.MOBILE_BACK) return;
+                    const pmActive = !!this._postMatchPanel?.activeInHierarchy;
+                    console.log(`[HwBack] KEY_DOWN postMatchActive=${pmActive}`);
+                    if (pmActive) {
+                        this._onPostMatchBack();
+                        ev.propagationStopped = true;
+                    }
+                } catch (err: any) {
+                    console.log(`[HwBack] handler threw: ${err?.message ?? err}`);
+                }
+            }, this);
+            console.log(`${TAG} start | HW_BACK_HANDLER installed (attempt 8 Option A)`);
+        } catch (e: any) {
+            console.log(`${TAG} start | HW_BACK_HANDLER install threw: ${e?.message ?? e}`);
         }
         // Frame heartbeat: log director update + draw ticks so we can see
         // whether the JS thread runs ANY frame after start() returns and
@@ -2768,6 +2983,9 @@ export class AppUI extends Component {
         if (this._wagerValueButton) {
             this._wagerValueLabel = this._wagerValueButton.node.getChildByName('Label')?.getComponent(Label) ?? null;
             this._wagerValueButton.node.on(Button.EventType.CLICK, () => this._onWagerValueTap(), this);
+            // 2026-05-02 Pass 2 — tactile press dip + stronger zoom on tap so the
+            // stake pill reads as a "commitment control" rather than a passive label.
+            try { addPressPop(this._wagerValueButton); setStrongPress(this._wagerValueButton); } catch (_) { /* optional */ }
         }
         this._wagerStartButton = this._tokenDuelPanel.getChildByName('WagerStartButton')?.getComponent(Button) ?? null;
         if (this._wagerStartButton) {
@@ -2809,6 +3027,49 @@ export class AppUI extends Component {
             }
         }
         console.log(`${TAG} start | WagerControlRow value_btn=${!!this._wagerValueButton} start_btn=${!!this._wagerStartButton} dropdown=${!!this._wagerDropdown} rows=${this._wagerDropdownRows.length}/8`);
+
+        // betting-duel ($SKR) — currency picker bindings + icon preload.
+        this._wagerCurrencyButton = this._tokenDuelPanel.getChildByName('WagerCurrencyButton')?.getComponent(Button) ?? null;
+        if (this._wagerCurrencyButton) {
+            this._wagerCurrencyValueLabel = this._wagerCurrencyButton.node.getChildByName('Label')?.getComponent(Label) ?? null;
+            this._wagerCurrencyIconSprite = this._wagerCurrencyButton.node.getChildByName('WagerCurrencyIcon')?.getComponent(Sprite) ?? null;
+            this._wagerCurrencyButton.node.on(Button.EventType.CLICK, () => this._onWagerCurrencyTap(), this);
+            try { addPressPop(this._wagerCurrencyButton); setStrongPress(this._wagerCurrencyButton); } catch (_) { /* optional */ }
+        }
+        this._wagerCurrencyDropdown = this._tokenDuelPanel.getChildByName('WagerCurrencyDropdown') ?? null;
+        if (this._wagerCurrencyDropdown) {
+            for (let i = 0; i < 2; i++) {
+                const rowN = this._wagerCurrencyDropdown.getChildByName(`WagerCurrencyRow_${i}`);
+                const b = rowN?.getComponent(Button);
+                if (b) {
+                    const idx = i;
+                    this._wagerCurrencyDropdownRows.push(b);
+                    b.node.on(Button.EventType.CLICK, () => this._onWagerCurrencyRowTap(idx), this);
+                }
+            }
+        }
+        // Preload sol/skr icon sprite frames; AppUI swaps them on currency change.
+        // Same `resources.load` pattern as the IconLibrary loader (line ~6375)
+        // but kept inline because these two icons aren't tag-keyed and don't
+        // belong in the runtime icon registry.
+        resources.load<SpriteFrame>('icons/sol/spriteFrame', SpriteFrame, (err, frame) => {
+            if (err || !frame) { console.log(`${TAG} wagerCurrency | sol icon LOAD_FAIL err=${err?.message ?? err}`); return; }
+            this._solIconSpriteFrame = frame;
+            this._refreshWagerCurrencyIcon();
+        });
+        resources.load<SpriteFrame>('icons/skr/spriteFrame', SpriteFrame, (err, frame) => {
+            if (err || !frame) { console.log(`${TAG} wagerCurrency | skr icon LOAD_FAIL err=${err?.message ?? err}`); return; }
+            this._skrIconSpriteFrame = frame;
+        });
+        // If the cluster doesn't have a SKR mint configured, hide the SKR row.
+        if (!isSkrAvailable() && this._wagerCurrencyDropdownRows[1]) {
+            const skrRowNode = this._wagerCurrencyDropdownRows[1].node;
+            const op = skrRowNode.getComponent(UIOpacity) ?? skrRowNode.addComponent(UIOpacity);
+            op.opacity = 80;
+            this._wagerCurrencyDropdownRows[1].interactable = false;
+        }
+        console.log(`${TAG} start | WagerCurrencyRow btn=${!!this._wagerCurrencyButton} dropdown=${!!this._wagerCurrencyDropdown} rows=${this._wagerCurrencyDropdownRows.length}/2 skr_avail=${isSkrAvailable()}`);
+
         this._refreshWagerControlRow();
 
         // Session D Part 3: WaitingPanel + PostMatchPanel bindings.
@@ -3383,6 +3644,9 @@ export class AppUI extends Component {
         // Fixed 6-row pool, no scrollview. Rows are direct children of the panel.
         if (this._mipPanel) {
             this._mipSubtitleLabel = this._mipPanel.getChildByName('MatchesInProgressSubtitleLabel')?.getComponent(Label) ?? null;
+            // 2026-05-02 — header LIVE dot. AppUI toggles active + alpha-pulses
+            // in sync with per-row LIVE dots. Hidden by default (n=0).
+            this._mipHeaderLiveDot = this._mipPanel.getChildByName('MIPHeaderLiveDot')?.getComponent(Sprite) ?? null;
             this._mipEmptyState = this._mipPanel.getChildByName('MIPEmptyState') ?? null;
             this._mipMoreLabel = this._mipPanel.getChildByName('MIPMoreLabel')?.getComponent(Label) ?? null;
             const mipBackBtn = this._mipPanel.getChildByName('BackButton')?.getComponent(Button);
@@ -3396,10 +3660,19 @@ export class AppUI extends Component {
                 this._mipRowNodes.push(rowN);
 
                 // 2026-04-29 redesign — card chrome refs.
-                const cardBg = rowN.getChildByName(`MIPCardBg_${i}`)?.getComponent(Sprite);
+                const cardBgN = rowN.getChildByName(`MIPCardBg_${i}`);
+                const cardBg = cardBgN?.getComponent(Sprite);
                 if (cardBg) this._mipCardBgs.push(cardBg);
-                const cardGlow = rowN.getChildByName(`MIPCardGlow_${i}`)?.getComponent(Sprite);
+                // 2026-05-02 — bind UITransform alongside Sprite so
+                // _applyMipHeroLayout can resize the card surface (the prior
+                // pass declared the array but never populated it).
+                const cardBgUT = cardBgN?.getComponent(UITransform);
+                if (cardBgUT) this._mipCardBgUTs.push(cardBgUT);
+                const cardGlowN = rowN.getChildByName(`MIPCardGlow_${i}`);
+                const cardGlow = cardGlowN?.getComponent(Sprite);
                 if (cardGlow) this._mipCardGlows.push(cardGlow);
+                const cardGlowUT = cardGlowN?.getComponent(UITransform);
+                if (cardGlowUT) this._mipCardGlowUTs.push(cardGlowUT);
                 const edgeSpr = rowN.getChildByName(`MIPCardEdge_${i}`)?.getComponent(Sprite);
                 if (edgeSpr) this._mipCardEdges.push(edgeSpr);
 
@@ -3436,6 +3709,15 @@ export class AppUI extends Component {
                 // Status label (was MIPWinLine pre-2026-04-29 redesign).
                 const winL = rowN.getChildByName(`MIPStatusLabel_${i}`)?.getComponent(Label);
                 if (winL) this._mipStatusLabels.push(winL);
+
+                // 2026-05-02 — "Live Battle" v3 hero centerpiece refs. Always
+                // bound; activated only on row 0 when n=1 by _applyMipHeroVisibility.
+                this._mipBigTimerLabels.push(
+                    rowN.getChildByName(`MIPBigTimer_${i}`)?.getComponent(Label) ?? null
+                );
+                this._mipBigPhaseLabels.push(
+                    rowN.getChildByName(`MIPBigPhase_${i}`)?.getComponent(Label) ?? null
+                );
 
                 const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
                 if (tap) {
@@ -4418,6 +4700,11 @@ export class AppUI extends Component {
         if (which === 'home' && this._homePanel) {
             try { ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' }); } catch (_) { /* tween/Graphics may not be loaded yet */ }
         }
+        // 2026-05-02 — "Live Battle" v3 ambient layer. Particles drift behind
+        // the hero card so the negative space below stops reading as dead.
+        if (which === 'mip' && this._mipPanel) {
+            try { ensureParticleDrift(this._mipPanel, 8); } catch (_) { /* tween/Graphics may not be loaded yet */ }
+        }
         console.log(`${TAG} _setActivePanel | DONE which=${which} target=${target?.name}`);
         this._dumpPanelLayout(target ?? null, 'set_active_panel:' + which);
     }
@@ -4479,7 +4766,21 @@ export class AppUI extends Component {
         } else {
             this._mipBackendCache = [];
         }
-        this._rebuildMipDisplay();
+        // 2026-05-02 attempt 7 rev 3 — Stage G: storm trigger candidate.
+        // _refreshMipMatches is called after _teardownMatchRuntime. The
+        // post-game-over [SE_ERROR] storm fires ~520ms after
+        // getProgramAccounts returns. _rebuildMipDisplay touches every MIP
+        // row UI component, any of which could be in a half-destroyed
+        // state from the panel transition. Wrap so the throw is surfaced
+        // instead of escaping into the engine error firehose.
+        try {
+            console.log(`[StormTrap] phase=_rebuildMipDisplay.pre onchain=${this._mipOnChainCache?.length ?? 0} backend=${this._mipBackendCache?.length ?? 0}`);
+            this._rebuildMipDisplay();
+            console.log(`[StormTrap] phase=_rebuildMipDisplay.post ok`);
+        } catch (e: any) {
+            const stk = (e?.stack ?? '').split('\n').slice(0, 6).map((s: string) => s.trim()).join(' | ');
+            console.log(`[StormTrap] phase=_rebuildMipDisplay ERROR=${e?.message ?? e} stack=${stk}`);
+        }
     }
 
     /**
@@ -4548,13 +4849,21 @@ export class AppUI extends Component {
         const n = this._mipMatches.length;
         const visible = Math.min(n, 6);
         if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
+        // 2026-05-02 — "Live Battle" v3 header treatment. Subtitle becomes
+        // "LIVE NOW" with a pulsing teal dot; "All clear" when zero.
         if (this._mipSubtitleLabel) {
-            this._mipSubtitleLabel.string = n === 0 ? 'All clear' : `${n} game${n > 1 ? 's' : ''} running`;
+            this._mipSubtitleLabel.string = n === 0 ? 'All clear' : 'LIVE NOW';
+        }
+        if (this._mipHeaderLiveDot) {
+            this._mipHeaderLiveDot.node.active = n > 0;
         }
         if (this._mipMoreLabel) {
             this._mipMoreLabel.node.active = n > 6;
             this._mipMoreLabel.string = n > 6 ? `+${n - 6} more` : '';
         }
+        // 2026-05-02 — apply hero geometry BEFORE per-row tinting/sizing so
+        // children land at the right coords for the active layout.
+        this._applyMipHeroLayout();
         const me = MWAManager.instance?.connectedPubkey ?? '';
         // Progress-track inner width; matches LayoutSpec mipRow.progressFill
         // anchored at (0, 0.5). If the progress-track sprite array reports a
@@ -4620,8 +4929,10 @@ export class AppUI extends Component {
                 isPregame ? 'pregame' : isWinning ? 'winning' : 'losing';
             this._mipRowLeaderState[i] = state;
 
-            // 2026-04-29 v2 — merged phase + time line; always shown.
-            // Phase replaces the useless "Round just started" filler.
+            // 2026-04-29 v2 — merged phase + time line. On the n=1 hero card
+            // the timer is split into a 64pt big-timer + phase microcopy below
+            // (filled below); the merged status is hidden by _applyMipHeroLayout.
+            // Stack rows keep the merged line.
             const phase = this._mipPhaseLabel(elapsedFrac);
             const statusLbl = this._mipStatusLabels[i];
             if (statusLbl) {
@@ -4629,12 +4940,29 @@ export class AppUI extends Component {
                 statusLbl.color = new Color(200, 206, 226, 255);
             }
 
-            // 2026-04-29 v2 — leader chip (repurposed stakeChip slot).
-            // Hidden in pregame; "YOU/OPP +X.XX%" tinted by leader state.
+            // 2026-05-02 — hero centerpiece writes (row 0 only, n=1 only).
+            // BigTimer = "23h 40m" 64pt gold; BigPhase = "Match just started" 18pt slate.
+            const isHeroRow = i === 0 && n === 1;
+            if (isHeroRow) {
+                const bt = this._mipBigTimerLabels[0];
+                if (bt) bt.string = this._formatRemainingTime(remainingMs).replace(/\s*left$/, '');
+                const bp = this._mipBigPhaseLabels[0];
+                if (bp) bp.string = phase;
+            }
+
+            // Leader chip — "YOU +X.XX% ▲" (hero animates: smooth number tween
+            // + ▲/▼ arrow + scale pop on update + positive-streak tracking).
+            // Stack rows keep the simpler static path.
             const leaderChip = this._mipStakeChipLabels[i];
             if (leaderChip) {
                 if (isPregame) {
                     leaderChip.string = '';
+                    if (isHeroRow) {
+                        this._mipPrevLeaderHeight[0] = 0;
+                        this._mipPositiveStreak[0] = 0;
+                    }
+                } else if (isHeroRow) {
+                    this._renderHeroLeaderChip(leaderChip, isWinning, myHeight, leaderHeight);
                 } else if (isWinning) {
                     leaderChip.string = `YOU +${decodeScore(myHeight).toFixed(2)}%`;
                     leaderChip.color = new Color(48, 198, 155, 255);
@@ -4679,14 +5007,22 @@ export class AppUI extends Component {
                 fillSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, 230);
             }
 
-            // 2026-04-29 v2 — Resume CTA stays static. The breathing cue is
-            // the glow halo behind it (alpha animated in _mipFrameTick). Kill
-            // any leftover scale tween from prior builds.
+            // 2026-05-02 — Resume CTA scale pulse: enabled on the n=1 hero only
+            // (1.0→1.03 on a 3s cycle); stack rows stay static. Stack rows that
+            // had a leftover pulse from a prior n=1 state get cleaned up here.
             const resumeBtn = this._mipResumeButtons[i];
-            if (resumeBtn && this._mipResumePulsing[i]) {
-                try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
-                resumeBtn.node.setScale(1, 1, 1);
-                this._mipResumePulsing[i] = false;
+            if (resumeBtn) {
+                if (isHeroRow) {
+                    if (!this._mipResumePulsing[i]) {
+                        // peak=1.03, duration=3.0s per locked spec.
+                        try { addIdlePulse(resumeBtn.node, 1.03, 3.0); } catch (_) { /* ButtonFX optional */ }
+                        this._mipResumePulsing[i] = true;
+                    }
+                } else if (this._mipResumePulsing[i]) {
+                    try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
+                    resumeBtn.node.setScale(1, 1, 1);
+                    this._mipResumePulsing[i] = false;
+                }
             }
             // Tint the resume glow RGB to match leader state (winning teal,
             // losing rose, pregame muted). Alpha is animated in _mipFrameTick.
@@ -4697,17 +5033,80 @@ export class AppUI extends Component {
         }
     }
 
-    /** 2026-04-29 v2 — phase label from elapsed fraction.
-     *  Drives the merged "<phase> • <time-left>" line on each MIP card. */
+    /** 2026-05-02 — phase label from elapsed fraction. Three-bucket emotional
+     *  copy locked with the user. Drives the merged status line on stack rows
+     *  and the big-phase microcopy on the n=1 hero. */
     private _mipPhaseLabel(elapsedFrac: number): string {
         if (elapsedFrac >= 0.90) return 'Ending soon';
-        if (elapsedFrac >= 0.75) return 'Late match';
-        if (elapsedFrac >= 0.25) return 'Mid match';
-        return 'Early match';
+        if (elapsedFrac >= 0.50) return 'Mid match';
+        return 'Match just started';
     }
 
-    /** Resize + reposition row 0 when the active count is 1. Restores the
-     *  standard 660×150 size (and the layout-spec base Y) otherwise. */
+    /** 2026-05-02 — animated leader chip for the n=1 hero row. Smoothly tweens
+     *  the % value between ticks (no hard jump), appends ▲/▼ on direction
+     *  change, runs a one-shot scale pop on update, and tracks a positive
+     *  streak for the Resume-glow boost in `_mipFrameTick`. */
+    private _renderHeroLeaderChip(
+        chip: Label,
+        isWinning: boolean,
+        myHeight: number,
+        leaderHeight: number
+    ): void {
+        const newHeight = isWinning ? myHeight : leaderHeight;
+        const newPct = decodeScore(newHeight);
+        const prevHeight = this._mipPrevLeaderHeight[0];
+        const prevPct = decodeScore(prevHeight);
+        const delta = newHeight - prevHeight;
+        const arrow = delta > 0 ? ' ▲' : delta < 0 ? ' ▼' : '';
+        const prefix = isWinning ? 'YOU' : 'OPP';
+        const tint = isWinning
+            ? new Color(48, 198, 155, 255)
+            : new Color(236, 88, 122, 255);
+        chip.color = tint;
+        // First render or no change — write directly.
+        if (prevHeight === 0 || delta === 0) {
+            chip.string = `${prefix} +${newPct.toFixed(2)}%${arrow}`;
+        } else {
+            // Smooth number tween — write each step into the label so the
+            // value glides instead of snapping. 400 ms feels live but never
+            // overlaps the next 1-s tick.
+            const t = this._mipLeaderTween[0];
+            if (t) { try { t.stop(); } catch (_) { /* tween already disposed */ } }
+            const proxy = { v: prevPct };
+            this._mipLeaderTween[0] = tween(proxy)
+                .to(0.4, { v: newPct }, {
+                    onUpdate: () => {
+                        if (chip.isValid) chip.string = `${prefix} +${proxy.v.toFixed(2)}%${arrow}`;
+                    },
+                })
+                .call(() => {
+                    if (chip.isValid) chip.string = `${prefix} +${newPct.toFixed(2)}%${arrow}`;
+                })
+                .start();
+            // Subtle scale pop on update (1 → 1.04 → 1 over 240ms). Independent
+            // of the value tween so the chip "pulses" once per tick change.
+            const node = chip.node;
+            Tween.stopAllByTarget(node);
+            node.setScale(1, 1, 1);
+            tween(node)
+                .to(0.12, { scale: new Vec3(1.04, 1.04, 1) }, { easing: 'sineOut' })
+                .to(0.12, { scale: new Vec3(1, 1, 1) }, { easing: 'sineIn' })
+                .start();
+        }
+        // Positive-streak tracker → drives Resume-glow alpha boost in tick.
+        if (delta > 0) {
+            this._mipPositiveStreak[0] = (this._mipPositiveStreak[0] || 0) + 1;
+        } else if (delta < 0) {
+            this._mipPositiveStreak[0] = 0;
+        }
+        this._mipPrevLeaderHeight[0] = newHeight;
+    }
+
+    /** 2026-05-02 — "Live Battle" v3 hero treatment. When n=1, row 0 grows to
+     *  660×420 with a big-timer centerpiece, animated leader chip, dominant
+     *  Resume CTA, and de-emphasized Ranks (icon-only). Stack rows (n>=2)
+     *  return to the standard 680×144 row template. Children inside the row
+     *  also get repositioned so the chrome lines up with the larger surface. */
     private _applyMipHeroLayout(): void {
         if (this._mipRowNodes.length === 0) return;
         const isHero = this._mipMatches.length === 1;
@@ -4715,20 +5114,114 @@ export class AppUI extends Component {
         const cardBgUT = this._mipCardBgUTs[0];
         const cardGlowUT = this._mipCardGlowUTs[0];
         if (!row0 || !cardBgUT || !cardGlowUT) return;
+        // Sync hero-active flag — used by the leader-chip update path + Resume
+        // idle pulse teardown.
+        this._mipHeroActive = isHero;
+        // Resolve children we'll reposition. All optional — if a row was built
+        // before the v3 generator pass these will be null and we skip them.
+        const vsLbl     = this._mipVsLabels[0];
+        const liveGlow  = this._mipLiveGlows[0];
+        const liveDot   = this._mipLiveDots[0];
+        const liveLbl   = this._mipLiveLabels[0];
+        const statusLbl = this._mipStatusLabels[0];
+        const stakeLbl  = this._mipStakeChipLabels[0];
+        const trackSpr  = this._mipProgressTracks[0];
+        const fillN     = this._mipProgressFills[0];
+        const fillUT    = this._mipProgressFillUTs[0];
+        const resumeBtn = this._mipResumeButtons[0];
+        const resumeGlow= this._mipResumeGlows[0];
+        const detailsBtn= this._mipDetailsButtons[0];
+        const bigTimer  = this._mipBigTimerLabels[0];
+        const bigPhase  = this._mipBigPhaseLabels[0];
+
         if (isHero) {
-            // Scrollview content uses anchor (0.5, 1) — top-center, so y=0 is
-            // the top of content and y goes negative downward. y=-200 puts the
-            // hero row's center 200 px below content top, well inside the
-            // visible viewport regardless of view-height changes. (Was -500
-            // before 2026-04-28 — that placed the row near the bottom of a
-            // 1000-px view and went off-screen post UX upgrade.) Card 660×260.
-            row0.setPosition(0, -200, 0);
-            cardBgUT.setContentSize(660, 260);
-            cardGlowUT.setContentSize(668, 268);
+            // Hero geometry. Mirrors mip.HERO in LayoutSpec.cjs — values
+            // hardcoded here because LayoutSpec.cjs constants aren't exported
+            // for runtime consumption (existing pattern).
+            row0.setPosition(0, -260, 0);
+            cardBgUT.setContentSize(660, 420);
+            cardGlowUT.setContentSize(692, 452);
+            // Top zone — VS line + LIVE cluster up where the bigger card
+            // gives them room. VS pinned to upper-left; LIVE cluster upper-right.
+            if (vsLbl)    vsLbl.node.setPosition(-156, 160, 0);
+            if (liveGlow) liveGlow.node.setPosition(260, 160, 0);
+            if (liveDot)  liveDot.node.setPosition(260, 160, 0);
+            if (liveLbl)  liveLbl.node.setPosition(298, 160, 0);
+            // Hide the merged status line — replaced by big-timer + big-phase.
+            if (statusLbl) statusLbl.node.active = false;
+            // Center zone — big-timer 64pt, phase 18pt, leader chip 22pt.
+            if (bigTimer) {
+                bigTimer.node.active = true;
+                bigTimer.node.setPosition(0, 40, 0);
+            }
+            if (bigPhase) {
+                bigPhase.node.active = true;
+                bigPhase.node.setPosition(0, -28, 0);
+            }
+            if (stakeLbl) stakeLbl.node.setPosition(0, -78, 0);
+            // Bottom zone — progress bar pulled down, Resume + Ranks beneath.
+            if (trackSpr) trackSpr.node.setPosition(0, -150, 0);
+            if (fillN)    fillN.setPosition(-312, -150, 0);
+            if (fillUT)   fillUT.setContentSize(fillUT.contentSize.width, 8);
+            if (resumeGlow) {
+                resumeGlow.node.setPosition(160, -185, 0);
+                const rgUT = resumeGlow.node.getComponent(UITransform);
+                if (rgUT) rgUT.setContentSize(260, 96);
+            }
+            if (resumeBtn) {
+                resumeBtn.node.setPosition(160, -185, 0);
+                const rbUT = resumeBtn.node.getComponent(UITransform);
+                if (rbUT) rbUT.setContentSize(200, 64);
+            }
+            if (detailsBtn) {
+                detailsBtn.node.setPosition(-244, -185, 0);
+                const dbUT = detailsBtn.node.getComponent(UITransform);
+                if (dbUT) dbUT.setContentSize(48, 36);
+                // Swap label to icon glyph on hero ("≣" reads as a ranks list).
+                const dbLbl = detailsBtn.node.getChildByName('Label')?.getComponent(Label);
+                if (dbLbl) dbLbl.string = '≣';
+            }
         } else {
-            row0.setPosition(0, -200, 0);  // mip.ROW_BASE_Y from LayoutSpec.cjs (2026-04-29: -40→-200)
-            cardBgUT.setContentSize(660, 150);
+            // Restore standard row template (680×144 per LayoutSpec.mip).
+            row0.setPosition(0, -200, 0);
+            cardBgUT.setContentSize(660, 144);
             cardGlowUT.setContentSize(668, 158);
+            if (vsLbl)    vsLbl.node.setPosition(-156, 46, 0);
+            if (liveGlow) liveGlow.node.setPosition(270, 50, 0);
+            if (liveDot)  liveDot.node.setPosition(270, 50, 0);
+            if (liveLbl)  liveLbl.node.setPosition(308, 50, 0);
+            if (statusLbl) statusLbl.node.active = true;
+            if (statusLbl) statusLbl.node.setPosition(-36, 12, 0);
+            if (bigTimer)  bigTimer.node.active = false;
+            if (bigPhase)  bigPhase.node.active = false;
+            if (stakeLbl)  stakeLbl.node.setPosition(-244, -14, 0);
+            if (trackSpr)  trackSpr.node.setPosition(0, -58, 0);
+            if (fillN)     fillN.setPosition(-312, -58, 0);
+            if (fillUT)    fillUT.setContentSize(fillUT.contentSize.width, 6);
+            if (resumeGlow) {
+                resumeGlow.node.setPosition(254, -30, 0);
+                const rgUT = resumeGlow.node.getComponent(UITransform);
+                if (rgUT) rgUT.setContentSize(150, 72);
+            }
+            if (resumeBtn) {
+                resumeBtn.node.setPosition(254, -30, 0);
+                const rbUT = resumeBtn.node.getComponent(UITransform);
+                if (rbUT) rbUT.setContentSize(116, 44);
+            }
+            if (detailsBtn) {
+                detailsBtn.node.setPosition(128, -30, 0);
+                const dbUT = detailsBtn.node.getComponent(UITransform);
+                if (dbUT) dbUT.setContentSize(84, 36);
+                const dbLbl = detailsBtn.node.getChildByName('Label')?.getComponent(Label);
+                if (dbLbl) dbLbl.string = 'Ranks';
+            }
+            // Reset hero-only animation state cleanly.
+            this._mipPrevLeaderHeight[0] = 0;
+            this._mipPositiveStreak[0] = 0;
+            const t = this._mipLeaderTween[0];
+            if (t) { try { t.stop(); } catch (_) { /* tween disposed */ } }
+            this._mipLeaderTween[0] = null;
+            if (stakeLbl) stakeLbl.node.setScale(1, 1, 1);
         }
     }
 
@@ -4825,7 +5318,9 @@ export class AppUI extends Component {
 
     /** Per-frame loop: ease duel-bar pos toward target, redraw fill + glow,
      *  pulse card glow alpha (when remaining<20%) + ring stroke width.
-     *  2026-04-29 v2: also drives resume-button glow halo (slow 2.5s breathe). */
+     *  2026-04-29 v2: also drives resume-button glow halo (slow 2.5s breathe).
+     *  2026-05-02 v3: pulses per-row LIVE dots + header dot on a 2s cycle, and
+     *  boosts hero Resume-glow cap when leader-chip positive streak ≥ 3. */
     private _mipFrameTick = (_dt: number): void => {
         try {
             const now = performance.now();
@@ -4833,6 +5328,15 @@ export class AppUI extends Component {
             // 2026-04-29 v2 — slower 2.5s cycle for the resume glow so it reads
             // as "confident" rather than "needy".
             const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
+            // 2026-05-02 — 2s LIVE pulse cycle. Drives row dots + header dot.
+            const breatheFast = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.0));
+            const liveAlpha = Math.round(160 + 95 * breatheFast);
+            // Header LIVE dot — only animates when n>=1 (active flag toggled
+            // in _renderMipRows).
+            const headerDot = this._mipHeaderLiveDot;
+            if (headerDot && headerDot.isValid && headerDot.node.active) {
+                headerDot.color = new Color(headerDot.color.r, headerDot.color.g, headerDot.color.b, liveAlpha);
+            }
             for (let i = 0; i < this._mipMatches.length; i++) {
                 const row = this._mipRowNodes[i];
                 if (!row || !row.isValid || !row.active) continue;
@@ -4858,14 +5362,31 @@ export class AppUI extends Component {
                     }
                     glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, a);
                 }
-                // Resume glow halo — alpha breathes 30→90 on a 2.5s cycle for
-                // active rows; muted in pregame so the CTA doesn't shout before
-                // the round starts mattering.
+                // 2026-05-02 — per-row LIVE dot pulse (2s cycle). Pregame stays
+                // dim so it reads as "ambient" rather than "live".
+                const liveDotPulse = this._mipLiveDots[i];
+                if (liveDotPulse && liveDotPulse.isValid) {
+                    const a = state === 'pregame'
+                        ? Math.round(80 + 40 * breatheFast)
+                        : liveAlpha;
+                    liveDotPulse.color = new Color(liveDotPulse.color.r, liveDotPulse.color.g, liveDotPulse.color.b, a);
+                }
+                // Resume glow halo — alpha breathes on a slower cycle. Hero
+                // (i=0 when n=1) uses the 50→140 amplitude per spec; stack rows
+                // keep the existing 30→90. Streak ≥ 3 on the hero bumps the
+                // cap to 180 for a "momentum" cue.
                 const rg = this._mipResumeGlows[i];
                 if (rg && rg.isValid) {
-                    const a = state === 'pregame'
-                        ? Math.round(20 + 25 * breatheSlow)
-                        : Math.round(30 + 60 * breatheSlow);
+                    let a: number;
+                    if (state === 'pregame') {
+                        a = Math.round(20 + 25 * breatheSlow);
+                    } else if (i === 0 && this._mipHeroActive) {
+                        const streak = this._mipPositiveStreak[0] ?? 0;
+                        const cap = streak >= 3 ? 180 : 140;
+                        a = Math.round(50 + (cap - 50) * breatheSlow);
+                    } else {
+                        a = Math.round(30 + 60 * breatheSlow);
+                    }
                     rg.color = new Color(rg.color.r, rg.color.g, rg.color.b, a);
                 }
                 // Ring stroke pulse when remaining<20% — driven by lineWidth.
@@ -5482,7 +6003,7 @@ export class AppUI extends Component {
             { panel: this._tokenDuelPanel, name: 'WagerValueButton',       icon: 'coin',   size: 26, offsetX: -130 },
 
             // Leaderboard / Portfolio / DailyChallenge / Spectator / Tournament panels — titles
-            { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 56, offsetX: -85 },
+            { panel: root, name: 'LeaderboardTitleLabel',       icon: 'trophy', size: 56, offsetX: -130 },
             { panel: root, name: 'DailyChallengeTitleLabel',    icon: 'flame',  size: 26, offsetX: -200 },
             { panel: root, name: 'PortfolioTitleLabel',         icon: 'user',   size: 56, offsetX: -85 },
             { panel: root, name: 'PortfolioTrophiesTab',        icon: 'trophy', size: 20, offsetX: -55 },
@@ -7031,6 +7552,12 @@ export class AppUI extends Component {
             // History tab even when the backend is unreachable, the user is a
             // guest, or the POST silently fails.
             if (myPubkey) {
+                // [HIST_DBG] write-path instrumentation — anchor of the History
+                // decision tree (~/.claude/plans/cached-growing-leaf.md). If
+                // `block_entered` is absent from logcat after a bot match
+                // settles, the build is stale and the history-write code never
+                // deployed; rebuild after clearing library/ + temp/.
+                console.log(`[HIST_DBG] block_entered pk=${myPubkey.slice(0, 8)} guest=${this._isGuest()} track=${savedTrack} mode=${modeId} xp=${outcome.xpGained}`);
                 const fallbackId = savedLocalPda
                     ?? `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 const requiredPlayersForRow = MODES[modeId as keyof typeof MODES]?.requiredPlayers ?? 2;
@@ -7069,10 +7596,14 @@ export class AppUI extends Component {
                         const mod = await import('../../token-duel/scripts/PaperMatchHistoryRpc');
                         // Local mirror first — guaranteed visible regardless of backend.
                         mod.recordLocalHistory(row);
+                        console.log(`[HIST_DBG] local_done id=${row.id.slice(0, 18)} count=${mod.peekLocalCount()}`);
                         if (!this._isGuest()) {
-                            await mod.postPaperMatchHistory(row);
+                            console.log(`[HIST_DBG] post_start url=${RECEIPT_BACKEND_URL}`);
+                            const ok = await mod.postPaperMatchHistory(row);
+                            console.log(`[HIST_DBG] post_done ok=${ok}`);
                         }
-                    } catch (e) {
+                    } catch (e: any) {
+                        console.log(`[HIST_DBG] write_threw ${e?.message ?? e}`);
                         console.log(`${TAG} paper_match_history_record_err | ${e}`);
                     }
                 })();
@@ -9693,9 +10224,12 @@ export class AppUI extends Component {
         }
 
         // Error fallbacks — mirror HomeUI._onSignAndSend.
-        if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
-            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet mismatch';
+        if (mwa.lastError?.code === 'WALLET_CHANGED') {
+            showToast('Different wallet selected — reconnect to switch accounts', true);
+            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet changed';
+        } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+            showToast('Wallet session expired — please disconnect and reconnect', true);
+            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet session expired';
         } else if (mwa.lastError?.code === 'WALLET_HUNG') {
             showToast("Wallet didn't respond — try reconnecting", true);
             if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet timeout';
@@ -9790,9 +10324,12 @@ export class AppUI extends Component {
             if (this._tokenDuelStatus) {
                 this._tokenDuelStatus.string = 'Wallet needs devnet SOL\nhttps://faucet.solana.com';
             }
+        } else if (code === 'WALLET_CHANGED') {
+            showToast('Different wallet selected — reconnect to switch accounts', true);
+            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet changed';
         } else if (code === 'WALLET_AUTH_MISMATCH') {
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
-            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet mismatch';
+            showToast('Wallet session expired — please disconnect and reconnect', true);
+            if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet session expired';
         } else if (code === 'WALLET_HUNG') {
             showToast("Wallet didn't respond — try reconnecting", true);
             if (this._tokenDuelStatus) this._tokenDuelStatus.string = 'Wallet timeout';
@@ -11695,10 +12232,13 @@ export class AppUI extends Component {
         } else if (mwa.lastError?.code === 'WALLET_CRASHED') {
             // Wallet closed WebSocket without reply — Solflare-class crash or unsupported method. See KNOWN_ISSUES.md #6/#11.
             showToast('Wallet crashed — try Backpack, Phantom, or Jupiter', true);
+        } else if (mwa.lastError?.code === 'WALLET_CHANGED') {
+            // Pass 14: auto-recovery succeeded but returned a different pubkey.
+            showToast('Different wallet selected — reconnect to switch accounts', true);
         } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-            // Pass 13: user picked a different wallet in the OS picker than the
-            // one that issued the cached authToken. See KNOWN_ISSUES.md #17.
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+            // Pass 14: auto-recovery was attempted but failed (user dismissed
+            // the recovery picker). KNOWN_ISSUES.md #17.
+            showToast('Wallet session expired — please disconnect and reconnect', true);
         } else {
             showToast('Sign message failed');
         }
@@ -11727,9 +12267,11 @@ export class AppUI extends Component {
             : 'Sign transaction failed';
         if (signed.length > 0) {
             showToast('Transaction Signed!');
+        } else if (mwa.lastError?.code === 'WALLET_CHANGED') {
+            showToast('Different wallet selected — reconnect to switch accounts', true);
         } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-            // Pass 13 — KNOWN_ISSUES.md #17.
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+            // Pass 14: recovery dismissed by user. KNOWN_ISSUES.md #17.
+            showToast('Wallet session expired — please disconnect and reconnect', true);
         } else {
             showToast('Sign transaction failed');
         }
@@ -11768,9 +12310,11 @@ export class AppUI extends Component {
             showToast('Wallet crashed — try Backpack, Phantom, or Jupiter', true);
         } else if (mwa.lastError?.code === 'RPC_BROADCAST_FAILED') {
             showToast('Sign succeeded but RPC broadcast was rejected', true);
+        } else if (mwa.lastError?.code === 'WALLET_CHANGED') {
+            showToast('Different wallet selected — reconnect to switch accounts', true);
         } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-            // Pass 13 — KNOWN_ISSUES.md #17.
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+            // Pass 14: recovery dismissed by user. KNOWN_ISSUES.md #17.
+            showToast('Wallet session expired — please disconnect and reconnect', true);
         } else {
             showToast('Sign & send failed');
         }
@@ -11863,10 +12407,12 @@ export class AppUI extends Component {
         } else if (mwa.lastError?.code === 'RPC_BLOCKHASH_FAILED') {
             showToast('Delete failed — could not reach Solana RPC', true);
             this._setHomeEnabled(true);
+        } else if (mwa.lastError?.code === 'WALLET_CHANGED') {
+            showToast('Different wallet selected — reconnect to switch accounts', true);
+            this._setHomeEnabled(true);
         } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-            // Pass 13 — user picked a different wallet in the OS picker than
-            // the one that issued the cached authToken. KNOWN_ISSUES.md #17.
-            showToast('Wrong wallet — use the wallet you connected with, or Disconnect and Connect again', true);
+            // Pass 14: recovery dismissed by user. KNOWN_ISSUES.md #17.
+            showToast('Wallet session expired — please disconnect and reconnect', true);
             this._setHomeEnabled(true);
         } else {
             this._setHomeEnabled(true);
@@ -12481,6 +13027,139 @@ export class AppUI extends Component {
         showToast('Bot match — tap Commit to start');
     }
 
+    /**
+     * 2026-05-02 attempt 8 Option B — Build two raw touch-overlay nodes at
+     * Canvas root level, sized + positioned over the existing post-match
+     * CTAs. Each fires its handler on TOUCH_END (not Button.CLICK) so a
+     * broken Button component or panel-internal touch swallow doesn't kill
+     * the tap path. Idempotent: gated by `_postMatchOverlayInstalled`.
+     */
+    private _installPostMatchTouchOverlay(): void {
+        if (this._postMatchOverlayInstalled) return;
+        if (!this._postMatchPanel) {
+            console.log(`${TAG} _installPostMatchTouchOverlay | NO_PANEL`);
+            return;
+        }
+        // The two visible CTAs: 'sameSquad' = green PICK NEW SQUAD (calls _onPostMatchAgain),
+        // 'again' = dark HOME (calls _onPostMatchBack). See AppUI.ts:3076-3078.
+        const homeBtnNode = this._postMatchPanel.getChildByName('PostMatchAgainButton');
+        const newSquadBtnNode = this._postMatchPanel.getChildByName('PostMatchSameSquadButton');
+        if (!homeBtnNode || !newSquadBtnNode) {
+            console.log(`${TAG} _installPostMatchTouchOverlay | MISSING_BTN home=${!!homeBtnNode} newSquad=${!!newSquadBtnNode}`);
+            return;
+        }
+        // 2026-05-02 attempt 8 rev 3 — canvas-relative positions (Fix B).
+        // Don't read sourceNode.worldPosition; that may be stale during the
+        // cascade. Compute from the canvas's own UITransform so positions
+        // are deterministic regardless of when this runs.
+        const canvasUT = this.node.getComponent(UITransform);
+        const cw = canvasUT?.contentSize.width ?? 720;
+        const ch = canvasUT?.contentSize.height ?? 1602;
+        const yLocal = -ch / 2 + 152;
+        const xOffset = cw / 4 + 18; // ~180 for 720-wide
+        const newSquadLocal = new Vec3(-xOffset, yLocal, 0);
+        const homeLocal = new Vec3(+xOffset, yLocal, 0);
+        const buildOverlay = (label: string, localPos: Vec3, ctaText: string, handler: () => void): Node => {
+            const overlay = new Node(`PostMatchOverlay_${label}`);
+            // Fix 1 (rev 2, retained): set layer to canvas's so the UI camera
+            // actually dispatches input + renders to this node.
+            overlay.layer = this.node.layer;
+            const ut = overlay.addComponent(UITransform);
+            // Fix D: bigger hit zone, more forgiving tap target.
+            ut.setContentSize(360, 120);
+            this.node.addChild(overlay);
+            overlay.setPosition(localPos);
+            overlay.setSiblingIndex(this.node.children.length - 1);
+            overlay.on(Node.EventType.TOUCH_END, (ev: EventTouch) => {
+                console.log(`[PostMatchOverlay] TOUCH_END label=${label}`);
+                try {
+                    handler();
+                } catch (err: any) {
+                    console.log(`[PostMatchOverlay] handler threw label=${label} err=${err?.message ?? err}`);
+                }
+            }, this);
+            // Fix A: Label child (always renders in Cocos 3.8, no SpriteFrame
+            // needed). Bright yellow text overlays the existing CTA so the
+            // user has an unambiguous tappable target.
+            try {
+                const lblNode = new Node('overlay_label');
+                lblNode.layer = overlay.layer;
+                const lblUT = lblNode.addComponent(UITransform);
+                lblUT.setContentSize(360, 120);
+                const lbl = lblNode.addComponent(Label);
+                lbl.string = ctaText;
+                lbl.fontSize = 22;
+                lbl.lineHeight = 26;
+                lbl.color = new Color(255, 255, 0, 255);
+                lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+                lbl.verticalAlign = VerticalTextAlignment.CENTER;
+                overlay.addChild(lblNode);
+            } catch (e: any) {
+                console.log(`[PostMatchOverlay] label_child threw label=${label} err=${e?.message ?? e}`);
+            }
+            overlay.active = false;
+            console.log(`[PostMatchOverlay] BUILT label=${label} layer=${overlay.layer} canvasLayer=${this.node.layer} size=360x120 localPos=(${localPos.x.toFixed(1)},${localPos.y.toFixed(1)}) parentChildren=${this.node.children.length}`);
+            return overlay;
+        };
+        this._postMatchHomeOverlay = buildOverlay('home', homeLocal, '⬅ TAP HERE FOR HOME', () => this._onPostMatchBack());
+        this._postMatchAgainOverlay = buildOverlay('newSquad', newSquadLocal, 'TAP HERE FOR NEW SQUAD', () => this._onPostMatchAgain());
+        // Fix E: visible reminder that hardware back also escapes the panel.
+        // Built once; activated/deactivated together with the overlays.
+        try {
+            const hint = new Node('PostMatchOverlay_hint');
+            hint.layer = this.node.layer;
+            const hintUT = hint.addComponent(UITransform);
+            hintUT.setContentSize(cw, 40);
+            this.node.addChild(hint);
+            hint.setPosition(new Vec3(0, ch / 2 - 60, 0));
+            hint.setSiblingIndex(this.node.children.length - 1);
+            const hintLbl = hint.addComponent(Label);
+            hintLbl.string = '⬅ Hardware back also works';
+            hintLbl.fontSize = 18;
+            hintLbl.lineHeight = 22;
+            hintLbl.color = new Color(255, 255, 0, 200);
+            hintLbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            hintLbl.verticalAlign = VerticalTextAlignment.CENTER;
+            hint.active = false;
+            (this as any)._postMatchHwBackHint = hint;
+        } catch (e: any) {
+            console.log(`[PostMatchOverlay] hint_label threw err=${e?.message ?? e}`);
+        }
+        this._postMatchOverlayInstalled = true;
+        console.log(`${TAG} _installPostMatchTouchOverlay | DONE attempt8_optionB rev3`);
+    }
+
+    /**
+     * 2026-05-02 attempt 8 Option B — toggle the two runtime touch overlays
+     * in lockstep with PostMatchPanel.active. Re-applies world position on
+     * each show in case viewport size changed since build time.
+     */
+    private _setPostMatchOverlayActive(active: boolean): void {
+        if (active) {
+            // 2026-05-02 attempt 8 rev 3 — Fix C: re-apply canvas-relative
+            // positions on each show (in case viewport resized between match
+            // and panel show). Same math as in _installPostMatchTouchOverlay.
+            const canvasUT = this.node.getComponent(UITransform);
+            const cw = canvasUT?.contentSize.width ?? 720;
+            const ch = canvasUT?.contentSize.height ?? 1602;
+            const yLocal = -ch / 2 + 152;
+            const xOffset = cw / 4 + 18;
+            if (this._postMatchHomeOverlay) {
+                this._postMatchHomeOverlay.setPosition(new Vec3(+xOffset, yLocal, 0));
+                this._postMatchHomeOverlay.setSiblingIndex(this.node.children.length - 1);
+            }
+            if (this._postMatchAgainOverlay) {
+                this._postMatchAgainOverlay.setPosition(new Vec3(-xOffset, yLocal, 0));
+                this._postMatchAgainOverlay.setSiblingIndex(this.node.children.length - 1);
+            }
+        }
+        if (this._postMatchHomeOverlay) this._postMatchHomeOverlay.active = active;
+        if (this._postMatchAgainOverlay) this._postMatchAgainOverlay.active = active;
+        const hint = (this as any)._postMatchHwBackHint as Node | undefined;
+        if (hint) hint.active = active;
+        console.log(`[PostMatchOverlay] SET_ACTIVE ${active} home=${!!this._postMatchHomeOverlay} again=${!!this._postMatchAgainOverlay} hint=${!!hint}`);
+    }
+
     private _showPostMatchPanel(outcome: {
         won: boolean;
         tie?: boolean;          // betting-duel: equal portfolio deltas → think mascot
@@ -12547,6 +13226,12 @@ export class AppUI extends Component {
         if (_backLink) _backLink.active = false;
         const ssBtnShow = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
         ensureInteractable(ssBtnShow, 'sameSquad');
+        // 2026-05-02 attempt 8 Option B — install + activate runtime touch
+        // overlays at Canvas root. Idempotent install on first show, then
+        // active=true on every show. Hidden again in _onPostMatchBack /
+        // _onPostMatchAgain. Per plan ~/.claude/plans/cozy-wobbling-goose.md.
+        this._installPostMatchTouchOverlay();
+        this._setPostMatchOverlayActive(true);
         // Defensive show-time reset on the two visible CTAs — a re-entry from
         // a prior round (or a finalizer-stop race) can leave node.active or
         // interactable in a half-state. Force both to a known-good state
@@ -14094,6 +14779,8 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
+        // 2026-05-02 attempt 8 Option B — hide overlay in lockstep with panel.
+        this._setPostMatchOverlayActive(false);
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
         // Resume Birdeye polling now that we're back on Home (trade tab visible).
@@ -14109,6 +14796,8 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
+        // 2026-05-02 attempt 8 Option B — hide overlay in lockstep with panel.
+        this._setPostMatchOverlayActive(false);
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Re-open picker so user can pick mode/wager again. Squad still intact.
@@ -14445,8 +15134,13 @@ export class AppUI extends Component {
         const ok = signed.length > 0;
         console.log(`${TAG} _signBotMatchDemo | RESULT signed_bytes=${signed.length} ok=${ok} lastError=${mwa.lastError?.code ?? '(none)'}`);
         if (!ok) {
-            if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
-                showToast('Wrong wallet, disconnect and reconnect', true);
+            if (mwa.lastError?.code === 'WALLET_CHANGED') {
+                showToast('Different wallet selected — reconnect to switch accounts', true);
+            } else if (mwa.lastError?.code === 'WALLET_AUTH_MISMATCH') {
+                // Pass 14: auto-recovery in MWAManager attempted but the user
+                // dismissed the recovery picker. Real "wallet rejected token"
+                // is now handled transparently before reaching this branch.
+                showToast('Wallet session expired — please disconnect and reconnect', true);
             } else if (mwa.lastError?.code === 'USER_REJECTED') {
                 showToast('Sign cancelled');
             } else {
@@ -14565,6 +15259,7 @@ export class AppUI extends Component {
                 timeWindow: windowU8,
                 forceCreate: opts?.forceCreate,
                 explicitMatchPda: opts?.explicitMatchPda,
+                wagerCurrency: this._pickerSelectedWagerCurrency,
                 getBlockhash: async () => {
                     const bh = await this._rpc.getLatestBlockhash('confirmed');
                     if (!bh) throw new Error('failed to fetch blockhash');
@@ -16491,6 +17186,11 @@ export class AppUI extends Component {
             if (this._wagerValueButton) this._wagerValueButton.node.active = false;
             if (this._wagerDropdown) this._wagerDropdown.active = false;
             if (this._wagerBotChip) this._wagerBotChip.active = false;
+            // betting-duel ($SKR) — currency picker only applies to CREATE
+            // mode (host picks SOL or SKR for the new lobby). Resume mode
+            // inherits the currency from the existing match.
+            if (this._wagerCurrencyButton) this._wagerCurrencyButton.node.active = false;
+            if (this._wagerCurrencyDropdown) this._wagerCurrencyDropdown.active = false;
             if (this._wagerLockChip) {
                 this._wagerLockChip.active = true;
                 if (this._wagerLockChipLabel) this._wagerLockChipLabel.string = `🔒 ${wagerLabel}`;
@@ -16510,8 +17210,10 @@ export class AppUI extends Component {
             if (this._wagerHintLabel) {
                 // 2026-05-01 r3 — single label, always visible, state-based.
                 // Lock chip occupies the pill row so hint stays at -616.
+                // 2026-05-02 Pass 2 — bake wager amount into ready copy so
+                // the user reads the stake at the moment of commitment.
                 this._wagerHintLabel.string = ready
-                    ? '✓ Squad ready · tap RESUME MATCH'
+                    ? `✓ Wagering ${wagerLabel} · tap RESUME MATCH`
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to resume`;
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
@@ -16532,6 +17234,10 @@ export class AppUI extends Component {
             if (this._wagerValueButton) this._wagerValueButton.node.active = false;
             if (this._wagerDropdown) this._wagerDropdown.active = false;
             if (this._wagerBotChip) this._wagerBotChip.active = false;
+            // betting-duel ($SKR) — currency is locked to the host's choice
+            // when joining; hide the picker.
+            if (this._wagerCurrencyButton) this._wagerCurrencyButton.node.active = false;
+            if (this._wagerCurrencyDropdown) this._wagerCurrencyDropdown.active = false;
             if (this._wagerLockChip) {
                 this._wagerLockChip.active = true;
                 if (this._wagerLockChipLabel) this._wagerLockChipLabel.string = `🔒 ${wagerLabel}`;
@@ -16551,8 +17257,9 @@ export class AppUI extends Component {
             if (this._wagerHintLabel) {
                 // 2026-05-01 r3 — single label, always visible, state-based.
                 // Lock chip occupies the pill row so hint stays at -616.
+                // 2026-05-02 Pass 2 — wager amount in ready copy.
                 this._wagerHintLabel.string = ready
-                    ? '✓ Squad ready · tap JOIN MATCH'
+                    ? `✓ Wagering ${wagerLabel} · tap JOIN MATCH`
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to join`;
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
@@ -16568,6 +17275,11 @@ export class AppUI extends Component {
             if (this._wagerValueButton) this._wagerValueButton.node.active = false;
             if (this._wagerDropdown) this._wagerDropdown.active = false;
             if (this._wagerLockChip) this._wagerLockChip.active = false;
+            // betting-duel ($SKR) — bot matches are paper / free practice; no
+            // currency choice applies. Hide the picker so the row reads as a
+            // pure "free play" affordance, not a wager UI.
+            if (this._wagerCurrencyButton) this._wagerCurrencyButton.node.active = false;
+            if (this._wagerCurrencyDropdown) this._wagerCurrencyDropdown.active = false;
             // 2026-04-28 polish — top-bar MatchSetupStakeLabel already shows
             // the mode chip, so the floating WagerBotChip near the CTA is
             // redundant. Hide it and route the read entirely through the
@@ -16595,7 +17307,7 @@ export class AppUI extends Component {
                 // the pill would sit instead of leaving a gap.
                 // 2026-05-02 — pill y shifted -548 → -534 (compact resize).
                 this._wagerHintLabel.string = ready
-                    ? '✓ Squad ready · tap START BOT MATCH'
+                    ? '✓ Free practice · tap START BOT MATCH'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to play bots`;
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
@@ -16607,15 +17319,23 @@ export class AppUI extends Component {
         }
 
         // ── CREATE MODE — original Start Match (real / paper-real) flow. ──
-        const label = WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex] ?? '0.05 SOL';
+        const isSkr = this._pickerSelectedWagerCurrency === 'SKR';
+        const tierLabels = isSkr ? WAGER_TIERS_SKR_LABELS : WAGER_TIERS_LABELS;
+        const label = tierLabels[this._pickerSelectedWagerIndex] ?? (isSkr ? '500 SKR' : '0.05 SOL');
         if (this._wagerValueButton) this._wagerValueButton.node.active = true;
         if (this._wagerLockChip) this._wagerLockChip.active = false;
         if (this._wagerBotChip) this._wagerBotChip.active = false;
+        // betting-duel ($SKR) — currency picker is CREATE-mode-only; show it
+        // here (only place it's used). Dropdown stays inactive until tap.
+        if (this._wagerCurrencyButton) this._wagerCurrencyButton.node.active = true;
         // 2026-05-01 r3 — single-line "0.05 SOL  ▾" on the half-width
         // chunky stake pill (32pt gold bold, set at scene-gen). Runtime
         // updates the amount when user picks a tier from the dropdown.
         if (this._wagerValueLabel) this._wagerValueLabel.string = `${label}  ▾`;
         if (this._matchSetupStakeLabel) this._matchSetupStakeLabel.string = `Stake: ${label}`;
+        // betting-duel ($SKR) — currency-button label + icon mirror current state.
+        if (this._wagerCurrencyValueLabel) this._wagerCurrencyValueLabel.string = `${this._pickerSelectedWagerCurrency}  ▾`;
+        this._refreshWagerCurrencyIcon();
         if (this._wagerStartButton) {
             this._wagerStartButton.interactable = ready;
             if (this._wagerStartLabel) {
@@ -16631,8 +17351,10 @@ export class AppUI extends Component {
         if (this._wagerHintLabel) {
             // 2026-05-01 r3 — single label, always visible, state-based copy
             // (one or the other, never two competing labels in this row).
+            // 2026-05-02 Pass 2 — wager amount baked into ready copy so the
+            // user sees the stake at the moment of commitment.
             this._wagerHintLabel.string = ready
-                ? '✓ Squad ready · tap LOCK IN SQUAD'
+                ? `✓ Wagering ${label} · tap LOCK IN SQUAD`
                 : filled === 2
                     ? 'Pick your final token to lock in'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
@@ -16714,15 +17436,105 @@ export class AppUI extends Component {
     /** User picked a tier from the dropdown. */
     private _onWagerRowTap(dropdownIdx: number): void {
         // Dropdown row order is UX-driven (ascending $$ then INTRO last);
-        // on-chain tier index is separate. Map via WAGER_DISPLAY_TO_TIER.
-        const idx = WAGER_DISPLAY_TO_TIER[dropdownIdx] ?? dropdownIdx;
-        if (idx < 0 || idx >= WAGER_TIERS_LAMPORTS.length) return;
+        // on-chain tier index is separate. Map via WAGER_DISPLAY_TO_TIER for
+        // SOL; SKR tiers use the identity mapping (only 6 rows, no INTRO).
+        const isSkr = this._pickerSelectedWagerCurrency === 'SKR';
+        const idx = isSkr
+            ? (WAGER_DISPLAY_TO_TIER_SKR[dropdownIdx] ?? dropdownIdx)
+            : (WAGER_DISPLAY_TO_TIER[dropdownIdx] ?? dropdownIdx);
+        const tierBound = isSkr ? WAGER_TIERS_SKR_ATOMS.length : WAGER_TIERS_LAMPORTS.length;
+        if (idx < 0 || idx >= tierBound) return;
+        const changed = this._pickerSelectedWagerIndex !== idx;
         this._pickerSelectedWagerIndex = idx;
-        console.log(`${TAG} _onWagerRowTap | row=${dropdownIdx} tier_idx=${idx} lamports=${WAGER_TIERS_LAMPORTS[idx]} label=${WAGER_TIERS_LABELS[idx]}`);
+        const labelArr = isSkr ? WAGER_TIERS_SKR_LABELS : WAGER_TIERS_LABELS;
+        const amountArr = isSkr
+            ? WAGER_TIERS_SKR_ATOMS.map((a) => a.toString())
+            : WAGER_TIERS_LAMPORTS.map((a) => a.toString());
+        console.log(`${TAG} _onWagerRowTap | row=${dropdownIdx} tier_idx=${idx} amount=${amountArr[idx]} label=${labelArr[idx]} currency=${this._pickerSelectedWagerCurrency}`);
         if (this._wagerDropdown) this._wagerDropdown.active = false;
         this._refreshWagerControlRow();
         this._refreshModePickerUi();
         this._syncBackdrop();
+        // 2026-05-02 Pass 2 — value-line opacity flash so the tier change
+        // reads as a financial-awareness cue, not a silent label swap.
+        if (changed && this._wagerValueLabel) {
+            try {
+                const node = this._wagerValueLabel.node;
+                const op = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+                Tween.stopAllByTarget(op);
+                op.opacity = 100;
+                tween(op).to(0.18, { opacity: 255 }, { easing: 'cubicOut' as any }).start();
+            } catch (_) { /* optional */ }
+        }
+    }
+
+    // ─── betting-duel ($SKR) — currency picker handlers ────────────────
+
+    /** Open/close the upward currency dropdown. */
+    private _onWagerCurrencyTap(): void {
+        if (!this._wagerCurrencyDropdown) return;
+        const open = !this._wagerCurrencyDropdown.active;
+        this._wagerCurrencyDropdown.active = open;
+        console.log(`${TAG} _onWagerCurrencyTap | open=${open} currency=${this._pickerSelectedWagerCurrency}`);
+        this._syncBackdrop();
+    }
+
+    /** User picked a currency from the dropdown (0=SOL, 1=SKR). */
+    private _onWagerCurrencyRowTap(dropdownIdx: number): void {
+        const next: WagerCurrency = dropdownIdx === 1 ? 'SKR' : 'SOL';
+        if (next === 'SKR' && !isSkrAvailable()) {
+            console.log(`${TAG} _onWagerCurrencyRowTap | SKR_DISABLED row=${dropdownIdx} (no devnet mint configured)`);
+            if (this._wagerCurrencyDropdown) this._wagerCurrencyDropdown.active = false;
+            return;
+        }
+        const changed = this._pickerSelectedWagerCurrency !== next;
+        this._pickerSelectedWagerCurrency = next;
+        // Reset to tier index 0 when switching currencies — the SOL and SKR
+        // tier arrays don't share semantics and the active index might be
+        // out of bounds for the new currency (SKR has 6 tiers, SOL has 8).
+        if (changed) this._pickerSelectedWagerIndex = next === 'SKR' ? 1 : 1;
+        console.log(`${TAG} _onWagerCurrencyRowTap | row=${dropdownIdx} currency=${next} tier_idx_reset_to=${this._pickerSelectedWagerIndex}`);
+        if (this._wagerCurrencyDropdown) this._wagerCurrencyDropdown.active = false;
+        this._refreshWagerCurrencyIcon();
+        this._refreshWagerDropdownLabels();
+        this._refreshWagerControlRow();
+        this._refreshModePickerUi();
+        this._syncBackdrop();
+    }
+
+    /** Swap the icon sprite next to the currency-button label. */
+    private _refreshWagerCurrencyIcon(): void {
+        if (!this._wagerCurrencyIconSprite) return;
+        const target = this._pickerSelectedWagerCurrency === 'SKR'
+            ? this._skrIconSpriteFrame
+            : this._solIconSpriteFrame;
+        if (target) this._wagerCurrencyIconSprite.spriteFrame = target;
+    }
+
+    /**
+     * Re-paint the wager-tier dropdown row labels for the active currency.
+     * SKR has 6 tiers, SOL has 8 — extra rows hide via UIOpacity + interactable=false.
+     */
+    private _refreshWagerDropdownLabels(): void {
+        const isSkr = this._pickerSelectedWagerCurrency === 'SKR';
+        const labels = isSkr ? WAGER_TIERS_SKR_LABELS : WAGER_TIERS_LABELS;
+        const visibleCount = labels.length;
+        for (let i = 0; i < this._wagerDropdownRows.length; i++) {
+            const row = this._wagerDropdownRows[i];
+            if (!row) continue;
+            const labelComp = row.node.getChildByName('Label')?.getComponent(Label);
+            if (i < visibleCount) {
+                if (labelComp) labelComp.string = labels[i];
+                row.interactable = true;
+                const op = row.node.getComponent(UIOpacity) ?? row.node.addComponent(UIOpacity);
+                op.opacity = 255;
+            } else {
+                if (labelComp) labelComp.string = '';
+                row.interactable = false;
+                const op = row.node.getComponent(UIOpacity) ?? row.node.addComponent(UIOpacity);
+                op.opacity = 0;
+            }
+        }
     }
 
     /**
@@ -19452,6 +20264,7 @@ export class AppUI extends Component {
                 const offset = reset ? 0 : this._matchHistoryEntries.length;
                 const { listPaperMatchHistory } = await import('../../token-duel/scripts/PaperMatchHistoryRpc');
                 const rows = await listPaperMatchHistory(pubkey, PAPER_PAGE, offset);
+                console.log(`[HIST_DBG] fetch_paper offset=${offset} rows=${rows.length} pubkey=${pubkey.slice(0, 8)}`);
                 pageEntries = rows.map((r) => this._paperRowToHistoryEntry(r));
                 nextCursor = rows.length >= PAPER_PAGE ? `paper:${offset + rows.length}` : null;
             } else {
@@ -19521,6 +20334,12 @@ export class AppUI extends Component {
 
     /** Populate the row pool from the cumulative entry list, newest first. */
     private _renderMatchHistoryRows(entries: HistoryRowEntry[]): void {
+        // [HIST_DBG] render-path snapshot — paired with fetch_paper above. If
+        // entries>=1 but viewActive=false or viewOpacity=0, the rows ARE there
+        // and the renderer is hiding them (same render-path bug class as the
+        // disappearing Paper/Real pills). See decision tree in plan file.
+        const _viewOpacity = this._pfHistoryView?.getComponent(UIOpacity)?.opacity;
+        console.log(`[HIST_DBG] render entries=${entries.length} pool=${this._pfHistoryRows.length} viewActive=${this._pfHistoryView?.active} viewActiveInHier=${this._pfHistoryView?.activeInHierarchy} viewOpacity=${_viewOpacity ?? 'none'}`);
         const green = new Color(48, 198, 155, 255);
         const red = new Color(220, 90, 90, 255);
         const dim = new Color(140, 150, 170, 255);

@@ -23,6 +23,10 @@ pub mod migrate_user_stats;
 pub mod initialize_daily_challenge;
 pub mod initialize_season;
 pub mod pay_season;
+// betting-duel — $SKR (SPL-token) wager twins
+pub mod join_match_skr;
+pub mod settle_match_skr;
+pub mod cancel_match_skr;
 
 pub use initialize_pool::*;
 pub use initialize_leaderboard::*;
@@ -43,3 +47,6 @@ pub use migrate_user_stats::*;
 pub use initialize_daily_challenge::*;
 pub use initialize_season::*;
 pub use pay_season::*;
+pub use join_match_skr::*;
+pub use settle_match_skr::*;
+pub use cancel_match_skr::*;

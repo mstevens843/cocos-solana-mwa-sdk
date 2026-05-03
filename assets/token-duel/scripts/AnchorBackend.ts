@@ -24,8 +24,14 @@ import {
     RawInstructionInput,
 } from '../../solana-mwa/scripts/TransactionBuilder';
 import { base58Decode } from '../../solana-mwa/scripts/Base58';
-import { ED25519_PROGRAM_ID, POOL_PDA, PROGRAM_ID, SEEDS, SYSTEM_PROGRAM_ID, SYSVAR_INSTRUCTIONS_ID } from './constants';
+import { ED25519_PROGRAM_ID, POOL_PDA, PROGRAM_ID, SEEDS, SYSTEM_PROGRAM_ID, SYSVAR_INSTRUCTIONS_ID, SYSVAR_RENT_ID } from './constants';
 import { findProgramAddress, u64LeBytes } from './PdaDeriver';
+import {
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    TOKEN_PROGRAM_ID,
+    buildCreateAtaIdempotentIx,
+    deriveAssociatedTokenAddress,
+} from './SplTokenIx';
 
 /** Legacy singleton leaderboard PDA — seeds [b"leaderboard"]. Used by solo settle. */
 function deriveLeaderboardPda(): string {
@@ -797,6 +803,257 @@ export class AnchorBackend {
         ];
         const bytes = buildAnchorTransaction(PROGRAM_ID, accounts, data, cancellerBase58, blockhash);
         console.log(`${TAG} buildCancelMatchTx | DONE canceller=${cancellerBase58} match=${matchPdaBase58} refund_to=${refundRecipientBase58} tx_bytes=${bytes.length}`);
+        return bytes;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // betting-duel — $SKR (SPL-token) wager tx builders
+    //
+    // Account orders MUST match the #[derive(Accounts)] structs in
+    // `programs/token-duel/src/instructions/{join_match_skr,
+    // settle_match_skr, cancel_match_skr}.rs`. If a Rust struct field
+    // reorders, this wire protocol breaks.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Per-match SPL escrow TokenAccount PDA. Seeds: [b"match_escrow_token", match_pda]. */
+    static deriveMatchEscrowTokenPda(matchPdaBase58: string): string {
+        const [pda] = findProgramAddress([SEEDS.MATCH_ESCROW_TOKEN, base58Decode(matchPdaBase58)], PROGRAM_ID);
+        return pda;
+    }
+
+    /** Per-mint treasury ATA. Authority is the Treasury PDA. */
+    static deriveTreasuryTokenAta(mintBase58: string): string {
+        return deriveAssociatedTokenAddress(this.deriveTreasuryPda(), mintBase58);
+    }
+
+    /** Player's ATA for a given mint (canonical associated token address). */
+    static derivePlayerAta(playerBase58: string, mintBase58: string): string {
+        return deriveAssociatedTokenAddress(playerBase58, mintBase58);
+    }
+
+    /**
+     * Build a single-instruction tx that idempotently creates `wallet`'s
+     * ATA for `mint`. Cheap preflight — no-op if the ATA already exists.
+     */
+    static buildEnsureAtaTx(
+        fundingBase58: string,
+        walletBase58: string,
+        mintBase58: string,
+        blockhash: string,
+    ): Uint8Array {
+        const ix = buildCreateAtaIdempotentIx(fundingBase58, walletBase58, mintBase58);
+        const bytes = buildMultiIxTransaction([ix], fundingBase58, blockhash);
+        console.log(`${TAG} buildEnsureAtaTx | DONE funder=${fundingBase58} wallet=${walletBase58} mint=${mintBase58} tx_bytes=${bytes.length}`);
+        return bytes;
+    }
+
+    /**
+     * Build unsigned join_match_create_skr tx. The player's SKR ATA must
+     * already be funded with at least the wager amount; caller is
+     * responsible for any preflight `buildEnsureAtaTx`.
+     *
+     * Account order matches `JoinMatchCreateSkr`:
+     *   [player, counter, match, match_escrow, mint, match_escrow_token,
+     *    player_token_account, token_program, associated_token_program,
+     *    system_program, rent]
+     *
+     * Data: [disc(join_match_create_skr) | mode u8 | wager_tier u8
+     *        | xp_bucket u16 LE | time_window u8 | seq u64 LE]
+     */
+    static buildJoinMatchCreateSkrTx(
+        playerBase58: string,
+        mintBase58: string,
+        mode: number,
+        wagerTier: number,
+        xpBucket: number,
+        timeWindow: number,
+        seq: bigint,
+        blockhash: string,
+    ): Uint8Array {
+        const counter = this.deriveMatchCounterPda();
+        const matchPda = this.deriveMatchPda(mode, wagerTier, seq);
+        const escrow = this.deriveMatchEscrowPda(matchPda);
+        const escrowToken = this.deriveMatchEscrowTokenPda(matchPda);
+        const playerAta = this.derivePlayerAta(playerBase58, mintBase58);
+        const disc = this.discriminator('join_match_create_skr');
+        const argBytes = new Uint8Array(1 + 1 + 2 + 1 + 8);
+        argBytes[0] = mode & 0xff;
+        argBytes[1] = wagerTier & 0xff;
+        argBytes[2] = xpBucket & 0xff;
+        argBytes[3] = (xpBucket >> 8) & 0xff;
+        argBytes[4] = timeWindow & 0xff;
+        argBytes.set(u64LeBytes(seq), 5);
+        const data = concat(disc, argBytes);
+        const accounts: AnchorAccountMetaInput[] = [
+            { pubkeyBase58: playerBase58,                isSigner: true,  isWritable: true  },
+            { pubkeyBase58: counter,                     isSigner: false, isWritable: true  },
+            { pubkeyBase58: matchPda,                    isSigner: false, isWritable: true  },
+            { pubkeyBase58: escrow,                      isSigner: false, isWritable: true  },
+            { pubkeyBase58: mintBase58,                  isSigner: false, isWritable: false },
+            { pubkeyBase58: escrowToken,                 isSigner: false, isWritable: true  },
+            { pubkeyBase58: playerAta,                   isSigner: false, isWritable: true  },
+            { pubkeyBase58: TOKEN_PROGRAM_ID,            isSigner: false, isWritable: false },
+            { pubkeyBase58: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSTEM_PROGRAM_ID,           isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSVAR_RENT_ID,              isSigner: false, isWritable: false },
+        ];
+        const bytes = buildAnchorTransaction(PROGRAM_ID, accounts, data, playerBase58, blockhash);
+        console.log(`${TAG} buildJoinMatchCreateSkrTx | DONE player=${playerBase58} mint=${mintBase58} mode=${mode} tier=${wagerTier} window=${timeWindow} seq=${seq} match=${matchPda} escrow_token=${escrowToken} tx_bytes=${bytes.length}`);
+        return bytes;
+    }
+
+    /**
+     * Build unsigned join_match_join_skr tx. Account order matches
+     * `JoinMatchJoinSkr`:
+     *   [player, match, match_escrow, mint, match_escrow_token,
+     *    player_token_account, token_program, system_program]
+     */
+    static buildJoinMatchJoinSkrTx(
+        playerBase58: string,
+        matchPdaBase58: string,
+        mintBase58: string,
+        blockhash: string,
+    ): Uint8Array {
+        const escrow = this.deriveMatchEscrowPda(matchPdaBase58);
+        const escrowToken = this.deriveMatchEscrowTokenPda(matchPdaBase58);
+        const playerAta = this.derivePlayerAta(playerBase58, mintBase58);
+        const disc = this.discriminator('join_match_join_skr');
+        const data = disc;
+        const accounts: AnchorAccountMetaInput[] = [
+            { pubkeyBase58: playerBase58,      isSigner: true,  isWritable: true  },
+            { pubkeyBase58: matchPdaBase58,    isSigner: false, isWritable: true  },
+            { pubkeyBase58: escrow,            isSigner: false, isWritable: true  },
+            { pubkeyBase58: mintBase58,        isSigner: false, isWritable: false },
+            { pubkeyBase58: escrowToken,       isSigner: false, isWritable: true  },
+            { pubkeyBase58: playerAta,         isSigner: false, isWritable: true  },
+            { pubkeyBase58: TOKEN_PROGRAM_ID,  isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
+        ];
+        const bytes = buildAnchorTransaction(PROGRAM_ID, accounts, data, playerBase58, blockhash);
+        console.log(`${TAG} buildJoinMatchJoinSkrTx | DONE player=${playerBase58} match=${matchPdaBase58} mint=${mintBase58} tx_bytes=${bytes.length}`);
+        return bytes;
+    }
+
+    /**
+     * Build unsigned settle_match_verified_skr tx — Ed25519 precompile +
+     * Anchor ix in a single atomic transaction.
+     *
+     * Caller responsibilities:
+     *   - Pass `allPlayersBase58` in match.players[0..N] order (UserStats
+     *     PDAs are derived per-player here).
+     *   - Pass `payoutRecipientsBase58` in rank order (1st, 2nd, ...) of
+     *     length K = mode.payoutBps.length. Each recipient's SKR ATA is
+     *     derived here. **The recipient ATAs MUST exist** before this tx
+     *     runs — preflight `buildEnsureAtaTx` for any winner who hasn't
+     *     held SKR before.
+     *
+     * Account order matches `SettleMatchVerifiedSkr`:
+     *   [player, match, match_escrow, mint, match_escrow_token, treasury,
+     *    treasury_token, leaderboard, ix_sysvar, token_program,
+     *    associated_token_program, system_program, rent]
+     * Remaining accounts (N + K):
+     *   [stats_p0..stats_pN-1, recipient_ata_1..recipient_ata_K]
+     */
+    static buildSettleMatchVerifiedSkrTx(
+        playerBase58: string,
+        matchPdaBase58: string,
+        matchModeU8: number,
+        mintBase58: string,
+        height: number,
+        signedAt: number,
+        ed25519IxDataB64: string,
+        allPlayersBase58: string[],
+        payoutRecipientsBase58: string[],
+        blockhash: string,
+    ): Uint8Array {
+        const escrow = this.deriveMatchEscrowPda(matchPdaBase58);
+        const escrowToken = this.deriveMatchEscrowTokenPda(matchPdaBase58);
+        const treasury = this.deriveTreasuryPda();
+        const treasuryToken = this.deriveTreasuryTokenAta(mintBase58);
+        const leaderboard = deriveModeLeaderboardPda(matchModeU8);
+
+        const ed25519Data = base64ToBytes(ed25519IxDataB64);
+        const ed25519Ix: RawInstructionInput = {
+            programIdBase58: ED25519_PROGRAM_ID,
+            accounts: [],
+            data: ed25519Data,
+        };
+
+        const disc = this.discriminator('settle_match_verified_skr');
+        const argBytes = new Uint8Array(4 + 8);
+        argBytes[0] = height & 0xff;
+        argBytes[1] = (height >> 8) & 0xff;
+        argBytes[2] = (height >> 16) & 0xff;
+        argBytes[3] = (height >> 24) & 0xff;
+        argBytes.set(u64LeBytes(BigInt(signedAt)), 4);
+        const data = concat(disc, argBytes);
+
+        const accounts: AnchorAccountMetaInput[] = [
+            { pubkeyBase58: playerBase58,                isSigner: true,  isWritable: true  },
+            { pubkeyBase58: matchPdaBase58,              isSigner: false, isWritable: true  },
+            { pubkeyBase58: escrow,                      isSigner: false, isWritable: true  },
+            { pubkeyBase58: mintBase58,                  isSigner: false, isWritable: false },
+            { pubkeyBase58: escrowToken,                 isSigner: false, isWritable: true  },
+            { pubkeyBase58: treasury,                    isSigner: false, isWritable: true  },
+            { pubkeyBase58: treasuryToken,               isSigner: false, isWritable: true  },
+            { pubkeyBase58: leaderboard,                 isSigner: false, isWritable: true  },
+            { pubkeyBase58: SYSVAR_INSTRUCTIONS_ID,      isSigner: false, isWritable: false },
+            { pubkeyBase58: TOKEN_PROGRAM_ID,            isSigner: false, isWritable: false },
+            { pubkeyBase58: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSTEM_PROGRAM_ID,           isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSVAR_RENT_ID,              isSigner: false, isWritable: false },
+        ];
+        for (const p of allPlayersBase58) {
+            accounts.push({ pubkeyBase58: this.deriveUserStatsPda(p), isSigner: false, isWritable: true });
+        }
+        for (const r of payoutRecipientsBase58) {
+            accounts.push({ pubkeyBase58: this.derivePlayerAta(r, mintBase58), isSigner: false, isWritable: true });
+        }
+
+        const anchorIx: RawInstructionInput = {
+            programIdBase58: PROGRAM_ID,
+            accounts,
+            data,
+        };
+
+        const bytes = buildMultiIxTransaction([ed25519Ix, anchorIx], playerBase58, blockhash);
+        console.log(`${TAG} buildSettleMatchVerifiedSkrTx | DONE player=${playerBase58} match=${matchPdaBase58} mint=${mintBase58} h=${height} signed_at=${signedAt} n_stats=${allPlayersBase58.length} k_payouts=${payoutRecipientsBase58.length} tx_bytes=${bytes.length}`);
+        return bytes;
+    }
+
+    /**
+     * Build unsigned cancel_match_skr tx. Account order matches
+     * `CancelMatchSkr`:
+     *   [canceller, match, match_escrow, mint, match_escrow_token,
+     *    refund_recipient_ata, token_program, system_program]
+     *
+     * `refundRecipientBase58` is the WALLET pubkey of the creator (slot 0);
+     * the ATA is derived here.
+     */
+    static buildCancelMatchSkrTx(
+        cancellerBase58: string,
+        matchPdaBase58: string,
+        mintBase58: string,
+        refundRecipientBase58: string,
+        blockhash: string,
+    ): Uint8Array {
+        const escrow = this.deriveMatchEscrowPda(matchPdaBase58);
+        const escrowToken = this.deriveMatchEscrowTokenPda(matchPdaBase58);
+        const refundAta = this.derivePlayerAta(refundRecipientBase58, mintBase58);
+        const disc = this.discriminator('cancel_match_skr');
+        const data = disc;
+        const accounts: AnchorAccountMetaInput[] = [
+            { pubkeyBase58: cancellerBase58,    isSigner: true,  isWritable: false },
+            { pubkeyBase58: matchPdaBase58,     isSigner: false, isWritable: true  },
+            { pubkeyBase58: escrow,             isSigner: false, isWritable: true  },
+            { pubkeyBase58: mintBase58,         isSigner: false, isWritable: false },
+            { pubkeyBase58: escrowToken,        isSigner: false, isWritable: true  },
+            { pubkeyBase58: refundAta,          isSigner: false, isWritable: true  },
+            { pubkeyBase58: TOKEN_PROGRAM_ID,   isSigner: false, isWritable: false },
+            { pubkeyBase58: SYSTEM_PROGRAM_ID,  isSigner: false, isWritable: false },
+        ];
+        const bytes = buildAnchorTransaction(PROGRAM_ID, accounts, data, cancellerBase58, blockhash);
+        console.log(`${TAG} buildCancelMatchSkrTx | DONE canceller=${cancellerBase58} match=${matchPdaBase58} mint=${mintBase58} refund_to=${refundRecipientBase58} ata=${refundAta} tx_bytes=${bytes.length}`);
         return bytes;
     }
 }

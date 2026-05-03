@@ -36,6 +36,13 @@ export interface MatchState {
     escrowBump: number;
     /** Part 9: 0=1h, 1=24h, 2=3d, 3=7d. */
     timeWindow: number;
+    /** betting-duel: wager-currency mint base58. All-zeros (the system
+     *  program ID `11111111111111111111111111111111`) means native SOL;
+     *  any other value identifies the SPL mint (e.g. `SKRbvo6...`). */
+    wagerMint: string;
+    /** Convenience derive: `'SOL'` when `wagerMint` is the all-zero
+     *  default, `'SKR'` otherwise. */
+    wagerCurrency: 'SOL' | 'SKR';
 }
 
 export interface CounterState {
@@ -74,20 +81,25 @@ function b64ToBytes(b64: string): Uint8Array {
 
 /**
  * Parse a Match account's raw bytes (includes Anchor's 8-byte discriminator).
- * Part 9 layout (after discriminator):
+ * Layout (after discriminator):
  *   mode u8, wager_tier u8, wager_lamports u64, xp_bucket u16,
  *   required_players u8, player_count u8, players [Pubkey; 10],
  *   heights [u32; 10], settled_count u8, created_at i64, started_at i64,
  *   closed_at i64, status u8, seq u64, bump u8, escrow_bump u8,
- *   time_window u8
- * Total: 8 + 411 = 419 bytes. `time_window` sits at byte offset 418 and
- * is the memcmp target for per-window match discovery.
+ *   time_window u8, wager_mint Pubkey
+ * Total: 8 + 443 = 451 bytes. `time_window` sits at byte offset 418
+ * (memcmp target for per-window match discovery); `wager_mint` follows
+ * at offset 419..451 (memcmp target for per-currency filtering, added
+ * on the betting-duel branch).
  */
 const MATCH_MAX_PLAYERS = 10;
 export const MATCH_TIME_WINDOW_OFFSET = 418;
+export const MATCH_WAGER_MINT_OFFSET = 419;
+
+const NATIVE_SOL_MINT_BASE58 = '11111111111111111111111111111111';
 
 export function parseMatchAccount(pdaBase58: string, raw: Uint8Array): MatchState | null {
-    if (raw.length < 8 + 411) {
+    if (raw.length < 8 + 443) {
         console.log(`${TAG} parseMatchAccount | TOO_SHORT bytes=${raw.length} pda=${pdaBase58}`);
         return null;
     }
@@ -115,8 +127,15 @@ export function parseMatchAccount(pdaBase58: string, raw: Uint8Array): MatchStat
     const bump = raw[o]; o += 1;
     const escrowBump = raw[o]; o += 1;
     const timeWindow = raw[o]; o += 1;
+    const wagerMint = base58Encode(raw.subarray(o, o + 32)); o += 32;
+    const wagerCurrency: 'SOL' | 'SKR' =
+        wagerMint === NATIVE_SOL_MINT_BASE58 ? 'SOL' : 'SKR';
 
-    return { pda: pdaBase58, mode, wagerTier, wagerLamports, xpBucket, requiredPlayers, playerCount, players, heights, settledCount, createdAt, startedAt, closedAt, status, seq, bump, escrowBump, timeWindow };
+    return {
+        pda: pdaBase58, mode, wagerTier, wagerLamports, xpBucket, requiredPlayers,
+        playerCount, players, heights, settledCount, createdAt, startedAt, closedAt,
+        status, seq, bump, escrowBump, timeWindow, wagerMint, wagerCurrency,
+    };
 }
 
 /**
@@ -218,10 +237,19 @@ export async function findAllOpenMatchesUnfiltered(
     const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
         { dataSize: MATCH_ACCOUNT_BYTES },
     ]);
-    const parsed = raw
-        .map((r) => parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64)))
-        .filter((m): m is MatchState => m !== null)
-        .filter((m) => m.status === 0 && m.playerCount < m.requiredPlayers);
+    // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap.
+    // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage G.
+    const decoded: MatchState[] = [];
+    for (const r of raw) {
+        try {
+            const m = parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64));
+            if (m) decoded.push(m);
+        } catch (e: any) {
+            const stk = (e?.stack ?? '').split('\n').slice(0, 4).map((s: string) => s.trim()).join(' | ');
+            console.log(`[StormTrap] phase=parseMatchAccount.findAllOpen pda=${r.pubkey.slice(0, 8)} ERROR=${e?.message ?? e} stack=${stk}`);
+        }
+    }
+    const parsed = decoded.filter((m) => m.status === 0 && m.playerCount < m.requiredPlayers);
     parsed.sort((a, b) => Number(a.createdAt - b.createdAt));
     console.log(`${TAG} findAllOpenMatchesUnfiltered | DONE scanned=${raw.length} open=${parsed.length}`);
     return parsed;
@@ -240,10 +268,22 @@ export async function findActiveMatchesUnfiltered(
     const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
         { dataSize: MATCH_ACCOUNT_BYTES },
     ]);
-    const parsed = raw
-        .map((r) => parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64)))
-        .filter((m): m is MatchState => m !== null)
-        .filter((m) => m.status === 1);
+    // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap.
+    // The post-game-over [SE_ERROR] storm fires immediately after this
+    // call returns 3 accounts; one of them likely has a malformed layout
+    // causing parseMatchAccount or downstream UI updates to throw.
+    // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage G.
+    const decoded: MatchState[] = [];
+    for (const r of raw) {
+        try {
+            const m = parseMatchAccount(r.pubkey, b64ToBytes(r.dataBase64));
+            if (m) decoded.push(m);
+        } catch (e: any) {
+            const stk = (e?.stack ?? '').split('\n').slice(0, 4).map((s: string) => s.trim()).join(' | ');
+            console.log(`[StormTrap] phase=parseMatchAccount.findActive pda=${r.pubkey.slice(0, 8)} ERROR=${e?.message ?? e} stack=${stk}`);
+        }
+    }
+    const parsed = decoded.filter((m) => m.status === 1);
     parsed.sort((a, b) => Number(b.startedAt - a.startedAt));
     console.log(`${TAG} findActiveMatchesUnfiltered | DONE scanned=${raw.length} active=${parsed.length}`);
     return parsed;

@@ -157,6 +157,15 @@ export function recordLocalHistory(row: PaperMatchHistoryRow): void {
     console.log(`${TAG} local | id=${row.id.slice(0, 18)}… pk=${row.pubkey.slice(0, 8)}… won=${row.won} placement=${row.placement + 1}/${row.totalPlayers} xp=${row.xpGained}`);
 }
 
+/**
+ * Diagnostic helper — returns count of rows currently in the localStorage
+ * mirror. Used by the [HIST_DBG] instrumentation to confirm the local-mirror
+ * write actually persisted. No side effects.
+ */
+export function peekLocalCount(): number {
+    return readLocalAll().length;
+}
+
 export async function listPaperMatchHistory(
     pubkey: string,
     limit = 50,
@@ -168,6 +177,10 @@ export async function listPaperMatchHistory(
     if (offset > 0) return backend;
 
     const local = readLocalAll().filter((r) => r.pubkey === pubkey);
+    // [HIST_DBG] split-decision diagnostic — distinguishes empty-backend vs
+    // empty-local-mirror so the History-tab decision tree can route to the
+    // right fix (write-path vs read-path). Per ~/.claude/plans/cached-growing-leaf.md.
+    console.log(`${TAG} list | backend=${backend.length} local=${local.length} pubkey=${pubkey.slice(0, 8)}…`);
     if (local.length === 0) return backend;
 
     const seen = new Set<string>();

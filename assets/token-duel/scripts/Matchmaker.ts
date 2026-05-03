@@ -17,6 +17,7 @@ import { Stats } from './Stats';
 import { TokenDuelRpc } from './TokenDuelRpc';
 import { AnchorBackend } from './AnchorBackend';
 import { findOpenMatches, getMatch, getMatchCounter, MatchState } from './MatchRpc';
+import { skrMintForCluster, type WagerCurrency } from './WagerCurrency';
 import { computeModePayout, xpForPlacement } from './PayoutCalc';
 import { encodeDeltaPct } from './ScoreEncoding';
 import { sampleInstantBotOutcome, BotSquadEntry } from './SquadBot';
@@ -167,26 +168,42 @@ export async function resolveRealMatchAction(opts: {
     /** Phase A: build a join tx for this exact match PDA (browser explicit join).
      *  When set, `findOpenMatches` is bypassed and `forceCreate` is ignored. */
     explicitMatchPda?: string;
+    /** betting-duel: wager currency. Defaults to 'SOL' (existing flow).
+     *  When 'SKR', the SPL twin ix path (`join_match_*_skr`) is used and
+     *  open-match discovery filters by `wagerCurrency === 'SKR'` so SOL
+     *  and SKR lobbies never cross-match. */
+    wagerCurrency?: WagerCurrency;
 }): Promise<RealMatchResolution> {
-    console.log(`${TAG} resolveRealMatchAction | START player=${opts.playerPubkey} mode=${opts.mode} tier=${opts.wagerTierIndex} xp_bucket=${opts.xpBucket} window=${opts.timeWindow} forceCreate=${opts.forceCreate ? 'yes' : 'no'} explicit=${opts.explicitMatchPda ?? 'none'}`);
+    const currency: WagerCurrency = opts.wagerCurrency ?? 'SOL';
+    console.log(`${TAG} resolveRealMatchAction | START player=${opts.playerPubkey} mode=${opts.mode} tier=${opts.wagerTierIndex} currency=${currency} xp_bucket=${opts.xpBucket} window=${opts.timeWindow} forceCreate=${opts.forceCreate ? 'yes' : 'no'} explicit=${opts.explicitMatchPda ?? 'none'}`);
     const modeDef = MODES[opts.mode];
     const modeU8 = modeDef.modeU8;
+    const skrMint = currency === 'SKR' ? skrMintForCluster() : '';
+    if (currency === 'SKR' && !skrMint) {
+        throw new Error('SKR mint not configured for current cluster (devnet test-mint missing)');
+    }
 
     if (opts.explicitMatchPda) {
-        const tx = AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, opts.explicitMatchPda, opts.blockhash);
-        console.log(`${TAG} resolveRealMatchAction | JOIN_EXPLICIT match=${opts.explicitMatchPda}`);
+        const tx = currency === 'SKR'
+            ? AnchorBackend.buildJoinMatchJoinSkrTx(opts.playerPubkey, opts.explicitMatchPda, skrMint, opts.blockhash)
+            : AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, opts.explicitMatchPda, opts.blockhash);
+        console.log(`${TAG} resolveRealMatchAction | JOIN_EXPLICIT match=${opts.explicitMatchPda} currency=${currency}`);
         return { action: 'join', matchPda: opts.explicitMatchPda, seq: 0n, txBytes: tx, blockhash: opts.blockhash };
     }
 
     if (!opts.forceCreate) {
         const open = await findOpenMatches(opts.rpc, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow);
-        const joinable = open.filter((m) => !m.players.includes(opts.playerPubkey));
+        // Filter by currency so SOL and SKR lobbies never cross-match.
+        const sameCurrency = open.filter((m) => m.wagerCurrency === currency);
+        const joinable = sameCurrency.filter((m) => !m.players.includes(opts.playerPubkey));
         joinable.sort((a, b) => Number(a.createdAt - b.createdAt));
 
         if (joinable.length > 0) {
             const target = joinable[0];
-            const tx = AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, target.pda, opts.blockhash);
-            console.log(`${TAG} resolveRealMatchAction | JOIN match=${target.pda} seq=${target.seq}`);
+            const tx = currency === 'SKR'
+                ? AnchorBackend.buildJoinMatchJoinSkrTx(opts.playerPubkey, target.pda, skrMint, opts.blockhash)
+                : AnchorBackend.buildJoinMatchJoinTx(opts.playerPubkey, target.pda, opts.blockhash);
+            console.log(`${TAG} resolveRealMatchAction | JOIN match=${target.pda} seq=${target.seq} currency=${currency}`);
             return { action: 'join', matchPda: target.pda, seq: target.seq, txBytes: tx, blockhash: opts.blockhash };
         }
     }
@@ -194,10 +211,14 @@ export async function resolveRealMatchAction(opts: {
     const counter = await getMatchCounter(opts.rpc);
     const seq = counter?.seq ?? 0n;
     const matchPda = AnchorBackend.deriveMatchPda(modeU8, opts.wagerTierIndex, seq);
-    const tx = AnchorBackend.buildJoinMatchCreateTx(
-        opts.playerPubkey, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow, seq, opts.blockhash,
-    );
-    console.log(`${TAG} resolveRealMatchAction | CREATE seq=${seq} match=${matchPda} forced=${opts.forceCreate ? 'yes' : 'no'}`);
+    const tx = currency === 'SKR'
+        ? AnchorBackend.buildJoinMatchCreateSkrTx(
+            opts.playerPubkey, skrMint, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow, seq, opts.blockhash,
+        )
+        : AnchorBackend.buildJoinMatchCreateTx(
+            opts.playerPubkey, modeU8, opts.wagerTierIndex, opts.xpBucket, opts.timeWindow, seq, opts.blockhash,
+        );
+    console.log(`${TAG} resolveRealMatchAction | CREATE seq=${seq} match=${matchPda} currency=${currency} forced=${opts.forceCreate ? 'yes' : 'no'}`);
     return { action: 'create', matchPda, seq, txBytes: tx, blockhash: opts.blockhash };
 }
 
@@ -255,6 +276,8 @@ export async function joinOrCreateWithRetry(opts: {
     forceCreate?: boolean;
     /** Phase A: explicit-join from the FindMatchPanel browser. */
     explicitMatchPda?: string;
+    /** betting-duel: wager currency (defaults to 'SOL'). */
+    wagerCurrency?: WagerCurrency;
 }): Promise<JoinOrCreateResult> {
     const maxRetries = opts.maxRetries ?? 3;
     let lastError: Error = new Error('no attempts');
@@ -270,6 +293,7 @@ export async function joinOrCreateWithRetry(opts: {
             blockhash,
             forceCreate: opts.forceCreate,
             explicitMatchPda: opts.explicitMatchPda,
+            wagerCurrency: opts.wagerCurrency,
         });
         console.log(`${TAG} joinOrCreateWithRetry | attempt=${attempt} action=${resolved.action} seq=${resolved.seq} match=${resolved.matchPda}`);
         try {

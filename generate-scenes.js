@@ -3360,6 +3360,9 @@ function generate() {
     // y=-14 (lower half of new 72h pill) so the WAGER caption can sit above it.
     style(sb, tdWagerValueBtn, { bold: true, fontSize: 22, color: cl(255, 210, 74, 255), spacing: 1 });
     sb.e[tdWagerValueBtn + 1]._lpos = v3(0, -14, 0); // existing 'Label' child
+    // Shrink the value-Label's UITransform from full pill (240×72) → bottom
+    // half (240×36) so it doesn't bbox-overlap the new WAGER caption above.
+    sb.e[tdWagerValueBtn + 5]._contentSize = sz(240, 36);
     // WagerCaptionLabel — 10pt micro caps "WAGER" gold-dim, sits above value.
     const tdWagerCaption = mkLabel(sb, 'WagerCaptionLabel', tdWagerValueBtn, 'WAGER', 10, 18,
         120, 14, 255, 210, 74);
@@ -3369,6 +3372,9 @@ function generate() {
     sb.e[sb.e[tdWagerCaption]._components[1].__id__]._color = cl(255, 210, 74, 180);
     // 2026-05-01 r3 — top-edge accent stripe for "decisive primary" read.
     const tdWagerValueEdge = mkCardEdge(sb, tdWagerValueBtn, TDE.wagerValueButton.w, TDE.wagerValueButton.h, 255, 210, 74, 200);
+    // mkLabel + mkCardEdge don't auto-parent — append both to the button's
+    // _children so the engine actually traverses them at runtime.
+    sb.e[tdWagerValueBtn]._children = [...(sb.e[tdWagerValueBtn]._children ?? []), rf(tdWagerCaption), rf(tdWagerValueEdge)];
     // 2026-04-30 — clone Home FindMatch styling exactly: teal base + tier=primary
     // (glow alpha 110, pad 16, idle pulse + ripple), 32 pt label, shimmer sweep.
     // Only the size differs (640×64 vs FindMatch 680×136) to fit picker layout.
@@ -3431,11 +3437,19 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    const tdWagerLockLabel = mkLabel(sb, 'WagerLockChipLabel', tdWagerLockChip, '🔒 0.05 SOL', 16, 0,
-        TDE.wagerLockChip.w - 24, TDE.wagerLockChip.h - 12, 255, 210, 74);
+    // 2026-05-02 Pass 2 — stacked WAGER (LOCKED) caption + 🔒 0.05 SOL value
+    // line; mirrors WagerValueButton layout for cross-mode consistency.
+    const tdWagerLockCaption = mkLabel(sb, 'WagerLockCaption', tdWagerLockChip, 'WAGER (LOCKED)', 10, 18,
+        TDE.wagerLockChip.w - 24, 14, 255, 210, 74);
+    sb.e[tdWagerLockCaption]._lpos = v3(0, 18, 0);
+    sb.e[sb.e[tdWagerLockCaption]._components[1].__id__]._isBold = true;
+    sb.e[sb.e[tdWagerLockCaption]._components[1].__id__]._spacingX = 2;
+    sb.e[sb.e[tdWagerLockCaption]._components[1].__id__]._color = cl(255, 210, 74, 180);
+    const tdWagerLockLabel = mkLabel(sb, 'WagerLockChipLabel', tdWagerLockChip, '🔒 0.05 SOL', 22, -14,
+        TDE.wagerLockChip.w - 24, 28, 255, 210, 74);
     sb.e[sb.e[tdWagerLockLabel]._components[1].__id__]._isBold = true;
     sb.e[tdWagerLockChip]._components = [rf(tdWagerLockUT), rf(tdWagerLockSpr)];
-    sb.e[tdWagerLockChip]._children = [rf(tdWagerLockLabel)];
+    sb.e[tdWagerLockChip]._children = [rf(tdWagerLockCaption), rf(tdWagerLockLabel)];
     sb.e[tdWagerLockChip]._active = false;
 
     // ── WagerBotChip — BOT-MODE only ───────────────────────────────────
@@ -3457,12 +3471,20 @@ function generate() {
         _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
         _id: gid(),
     });
-    // 2026-04-30 v2 — chip shrunk 200→120 wide; shorter copy "🤖 BOT" fits the smaller square.
-    const tdWagerBotLabel = mkLabel(sb, 'WagerBotChipLabel', tdWagerBotChip, '🤖 BOT', 16, 0,
-        TDE.wagerBotChip.w - 24, TDE.wagerBotChip.h - 12, 255, 92, 138);
+    // 2026-05-02 Pass 2 — stacked MODE caption + 🤖 FREE PLAY value line;
+    // mirrors WagerValueButton layout (no stake to declare in bot mode, so
+    // caption shifts MODE and value shifts to FREE PLAY).
+    const tdWagerBotCaption = mkLabel(sb, 'WagerBotCaption', tdWagerBotChip, 'MODE', 10, 18,
+        TDE.wagerBotChip.w - 24, 14, 255, 92, 138);
+    sb.e[tdWagerBotCaption]._lpos = v3(0, 18, 0);
+    sb.e[sb.e[tdWagerBotCaption]._components[1].__id__]._isBold = true;
+    sb.e[sb.e[tdWagerBotCaption]._components[1].__id__]._spacingX = 2;
+    sb.e[sb.e[tdWagerBotCaption]._components[1].__id__]._color = cl(255, 92, 138, 180);
+    const tdWagerBotLabel = mkLabel(sb, 'WagerBotChipLabel', tdWagerBotChip, '🤖 FREE PLAY', 22, -14,
+        TDE.wagerBotChip.w - 24, 28, 255, 92, 138);
     sb.e[sb.e[tdWagerBotLabel]._components[1].__id__]._isBold = true;
     sb.e[tdWagerBotChip]._components = [rf(tdWagerBotUT), rf(tdWagerBotSpr)];
-    sb.e[tdWagerBotChip]._children = [rf(tdWagerBotLabel)];
+    sb.e[tdWagerBotChip]._children = [rf(tdWagerBotCaption), rf(tdWagerBotLabel)];
     sb.e[tdWagerBotChip]._active = false;
 
     // WagerDropdown — 8 tier rows, opens upward from WagerValueButton.
@@ -3505,6 +3527,73 @@ function generate() {
         style(sb, introRowN, { color: GOLD() });
     }
     sb.e[tdWagerDropdown]._children = wagerDropdownRows.map(rf);
+
+    // ── betting-duel ($SKR): WagerCurrencyButton + WagerCurrencyDropdown ────
+    // Mirrors the pattern of WagerValueButton above. Caption "WAGER IN",
+    // body shows the active currency code + ▾. AppUI._onWagerCurrencyTap
+    // toggles the dropdown; _onWagerCurrencyRowTap updates the active
+    // currency, swaps the icon sprite frame, and rebuilds the value-tier
+    // label set. SpriteFrames for the coin icons are set at runtime in
+    // AppUI.start() via `_resolveAssetSpriteFrame('icons/sol' | 'icons/skr')`.
+    const tdWagerCurrencyBtn = mkBtnXY(sb, 'WagerCurrencyButton', tdN, 'SOL  ▾',
+        TDE.wagerCurrencyButton.x, TDE.wagerCurrencyButton.y,
+        TDE.wagerCurrencyButton.w, TDE.wagerCurrencyButton.h, 44, 24, 64);
+    style(sb, tdWagerCurrencyBtn, { bold: true, fontSize: 22, color: cl(255, 210, 74, 255), spacing: 1 });
+    sb.e[tdWagerCurrencyBtn + 1]._lpos = v3(20, -14, 0); // 'Label' child — shifted right of icon
+    sb.e[tdWagerCurrencyBtn + 5]._contentSize = sz(160, 36);
+    const tdWagerCurrencyCaption = mkLabel(sb, 'WagerCurrencyCaptionLabel', tdWagerCurrencyBtn, 'WAGER IN', 10, 18,
+        160, 14, 255, 210, 74);
+    sb.e[tdWagerCurrencyCaption]._lpos = v3(0, 18, 0);
+    sb.e[sb.e[tdWagerCurrencyCaption]._components[1].__id__]._isBold = true;
+    sb.e[sb.e[tdWagerCurrencyCaption]._components[1].__id__]._spacingX = 2;
+    sb.e[sb.e[tdWagerCurrencyCaption]._components[1].__id__]._color = cl(255, 210, 74, 180);
+    // Icon sprite child — AppUI swaps the SpriteFrame between sol.png / skr.png.
+    const tdWagerCurrencyIcon = sb.e.length;
+    sb.node('WagerCurrencyIcon', tdWagerCurrencyBtn, [], [], v3(-60, -14, 0));
+    const tdWagerCurrencyIconUT = sb.ut(tdWagerCurrencyIcon, 28, 28);
+    const tdWagerCurrencyIconSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(tdWagerCurrencyIcon), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(255, 255, 255, 255),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 0, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[tdWagerCurrencyIcon]._components = [rf(tdWagerCurrencyIconUT), rf(tdWagerCurrencyIconSpr)];
+    const tdWagerCurrencyEdge = mkCardEdge(sb, tdWagerCurrencyBtn,
+        TDE.wagerCurrencyButton.w, TDE.wagerCurrencyButton.h, 255, 210, 74, 200);
+    sb.e[tdWagerCurrencyBtn]._children = [
+        ...(sb.e[tdWagerCurrencyBtn]._children ?? []),
+        rf(tdWagerCurrencyCaption),
+        rf(tdWagerCurrencyIcon),
+        rf(tdWagerCurrencyEdge),
+    ];
+
+    // WagerCurrencyDropdown — 2 rows (SOL + SKR), opens upward from
+    // WagerCurrencyButton.
+    const WCDR = TDT.wagerCurrencyDropdownRow;
+    const tdWagerCurrencyDropdown = sb.e.length;
+    const currencyDropdownH = WCDR.count * WCDR.rowH + WCDR.padding * 2;
+    sb.node('WagerCurrencyDropdown', tdN, [], [],
+        v3(TDE.wagerCurrencyDropdown.x, TDE.wagerCurrencyDropdown.y, 0));
+    const currencyDropdownUT = sb.ut(tdWagerCurrencyDropdown,
+        TDE.wagerCurrencyDropdown.w, currencyDropdownH);
+    sb.e[currencyDropdownUT]._anchorPoint = v2(0.5, 0);
+    const currencyDropdownSpr = sb.spr(tdWagerCurrencyDropdown, 18, 22, 32);
+    sb.e[tdWagerCurrencyDropdown]._components = [rf(currencyDropdownUT), rf(currencyDropdownSpr)];
+    sb.e[tdWagerCurrencyDropdown]._active = false;
+
+    const wagerCurrencyDropdownRows = [];
+    for (let i = 0; i < WCDR.count; i++) {
+        const rowLocalY = currencyDropdownH - WCDR.padding - (i + 0.5) * WCDR.rowH;
+        const rowN = mkBtnXY(sb, `WagerCurrencyRow_${i}`, tdWagerCurrencyDropdown, WCDR.labels[i],
+                             0, rowLocalY, WCDR.w, WCDR.h, 36, 16, 48);
+        wagerCurrencyDropdownRows.push(rowN);
+    }
+    sb.e[tdWagerCurrencyDropdown]._children = wagerCurrencyDropdownRows.map(rf);
 
     // Hero tile stub indices — placeholders kept at (-999, -999) only so the
     // children-list patch below doesn't shift. Hero tiles were deleted in
@@ -4800,6 +4889,8 @@ function generate() {
         rf(tdCommit), rf(tdStartGame), rf(tdClaim),
         rf(tdWagerDivider),                                   // 2026-04-29b — hairline above stake+CTA commitment row
         rf(tdWagerValueBtn), rf(tdWagerStartGlow), rf(tdWagerStartBtn), rf(tdWagerHint), rf(tdWagerLockChip), rf(tdWagerBotChip), rf(tdWagerDropdown),
+        rf(tdWagerCurrencyBtn), rf(tdWagerCurrencyDropdown),  // betting-duel ($SKR) currency picker — left half of the stake-pill row + its popover
+
         rf(tdHero1), rf(tdHero2), rf(tdHero3),
         rf(h1N), rf(h2N), rf(h3N),
         rf(tdGameArea), rf(tdGameOver),                       // 2026-04-29: racePanelN moved to canvas root
@@ -5942,6 +6033,14 @@ function generate() {
     const mipSubtitle = mkLabel(sb, 'MatchesInProgressSubtitleLabel', mipN, 'All clear', 18,
         MIPE.subtitle.y, MIPE.subtitle.w, MIPE.subtitle.h, 255, 255, 255);
 
+    // 2026-05-02 — header LIVE dot. Sits just left of the centered subtitle
+    // ("LIVE NOW" when n>=1). AppUI toggles active + alpha-pulses on a 2s
+    // cycle in sync with per-row LIVE dots. Hidden by default (n=0).
+    const mipHeaderLiveDotN = mipSolidSprite('MIPHeaderLiveDot', mipN,
+        -58, MIPE.subtitle.y, 10, 10,
+        48, 198, 155, 255);
+    sb.e[mipHeaderLiveDotN]._active = false;
+
     // Empty-state cluster — toggled by AppUI when 0 active matches.
     const mipEmptyN = sb.e.length;
     sb.node('MIPEmptyState', mipN, [], [], v3(MIPE.emptyState.x, MIPE.emptyState.y, 0));
@@ -6113,10 +6212,28 @@ function generate() {
             55, 65, 85);
         style(sb, detailsBtnN, { bold: true });
 
+        // 2026-05-02 — "Live Battle" v3 hero centerpiece. Big timer (64pt gold
+        // bold) + phase microcopy (18pt slate). Default inactive on all rows;
+        // AppUI._applyMipHeroVisibility activates row 0 only when n=1.
+        // Scaffolded for all 6 rows for layout symmetry — node creation cost
+        // at boot is tiny vs runtime add+component cycle.
+        const bigTimerN = mkLabel(sb, `MIPBigTimer_${i}`, rowN, '', 64,
+            40, 480, 80, 255, 210, 74);
+        sb.e[bigTimerN]._lpos = v3(0, 40, 0);
+        sb.e[bigTimerN]._active = false;
+        style(sb, bigTimerN, { bold: true, mono: true });
+
+        const bigPhaseN = mkLabel(sb, `MIPBigPhase_${i}`, rowN, '', 18,
+            -28, 400, 24, 184, 184, 184);
+        sb.e[bigPhaseN]._lpos = v3(0, -28, 0);
+        sb.e[bigPhaseN]._active = false;
+
         // Z-order: cardGlow → cardBg → tap → edge → progressTrack → progressFill
         // → resumeGlow → resumeBtn → detailsBtn → liveGlow → liveDot → liveLabel → text labels.
         // (Resume glow under button so the button's solid fill draws on top.
         // Live glow sits ABOVE progress so the halo isn't hidden by the bar.)
+        // BigTimer/BigPhase ride on top of the card chrome (above edge but
+        // below text labels) so the centerpiece reads through the urgent glow.
         sb.e[rowN]._children = [
             rf(cardGlowN), rf(cardBgN),
             rf(tapN), rf(edgeN),
@@ -6124,6 +6241,7 @@ function generate() {
             rf(resumeGlowN), rf(resumeBtnN), rf(detailsBtnN),
             rf(liveGlowN), rf(liveDotN), rf(liveLabelN),
             rf(vsLblN), rf(stakeChipN), rf(statusLabelN), rf(timeLblN),
+            rf(bigTimerN), rf(bigPhaseN),
         ];
         sb.e[rowN]._active = false;
         mipRows.push(rowN);
