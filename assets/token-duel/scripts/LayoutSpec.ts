@@ -100,8 +100,11 @@ export const UNIFORM_CARD = {
     NOTIFICATION_H:  92,
 } as const;
 
-// 2026-04-29 FindMatch UX rebuild (god-tier prompt). Strict vertical rhythm,
-// dominant primary CTA, FilterCard container, 4 tall lobby cards per page.
+// 2026-05-02 arena rebuild (Phase B). Filter section compacted ~324→180px:
+// Mode pill on its own row (full width 600), Duration + Stake side-by-side
+// on the second row (290w each), Hide-full toggle in the bottom band of
+// the filter card. Captions (Mode/Duration/Stake) hidden — pills are
+// self-evident at this size. CTA + lobby pool lift up to fill freed space.
 // One source of truth — both LayoutSpec.cjs (scene-gen) and AppUI runtime
 // must read y/w/h from this block so the layout cannot drift.
 export const FINDMATCH_LAYOUT = {
@@ -111,27 +114,24 @@ export const FINDMATCH_LAYOUT = {
     CARD_PADDING:    16,
     HEADER_Y:       750,   // back link / level chip
     TITLE_Y:        695,   // own row, no overlap with mode pill
-    STATUS_Y:       655,   // LIVE SYSTEM . N LOBBIES ACTIVE — runtime opacity 153
-    // 2026-04-30 UX rebuild — tabs lifted 590→615 so the active-tab glow halo
-    // (~16px alpha falloff) clears the FilterCard top edge by 24px instead of
-    // overlapping it by 3px. Filter section restructured to label-above-pill
-    // blocks (Mode / Duration / Stake), pills widen 440→600 (5×120w segments).
-    TABS_Y:         615,
-    FILTER_CARD:  { x: 0, y: 406, w: 640, h: 324 },
-    MODE_LABEL_Y:   541,   // label sits above pill (left-anchored caption)
-    MODE_ROW_Y:     502,   // pill centerY
-    WINDOW_LABEL_Y: 453,
-    WINDOW_ROW_Y:   414,
-    WAGER_LABEL_Y:  365,
-    WAGER_ROW_Y:    326,
-    HIDE_FULL_Y:    274,
-    PRIMARY_CTA_Y:  184,   // anchored as section divider between filters and lobby list
+    STATUS_Y:       655,   // "LIVE · N matches active now" — runtime opacity 230 when active
+    TABS_Y:         615,   // Open Lobbies / Live Now
+    FILTER_CARD:  { x: 0, y: 484, w: 640, h: 180 },
+    // Captions hidden in compact layout — pills are self-evident.
+    MODE_LABEL_Y:   -2000,
+    WINDOW_LABEL_Y: -2000,
+    WAGER_LABEL_Y:  -2000,
+    MODE_ROW_Y:     536,   // top row, full width (600w, 5 segs)
+    WINDOW_ROW_Y:   468,   // second row, left half (290w, x=-155)
+    WAGER_ROW_Y:    468,   // second row, right half (290w, x=+155)
+    HIDE_FULL_Y:    410,   // right-anchored chip inside filter card
+    PRIMARY_CTA_Y:  336,
     PRIMARY_CTA_W:  680,
     PRIMARY_CTA_H:   72,
-    ROW_BASE_Y:      54,   // first lobby card center
-    ROW_STRIDE_Y:  -156,   // 140h card + 16 gap
-    ROW_HEIGHT:     140,
-    PAGINATION_Y:  -508,
+    ROW_BASE_Y:     206,   // first lobby card center (lifted 54→206)
+    ROW_STRIDE_Y:  -156,   // 140h card + 16 gap (unchanged)
+    ROW_HEIGHT:     140,   // unchanged — internal sub-row offsets stay valid
+    PAGINATION_Y:  -360,   // 24px below row 3 bottom (-340)
 } as const;
 
 // 2026-04-29 PostMatch viewport-aware 3-zone resolver. Mirrors pm.zones
@@ -540,8 +540,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             fmWindowLabel:      { x: -300, y: FINDMATCH_LAYOUT.WINDOW_LABEL_Y, w: 200, h: 22, type: 'label' },
             fmWagerLabel:       { x: -300, y: FINDMATCH_LAYOUT.WAGER_LABEL_Y,  w: 200, h: 22, type: 'label' },
             segmentMountMode:   { x: 0,    y: FINDMATCH_LAYOUT.MODE_ROW_Y,   w: 600, h: 44, type: 'group' },
-            segmentMountWindow: { x: 0,    y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 600, h: 44, type: 'group' },
-            segmentMountWager:  { x: 0,    y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 600, h: 44, type: 'group' },
+            segmentMountWindow: { x: -155, y: FINDMATCH_LAYOUT.WINDOW_ROW_Y, w: 290, h: 44, type: 'group' },
+            segmentMountWager:  { x:  155, y: FINDMATCH_LAYOUT.WAGER_ROW_Y,  w: 290, h: 44, type: 'group' },
             hideFullToggle:     { x: 240,  y: FINDMATCH_LAYOUT.HIDE_FULL_Y,  w: 120, h: 28, type: 'btnPrimary' },
             // Top-right level chip; AppUI applies UIOpacity 178 (~70%) so it
             // does not compete with the title for visual weight.
@@ -582,8 +582,10 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 685, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
             // 2026-04-29 token-picker rebuild — title raised 570→560, w 320→360, h 36→48.
             title:           { x: 0,    y: 560,  w: 360, h: 48, type: 'label' },
-            // 2026-04-29 — moved 540→520 to clear bbox of larger title (h:36→48 at y:560).
-            headerUnderline: { x: 0,    y: 520,  w: 712, h: 2,  type: 'sprite' },
+            // 2026-05-02 token-picker UX — DRAFT YOUR SQUAD eyebrow below title.
+            subtitle:        { x: 0,    y: 520,  w: 480, h: 18, type: 'label' },
+            // 2026-05-02 — superseded by subtitle eyebrow; off-canvas placeholder.
+            headerUnderline: { x: -2000, y: -2000, w: 1, h: 1, type: 'sprite' },
             levelPill:       { x: 120,  y: 620,  w: 140, h: 44, type: 'chip' },
             solPill:         { x: 265,  y: 620,  w: 140, h: 44, type: 'chip' },
             // 2026-04-29 god-tier UX pass — mission bar h 64→80, recentered y
@@ -622,11 +624,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // 2026-05-01 r3 — half-width chunky stake pill (320×84) centered
             // below the CTA, single-line "0.05 SOL ▾" at 32pt gold. Helper
             // text gets its own row below the pill, always visible.
-            wagerRowDivider:   { x: 0,    y: -400, w: 680, h: 1,   type: 'sprite' },
-            wagerStartButton:  { x:    0, y: -456, w: 640, h: 64,  type: 'btnPrimary' },
-            wagerValueButton:  { x:    0, y: -548, w: 320, h: 84,  type: 'btnGhost' },
-            wagerLockChip:     { x:    0, y: -548, w: 320, h: 84,  type: 'chip' },
-            wagerBotChip:      { x:    0, y: -548, w: 320, h: 84,  type: 'chip' },
+            wagerRowDivider:   { x: 0,    y: -388, w: 680, h: 1,   type: 'sprite' },
+            wagerStartButton:  { x:    0, y: -444, w: 640, h: 88,  type: 'btnPrimary' },
+            wagerValueButton:  { x:    0, y: -542, w: 240, h: 72,  type: 'btnGhost' },
+            wagerLockChip:     { x:    0, y: -542, w: 240, h: 72,  type: 'chip' },
+            wagerBotChip:      { x:    0, y: -542, w: 240, h: 72,  type: 'chip' },
             wagerHintLabel:    { x:    0, y: -616, w: 600, h: 28,  type: 'label' },
             wagerDropdown:     { x:    0, y: -380, w: 360, h: 360, type: 'group' },
             stakeHeaderLabel:  { x: 0,    y: -395, w: 280, h: 18,  type: 'label' },

@@ -29,6 +29,13 @@ function safeStorage(): KVStorage | null {
         const s = (sys as any)?.localStorage as KVStorage | undefined;
         if (s && typeof s.getItem === 'function') return s;
     } catch (_) { /* native shim not yet ready */ }
+    // Mirrors Stats.ts:56-66 — sys.localStorage isn't bound on every runtime
+    // (Editor Preview, some web builds), so fall back to the global before
+    // silently no-op'ing the local-mirror write.
+    try {
+        const g = (globalThis as any).localStorage as KVStorage | undefined;
+        if (g && typeof g.getItem === 'function') return g;
+    } catch (_) { /* blocked */ }
     return null;
 }
 

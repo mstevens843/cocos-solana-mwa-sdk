@@ -1047,6 +1047,65 @@ app.post('/match/:matchPda/publish-squad', (req: Request, res: Response) => {
     }
 });
 
+/**
+ * Live race standings — one-shot snapshot of every published squad in a
+ * match, ranked by current portfolio delta. Used by the MIP "details" modal
+ * on the client. Reads in-memory squad board (TTL-bounded), fetches a single
+ * batched current-price call from Birdeye, and computes per-player
+ * portfolioDeltaPct = mean over their resolved mints of (cur-entry)/entry*100.
+ *
+ * Returns 200 + empty players[] when no squads have been published yet
+ * (modal renders a "Squads not yet published" empty state). Never streams.
+ */
+app.get('/match/:matchPda/live-pnl', async (req: Request, res: Response) => {
+    try {
+        const matchPda = req.params.matchPda;
+        if (!matchPda || matchPda.length < 32 || matchPda.length > 44) {
+            return res.status(400).json({ error: 'invalid matchPda in path' });
+        }
+        try { new PublicKey(matchPda); }
+        catch { return res.status(400).json({ error: 'malformed matchPda' }); }
+
+        const boards = sessions.getMatchSquadsWithEntries(matchPda);
+        const fetchedAt = Date.now();
+        if (boards.length === 0) {
+            return res.json({ matchPda, fetchedAt, players: [] });
+        }
+        // Distinct mints across every player — one batched Birdeye call.
+        const mintSet = new Set<string>();
+        for (const b of boards) for (const m of b.mints) mintSet.add(m);
+        const currentPrices = await sessions.fetchSpotPrices([...mintSet]);
+
+        const players = boards.map((b) => {
+            let sumPct = 0;
+            let resolved = 0;
+            const playerCurrent: Record<string, number> = {};
+            for (const mint of b.mints) {
+                const entry = b.entryPrices[mint];
+                const cur = currentPrices[mint];
+                if (Number.isFinite(cur) && cur > 0) playerCurrent[mint] = cur;
+                if (!Number.isFinite(entry) || entry <= 0) continue;
+                if (!Number.isFinite(cur) || cur <= 0) continue;
+                sumPct += ((cur - entry) / entry) * 100;
+                resolved += 1;
+            }
+            const portfolioDeltaPct = resolved > 0 ? sumPct / resolved : 0;
+            return {
+                playerPubkey: b.playerPubkey,
+                mints: b.mints.slice(),
+                entryPrices: { ...b.entryPrices },
+                currentPrices: playerCurrent,
+                portfolioDeltaPct,
+                resolvedCount: resolved,
+            };
+        });
+        return res.json({ matchPda, fetchedAt, players });
+    } catch (e: any) {
+        console.error(`${TAG} /match/:pda/live-pnl ERROR`, e);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
 app.post('/session/start', async (req: Request, res: Response) => {
     try {
         const body = req.body as StartSessionRequest;

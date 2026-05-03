@@ -58,8 +58,12 @@ export class SessionManager {
     // Clients POST their 3 squad mints at match-commit time; backend stores +
     // broadcasts to anyone subscribed to that matchPda via WS.
     //
-    // matchPda → Map(playerPubkey → {mints, publishedAt})
-    private matchSquads = new Map<string, Map<string, { mints: string[]; publishedAt: number }>>();
+    // matchPda → Map(playerPubkey → {mints, entryPrices, publishedAt})
+    // entryPrices map fills in asynchronously after a best-effort Birdeye
+    // /defi/multi_price call kicked off at publish time. May stay empty if
+    // Birdeye is unreachable or the mint is unindexed; live-pnl callers
+    // tolerate that and report 0% for those tokens.
+    private matchSquads = new Map<string, Map<string, { mints: string[]; entryPrices: Record<string, number>; publishedAt: number }>>();
     // matchPda → spectator WS set (separate from session-based spectators).
     private matchSpectators = new Map<string, Set<WebSocket>>();
     // 10-minute TTL on squad entries — 1h race max + buffer.
@@ -268,9 +272,21 @@ export class SessionManager {
             board = new Map();
             this.matchSquads.set(matchPda, board);
         }
-        board.set(playerPubkey, { mints: mints.slice(), publishedAt: Date.now() });
+        const entry = { mints: mints.slice(), entryPrices: {} as Record<string, number>, publishedAt: Date.now() };
+        board.set(playerPubkey, entry);
         console.log(`${TAG} publishMatchSquad match=${matchPda.slice(0, 8)}... player=${playerPubkey.slice(0, 8)}... mints=[${mints.map(m => m.slice(0, 8)).join(',')}] board_size=${board.size}`);
         this.broadcastMatchSquadEvent(matchPda, { kind: 'opponent-squad', playerPubkey, mints });
+        // Fire-and-forget entry-price capture. Race-start is "now" — Birdeye
+        // /defi/multi_price gives the per-mint USD price, which we cache so a
+        // later GET /match/:pda/live-pnl can compute (current-entry)/entry.
+        // Failures stay non-fatal; entryPrices remains empty for that player.
+        void this.fetchSpotPrices(mints).then((prices) => {
+            entry.entryPrices = prices;
+            const filled = Object.keys(prices).length;
+            console.log(`${TAG} publishMatchSquad entry_prices_resolved match=${matchPda.slice(0, 8)}... player=${playerPubkey.slice(0, 8)}... filled=${filled}/${mints.length}`);
+        }).catch((e) => {
+            console.warn(`${TAG} publishMatchSquad entry_prices_err match=${matchPda.slice(0, 8)}... err=${e?.message ?? e}`);
+        });
         return { ok: true };
     }
 
@@ -283,6 +299,25 @@ export class SessionManager {
         for (const [playerPubkey, entry] of board) {
             if (entry.publishedAt < cutoff) continue;
             out.push({ playerPubkey, mints: entry.mints.slice() });
+        }
+        return out;
+    }
+
+    /**
+     * Entries-aware variant — bundles each player's cached entry prices
+     * alongside their mints so /match/:pda/live-pnl can compute portfolio
+     * deltas without a second board lookup. Mirrors getMatchSquads's TTL.
+     */
+    getMatchSquadsWithEntries(
+        matchPda: string,
+    ): Array<{ playerPubkey: string; mints: string[]; entryPrices: Record<string, number> }> {
+        const board = this.matchSquads.get(matchPda);
+        if (!board) return [];
+        const out: Array<{ playerPubkey: string; mints: string[]; entryPrices: Record<string, number> }> = [];
+        const cutoff = Date.now() - SessionManager.SQUAD_TTL_MS;
+        for (const [playerPubkey, entry] of board) {
+            if (entry.publishedAt < cutoff) continue;
+            out.push({ playerPubkey, mints: entry.mints.slice(), entryPrices: { ...entry.entryPrices } });
         }
         return out;
     }
@@ -347,6 +382,39 @@ export class SessionManager {
         } catch (e) {
             console.warn(`${TAG} birdeye fetch error ${e} — permissive mode`);
             for (const m of mints) out[m] = 0;
+            return out;
+        }
+    }
+
+    /**
+     * Birdeye /defi/multi_price — returns USD spot price per mint. Best-effort:
+     * unindexed mints + transport errors collapse to "missing from result"
+     * (caller treats that as 0% delta contribution, matching PortfolioRace).
+     * Used by publishMatchSquad to capture entry prices and by the live-pnl
+     * endpoint to fetch current prices.
+     */
+    async fetchSpotPrices(mints: string[]): Promise<Record<string, number>> {
+        const out: Record<string, number> = {};
+        if (mints.length === 0) return out;
+        if (!this.birdeyeApiKey) return out; // dev mode — no Birdeye, no prices
+        const list = mints.slice(0, 100).join(',');
+        const url = `https://public-api.birdeye.so/defi/multi_price?list_address=${list}`;
+        try {
+            const res = await fetch(url, {
+                headers: { 'accept': 'application/json', 'x-chain': 'solana', 'X-API-KEY': this.birdeyeApiKey },
+            });
+            if (!res.ok) {
+                console.warn(`${TAG} fetchSpotPrices birdeye HTTP ${res.status} mints=${mints.length}`);
+                return out;
+            }
+            const body = (await res.json()) as { data?: Record<string, { value?: number } | null> };
+            for (const mint of mints) {
+                const v = Number(body.data?.[mint]?.value ?? NaN);
+                if (Number.isFinite(v) && v > 0) out[mint] = v;
+            }
+            return out;
+        } catch (e: any) {
+            console.warn(`${TAG} fetchSpotPrices birdeye err ${e?.message ?? e}`);
             return out;
         }
     }
