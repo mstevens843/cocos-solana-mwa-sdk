@@ -42,7 +42,11 @@ export type IconName =
     // Phase N4 - Disconnect (Home wallet sign-out; Phase 3 PNG = disconnect.png)
     | 'disconnect'
     // Matches In Progress row (Phase 3 PNG = play.png)
-    | 'play';
+    | 'play'
+    // F1 - Lucide-derived dropdown icons. PNGs ship as white-on-transparent;
+    // the runtime tint paints them per FEED_OPTIONS color from solpulse.
+    | 'lucideSparkles' | 'lucideFlame' | 'lucideTrendingUp'
+    | 'lucideBarChart' | 'lucideGlobe' | 'lucideStar';
 
 export interface IconAttachOptions {
     /** Logical size in points; defaults to 32. */
@@ -898,3 +902,12 @@ REG.bell        = { draw: drawBell,         tintHex: Palette.text.hi,      emoji
 // Phase N4 additions:
 REG.disconnect  = { draw: drawDisconnect,   tintHex: Palette.status.loss,  emoji: '⏻' };
 REG.play        = { draw: drawPlay,         tintHex: Palette.text.hi,      emoji: '▶' };
+// F1 - Lucide-derived dropdown icons. The procedural draw stubs reuse the
+// closest existing primitives (only invoked if Phase 1 path is ever
+// re-enabled; currently dead). Real rendering happens via Phase 3 PNG.
+REG.lucideSparkles   = { draw: drawSparkle, tintHex: '#A3E635', emoji: '✨' };
+REG.lucideFlame      = { draw: drawFlame,   tintHex: '#FB923C', emoji: '🔥' };
+REG.lucideTrendingUp = { draw: (g, s, c) => drawArrow(g, s, c, true), tintHex: '#4ADE80', emoji: '📈' };
+REG.lucideBarChart   = { draw: drawChart,   tintHex: '#A78BFA', emoji: '📊' };
+REG.lucideGlobe      = { draw: drawCircle,  tintHex: '#22D3EE', emoji: '🌐' };
+REG.lucideStar       = { draw: drawStar,    tintHex: '#FACC15', emoji: '⭐' };

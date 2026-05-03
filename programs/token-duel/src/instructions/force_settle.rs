@@ -10,6 +10,13 @@
 //! The caller does NOT need to be one of the match players — this is meant
 //! to unlock stranded escrow lamports regardless of who initiates.
 //!
+//! TODO(host-no-forfeit): If a future "concede" / "cancel_active_match"
+//! instruction is added, gate it with
+//!   `require!(ctx.accounts.signer.key() != match_acc.players[0],
+//!            GameError::HostCannotForfeit);`
+//! so the lobby creator can't bail mid-match when losing. The 300-second
+//! AFK gate above already prevents that abuse on `force_settle` itself.
+//!
 //! remaining_accounts layout is identical to `settle_match`'s final path:
 //!   [stats_p0, ..., stats_pN-1, payout_1, payout_2, ..., payout_K]
 //! where N = required_players, K = payout_table().len().

@@ -5,7 +5,7 @@
  * Home: Sign Message, Sign Tx, Sign & Send, Capabilities, Reconnect, Disconnect, Delete.
  */
 
-import { _decorator, Component, Label, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen, Size, input, Input, KeyCode, EventKeyboard, HorizontalTextAlignment, VerticalTextAlignment } from 'cc';
+import { _decorator, Component, Label, LabelOutline, LabelShadow, Button, Node, Sprite, Color, EditBox, ScrollView, Slider, SpriteFrame, ImageAsset, Texture2D, assetManager, UITransform, UIOpacity, tween, Vec2, Vec3, Tween, Graphics, resources, director, Director, EventTouch, view, screen, Size, input, Input, KeyCode, EventKeyboard, HorizontalTextAlignment, VerticalTextAlignment } from 'cc';
 // UX overhaul: Phase 1+2 helpers - central theme, procedural icons, panel
 // transitions, mascot. All runtime-only; no asset deps.
 import { IconLibrary, IconName } from '../../token-duel/scripts/IconLibrary';
@@ -14,7 +14,7 @@ import { MascotController, MascotState } from '../../token-duel/scripts/MascotCo
 import { Palette, themeColor, colorFromHex, TabTier, TabTierSpec } from '../../token-duel/scripts/Theme';
 import { POSTMATCH_ZONES, POSTMATCH_SAFE_AREA_TOP, POSTMATCH_SAFE_AREA_BOT, DashboardLayoutSpec } from '../../token-duel/scripts/LayoutSpec';
 import { enhancePrimaryCTA, applyButtonTier, addIdlePulse, addAlmostReadyPulse, stopPulse, addPressPop, setStrongPress, addShimmerSweep, addSignalFlicker } from '../../token-duel/scripts/ButtonFX';
-import { addFloat, addGlowPulse, addParticleDrift, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
+import { addFloat, addGlowPulse, addOrbitDots, addParticleDrift, addScaleBreath, ensureParticleDrift, installLandingVignette, installSoftEllipse, installSoftGlow, panelEnterFlourish } from '../../token-duel/scripts/LandingFX';
 import { installGraphicsCreationWatcher, enqueuePostDraw } from '../../token-duel/scripts/safeGraphics';
 import { runEnterMatchCinematic, runEnterMatchImpact, destroyEnterMatchOverlay, EnterMatchHandle } from '../../token-duel/scripts/EnterMatchTransition';
 import { runFighterPickIn, runFighterPickOut, cancelAllFighterPicks, FighterTokenData, FighterPickInOptions, FighterPickOutOptions } from '../../token-duel/scripts/FighterPickTransition';
@@ -34,6 +34,7 @@ import { BirdeyeClient } from '../../token-duel/scripts/birdeye/BirdeyeClient';
 import { Candle, FeedTab, OhlcvType, TokenRow } from '../../token-duel/scripts/birdeye/types';
 import { DEBUG_POSTMATCH, USE_POSTMATCH_V2 } from '../../token-duel/scripts/DemoFlags';
 import { PostMatchPanelV2, PostMatchOutcome as PostMatchOutcomeV2 } from './PostMatchPanelV2';
+import { LevelUpOverlay, LevelUpPayload } from '../../token-duel/scripts/LevelUpOverlay';
 import { trendingUrl, gainersUrl, newListingsUrl, smartMoneyUrl, searchUrl, pathOf } from '../../token-duel/scripts/birdeye/endpoints';
 import { computeScore, formatScore } from '../../token-duel/scripts/TokenScore';
 import { Watchlist } from '../../token-duel/scripts/Watchlist';
@@ -403,12 +404,15 @@ export class AppUI extends Component {
         'Watch the live timer, last 5s pulse.',
         'Tournament mode rewards top-3 every week.',
     ];
-    // Phase H4 - LevelUpOverlay bindings.
-    private _levelUpOverlay: Node | null = null;
-    private _levelUpTitleLabel: Label | null = null;
-    private _levelUpBigLevel: Label | null = null;
-    private _levelUpCaptionLabel: Label | null = null;
-    private _levelUpRakeLabel: Label | null = null;
+    // Phase H4 (rev 2026-05-03) - LevelUpOverlay is now a runtime-built
+    // class (LevelUpOverlay.ts) parented to Canvas root, fired from
+    // _enqueueLevelUp regardless of which UI panel the user is on. The
+    // scene-baked node + 5 labels were removed; trigger sites moved out of
+    // _showPostMatchPanel into _onGameOver paper/real paths so background
+    // matches still surface the cinematic.
+    private _levelUpInstance: LevelUpOverlay | null = null;
+    private _levelUpQueue: LevelUpPayload[] = [];
+    private _levelUpActive: boolean = false;
     /** Idempotence guard: don't fire the cinematic twice for the same level. */
     private _lastShownLevelUp: number = 0;
 
@@ -747,6 +751,11 @@ export class AppUI extends Component {
     // the "Xm ago" freshness refresh on the Last Result strip).
     private _tickerPollTimer: number | null = null;
     private _tickerRotateTimer: number | null = null;
+    // 2026-05-03 landing polish - MascotStatusChip live-signal binding.
+    // Bound in _polishLandingPanel on first chip construction; refreshed by
+    // _refreshLandingLiveChip on a 30 s timer while Landing is active.
+    private _landingLiveChipLabel: Label | null = null;
+    private _landingLiveChipTimer: number | null = null;
     // Part 13: rake surfacing. Caches the last-fetched level for quick UI
     // updates without re-polling UserStats on every panel transition.
     // 2026-04-26 lobby restructure: HomeRakeChip removed; rake now lives in
@@ -976,6 +985,20 @@ export class AppUI extends Component {
     private _mipSubtitleLabel: Label | null = null;
     private _mipMoreLabel: Label | null = null;
     private _mipMatches: MatchState[] = [];
+    /** 2026-05-03 — Active-vs-Waiting tabs on MIP. `_mipActiveCache` mirrors
+     *  status=1 matches the user is in (existing); `_mipWaitingCache` mirrors
+     *  status=0 lobbies the user has joined or hosted that haven't filled. */
+    private _mipTab: 'active' | 'waiting' = 'active';
+    private _mipActiveCache: MatchState[] = [];
+    private _mipWaitingCache: MatchState[] = [];
+    /** Runtime-built tab-strip refs (lazy-bound on first MIP open). */
+    private _mipTabStripBuilt: boolean = false;
+    private _mipTabActiveBtn: Button | null = null;
+    private _mipTabWaitingBtn: Button | null = null;
+    private _mipTabActiveLbl: Label | null = null;
+    private _mipTabWaitingLbl: Label | null = null;
+    private _mipTabActiveUnderline: Sprite | null = null;
+    private _mipTabWaitingUnderline: Sprite | null = null;
     /** Live-battle redesign refs (one per row). */
     private _mipCardBgs: Sprite[] = [];
     private _mipCardGlows: Sprite[] = [];
@@ -1014,6 +1037,18 @@ export class AppUI extends Component {
     /** 2026-05-02 (pass-4) - small gold "FEATURED" pill on row 0 only when
      *  n>=2 (stack mode). Scaffolded for all 6 rows; only row 0 activates. */
     private _mipFeaturedBadges: (Label | null)[] = [];
+    /** 2026-05-03 polish - runtime-built per-row pills. WAGER pill shows on
+     *  REAL stack rows; LIVE pill background sits behind the existing
+     *  dot+label cluster to read as a unified "● LIVE" chip. Lazy-built. */
+    private _mipWagerPills: (Label | null)[] = [null, null, null, null, null, null];
+    private _mipWagerPillBgs: (Sprite | null)[] = [null, null, null, null, null, null];
+    private _mipLivePillBgs: (Sprite | null)[] = [null, null, null, null, null, null];
+    /** 2026-05-03 polish - runtime-built header chip showing the sum of
+     *  wager amounts across active REAL matches. Visible on Active tab only
+     *  when at least one match has wagerLamports > 0. Built lazily on first
+     *  MIP render after refs are bound. */
+    private _mipTotalWagerChip: Node | null = null;
+    private _mipTotalWagerChipLbl: Label | null = null;
     /** 2026-05-02 (pass-4) - muted helper line below the row pool, shown
      *  only when n=2 (lots of dead vertical space; n=1 hero owns the
      *  frame, n>=3 fills rows naturally, n=0 is empty-state). */
@@ -1209,7 +1244,7 @@ export class AppUI extends Component {
     private _waitingProgressLabel: Label | null = null;
     private _waitingStatusLabel: Label | null = null;
     private _waitingCancelButton: Button | null = null;
-    private _waitingPlayBotButton: Button | null = null;
+    private _waitingHomeButton: Button | null = null;
     // Part 9: force-settle UI state.
     private _waitingForceSettleButton: Button | null = null;
     private _realMatchStartedAt: number = 0;       // Date.now() when WaitingPanel saw status=Active
@@ -1380,7 +1415,7 @@ export class AppUI extends Component {
         for (let __bs = 0; __bs < 20; __bs++) {
             console.log(`[BOOT_ATTEMPT_7] iter=${__bs} t=${Date.now()} ver=stage-e-v1`);
         }
-        console.log(`${TAG} BUILD_STAMP v=2026-05-02-T2300-race-squad-headers - RacePlayerLevelChip moved from top-left corner to centered above PlayerTokenCardsRow as "YOU · Lv N" squad header (mirrors OpponentIdentityCard "BOT · Lv N" above bot row). Per-card sprite tint split into cool cyan-indigo (player 32/56/100) vs warm slate-purple (bot 48/22/60). Thin top-edge accent stripe (cyan player / muted slate bot) drawn into existing per-card bar Graphics - no new addComponent calls. Token bars unchanged.`);
+        console.log(`${TAG} BUILD_STAMP v=2026-05-03-T0300-landing-polish - Hackathon polish pass on Landing. Replaced disabled MascotGlow/MascotShadow/TitleGlow halos with safe substitutes: orbit-dot ring (6 violet/teal dots, 18s rotation, queued via safeAddGraphics), mascot scale-breath (1.0↔1.04 sineInOut), TitleLabel gold LabelOutline+LabelShadow. MascotStatusChip "Ready to duel?" → live-signal chip ("● Live · N duels in progress" / "● Live · arena open" fallback) refreshed every 30 s while Landing is active. Trust strip collapsed to single centered row at 14pt α230 ("🔒 Non-custodial · You control your wallet · Join in seconds"). LiveSignalLabel + LiveSignalDot hidden. CtaCardBg opacity 130→70 so the card recedes. Particle drift bumped 6→10 with topHeavy curve. No runtime Graphics glow re-enables — Fix 10E disables remain in place.`);
         // Boot-phase watcher: logs every Graphics component creation during
         // the first 8 ticks with phase context. If the engine SIGSEGVs, the
         // last `[SafeGraphics] addComponent` log line names the trigger Node.
@@ -1571,6 +1606,18 @@ export class AppUI extends Component {
             }
         } catch (e: any) {
             console.log(`${TAG} start | POSTMATCH_V2 init threw: ${e?.message ?? e}`);
+        }
+        // 2026-05-03 - cinematic LevelUpOverlay. Same Canvas-parented
+        // runtime-built pattern as PostMatchPanelV2. Reuses the scene
+        // mascot's celebrate sprite sheet via the same getter.
+        try {
+            this._levelUpInstance = new LevelUpOverlay(this.node, () => {
+                try { return this._postMatchMascot?.getFramesByState() ?? null; }
+                catch (_) { return null; }
+            });
+            console.log(`${TAG} start | LEVELUP_OVERLAY instantiated`);
+        } catch (e: any) {
+            console.log(`${TAG} start | LEVELUP_OVERLAY init threw: ${e?.message ?? e}`);
         }
         // Frame heartbeat: log director update + draw ticks so we can see
         // whether the JS thread runs ANY frame after start() returns and
@@ -3240,10 +3287,23 @@ export class AppUI extends Component {
             this._waitingProgressLabel = this._waitingPanel.getChildByName('WaitingProgressLabel')?.getComponent(Label) ?? null;
             this._waitingStatusLabel   = this._waitingPanel.getChildByName('WaitingStatusLabel')?.getComponent(Label) ?? null;
             this._waitingCancelButton  = this._waitingPanel.getChildByName('WaitingCancelButton')?.getComponent(Button) ?? null;
-            this._waitingPlayBotButton = this._waitingPanel.getChildByName('WaitingPlayBotButton')?.getComponent(Button) ?? null;
+            // Scene-gen renamed the node: `WaitingHomeButton` is canonical; the
+            // legacy `WaitingPlayBotButton` lookup keeps un-regenerated scenes
+            // working until the next `node generate-scenes.js` build.
+            this._waitingHomeButton = (this._waitingPanel.getChildByName('WaitingHomeButton')
+                ?? this._waitingPanel.getChildByName('WaitingPlayBotButton'))
+                ?.getComponent(Button) ?? null;
             this._waitingForceSettleButton = this._waitingPanel.getChildByName('WaitingForceSettleButton')?.getComponent(Button) ?? null;
             this._waitingCancelButton?.node.on(Button.EventType.CLICK, () => this._onWaitingCancel(), this);
-            this._waitingPlayBotButton?.node.on(Button.EventType.CLICK, () => this._onWaitingPlayBot(), this);
+            this._waitingHomeButton?.node.on(Button.EventType.CLICK, () => this._onWaitingHome(), this);
+            // Defensive label override — if the scene wasn't regenerated yet
+            // the button still says "▶ Play vs Bot". Force the new copy at
+            // bind time so behavior + label are always in sync.
+            const homeBtnNode = this._waitingHomeButton?.node;
+            if (homeBtnNode) {
+                const homeLbl = homeBtnNode.getComponentInChildren(Label);
+                if (homeLbl) homeLbl.string = '🏠 Home';
+            }
             this._waitingForceSettleButton?.node.on(Button.EventType.CLICK, () => this._onWaitingForceSettle(), this);
         }
         // Part 13: rake labels across panels. 2026-04-26: HomeRakeChip
@@ -3442,18 +3502,12 @@ export class AppUI extends Component {
             }
         }
 
-        // Phase H4 - LevelUpOverlay bindings.
-        this._levelUpOverlay = this.node.getChildByName('LevelUpOverlay') ?? null;
-        if (this._levelUpOverlay) {
-            this._levelUpTitleLabel   = this._levelUpOverlay.getChildByName('LevelUpTitleLabel')?.getComponent(Label) ?? null;
-            this._levelUpBigLevel     = this._levelUpOverlay.getChildByName('LevelUpBigLevel')?.getComponent(Label) ?? null;
-            this._levelUpCaptionLabel = this._levelUpOverlay.getChildByName('LevelUpCaptionLabel')?.getComponent(Label) ?? null;
-            this._levelUpRakeLabel    = this._levelUpOverlay.getChildByName('LevelUpRakeLabel')?.getComponent(Label) ?? null;
-            const luBtn = this._levelUpOverlay.getComponent(Button);
-            luBtn?.node.on(Button.EventType.CLICK, () => this._hideLevelUpOverlay(), this);
-            console.log(`${TAG} start | LevelUpOverlay wired=${!!this._levelUpOverlay}`);
-        }
-        console.log(`${TAG} start | overlays countdown=${!!this._countdownOverlay} signing=${!!this._signingOverlay}`);
+        // Phase H4 (rev 2026-05-03) - LevelUpOverlay is now runtime-built;
+        // see LevelUpOverlay.ts. Defensive: hide any leftover scene-baked
+        // node so older Main.scene snapshots don't render an empty rect.
+        const legacyLevelUp = this.node.getChildByName('LevelUpOverlay');
+        if (legacyLevelUp) legacyLevelUp.active = false;
+        console.log(`${TAG} start | overlays countdown=${!!this._countdownOverlay} signing=${!!this._signingOverlay} legacy_lvlup_purged=${!!legacyLevelUp}`);
 
         this._tournamentPanel = this.node.getChildByName('TournamentPanel') ?? null;
         if (this._tournamentPanel) {
@@ -3826,6 +3880,22 @@ export class AppUI extends Component {
             emptyCta?.node.on(Button.EventType.CLICK, () => this._showFindMatchPanel(), this);
             const secondaryFindBtn = this._mipSecondaryFindBtn?.getComponent(Button);
             secondaryFindBtn?.node.on(Button.EventType.CLICK, () => this._showFindMatchPanel(), this);
+            // 2026-05-03 polish - secondary CTA gets explicit slate fill +
+            // white label so it reads as a deliberate quiet action, not a
+            // washed-out ghost. Sized larger (200×40 → 220×44) so it
+            // pairs with the bigger Resume/Ranks pair in the cards above.
+            if (this._mipSecondaryFindBtn) {
+                const sfUT = this._mipSecondaryFindBtn.getComponent(UITransform);
+                if (sfUT) sfUT.setContentSize(220, 44);
+                const sfSpr = this._mipSecondaryFindBtn.getComponent(Sprite);
+                if (sfSpr) sfSpr.color = new Color(31, 36, 56, 240);
+                const sfLbl = this._mipSecondaryFindBtn.getChildByName('Label')?.getComponent(Label);
+                if (sfLbl) {
+                    sfLbl.string = 'Find another match';
+                    sfLbl.fontSize = 16;
+                    sfLbl.color = new Color(255, 255, 255, 255);
+                }
+            }
 
             for (let i = 0; i < 6; i++) {
                 const rowN = this._mipPanel.getChildByName(`MIPRow_${i}`);
@@ -4895,7 +4965,16 @@ export class AppUI extends Component {
         // several callers reach Home via _setActivePanel('home') directly
         // (MIP back button, Race escape) without going through _showHome.
         if (which === 'landing' && this._landingPanel) {
-            try { ensureParticleDrift(this._landingPanel, 6); } catch (_) { /* tween/Graphics may not be loaded yet */ }
+            // 2026-05-03 polish - bump count 6→10 + topHeavy curve so more
+            // particles accumulate around title/mascot, filling the upper
+            // hero band that previously read as dead space.
+            try { ensureParticleDrift(this._landingPanel, 10, { densityCurve: 'topHeavy' }); } catch (_) { /* tween/Graphics may not be loaded yet */ }
+            // 2026-05-03 polish - mascot chip live-signal refresh on a 30 s
+            // tick so the count stays current while the user lingers. Stops
+            // automatically when the user leaves Landing (else branches below).
+            this._startLandingLiveChip();
+        } else {
+            this._stopLandingLiveChip();
         }
         if (which === 'home' && this._homePanel) {
             try { ensureParticleDrift(this._homePanel, 12, { densityCurve: 'topHeavy' }); } catch (_) { /* tween/Graphics may not be loaded yet */ }
@@ -4923,6 +5002,15 @@ export class AppUI extends Component {
         }
         this._setActivePanel('mip');
         await this._refreshMipMatches();
+        // 2026-05-03 — Default to whichever tab has content. Active wins ties
+        // (in-flight races are usually more time-sensitive than queued lobbies);
+        // open Waiting only when Active is empty AND Waiting has lobbies.
+        const activeN = this._mipActiveCache.length + this._mipBackendCache.length + this._localActiveMatches.length;
+        const waitingN = this._mipWaitingCache.length;
+        if (activeN === 0 && waitingN > 0) {
+            this._mipTab = 'waiting';
+            this._rebuildMipDisplay();
+        }
         // 2026-04-29 - start the 1-s render tick + per-frame breathing tick.
         // Drives progress-bar fill, glow alpha breathing, urgent pulse on
         // <20% remaining, and label refresh.
@@ -4946,12 +5034,26 @@ export class AppUI extends Component {
             return;
         }
         try {
-            const all = await (await import('../../token-duel/scripts/MatchRpc'))
-                .findActiveMatchesUnfiltered(this._tdRpc);
-            this._mipOnChainCache = all.filter((m) => m.players.includes(me));
+            const rpcMod = await import('../../token-duel/scripts/MatchRpc');
+            // 2026-05-03 — Fetch BOTH active (status=1) AND waiting (status=0)
+            // in parallel so the MIP Active/Waiting tabs share one refresh
+            // cycle. Both lists are then client-filtered to matches the
+            // connected pubkey is participating in.
+            const [activeAll, waitingAll] = await Promise.all([
+                rpcMod.findActiveMatchesUnfiltered(this._tdRpc),
+                rpcMod.findAllOpenMatchesUnfiltered(this._tdRpc).catch((e) => {
+                    console.log(`${TAG} _refreshMipMatches | ERR_WAITING ${e}`);
+                    return [] as MatchState[];
+                }),
+            ]);
+            this._mipOnChainCache = activeAll.filter((m) => m.players.includes(me));
+            this._mipActiveCache = this._mipOnChainCache.slice();
+            this._mipWaitingCache = waitingAll.filter((m) => m.players.includes(me));
         } catch (e) {
             console.log(`${TAG} _refreshMipMatches | ERR_ONCHAIN ${e}`);
             this._mipOnChainCache = [];
+            this._mipActiveCache = [];
+            this._mipWaitingCache = [];
         }
         // 2026-04-27 - Fetch the user's persisted paper / bot matches from
         // the backend so MIP shows them cross-device. Guests skip this.
@@ -5026,13 +5128,23 @@ export class AppUI extends Component {
      * needing an RPC roundtrip.
      */
     private _rebuildMipDisplay(): void {
-        // Local in-memory wins over backend cache when ids collide (the local
-        // copy has fresher heights from the live tick). Backend rows show up
-        // for matches started on other devices or before app restart.
-        const localIds = new Set(this._localActiveMatches.map((m) => m.pda));
-        const backendOnly = this._mipBackendCache.filter((m) => !localIds.has(m.pda));
-        this._mipMatches = [...this._localActiveMatches, ...backendOnly, ...this._mipOnChainCache]
-            .sort((a, b) => Number(this._mipRemainingMs(a) - this._mipRemainingMs(b)));
+        // 2026-05-03 — Tab-aware list selection. Active tab shows in-flight
+        // races (existing behavior: local + backend paper + on-chain status=1).
+        // Waiting tab shows status=0 lobbies the user is in (host or joiner).
+        if (this._mipTab === 'waiting') {
+            this._mipMatches = this._mipWaitingCache.slice()
+                // Newest-first for the Waiting tab (most-recent lobby up top so
+                // a user who just hit Home from WaitingPanel sees their lobby).
+                .sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+        } else {
+            // Local in-memory wins over backend cache when ids collide (the local
+            // copy has fresher heights from the live tick). Backend rows show up
+            // for matches started on other devices or before app restart.
+            const localIds = new Set(this._localActiveMatches.map((m) => m.pda));
+            const backendOnly = this._mipBackendCache.filter((m) => !localIds.has(m.pda));
+            this._mipMatches = [...this._localActiveMatches, ...backendOnly, ...this._mipOnChainCache]
+                .sort((a, b) => Number(this._mipRemainingMs(a) - this._mipRemainingMs(b)));
+        }
         this._renderMipRows();
         this._renderMipHomeBadge();
     }
@@ -5046,6 +5158,16 @@ export class AppUI extends Component {
      * to drive the breathing glow + urgent-pulse under 20% remaining.
      */
     private _renderMipRows(): void {
+        // 2026-05-03 — Tab-aware render. Waiting tab uses a simpler card layout
+        // (mode/wager top line, "X/Y players · Waiting for N more" big line,
+        // progress bar + Joined Xm ago + Resume). Active tab keeps the existing
+        // live-control-center treatment below.
+        this._refreshMipTabStrip();
+        this._refreshMipTotalWagerChip();
+        if (this._mipTab === 'waiting') {
+            this._renderMipWaitingRows();
+            return;
+        }
         const n = this._mipMatches.length;
         const visible = Math.min(n, 6);
         if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
@@ -5076,14 +5198,20 @@ export class AppUI extends Component {
         // 2026-05-02 (pass-4) - muted helper line shows ONLY at n=2. n=1
         // hero card owns the visual frame; n>=3 fills rows naturally;
         // n=0 has the empty-state CTA. n=2 is the dead-air case.
+        // 2026-05-03 polish - pull helper + secondary CTA up from the page
+        // bottom so they read as connected to the card stack instead of
+        // floating in 270px of dead air. Stack ends ~y=170; helper at y=80,
+        // secondary CTA at y=20 → page reads as a single composition.
         if (this._mipHelperLine) {
             this._mipHelperLine.active = (n === 2);
+            this._mipHelperLine.setPosition(0, 80, 0);
         }
         // 2026-05-02 (pass-5) - secondary "Find another match" CTA visible
         // at n=1 and n=2. n=0 already has the empty-state primary CTA;
         // n>=3 fills the row stack so adding another button reads cluttered.
         if (this._mipSecondaryFindBtn) {
             this._mipSecondaryFindBtn.active = (n === 1 || n === 2);
+            this._mipSecondaryFindBtn.setPosition(0, 20, 0);
         }
         // 2026-05-02 - apply hero geometry BEFORE per-row tinting/sizing so
         // children land at the right coords for the active layout.
@@ -5126,15 +5254,21 @@ export class AppUI extends Component {
             // 2026-05-02 (pass-4) - VS line gets demoted on stack rows so
             // game state (time + leader chip) can lead. Hero (n=1, i=0)
             // keeps the dramatic 32pt set in _applyMipHeroLayout.
+            // 2026-05-03 polish - on REAL stack rows, drop the inline stake
+            // from the VS string (it now lives in the WAGER pill below).
+            // PAPER stack rows keep "· PAPER" inline. Hero row keeps the
+            // existing 32pt format with stake folded in (its big-timer +
+            // chip already carry the visual weight).
             const isHeroRowEarly = i === 0 && n === 1;
             const vsLbl = this._mipVsLabels[i];
             if (vsLbl) {
-                if (isBot) {
-                    vsLbl.string = `VS Bot • ${stakeText}`;
-                } else {
-                    const display = this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`;
-                    vsLbl.string = `VS ${display} • ${stakeText}`;
-                }
+                const showStakeInline = isHeroRowEarly || isPaper;
+                const display = isBot
+                    ? 'Bot'
+                    : (this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`);
+                vsLbl.string = showStakeInline
+                    ? `VS ${display} • ${stakeText}`
+                    : `VS ${display}`;
                 if (!isHeroRowEarly) {
                     // 2026-05-02 (pass-5) - VS line drops one more notch
                     // (18→15pt) so leader chip + time line clearly own the
@@ -5142,6 +5276,18 @@ export class AppUI extends Component {
                     vsLbl.fontSize = 15;
                     vsLbl.color = new Color(168, 174, 201, 255);
                 }
+            }
+            // 2026-05-03 polish - WAGER pill on REAL stack rows. PAPER and
+            // hero rows hide the pill (PAPER has no wager; hero folds it
+            // into the VS line). Pill node is the parent of the label; we
+            // toggle the whole pill (bg sprite + label child) by setting
+            // .active on that outer node.
+            const wagerPill = this._mipWagerPills[i] ?? this._buildMipWagerPill(i);
+            if (wagerPill) {
+                const showPill = !isPaper && !isHeroRowEarly;
+                const pillNode = wagerPill.node.parent;
+                if (pillNode) pillNode.active = showPill;
+                if (showPill) wagerPill.string = `WAGER · ${stakeText}`;
             }
 
             // Remaining/total fraction (drives progress bar + _mipFrameTick urgent-pulse).
@@ -5274,25 +5420,85 @@ export class AppUI extends Component {
 
             // LIVE cluster - dot + label tinted by state; glow halo gets
             // matching RGB and a static alpha (140 active / 60 pregame).
+            // 2026-05-03 polish - tighter dot+label cluster (-18px) on every
+            // stack row + dark-glass pill background behind the cluster so
+            // it reads as a unified "● LIVE" chip. Hero (n=1, row 0) is
+            // positioned by _applyMipHeroLayout's hero branch and skipped
+            // here so we don't fight that layout.
             const liveDot = this._mipLiveDots[i];
-            if (liveDot) liveDot.color = stateTint;
+            if (liveDot) {
+                liveDot.color = stateTint;
+                if (!isHeroRow) liveDot.node.setPosition(258, 50, 0);
+            }
             const liveGlowSpr = this._mipLiveGlows[i];
             if (liveGlowSpr) {
                 liveGlowSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, isPregame ? 60 : 140);
+                if (!isHeroRow) liveGlowSpr.node.setPosition(258, 50, 0);
+            }
+            if (!isHeroRow) {
+                const livePillBg = this._mipLivePillBgs[i] ?? this._buildMipLivePillBg(i);
+                if (livePillBg) livePillBg.node.active = true;
+            } else {
+                const livePillBg = this._mipLivePillBgs[i];
+                if (livePillBg) livePillBg.node.active = false;
             }
             const liveLbl = this._mipLiveLabels[i];
             if (liveLbl) {
                 liveLbl.color = isPregame
                     ? new Color(168, 174, 201, 255)
                     : new Color(stateTint.r, stateTint.g, stateTint.b, 255);
+                if (!isHeroRow) liveLbl.node.setPosition(290, 50, 0);
             }
 
             // Progress bar - fills from left as elapsed time grows. h=6 (was 4).
+            // 2026-05-03 polish - always Solana mint #14F195. Decoupled from
+            // leader state so the bar reads as pure time-elapsed progress.
+            // Leader state is already conveyed via the edge stripe, glow halo,
+            // leader chip, and time-text color - the progress bar gets its own
+            // semantic ("match progress") instead of doubling as score color.
             const fillUT = this._mipProgressFillUTs[i];
             if (fillUT) fillUT.setContentSize(PROGRESS_W * elapsedFrac, 6);
             const fillSpr = this._mipProgressFillSprites[i];
             if (fillSpr) {
-                fillSpr.color = new Color(stateTint.r, stateTint.g, stateTint.b, 230);
+                fillSpr.color = new Color(20, 241, 149, 220);
+            }
+
+            // 2026-05-03 polish - uniform Resume + Ranks geometry on every
+            // stack row. Was previously row-0-only inside _applyMipHeroLayout,
+            // leaving rows 1..5 with scene-template defaults (visible button
+            // asymmetry between cards). Hero (n=1) skips this block - its
+            // bigger 200×64 / 48×36 icon-mode sizing is set in the hero
+            // branch of _applyMipHeroLayout.
+            if (!isHeroRow) {
+                const rGlow = this._mipResumeGlows[i];
+                if (rGlow) {
+                    rGlow.node.setPosition(232, -30, 0);
+                    const rgUT = rGlow.node.getComponent(UITransform);
+                    if (rgUT) rgUT.setContentSize(150, 72);
+                }
+                const rBtn = this._mipResumeButtons[i];
+                if (rBtn) {
+                    rBtn.node.setPosition(232, -30, 0);
+                    const rbUT = rBtn.node.getComponent(UITransform);
+                    if (rbUT) rbUT.setContentSize(116, 44);
+                }
+                const dBtn = this._mipDetailsButtons[i];
+                if (dBtn) {
+                    dBtn.node.setPosition(140, -30, 0);
+                    const dbUT = dBtn.node.getComponent(UITransform);
+                    if (dbUT) dbUT.setContentSize(96, 44);
+                    // Dark-glass background so WHITE text reads against the
+                    // card surface instead of floating. Same baseline + height
+                    // as Resume → buttons are visually paired.
+                    const dbSpr = dBtn.node.getComponent(Sprite);
+                    if (dbSpr) dbSpr.color = new Color(36, 16, 48, 200);
+                    const dbLbl = dBtn.node.getChildByName('Label')?.getComponent(Label);
+                    if (dbLbl) {
+                        dbLbl.string = 'Ranks';
+                        dbLbl.fontSize = 14;
+                        dbLbl.color = new Color(255, 255, 255, 255);
+                    }
+                }
             }
 
             // 2026-05-02 (pass-5) - Resume CTA scale pulse on every active
@@ -5325,6 +5531,383 @@ export class AppUI extends Component {
                 resumeGlow.color = new Color(stateTint.r, stateTint.g, stateTint.b, resumeGlow.color.a);
             }
         }
+    }
+
+    /**
+     * 2026-05-03 — Build the Active/Waiting tab strip on the MIP panel. Lazy:
+     * runs once on first MIP open, then `_refreshMipTabStrip` re-tints + relabels.
+     * Pure runtime nodes (no scene-gen dependency) so this lands without a
+     * generate-scenes regen.
+     */
+    private _buildMipTabStrip(): void {
+        if (this._mipTabStripBuilt || !this._mipPanel) return;
+        const strip = new Node('MIPTabStrip');
+        strip.parent = this._mipPanel;
+        const stripUT = strip.addComponent(UITransform);
+        stripUT.contentSize = new Size(360, 40);
+        // 2026-05-03 polish - strip moved 478→440 to free the y=478 slot
+        // for the new TOTAL ACTIVE WAGER chip. Tabs are bigger (150×34 →
+        // 160×40, 14pt → 16pt) for stronger glance read; selected pill
+        // gets a 1px underline cue.
+        strip.setPosition(0, 440, 0);
+
+        const mkTab = (name: string, label: string, x: number): { btn: Button; lbl: Label; underline: Sprite } => {
+            const node = new Node(name);
+            node.parent = strip;
+            const ut = node.addComponent(UITransform);
+            ut.contentSize = new Size(160, 40);
+            node.setPosition(x, 0, 0);
+            const spr = node.addComponent(Sprite);
+            spr.color = new Color(31, 36, 56, 220);
+            const btn = node.addComponent(Button);
+            btn.transition = Button.Transition.NONE;
+            const lblNode = new Node(`${name}Label`);
+            lblNode.parent = node;
+            const lblUT = lblNode.addComponent(UITransform);
+            lblUT.contentSize = new Size(160, 40);
+            const lbl = lblNode.addComponent(Label);
+            lbl.string = label;
+            lbl.fontSize = 16;
+            lbl.color = new Color(220, 224, 232, 255);
+            lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            lbl.verticalAlign = VerticalTextAlignment.CENTER;
+            // Underline cue toggled in _refreshMipTabStrip when selected.
+            const ulNode = new Node(`${name}Underline`);
+            ulNode.parent = node;
+            const ulUT = ulNode.addComponent(UITransform);
+            ulUT.contentSize = new Size(120, 2);
+            ulNode.setPosition(0, -22, 0);
+            const ul = ulNode.addComponent(Sprite);
+            ul.color = new Color(20, 241, 149, 255);
+            ulNode.active = false;
+            return { btn, lbl, underline: ul };
+        };
+
+        const active = mkTab('MIPTabActive', 'Active', -88);
+        const waiting = mkTab('MIPTabWaiting', 'Waiting', 88);
+        this._mipTabActiveBtn = active.btn;
+        this._mipTabActiveLbl = active.lbl;
+        this._mipTabActiveUnderline = active.underline;
+        this._mipTabWaitingBtn = waiting.btn;
+        this._mipTabWaitingLbl = waiting.lbl;
+        this._mipTabWaitingUnderline = waiting.underline;
+        active.btn.node.on(Button.EventType.CLICK, () => this._onMipTabClick('active'), this);
+        waiting.btn.node.on(Button.EventType.CLICK, () => this._onMipTabClick('waiting'), this);
+        this._mipTabStripBuilt = true;
+        console.log(`${TAG} _buildMipTabStrip | built`);
+    }
+
+    /** Re-tint tab pills based on `_mipTab` + refresh count badges.
+     *  2026-05-03 polish - selected pill gets dark text on bright fill for
+     *  contrast; idle pill keeps light slate text. Underline cue lights up
+     *  on the selected tab in the matching tint.
+     */
+    private _refreshMipTabStrip(): void {
+        this._buildMipTabStrip();
+        const tealActive = new Color(20, 241, 149, 255);
+        const amberActive = new Color(255, 196, 60, 255);
+        const idle = new Color(31, 36, 56, 220);
+        const idleText = new Color(220, 224, 232, 255);
+        const activeText = new Color(15, 18, 32, 255);
+        const activeIsActive = this._mipTab === 'active';
+        if (this._mipTabActiveBtn) {
+            const spr = this._mipTabActiveBtn.node.getComponent(Sprite);
+            if (spr) spr.color = activeIsActive ? tealActive : idle;
+        }
+        if (this._mipTabActiveLbl) {
+            this._mipTabActiveLbl.color = activeIsActive ? activeText : idleText;
+        }
+        if (this._mipTabActiveUnderline) {
+            this._mipTabActiveUnderline.node.active = activeIsActive;
+            this._mipTabActiveUnderline.color = tealActive;
+        }
+        if (this._mipTabWaitingBtn) {
+            const spr = this._mipTabWaitingBtn.node.getComponent(Sprite);
+            if (spr) spr.color = !activeIsActive ? amberActive : idle;
+        }
+        if (this._mipTabWaitingLbl) {
+            this._mipTabWaitingLbl.color = !activeIsActive ? activeText : idleText;
+        }
+        if (this._mipTabWaitingUnderline) {
+            this._mipTabWaitingUnderline.node.active = !activeIsActive;
+            this._mipTabWaitingUnderline.color = amberActive;
+        }
+        const activeN = this._mipActiveCache.length + this._mipBackendCache.length + this._localActiveMatches.length;
+        if (this._mipTabActiveLbl) {
+            this._mipTabActiveLbl.string = activeN > 0 ? `Active (${activeN})` : 'Active';
+        }
+        const waitingN = this._mipWaitingCache.length;
+        if (this._mipTabWaitingLbl) {
+            this._mipTabWaitingLbl.string = waitingN > 0 ? `Waiting (${waitingN})` : 'Waiting';
+        }
+    }
+
+    private _onMipTabClick(tab: 'active' | 'waiting'): void {
+        if (this._mipTab === tab) return;
+        this._mipTab = tab;
+        console.log(`${TAG} _onMipTabClick | tab=${tab}`);
+        this._rebuildMipDisplay();
+    }
+
+    /**
+     * 2026-05-03 polish — lazy-build a "● LIVE" pill background behind the
+     * existing dot+label so the cluster reads as one chip. We slot the bg
+     * just before the row's LIVE glow node so it renders below the dot +
+     * label but above the cardBg/cardGlow surfaces. Falling back to the
+     * end of the child list keeps the bg visible if liveGlow ref is null.
+     */
+    private _buildMipLivePillBg(idx: number): Sprite | null {
+        const cached = this._mipLivePillBgs[idx];
+        if (cached) return cached;
+        const row = this._mipRowNodes[idx];
+        if (!row) return null;
+        const node = new Node(`MIPLivePillBg_${idx}`);
+        node.parent = row;
+        const liveGlowNode = this._mipLiveGlows[idx]?.node;
+        if (liveGlowNode) {
+            const targetIdx = liveGlowNode.getSiblingIndex();
+            node.setSiblingIndex(Math.max(0, targetIdx));
+        }
+        const ut = node.addComponent(UITransform);
+        ut.contentSize = new Size(78, 22);
+        node.setPosition(282, 50, 0);
+        const spr = node.addComponent(Sprite);
+        spr.color = new Color(36, 16, 48, 180);
+        this._mipLivePillBgs[idx] = spr;
+        return spr;
+    }
+
+    /**
+     * 2026-05-03 polish — lazy-build a "WAGER · X.XX SOL" pill on a stack
+     * row. Shown only on REAL matches (wagerLamports > 0). Mint-tinted
+     * glass pill with full-mint label, sized 144×22, top-right band.
+     */
+    private _buildMipWagerPill(idx: number): Label | null {
+        const cached = this._mipWagerPills[idx];
+        if (cached) return cached;
+        const row = this._mipRowNodes[idx];
+        if (!row) return null;
+        const node = new Node(`MIPWagerPill_${idx}`);
+        node.parent = row;
+        const ut = node.addComponent(UITransform);
+        ut.contentSize = new Size(144, 22);
+        node.setPosition(180, 22, 0);
+        const bg = node.addComponent(Sprite);
+        bg.color = new Color(20, 241, 149, 44);
+        this._mipWagerPillBgs[idx] = bg;
+
+        const lblNode = new Node(`MIPWagerPillLabel_${idx}`);
+        lblNode.parent = node;
+        const lblUT = lblNode.addComponent(UITransform);
+        lblUT.contentSize = new Size(144, 22);
+        const lbl = lblNode.addComponent(Label);
+        lbl.fontSize = 12;
+        lbl.color = new Color(20, 241, 149, 255);
+        lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+        lbl.verticalAlign = VerticalTextAlignment.CENTER;
+        lbl.string = '';
+        this._mipWagerPills[idx] = lbl;
+        return lbl;
+    }
+
+    /**
+     * 2026-05-03 polish — lazy-build the "TOTAL ACTIVE WAGER · X.XX SOL"
+     * header chip. Visible only on Active tab when at least one match has
+     * a non-zero wager. Parented to the MIP panel so it survives scene
+     * regen without a template add.
+     */
+    private _buildMipTotalWagerChip(): void {
+        if (this._mipTotalWagerChip || !this._mipPanel) return;
+        const node = new Node('MIPTotalWagerChip');
+        node.parent = this._mipPanel;
+        const ut = node.addComponent(UITransform);
+        ut.contentSize = new Size(280, 34);
+        node.setPosition(0, 478, 0);
+        const bg = node.addComponent(Sprite);
+        bg.color = new Color(31, 36, 56, 230);
+
+        const lblNode = new Node('MIPTotalWagerChipLabel');
+        lblNode.parent = node;
+        const lblUT = lblNode.addComponent(UITransform);
+        lblUT.contentSize = new Size(280, 34);
+        const lbl = lblNode.addComponent(Label);
+        lbl.fontSize = 14;
+        lbl.color = new Color(20, 241, 149, 255);
+        lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+        lbl.verticalAlign = VerticalTextAlignment.CENTER;
+        lbl.string = '';
+
+        this._mipTotalWagerChip = node;
+        this._mipTotalWagerChipLbl = lbl;
+    }
+
+    /**
+     * 2026-05-03 polish — sum REAL match wagers and toggle the header chip.
+     * Called from _renderMipRows on Active tab; also hidden on Waiting tab
+     * by _renderMipWaitingRows.
+     */
+    private _refreshMipTotalWagerChip(): void {
+        this._buildMipTotalWagerChip();
+        if (!this._mipTotalWagerChip || !this._mipTotalWagerChipLbl) return;
+        if (this._mipTab !== 'active') {
+            this._mipTotalWagerChip.active = false;
+            return;
+        }
+        let totalLamports = 0;
+        for (const m of this._mipMatches) {
+            if (m.wagerLamports > 0n) totalLamports += Number(m.wagerLamports);
+        }
+        if (totalLamports <= 0) {
+            this._mipTotalWagerChip.active = false;
+            return;
+        }
+        const sol = totalLamports / 1e9;
+        this._mipTotalWagerChipLbl.string = `TOTAL ACTIVE WAGER · ${sol.toFixed(2)} SOL`;
+        this._mipTotalWagerChip.active = true;
+    }
+
+    /**
+     * 2026-05-03 — Waiting-tab renderer. Reuses the existing 6-row pool but
+     * fills label content with queue state instead of race state:
+     *   - VS line  → mode label · wager · Real
+     *   - Time line → "X/Y players · Waiting for N more" (amber)
+     *   - Status   → "Joined Xm ago"
+     *   - Progress → fill = playerCount/requiredPlayers (semantic shift,
+     *                visually consistent)
+     *   - LIVE pill → "WAITING" (amber, no pulse)
+     */
+    private _renderMipWaitingRows(): void {
+        const n = this._mipMatches.length;
+        const visible = Math.min(n, 6);
+        if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
+        if (this._mipSubtitleLabel) {
+            this._mipSubtitleLabel.string = n === 0
+                ? 'No queued lobbies'
+                : (n === 1 ? '1 IN QUEUE' : `${n} IN QUEUE`);
+        }
+        if (this._mipHeaderLiveDot) this._mipHeaderLiveDot.node.active = false;
+        if (this._mipMoreLabel) {
+            this._mipMoreLabel.node.active = n > 6;
+            this._mipMoreLabel.string = n > 6 ? `+${n - 6} more` : '';
+        }
+        if (this._mipHelperLine) this._mipHelperLine.active = false;
+        if (this._mipSecondaryFindBtn) this._mipSecondaryFindBtn.active = (n === 0 || n === 1);
+        // 2026-05-03 polish - hide WAGER pills + total wager chip on the
+        // Waiting tab; both belong to the Active-tab race state.
+        for (const wagerLbl of this._mipWagerPills) {
+            if (wagerLbl) {
+                const pillNode = wagerLbl.node.parent;
+                if (pillNode) pillNode.active = false;
+            }
+        }
+        this._refreshMipTotalWagerChip();
+
+        // Hero geometry stays neutral; waiting cards all read as stack rows.
+        this._applyMipHeroLayout();
+
+        const PROGRESS_W = 624;
+        const amber = new Color(255, 196, 60, 255);
+        const slate = new Color(168, 174, 201, 255);
+        const muted = new Color(140, 144, 156, 255);
+        for (let i = 0; i < this._mipRowNodes.length; i++) {
+            const row = this._mipRowNodes[i];
+            const m = i < visible ? this._mipMatches[i] : null;
+            if (!row) continue;
+            if (!m) {
+                row.active = false;
+                const resumeBtn = this._mipResumeButtons[i];
+                if (resumeBtn) {
+                    try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
+                    resumeBtn.node.setScale(1, 1, 1);
+                }
+                this._mipResumePulsing[i] = false;
+                this._mipResumePulseAmp[i] = 0;
+                continue;
+            }
+            row.active = true;
+
+            const modeLabel = modeFromU8(m.mode).label;
+            const isPaper = m.wagerLamports === 0n;
+            const stakeText = isPaper ? 'PAPER' : `${(Number(m.wagerLamports) / 1e9).toFixed(3)} SOL`;
+            const remaining = Math.max(0, m.requiredPlayers - m.playerCount);
+
+            const vsLbl = this._mipVsLabels[i];
+            if (vsLbl) {
+                vsLbl.string = `${modeLabel} · ${stakeText} · Real`;
+                vsLbl.fontSize = 15;
+                vsLbl.color = slate;
+            }
+
+            const timeLbl = this._mipTimeLabels[i];
+            if (timeLbl) {
+                timeLbl.string = remaining > 0
+                    ? `${m.playerCount}/${m.requiredPlayers} players · Waiting for ${remaining} more`
+                    : `${m.playerCount}/${m.requiredPlayers} players · Lobby full!`;
+                timeLbl.fontSize = 16;
+                timeLbl.color = amber;
+            }
+
+            const statusLbl = this._mipStatusLabels[i];
+            if (statusLbl) {
+                const joinedAt = Number(m.createdAt) * 1000;
+                const ago = Math.max(0, Date.now() - joinedAt);
+                statusLbl.string = `Joined ${this._formatJoinedAgo(ago)}`;
+                statusLbl.color = muted;
+            }
+
+            const stakeChip = this._mipStakeChipLabels[i];
+            if (stakeChip) {
+                // Stake info already in vs line; keep chip empty so we don't
+                // double-render the same number.
+                stakeChip.string = '';
+            }
+
+            // Fill = playerCount / requiredPlayers (visual reinforcement of the count).
+            const fillFrac = m.requiredPlayers > 0 ? Math.max(0, Math.min(1, m.playerCount / m.requiredPlayers)) : 0;
+            this._mipRowFraction[i] = fillFrac;
+            const fillUT = this._mipProgressFillUTs[i];
+            if (fillUT) {
+                const ch = fillUT.contentSize.height;
+                fillUT.contentSize = new Size(PROGRESS_W * fillFrac, ch);
+            }
+            const fillSpr = this._mipProgressFillSprites[i];
+            if (fillSpr) fillSpr.color = amber;
+
+            const liveLbl = this._mipLiveLabels[i];
+            if (liveLbl) { liveLbl.string = 'WAITING'; liveLbl.color = amber; }
+            const liveDot = this._mipLiveDots[i];
+            if (liveDot) liveDot.color = amber;
+            const liveGlow = this._mipLiveGlows[i];
+            if (liveGlow) liveGlow.node.active = false;
+
+            const bigT = this._mipBigTimerLabels[i];
+            if (bigT) bigT.node.active = false;
+            const bigP = this._mipBigPhaseLabels[i];
+            if (bigP) bigP.node.active = false;
+            const featured = this._mipFeaturedBadges[i];
+            if (featured) featured.node.active = false;
+
+            const resumeBtn = this._mipResumeButtons[i];
+            if (resumeBtn) {
+                try { stopPulse(resumeBtn.node); } catch (_) { /* tween not loaded */ }
+                resumeBtn.node.setScale(1, 1, 1);
+                resumeBtn.node.active = true;
+            }
+            this._mipResumePulsing[i] = false;
+            this._mipResumePulseAmp[i] = 0;
+            // Leader-state edge: pregame for waiting rows so the urgent
+            // red/green tints don't fire from `_mipFrameTick`.
+            this._mipRowLeaderState[i] = 'pregame';
+        }
+    }
+
+    /** Friendly "Joined Xm ago" / "Joined just now" / "Joined Xh Ym ago" formatter. */
+    private _formatJoinedAgo(ms: number): string {
+        if (ms < 60_000) return 'just now';
+        if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+        const h = Math.floor(ms / 3_600_000);
+        const m = Math.floor((ms % 3_600_000) / 60_000);
+        return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
     }
 
     /** 2026-05-02 - phase label from elapsed fraction. Three-bucket emotional
@@ -5484,44 +6067,40 @@ export class AppUI extends Component {
             row0.setPosition(0, 400, 0);
             cardBgUT.setContentSize(660, 144);
             cardGlowUT.setContentSize(668, 158);
-            if (vsLbl)    vsLbl.node.setPosition(-156, 46, 0);
-            if (liveGlow) liveGlow.node.setPosition(270, 50, 0);
-            if (liveDot)  liveDot.node.setPosition(270, 50, 0);
-            if (liveLbl)  liveLbl.node.setPosition(308, 50, 0);
-            if (statusLbl) statusLbl.node.active = true;
-            if (statusLbl) statusLbl.node.setPosition(-36, 12, 0);
+            // 2026-05-03 polish - explicit font-size resets so a hero→stack
+            // transition fully drops hero typography. Without these, row 0
+            // can carry the 32pt hero VS / 28pt hero stake into stack mode.
+            if (vsLbl) {
+                vsLbl.node.setPosition(-156, 46, 0);
+                vsLbl.fontSize = 15;
+            }
+            // 2026-05-03 polish - tighter dot+label cluster (-18px) so it
+            // reads as a single "● LIVE" chip instead of a loose pair.
+            // Pill background sits behind via _buildMipLivePillBg in the
+            // render loop.
+            if (liveGlow) liveGlow.node.setPosition(258, 50, 0);
+            if (liveDot)  liveDot.node.setPosition(258, 50, 0);
+            if (liveLbl)  liveLbl.node.setPosition(290, 50, 0);
+            if (statusLbl) {
+                statusLbl.node.active = true;
+                statusLbl.node.setPosition(-36, -2, 0);
+                statusLbl.fontSize = 13;
+            }
             if (bigTimer)  bigTimer.node.active = false;
             if (bigPhase)  bigPhase.node.active = false;
-            if (stakeLbl)  stakeLbl.node.setPosition(-244, -14, 0);
+            if (stakeLbl) {
+                stakeLbl.node.setPosition(-244, -14, 0);
+                stakeLbl.fontSize = 22;
+            }
             if (trackSpr)  trackSpr.node.setPosition(0, -58, 0);
             if (fillN)     fillN.setPosition(-312, -58, 0);
             if (fillUT)    fillUT.setContentSize(fillUT.contentSize.width, 6);
-            // 2026-05-02 (pass-4) - Resume CTA dominates Ranks. Resume
-            // bumped 116×44 → 140×52 (+ glow 150×72 → 176×80) and pulled
-            // inward to x=246 to keep the right margin tidy. Ranks shrunk
-            // 84×36 → 64×32 with an 11pt slate label so it reads as a
-            // secondary affordance.
-            if (resumeGlow) {
-                resumeGlow.node.setPosition(246, -30, 0);
-                const rgUT = resumeGlow.node.getComponent(UITransform);
-                if (rgUT) rgUT.setContentSize(176, 80);
-            }
-            if (resumeBtn) {
-                resumeBtn.node.setPosition(246, -30, 0);
-                const rbUT = resumeBtn.node.getComponent(UITransform);
-                if (rbUT) rbUT.setContentSize(140, 52);
-            }
-            if (detailsBtn) {
-                detailsBtn.node.setPosition(136, -30, 0);
-                const dbUT = detailsBtn.node.getComponent(UITransform);
-                if (dbUT) dbUT.setContentSize(64, 32);
-                const dbLbl = detailsBtn.node.getChildByName('Label')?.getComponent(Label);
-                if (dbLbl) {
-                    dbLbl.string = 'Ranks';
-                    dbLbl.fontSize = 11;
-                    dbLbl.color = new Color(168, 174, 201, 255);
-                }
-            }
+            // 2026-05-03 polish - per-row Resume + Ranks geometry now lives
+            // in _renderMipRows() so EVERY stack row gets identical sizing
+            // (was only row 0 here, leaving rows 1..5 with scene-template
+            // defaults → visible asymmetry). The render-loop block also
+            // applies WHITE label color to Ranks. Hero (n=1) keeps its
+            // dedicated 200×64 / 48×36 icon-mode treatment in the if-branch.
             // Reset hero-only animation state cleanly.
             this._mipPrevLeaderHeight[0] = 0;
             this._mipPositiveStreak[0] = 0;
@@ -5944,7 +6523,15 @@ export class AppUI extends Component {
     private _onMipRowTap(idx: number): void {
         const m = this._mipMatches[idx];
         if (!m) return;
-        console.log(`${TAG} _onMipRowTap | TODO route to RacePanel pda=${m.pda} mode=${m.mode} window=${m.timeWindow}`);
+        console.log(`${TAG} _onMipRowTap | route match=${m.pda.slice(0, 8)} status=${m.status} tab=${this._mipTab}`);
+        // Bot/paper rows (synthetic pdas with non-base58 ids) can't be
+        // re-fetched from chain — skip routing and just toast for now. The
+        // existing in-app paper-bot resume flow lives elsewhere.
+        if (m.wagerLamports === 0n && m.players.some((p) => p.endsWith('BOT'))) {
+            showToast('Resume from the live paper match panel');
+            return;
+        }
+        void this._routeToMatch(m.pda);
     }
 
     /**
@@ -6126,6 +6713,29 @@ export class AppUI extends Component {
     }
 
     /**
+     * F1 - Attach the six lucide icons to the feed-tab dropdown rows. Run from
+     * both `_attachStaticIconBadges` (start) and `_onFeedTabDropdownClick` so
+     * cold-launch users still see badges if they open the dropdown before
+     * Phase 3 finished loading sprite frames. Tints mirror solpulse
+     * FEED_OPTIONS exactly (lime/orange/green/violet/cyan/yellow).
+     */
+    private _attachFeedTabDropdownIcons(): void {
+        const tabIconSpec: Record<string, { icon: IconName; tintHex: string }> = {
+            new:       { icon: 'lucideSparkles',   tintHex: '#A3E635' }, // lime-400
+            trending:  { icon: 'lucideFlame',      tintHex: '#FB923C' }, // orange-400
+            gainers:   { icon: 'lucideTrendingUp', tintHex: '#4ADE80' }, // green-400
+            volume:    { icon: 'lucideBarChart',   tintHex: '#A78BFA' }, // violet-400
+            smart:     { icon: 'lucideGlobe',      tintHex: '#22D3EE' }, // cyan-400
+            watchlist: { icon: 'lucideStar',       tintHex: '#FACC15' }, // yellow-400
+        };
+        for (const key of Object.keys(tabIconSpec)) {
+            const optN = this._tokenDuelPanel?.getChildByName(`FeedTabOption_${key}`);
+            const spec = tabIconSpec[key];
+            if (optN) this._ensureIconBadge(optN, spec.icon, { size: 26, offsetX: -78, tintHex: spec.tintHex });
+        }
+    }
+
+    /**
      * UX Phase 2b: comprehensive bind-time icon attachment for every panel-
      * level label/button whose scene-baked emoji has been stripped. Idempotent
      * (safe to call multiple times). Table-driven so we don't re-list paths.
@@ -6298,10 +6908,10 @@ export class AppUI extends Component {
             // Right cluster (Disconnect · Hub · Settings · Bell). Phase N4:
             // Disconnect (power) replaces the former user-icon Portfolio
             // shortcut; trophy now opens the merged Portfolio+Leaderboard hub.
-            { panel: this._homePanel, name: 'DisconnectButton',       icon: 'disconnect', size: 45, offsetX: 0 },
-            { panel: this._homePanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 45, offsetX: 0 },
-            { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 45, offsetX: 0 },  // home top-right gear, 64×64
-            { panel: this._homePanel, name: 'NotificationBellButton', icon: 'bell',   size: 45, offsetX: 0 },
+            { panel: this._homePanel, name: 'DisconnectButton',       icon: 'disconnect', size: 48, offsetX: 0 },
+            { panel: this._homePanel, name: 'OpenLeaderboardButton',  icon: 'trophy', size: 48, offsetX: 0 },
+            { panel: this._homePanel, name: 'OpenSettingsButton',     icon: 'cog',    size: 48, offsetX: 0 },  // home top-right gear, 64×64
+            { panel: this._homePanel, name: 'NotificationBellButton', icon: 'bell',   size: 48, offsetX: 0 },
 
             // TokenDuel top-bar (3 solo-icon buttons + Help glyph, 40×36 cells) -
             // icons 28 so they stop reading as dots inside the button. Leaderboard
@@ -6411,22 +7021,10 @@ export class AppUI extends Component {
             }
         }
 
-        // Feed tab dropdown rows (6 rows) - per-row icons. solpulse parity:
-        // FEED_OPTIONS in solpulse/.../NewPairsFeed.jsx:102-107 maps each tab
-        // to a Lucide icon + Tailwind text-* color. Mirror those colors here.
-        const tabIconSpec: Record<string, { icon: IconName; tintHex: string }> = {
-            new:       { icon: 'bolt',    tintHex: '#34D399' }, // emerald-400 (Zap)
-            trending:  { icon: 'flame',   tintHex: '#FB923C' }, // orange-400 (Flame)
-            gainers:   { icon: 'arrowUp', tintHex: '#FBBF24' }, // amber-400 (TrendingUp)
-            volume:    { icon: 'chart',   tintHex: '#A78BFA' }, // violet-400 (BarChart3)
-            smart:     { icon: 'brain',   tintHex: '#22D3EE' }, // cyan-400 (Brain)
-            watchlist: { icon: 'star',    tintHex: '#FBBF24' }, // amber-400 (Star)
-        };
-        for (const key of Object.keys(tabIconSpec)) {
-            const optN = this._tokenDuelPanel?.getChildByName(`FeedTabOption_${key}`);
-            const spec = tabIconSpec[key];
-            if (optN) this._ensureIconBadge(optN, spec.icon, { size: 44, offsetX: -90, tintHex: spec.tintHex });
-        }
+        // Feed tab dropdown rows (6 rows) - delegate to the dedicated helper so
+        // the same wiring runs from this static-bind pass AND every popover
+        // open (defensive re-attach for the Phase-3 PNG-load race).
+        this._attachFeedTabDropdownIcons();
 
         console.log(`${TAG} _attachStaticIconBadges | bound ${defs.length} + preset 5 + feed_tab 6`);
     }
@@ -6609,39 +7207,48 @@ export class AppUI extends Component {
             return;
         }
         const mascot = lp.getChildByName('LandingMascotContainer');
-        if (mascot) addFloat(mascot, 10, 3.2);
 
-        // 2026-04-29 landing UX - convert hard-edged white-square halos into
-        // soft Graphics-drawn radials. Cocos Sprite has no soft-edge primitive,
-        // so the scene-built TitleGlow/MascotGlow/MascotShadow render as
-        // literal rectangles and become visible artifacts on Landing (which
-        // exposes its background more than any other screen). Layer-compatible
-        // with the addGlowPulse calls below - installSoftGlow preserves
-        // UIOpacity so the breathing animation continues to work.
+        // 2026-05-03 landing polish - the disabled installSoftGlow / installSoftEllipse
+        // path (Fix 10E, see ~/.claude/plans/replicated-purring-journal.md) leaves
+        // TitleGlow / MascotGlow / MascotShadow as bare scene Sprites that either
+        // render as hard squares (if alpha > 0) or contribute nothing (alpha 0 in
+        // current spec). Either way they fail their job. Hide the nodes outright
+        // so they can't paint artifacts; replace their function with safe
+        // substitutes (orbit dots + scale-breath + Label outline/shadow tricks).
         const titleGlow  = lp.getChildByName('TitleGlow');
         const mascotGlow = lp.getChildByName('MascotGlow');
         const mascotShdw = lp.getChildByName('MascotShadow');
-        // FIX 10E (2026-04-29) - RE-DISABLED. Fix 10B re-enabled these via
-        // queue, Fix 10C made Mascot atomic, Fix 10D deferred auto-signin -
-        // each iteration still crashed in tick 2 DRAW. The queue/atomic/defer
-        // are correct defenses but not sufficient to cover the cumulative
-        // tree-state trigger that Fix 10A's 5 disables together avoid.
-        // Permanent cure (Phase 2): pre-place ring child Nodes with Graphics
-        // components in Main.scene, refactor install* → paintSoftGlow that
-        // calls gfx.clear()/circle()/fill() into pre-placed Graphics. Then
-        // re-enable. See ~/.claude/plans/replicated-purring-journal.md.
-        // if (titleGlow)  installSoftGlow(titleGlow,    { color: new Color(255, 210,  74), peakAlpha: 110 });
-        // if (mascotGlow) installSoftGlow(mascotGlow,   { color: new Color(153,  69, 255), peakAlpha: 110 });
-        // if (mascotShdw) installSoftEllipse(mascotShdw, { color: new Color(0, 0, 0),       peakAlpha:  80 });
+        // Stash the chip's rounded-rect SpriteFrame BEFORE deactivating the
+        // shadow node — getComponent works on inactive nodes too, but stashing
+        // here keeps the data flow obvious.
+        const chipRefSf = mascotShdw?.getComponent(Sprite)?.spriteFrame ?? null;
+        if (titleGlow)  titleGlow.active  = false;
+        if (mascotGlow) mascotGlow.active = false;
+        if (mascotShdw) mascotShdw.active = false;
 
-        // Edge vignette overlay - sits between gradient stack and content.
-        // Subtle corner darken focuses the eye on the center hero.
-        // FIX 10E - RE-DISABLED. See _polishLandingPanel installSoftGlow note above.
-        // installLandingVignette(lp);
+        // Title glow substitute — LabelOutline + LabelShadow on TitleLabel itself.
+        // Pure font-rendering, zero Graphics components, zero SIGSEGV risk.
+        const titleLabelNode = lp.getChildByName('TitleLabel');
+        const titleLabel = titleLabelNode?.getComponent(Label) ?? null;
+        if (titleLabel && titleLabelNode) {
+            const outline = titleLabelNode.getComponent(LabelOutline) ?? titleLabelNode.addComponent(LabelOutline);
+            outline.color = new Color(255, 210, 74, 180);  // Palette.rank.gold @ α180
+            outline.width = 2;
+            const shadow = titleLabelNode.getComponent(LabelShadow) ?? titleLabelNode.addComponent(LabelShadow);
+            shadow.color = new Color(255, 180, 60, 120);
+            shadow.offset = new Vec2(0, 0);
+            shadow.blur = 6;
+        }
 
-        if (mascotGlow) addGlowPulse(mascotGlow, 110, 2.6);
-
-        if (titleGlow) addGlowPulse(titleGlow, 120, 2.8);
+        // Mascot motion stack — float + orbit ring + scale-breath. Orbit dots
+        // replace MascotGlow's halo function via the proven safeAddGraphics
+        // queue; scale-breath gives mascot "alive" presence without any
+        // Graphics work.
+        if (mascot) {
+            addFloat(mascot, 10, 3.2);
+            addOrbitDots(mascot, { count: 6, radius: 130, periodSec: 18 });
+            addScaleBreath(mascot, { peakScale: 1.04, periodSec: 2.6 });
+        }
 
         const connectGlow = lp.getChildByName('BtnGlow_ConnectButton');
         // 2026-04-29 demo-ready pass: Connect halo peak 170 → 130 + period
@@ -6654,9 +7261,39 @@ export class AppUI extends Component {
         // additive band crosses the button face every ~3.5s.
         addShimmerSweep(lp.getChildByName('ConnectButton'));
 
-        // 2026-04-28 polish - green dot next to LiveSignalLabel pulses.
-        const liveDot = lp.getChildByName('LiveSignalDot');
-        if (liveDot) addGlowPulse(liveDot, 230, 1.4);
+        // 2026-05-03 polish — LiveSignal pair retired. Truth-of-live moved to
+        // MascotStatusChip below. Hide both nodes so the trust strip can
+        // re-center as a single row.
+        const liveSignalLbl = lp.getChildByName('LiveSignalLabel');
+        const liveDot       = lp.getChildByName('LiveSignalDot');
+        if (liveSignalLbl) liveSignalLbl.active = false;
+        if (liveDot)       liveDot.active       = false;
+
+        // 2026-05-03 polish — TrustLineLabel becomes a single centered row.
+        // Scene still emits it at x=-150, w=280 (legacy 2-column layout); the
+        // runtime override re-centers it and bumps the type for readability.
+        const trustLine = lp.getChildByName('TrustLineLabel');
+        if (trustLine) {
+            const ut = trustLine.getComponent(UITransform);
+            if (ut) ut.setContentSize(640, 28);
+            trustLine.setPosition(0, trustLine.position.y, 0);
+            const tll = trustLine.getComponent(Label);
+            if (tll) {
+                tll.string = '\u{1F512}  Non-custodial  ·  You control your wallet  ·  Join in seconds';
+                tll.fontSize = 14;
+                tll.lineHeight = 18;
+                tll.horizontalAlign = HorizontalTextAlignment.CENTER;
+                tll.color = new Color(180, 178, 210, 230);
+            }
+        }
+
+        // 2026-05-03 polish — soften CtaCardBg so it recedes behind the buttons
+        // instead of competing as a dark slab.
+        const ctaCard = lp.getChildByName('CtaCardBg');
+        if (ctaCard) {
+            const op = ctaCard.getComponent(UIOpacity) ?? ctaCard.addComponent(UIOpacity);
+            op.opacity = 70;
+        }
 
         const reconn = lp.getChildByName('ReconnectButton');
         if (reconn) {
@@ -6690,39 +7327,41 @@ export class AppUI extends Component {
         // 2026-05-02 UX polish - ConnectionStatusPill retired. Status now lives
         // inline on the Reconnect pill via _setConnectionPill → ReconnectStatusInline.
 
-        // Mascot status chip - built at runtime as a sibling above the mascot
+        // Mascot status chip — built at runtime as a sibling above the mascot
         // so it reads as the mascot speaking. Drift period matches the mascot's
-        // addFloat above (3.2s) so the chip rides with it. Construction avoids
-        // scene-file __id__ surgery for a fresh Node + Sprite + Label.
-        const chipExisting = lp.getChildByName('MascotStatusChip');
-        if (!chipExisting) {
-            const chip = new Node('MascotStatusChip');
+        // addFloat above (3.2s) so the chip rides with it. 2026-05-03: chip
+        // copy is now driven by _refreshLandingLiveChip(); the label reference
+        // is bound here on first construction so subsequent refreshes don't
+        // walk the tree.
+        let chip = lp.getChildByName('MascotStatusChip');
+        if (!chip) {
+            chip = new Node('MascotStatusChip');
             chip.parent = lp;
             chip.setPosition(new Vec3(0, 412, 0));
             const chipUI = chip.addComponent(UITransform);
-            chipUI.contentSize = new Size(200, 32);
-            // Borrow the rounded-rect SpriteFrame from MascotShadow so we don't
-            // duplicate the asset reference or load a new SpriteFrame here.
-            const refSf = mascotShdw?.getComponent(Sprite)?.spriteFrame ?? null;
-            if (refSf) {
+            chipUI.contentSize = new Size(220, 32);
+            if (chipRefSf) {
                 const bg = chip.addComponent(Sprite);
-                bg.spriteFrame = refSf;
+                bg.spriteFrame = chipRefSf;
                 bg.type = Sprite.Type.SLICED;
                 bg.color = new Color(26, 24, 48, 160);
             }
             const labelNode = new Node('Label');
             labelNode.parent = chip;
             const labelUI = labelNode.addComponent(UITransform);
-            labelUI.contentSize = new Size(196, 28);
+            labelUI.contentSize = new Size(216, 28);
             const lbl = labelNode.addComponent(Label);
-            lbl.string = 'Ready to duel?';
-            lbl.fontSize = 14;
+            lbl.fontSize = 13;
             lbl.lineHeight = 18;
             lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
             lbl.verticalAlign = VerticalTextAlignment.CENTER;
-            lbl.color = new Color(185, 183, 255, 220);
+            lbl.color = new Color(180, 230, 200, 235);
+            this._landingLiveChipLabel = lbl;
             addFloat(chip, 6, 3.2);
+        } else if (!this._landingLiveChipLabel) {
+            this._landingLiveChipLabel = chip.getChildByName('Label')?.getComponent(Label) ?? null;
         }
+        this._refreshLandingLiveChip();
 
         // 2026-04-28 - particle drift now spawned in _setActivePanel('landing')
         // so it re-fires on every Landing entry (disconnect → return etc.),
@@ -6758,6 +7397,10 @@ export class AppUI extends Component {
             'disconnect',
             // play.png - Matches In Progress row icon.
             'play',
+            // F1 - Lucide-derived dropdown icons (white-on-transparent PNGs;
+            // runtime tinted to lime/orange/green/violet/cyan/yellow).
+            'lucideSparkles', 'lucideFlame', 'lucideTrendingUp',
+            'lucideBarChart', 'lucideGlobe', 'lucideStar',
         ];
 
         // Kill switches - flip a flag to bypass each loader path. Default ALL
@@ -7735,6 +8378,18 @@ export class AppUI extends Component {
                     return;
                 }
                 this._activeRealMatchPda = null;
+                // 2026-05-03 - fire level-up cinematic on real-match settle
+                // before the post-match reveal so background matches surface
+                // the moment everywhere. xpBefore/After are on-chain totals
+                // from the UserStats PDA reads bracketing the settle.
+                if (result.newLevel > result.previousLevel) {
+                    this._enqueueLevelUp({
+                        previousLevel: result.previousLevel,
+                        newLevel: result.newLevel,
+                        xpBefore: previousXp,
+                        xpAfter: result.totalXp,
+                    });
+                }
                 this._showPostMatchPanel({
                     won: result.won,
                     // Tie iff scores are equal AND nobody is the declared winner
@@ -7869,6 +8524,19 @@ export class AppUI extends Component {
             const paperRecAfter = Stats.load('paper');
             const newLevel = levelFromXp(paperRecAfter.xp);
             const modeDef = MODES[modeId as keyof typeof MODES] ?? MODES.oneVone;
+            // 2026-05-03 - fire level-up cinematic BEFORE the post-match
+            // panel so background matches surface the moment regardless of
+            // which UI panel is visible. xpBefore/After are paper-only here
+            // (the on-chain XP for paper-bot is unchanged), which is the
+            // total the chip displays — see _refreshLevelChip.
+            if (newLevel > previousLevel) {
+                this._enqueueLevelUp({
+                    previousLevel,
+                    newLevel,
+                    xpBefore: paperRecBefore.xp,
+                    xpAfter: paperRecAfter.xp,
+                });
+            }
             this._showPostMatchPanel({
                 won: outcome.playerWon,
                 // Paper-bot tie: deterministic encoded scores from
@@ -8050,6 +8718,99 @@ export class AppUI extends Component {
     private _tierKey(height: number): string { return this._tierInfo(height).key; }
 
     // ── betting-duel Phase 3: RacePanel show/hide + tick + cancel ──────────────
+
+    /**
+     * 2026-05-03 PvP-lobby rule: the host (players[0]) cannot forfeit or end
+     * an active match. Joiners can quit (force-close, etc.) but auto-lose
+     * their stake via the existing AFK / force-settle path. NO forfeit button
+     * exists in the race panel today; if one is added later, it MUST gate on
+     * `_canForfeit(state)` so the host can't bail mid-game when losing.
+     * On-chain enforcement marker lives in the Anchor program TODO.
+     */
+    private _canForfeit(matchState: MatchState | null): boolean {
+        if (!matchState) return false;
+        const me = MWAManager.instance?.connectedPubkey;
+        if (!me) return false;
+        return matchState.players[0] !== me;
+    }
+
+    /**
+     * 2026-05-03 — CoD-lobby notification deep-link router.
+     *
+     * Tapping a `match_started` / `match_filled` notification routes the user
+     * into the right panel for that match based on on-chain status + their
+     * participant role:
+     *   - Active (status=1) + participant → mount race panel directly
+     *   - Waiting (status=0) + participant → mount waiting panel + arm poll
+     *   - Settled (status=2) → spectator panel (renders post-match summary)
+     *   - Not a participant → spectator panel (read-only)
+     *
+     * Refuses to switch out of a different live race the user is currently in
+     * (would forfeit the live stake), and no-ops if the right panel is already
+     * mounted for this exact PDA.
+     */
+    private async _routeToMatch(matchPda: string): Promise<void> {
+        console.log(`${TAG} _routeToMatch | match=${matchPda} active_pda=${this._activeRealMatchPda ?? 'none'} race_visible=${this._racePanel?.active ?? false}`);
+        const me = MWAManager.instance?.connectedPubkey;
+        // Already on the same race — nothing to do.
+        if (this._activeRealMatchPda === matchPda && this._racePanel?.active) {
+            return;
+        }
+        // In a different live race — refuse to switch (would forfeit stake).
+        if (this._activeRealMatchPda && this._activeRealMatchPda !== matchPda && this._racePanel?.active) {
+            showToast('Already in another match');
+            return;
+        }
+        let state: MatchState | null = null;
+        try {
+            state = await getMatch(this._tdRpc, matchPda);
+        } catch (e) {
+            console.log(`${TAG} _routeToMatch | FETCH_FAIL match=${matchPda} err=${(e as any)?.message ?? e}`);
+        }
+        if (!state) {
+            showToast('Match not found');
+            return;
+        }
+        const isParticipant = !!me && state.players.includes(me);
+        // Settled / cancelled — route to spectator (it'll render the post-match summary).
+        if (state.status === 2 || state.status === 3) {
+            this._onOpenSpectator(matchPda);
+            return;
+        }
+        // Not a participant — read-only spectator view.
+        if (!isParticipant) {
+            this._onOpenSpectator(matchPda);
+            return;
+        }
+        // Active + participant — mount race panel directly.
+        if (state.status === 1) {
+            this._activeRealMatchPda = matchPda;
+            this._latestRealMatchState = state;
+            this._realMatchMode = state.mode;
+            this._realMatchWagerTier = state.wagerTier;
+            this._realMatchWagerLamports = Number(state.wagerLamports);
+            this._pendingRealMatch = true;
+            this._hideWaitingPanel();
+            this._setStakeClusterVisible(true);
+            this._refreshSquadActionButtons();
+            this._onStartGame();
+            return;
+        }
+        // Waiting + participant — re-mount waiting panel via the resume flow.
+        // The picker's existing resume branch handles the seed/poll wiring.
+        // (Task #9 will add a direct _resumeWaitingPanel(matchPda) helper that
+        // bypasses the picker overlay; for now reuse the picker's resume target.)
+        this._pickerResumeTarget = state;
+        this._pickerHostMode = false;
+        this._pickerJoinTarget = null;
+        this._pickerSelectedTrack = 'real';
+        try {
+            await this._onPickerStart();
+        } catch (e) {
+            console.log(`${TAG} _routeToMatch | RESUME_FAIL match=${matchPda} err=${(e as any)?.message ?? e}`);
+            this._onOpenSpectator(matchPda);
+        }
+    }
 
     private _showRacePanel(holdings: Holding[]): void {
         if (!this._racePanel) {
@@ -10219,63 +10980,52 @@ export class AppUI extends Component {
         return RAKE_BPS_MAX - Math.floor(steps * range / 9);
     }
 
-    private _showLevelUpOverlay(previousLevel: number, newLevel: number): void {
-        if (!this._levelUpOverlay) return;
-        if (this._lastShownLevelUp >= newLevel) return; // already shown
-        this._lastShownLevelUp = newLevel;
-        console.log(`${TAG} _showLevelUpOverlay | prev=${previousLevel} new=${newLevel}`);
-        // Phase N4 - feed entry only; cinematic IS the primary surface.
-        const newRakeBps = this._rakeBpsForLevel(newLevel);
-        this._emitNotification('level_up', `Level ${newLevel} reached`,
+    /**
+     * Queue a level-up cinematic to play. Fires regardless of which UI panel
+     * the user is on, since matches resolve in the background. Notification
+     * feed entry emits with quietToast=true so the cinematic is the primary
+     * surface; the bell badge still increments.
+     *
+     * Multi-level rule: a single match crossing K boundaries arrives as ONE
+     * payload (prev=N, new=N+K) and the overlay shows it once with the
+     * "Massive XP gain." copy. Multiple SEPARATE level-up events (e.g. a
+     * background match settle followed by a cross-device paper-XP backfill)
+     * queue and play sequentially.
+     */
+    private _enqueueLevelUp(payload: LevelUpPayload): void {
+        if (!this._levelUpInstance) return;
+        if (payload.newLevel <= payload.previousLevel) return;
+        if (this._lastShownLevelUp >= payload.newLevel) return; // idempotence
+        this._lastShownLevelUp = payload.newLevel;
+        const newRakeBps = this._rakeBpsForLevel(payload.newLevel);
+        this._emitNotification(
+            'level_up',
+            `Level ${payload.newLevel} reached`,
             `Your rake is now ${(newRakeBps / 100).toFixed(1)}%`,
-            { payload: { previousLevel, newLevel }, quietToast: true, dedupeKey: `level:${newLevel}` });
-
-        if (this._levelUpTitleLabel) this._levelUpTitleLabel.string = 'LEVEL UP';
-        if (this._levelUpBigLevel) {
-            // Count up from previousLevel → newLevel over 700ms via setTimeout chain.
-            const start = Math.max(1, previousLevel | 0);
-            const end = newLevel | 0;
-            this._levelUpBigLevel.string = String(start);
-            const steps = Math.max(1, end - start);
-            const stepMs = Math.min(220, Math.floor(700 / steps));
-            for (let i = 1; i <= steps; i++) {
-                setTimeout(() => {
-                    if (!this._levelUpBigLevel) return;
-                    this._levelUpBigLevel.string = String(start + i);
-                }, i * stepMs);
-            }
-        }
-        if (this._levelUpCaptionLabel) this._levelUpCaptionLabel.string = `Level ${newLevel} reached`;
-        if (this._levelUpRakeLabel) {
-            const oldBps = this._rakeBpsForLevel(previousLevel);
-            const newBps = this._rakeBpsForLevel(newLevel);
-            if (newBps < oldBps) {
-                this._levelUpRakeLabel.string = `Your rake: ${(newBps / 100).toFixed(1)}% (was ${(oldBps / 100).toFixed(1)}%)`;
-                this._levelUpRakeLabel.color = new Color(48, 198, 155, 255);
-            } else {
-                this._levelUpRakeLabel.string = `Your rake: ${(newBps / 100).toFixed(1)}%`;
-                this._levelUpRakeLabel.color = new Color(180, 190, 210, 255);
-            }
-        }
-        this._levelUpOverlay.active = true;
-        // Pulse-tween the big level number to draw the eye.
-        if (this._levelUpBigLevel) {
-            const node = this._levelUpBigLevel.node;
-            Tween.stopAllByTarget(node);
-            node.setScale(0.6, 0.6, 1);
-            tween(node).to(0.35, { scale: new Vec3(1.0, 1.0, 1) }, { easing: 'backOut' }).start();
-        }
-        try { Haptics.fire(HapticType.HEAVY); } catch (_) { /* ignore */ }
-        try { playSound('level_up'); } catch (_) { /* ignore */ }
-        // Auto-dismiss after 2.8s.
-        setTimeout(() => this._hideLevelUpOverlay(), 2800);
+            {
+                payload: { previousLevel: payload.previousLevel, newLevel: payload.newLevel },
+                quietToast: true,
+                dedupeKey: `level:${payload.newLevel}`,
+            },
+        );
+        this._levelUpQueue.push(payload);
+        console.log(`${TAG} _enqueueLevelUp | prev=${payload.previousLevel} new=${payload.newLevel} queued=${this._levelUpQueue.length} active=${this._levelUpActive}`);
+        if (!this._levelUpActive) this._drainLevelUpQueue();
     }
 
-    private _hideLevelUpOverlay(): void {
-        if (!this._levelUpOverlay) return;
-        if (!this._levelUpOverlay.active) return;
-        this._levelUpOverlay.active = false;
-        console.log(`${TAG} _hideLevelUpOverlay | DONE`);
+    private _drainLevelUpQueue(): void {
+        if (!this._levelUpInstance) return;
+        const next = this._levelUpQueue.shift();
+        if (!next) {
+            this._levelUpActive = false;
+            return;
+        }
+        this._levelUpActive = true;
+        this._levelUpInstance.show(next, {
+            onClose: () => {
+                this._drainLevelUpQueue();
+            },
+        });
     }
 
     private _hideSigningOverlay(): void {
@@ -10799,6 +11549,10 @@ export class AppUI extends Component {
         if (willOpen) {
             if (this._minLiqPopoverNode) this._minLiqPopoverNode.active = false;
             if (this._columnsPopoverNode) { this._columnsPopoverNode.active = false; this._columnsPopoverOpen = false; }
+            // F1 - re-attach lucide row icons every time the popover opens, so
+            // users who tap the trigger before Phase-3 sprite registration
+            // completed still get badges as soon as they open it again.
+            this._attachFeedTabDropdownIcons();
         }
         this._syncBackdrop();
         console.log(`${TAG} _onFeedTabDropdownClick | popover_open=${willOpen} current_tab=${this._currentFeedTab}`);
@@ -10838,17 +11592,19 @@ export class AppUI extends Component {
             'watchlist':   'Watchlist  ▾',
             'top10':       'Top 10  ▾',
         };
-        const iconMap: Record<FeedTabOrVirtual, IconName> = {
-            'new':         'bolt',
-            'trending':    'flame',
-            'gainers':     'chart',
-            'smart_money': 'brain',
-            'watchlist':   'star',
-            'top10':       'trophy',
+        // F1 - Lucide trigger icons + solpulse tints. Match _attachFeedTabDropdownIcons.
+        const iconMap: Record<FeedTabOrVirtual, { icon: IconName; tintHex: string }> = {
+            'new':         { icon: 'lucideSparkles',   tintHex: '#A3E635' },
+            'trending':    { icon: 'lucideFlame',      tintHex: '#FB923C' },
+            'gainers':     { icon: 'lucideTrendingUp', tintHex: '#4ADE80' },
+            'smart_money': { icon: 'lucideGlobe',      tintHex: '#22D3EE' },
+            'watchlist':   { icon: 'lucideStar',       tintHex: '#FACC15' },
+            'top10':       { icon: 'lucideBarChart',   tintHex: '#A78BFA' },
         };
         this._feedTabDropdownLabel.string = map[tab] ?? '▾';
         const btn = this._tokenDuelPanel?.getChildByName('FeedTabDropdownButton');
-        if (btn) this._ensureIconBadge(btn, iconMap[tab] ?? 'bolt', { size: 16, offsetX: -90 });
+        const spec = iconMap[tab] ?? iconMap['trending'];
+        if (btn) this._ensureIconBadge(btn, spec.icon, { size: 16, offsetX: -90, tintHex: spec.tintHex });
     }
 
     private _highlightActiveFeedTabOption(active: FeedTabOrVirtual): void {
@@ -13309,18 +14065,30 @@ export class AppUI extends Component {
     //  SESSION D PART 3 - Waiting + PostMatch panel handlers
     // ═══════════════════════════════════════════════════════════════
 
-    private _showWaitingPanel(opts: { mode: string; wagerSol: number; track: 'paper' | 'real'; status?: string; requiredPlayers?: number }): void {
+    private _showWaitingPanel(opts: { mode: string; wagerSol: number; track: 'paper' | 'real'; status?: string; requiredPlayers?: number; isJoiner?: boolean; seedPlayerCount?: number }): void {
         this._dumpAppState('show_waiting_enter');
         if (!this._waitingPanel) return;
         this._tokenDuelPanel.active = false;
         this._waitingPanel.active = true;
         this._dumpPanelLayout(this._waitingPanel, 'show_waiting');
         const n = opts.requiredPlayers ?? 2;
-        if (this._waitingTitleLabel) this._waitingTitleLabel.string = opts.track === 'real' ? 'Finding opponents…' : 'Matching vs Bots…';
+        // Forward-looking seed so first paint reads truthfully:
+        // host/resume → 1/N (their slot fills the moment the create tx confirms);
+        // joiner → N-1/N (entering the last open slot of a near-full lobby);
+        // explicit seedPlayerCount overrides when actual count is known (mid-fill resume).
+        const seedCount = opts.seedPlayerCount ?? (opts.isJoiner ? Math.max(0, n - 1) : 1);
+        if (this._waitingTitleLabel) {
+            this._waitingTitleLabel.string = opts.track === 'real'
+                ? (opts.isJoiner ? 'Joining lobby · waiting for opponents…' : 'Match created · waiting for users…')
+                : 'Matching vs Bots…';
+        }
         if (this._waitingModeLabel) this._waitingModeLabel.string = `${opts.mode} · ${opts.wagerSol.toFixed(3)} SOL · ${opts.track === 'real' ? 'Real' : 'Paper'}`;
-        if (this._waitingProgressLabel) this._waitingProgressLabel.string = opts.track === 'real' ? `0/${n} players · 0:00 / 2:00` : 'Sampling opponents…';
+        if (this._waitingProgressLabel) this._waitingProgressLabel.string = opts.track === 'real' ? `${seedCount}/${n} players · 0:00 / 2:00` : 'Sampling opponents…';
         if (this._waitingStatusLabel) this._waitingStatusLabel.string = opts.status ?? '';
-        if (this._waitingPlayBotButton) this._waitingPlayBotButton.node.active = opts.track === 'real';
+        // Home button always visible — gives users a clean exit on either track
+        // (paper auto-hides ~1.5s later anyway; real keeps the lobby open in
+        // the background and lets the user resume via Matches In Progress).
+        if (this._waitingHomeButton) this._waitingHomeButton.node.active = true;
         // Part 13: rake preview line - "Rake: X.X% · pot: Y.Y SOL".
         if (this._waitingRakeLabel) {
             const bps = rakeBpsForLevel(this._cachedLevel);
@@ -13482,20 +14250,29 @@ export class AppUI extends Component {
         }
     }
 
-    private _onWaitingPlayBot(): void {
-        console.log(`${TAG} _onWaitingPlayBot | switching to bot fallback active_real=${this._activeRealMatchPda ?? 'none'}`);
-        // If a real match is live + timed-out, try best-effort refund before falling back.
-        if (this._activeRealMatchPda) {
-            const matchPda = this._activeRealMatchPda;
-            this._realPollAbortFlag = true;
-            this._submitCancelMatch(matchPda).catch(() => { /* best-effort */ });
-            this._activeRealMatchPda = null;
-        }
-        (this as any)._pendingPaperBotMatch = true;
+    /**
+     * Home tap from WaitingPanel. Leaves the on-chain lobby OPEN in the
+     * background so the user can resume via Matches In Progress → Waiting tab,
+     * or get auto-deep-linked back when a notification fires on lobby fill.
+     * Bot matches are reached via the dedicated Home-page bot button — no
+     * fallback-to-bot here anymore.
+     */
+    private _onWaitingHome(): void {
+        const pda = this._activeRealMatchPda;
+        console.log(`${TAG} _onWaitingHome | leaving waiting panel match=${pda ?? 'none'} (lobby stays open)`);
+        // Stop the foreground poll loop. The on-chain Match account remains
+        // status=0 with the user's stake escrowed; the WS notification stream
+        // (match_filled / match_started) will deep-link back if it fills.
+        this._realPollAbortFlag = true;
+        this._stopForceSettleWatch();
         this._hideWaitingPanel();
-        this._setStakeClusterVisible(true);
-        this._refreshSquadActionButtons();
-        showToast('Bot match - tap Commit to start');
+        // Clear active-match handle so a fresh Start Duel doesn't collide with
+        // the backgrounded lobby. The PDA is still discoverable via MIP/notif.
+        this._activeRealMatchPda = null;
+        this._showHome();
+        if (pda) {
+            showToast('Lobby still open — resume from Matches In Progress');
+        }
     }
 
     private _showPostMatchPanel(outcome: {
@@ -13804,12 +14581,12 @@ export class AppUI extends Component {
         // false here so it doesn't start running while the CTAs are hidden.
         this._stylePostMatchCTAs(outcome.won, false);
 
-        // Phase H4 - fire cinematic BEFORE rendering the rest of the panel.
-        // The overlay sits above PostMatchPanel; auto-dismisses after 2.8s
-        // and the user can tap-through immediately.
-        if (leveledUp) {
-            this._showLevelUpOverlay(previousLevel, outcome.newLevel);
-        }
+        // 2026-05-03 - cinematic LevelUpOverlay is now decoupled from the
+        // post-match reveal. Triggers live in _onGameOver paper/real paths
+        // (via _enqueueLevelUp), so a background-match level-up still fires
+        // the cinematic on whatever panel the user happens to be viewing.
+        // The post-match panel keeps its quieter "LEVEL UP! N → N+1"
+        // subtitle + gold-tinted level card as in-context reinforcement.
 
         if (this._postMatchTitleLabel) {
             // Drifting-gadget redesign: outcome-driven uppercase header.
@@ -15351,6 +16128,8 @@ export class AppUI extends Component {
                     ? 'Resuming lobby · waiting for opponents…'
                     : (join ? 'Joining lobby - sign tx…' : (hosting ? 'Hosting · waiting for opponents…' : 'Checking wallet…')),
                 requiredPlayers: modeDef.requiredPlayers,
+                isJoiner: join,
+                seedPlayerCount: resume && resumeTarget ? resumeTarget.playerCount : undefined,
             });
             // Cache selections so settle flow knows what to do. Stage 3 modeU8 mapping.
             const modeMap: Record<string, number> = { oneVone: 0, trio: 1, fourPlayer: 2, eightPlayer: 3 };
@@ -15370,7 +16149,12 @@ export class AppUI extends Component {
                 this._pickerResumeTarget = null;
                 this._pickerHostMode = false;
                 if (this._waitingProgressLabel) {
-                    this._waitingProgressLabel.string = `${resumeTarget.playerCount}/${modeDef.requiredPlayers} players · 0:00 / 2:00`;
+                    // Resume seed reflects the lobby's actual age, not 0:00 — a
+                    // 15-min-old lobby reading "0:00" would feel like a reset.
+                    const seedElapsed = resumeTarget.createdAt
+                        ? Date.now() - Number(resumeTarget.createdAt) * 1000
+                        : 0;
+                    this._waitingProgressLabel.string = `${resumeTarget.playerCount}/${modeDef.requiredPlayers} players · ${this._formatWaitingClock(Math.max(0, seedElapsed))}`;
                 }
                 (async () => {
                     const squadMints = this._squad.slots
@@ -15381,13 +16165,21 @@ export class AppUI extends Component {
                         void publishSquadToBackend(resumeTarget.pda, MWAManager.instance.connectedPubkey, squadMints);
                     }
                     if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Match ${resumeTarget.pda.substring(0, 8)}… · waiting for opponents`;
-                    const outcome = await this._runRealPollLoop(resumeTarget.pda);
+                    // Resume: pass on-chain createdAt as the wall-clock anchor so
+                    // the displayed elapsed reflects true lobby age (not just this poll).
+                    const resumeCreatedMs = resumeTarget.createdAt ? Number(resumeTarget.createdAt) * 1000 : Date.now();
+                    const outcome = await this._runRealPollLoop(resumeTarget.pda, resumeCreatedMs);
                     if (outcome === 'active') {
+                        // CoD-lobby auto-mount: lobby filled while user was on
+                        // WaitingPanel, no manual Commit step needed. _onStartGame
+                        // mounts the race panel directly so all participants
+                        // transition to the race the moment status flips Active.
                         this._pendingRealMatch = true;
                         this._hideWaitingPanel();
                         this._setStakeClusterVisible(true);
                         this._refreshSquadActionButtons();
-                        showToast('Opponent found - tap Commit to start');
+                        showToast('Match starting!');
+                        this._onStartGame();
                     } else if (outcome === 'timeout') {
                         if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No opponent in 2 min - Play Bot or Cancel+Refund';
                         this._emitNotification('match_expired', 'Lobby timed out',
@@ -15449,11 +16241,16 @@ export class AppUI extends Component {
 
                 const outcome = await this._runRealPollLoop(joinResult.matchPda);
                 if (outcome === 'active') {
+                    // CoD-lobby auto-mount: lobby filled while user was on
+                    // WaitingPanel, no manual Commit step needed. _onStartGame
+                    // mounts the race panel directly so all participants
+                    // transition to the race the moment status flips Active.
                     this._pendingRealMatch = true;
                     this._hideWaitingPanel();
                     this._setStakeClusterVisible(true);
                     this._refreshSquadActionButtons();
-                    showToast('Opponent found - tap Commit to start');
+                    showToast('Match starting!');
+                    this._onStartGame();
                 } else if (outcome === 'timeout') {
                     // Keep panel open; Play Bot + Cancel buttons are visible.
                     if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No opponent in 2 min - Play Bot or Cancel+Refund';
@@ -15719,35 +16516,59 @@ export class AppUI extends Component {
     }
 
     /**
+     * 2026-05-03 — clock format for the WaitingPanel progress line.
+     * Under 2 min keeps the original `MM:SS / 2:00` (the fast-poll budget hint).
+     * Past 2 min drops the denominator to `MM:SS elapsed` so resumed lobbies
+     * (which can be 15m+ old) read correctly. Past 1h switches to `Hh Mm elapsed`.
+     */
+    private _formatWaitingClock(elapsedMs: number): string {
+        if (elapsedMs < 120_000) {
+            const mm = Math.floor(elapsedMs / 60_000).toString().padStart(1, '0');
+            const ss = Math.floor((elapsedMs / 1000) % 60).toString().padStart(2, '0');
+            return `${mm}:${ss} / 2:00`;
+        }
+        if (elapsedMs < 3_600_000) {
+            const mm = Math.floor(elapsedMs / 60_000).toString().padStart(1, '0');
+            const ss = Math.floor((elapsedMs / 1000) % 60).toString().padStart(2, '0');
+            return `${mm}:${ss} elapsed`;
+        }
+        const h = Math.floor(elapsedMs / 3_600_000);
+        const m = Math.floor((elapsedMs % 3_600_000) / 60_000);
+        return `${h}h ${m}m elapsed`;
+    }
+
+    /**
      * Drive the WaitingPanel's progress label while `waitForOpponent` polls.
      * Returns the loop's outcome; caller decides what to do next.
+     * `startedAtMs` is the lobby-create wall clock — defaults to now for fresh
+     * lobbies; resume callers pass `Number(state.createdAt) * 1000` so the
+     * displayed elapsed reflects the true lobby age, not just this poll session.
      */
-    private async _runRealPollLoop(matchPda: string): Promise<'active' | 'timeout' | 'cancelled' | 'settled'> {
-        console.log(`${TAG} _runRealPollLoop | START match=${matchPda}`);
+    private async _runRealPollLoop(matchPda: string, startedAtMs?: number): Promise<'active' | 'timeout' | 'cancelled' | 'settled'> {
+        console.log(`${TAG} _runRealPollLoop | START match=${matchPda} started_at=${startedAtMs ?? 'now'}`);
         this._realPollAbortFlag = false;
         const timeoutMs = 120_000;
         // Live wall-clock tick every 1s for the elapsed display.
-        const startWall = Date.now();
+        const startWall = startedAtMs ?? Date.now();
         const clockTimer = setInterval(() => {
             if (this._realPollAbortFlag) return;
             const elapsed = Date.now() - startWall;
-            const mm = Math.floor(elapsed / 60_000).toString().padStart(1, '0');
-            const ss = Math.floor((elapsed / 1000) % 60).toString().padStart(2, '0');
             if (this._waitingProgressLabel) {
                 // Keep the player_count portion; only update the clock segment.
                 const current = this._waitingProgressLabel.string || '0/2 players';
                 const parts = current.split('·');
                 const countPart = (parts[0] ?? '0/2 players').trim();
-                this._waitingProgressLabel.string = `${countPart} · ${mm}:${ss} / 2:00`;
+                this._waitingProgressLabel.string = `${countPart} · ${this._formatWaitingClock(elapsed)}`;
             }
         }, 1000);
 
         const result = await waitForOpponent(this._tdRpc, matchPda, timeoutMs, (u) => {
             if (this._realPollAbortFlag) return;
             if (this._waitingProgressLabel) {
-                const mm = Math.floor(u.elapsedMs / 60_000).toString().padStart(1, '0');
-                const ss = Math.floor((u.elapsedMs / 1000) % 60).toString().padStart(2, '0');
-                this._waitingProgressLabel.string = `${u.playerCount}/${u.requiredPlayers} players · ${mm}:${ss} / 2:00`;
+                // Anchor displayed elapsed to startWall (createdAt) instead of
+                // u.elapsedMs (poll-session-only) so resumed lobbies show true age.
+                const elapsed = Date.now() - startWall;
+                this._waitingProgressLabel.string = `${u.playerCount}/${u.requiredPlayers} players · ${this._formatWaitingClock(elapsed)}`;
             }
             // Part 9: seed force-settle watcher off the first Active poll.
             if (u.state) this._latestRealMatchState = u.state;
@@ -16144,7 +16965,11 @@ export class AppUI extends Component {
             case 'match_filled': {
                 const matchPda = (n.payload?.matchPda as string) ?? null;
                 if (!matchPda) return undefined;
-                return () => this._onOpenSpectator(matchPda);
+                // CoD-lobby deep-link: if the user is a participant in this
+                // match, mount the race panel directly (or waiting panel if
+                // the lobby is still status=0). Non-participants fall back to
+                // the spectator panel via _routeToMatch's internal branch.
+                return () => void this._routeToMatch(matchPda);
             }
             case 'tournament_starting':
             case 'tournament_full': {
@@ -17427,27 +18252,23 @@ export class AppUI extends Component {
         // so opening the picker on a tall device never leaves a bleed band.
         this._relayoutModePickerToViewport();
 
-        // Guest OR bot mode hides the Paper/Real toggle (always paper); the
-        // wager chip row was retired in the lock-in redesign - stake info now
-        // lives in PickerSummaryCard's stake label, which is always visible.
-        const hideTrack = this._isGuest() || this._pickerBotMode;
+        // 2026-05-03 — Paper/Real toggle retired. Start Duel always creates a
+        // real PvP lobby; bots get the dedicated Home-page button (which sets
+        // _pickerBotMode=true and forces paper). Guest is also paper-only.
+        // Track is no longer user-selectable from this picker, so hide both
+        // toggles + the section header / helper unconditionally.
+        const isPracticeOnly = this._isGuest() || this._pickerBotMode;
+        const hideTrack = true;
+        this._pickerSelectedTrack = isPracticeOnly ? 'paper' : 'real';
         const trackHelper = this._modePickerOverlay?.getChildByName('PickerTrackHelperLabel');
-        if (hideTrack) {
-            this._pickerSelectedTrack = 'paper';
-            if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = false;
-            if (this._pickerRealToggle)  this._pickerRealToggle.node.active = false;
-            const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
-            if (trackHdr) trackHdr.active = false;
-            if (trackHelper) trackHelper.active = false;
-            for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
-        } else {
-            if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = true;
-            if (this._pickerRealToggle)  this._pickerRealToggle.node.active = true;
-            const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
-            if (trackHdr) trackHdr.active = true;
-            if (trackHelper) trackHelper.active = true;
-            for (const btn of this._pickerWagerButtons.values()) btn.node.active = true;
-        }
+        if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = false;
+        if (this._pickerRealToggle)  this._pickerRealToggle.node.active = false;
+        const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
+        if (trackHdr) trackHdr.active = false;
+        if (trackHelper) trackHelper.active = false;
+        // Wager chips stay hidden in practice flows (free play); visible when
+        // staking real SOL/SKR in the Start Duel flow.
+        for (const btn of this._pickerWagerButtons.values()) btn.node.active = !isPracticeOnly;
         // 2026-04-30 arena redesign - only the middle-zone Difficulty band
         // shifts when Track is hidden. Summary card / CTA / footer are now
         // anchored to the viewport bottom by _relayoutModePickerToViewport
@@ -21528,6 +22349,37 @@ export class AppUI extends Component {
         this._setLastResult(rec);
     }
 
+    /**
+     * 2026-05-03 landing polish — repaint the MascotStatusChip text from the
+     * live `_mipMatches` cache. Keeps the live-signal the user sees on Landing
+     * coherent with the Matches-In-Progress count without a new RPC: we just
+     * read the same array MIP already polls. Falls back to "arena open" copy
+     * when the array is empty (pre-auth, fresh launch, or genuinely zero
+     * active matches). Cheap; safe to call on every panel-show.
+     */
+    private _refreshLandingLiveChip(): void {
+        if (!this._landingLiveChipLabel) return;
+        const n = this._mipMatches.length;
+        this._landingLiveChipLabel.string = n > 0
+            ? `●  Live · ${n} ${n === 1 ? 'duel' : 'duels'} in progress`
+            : '●  Live · arena open';
+    }
+
+    private _startLandingLiveChip(): void {
+        if (this._landingLiveChipTimer !== null) return;
+        this._refreshLandingLiveChip();
+        this._landingLiveChipTimer = setInterval(() => {
+            this._refreshLandingLiveChip();
+        }, 30_000) as unknown as number;
+    }
+
+    private _stopLandingLiveChip(): void {
+        if (this._landingLiveChipTimer !== null) {
+            clearInterval(this._landingLiveChipTimer);
+            this._landingLiveChipTimer = null;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  Part 14 - Tournaments
     // ═══════════════════════════════════════════════════════════════
@@ -21971,6 +22823,8 @@ export class AppUI extends Component {
             track: 'real',
             status: 'Joining match - sign tx',
             requiredPlayers: modeDef.requiredPlayers,
+            isJoiner: true,
+            seedPlayerCount: m.playerCount,
         });
         (async () => {
             const initResult = await this._ensureUserStatsInitialized();
@@ -21987,11 +22841,14 @@ export class AppUI extends Component {
             if (this._waitingStatusLabel) this._waitingStatusLabel.string = `Match ${joinResult.matchPda.substring(0, 8)}… · waiting for opponents`;
             const outcome = await this._runRealPollLoop(joinResult.matchPda);
             if (outcome === 'active') {
+                // CoD-lobby auto-mount: spectator-join → match filled →
+                // race panel mounts directly without an extra Commit tap.
                 this._pendingRealMatch = true;
                 this._hideWaitingPanel();
                 this._setStakeClusterVisible(true);
                 this._refreshSquadActionButtons();
-                showToast('Opponent found - tap Commit to start');
+                showToast('Match starting!');
+                this._onStartGame();
             } else if (outcome === 'timeout') {
                 if (this._waitingStatusLabel) this._waitingStatusLabel.string = 'No opponent in 2 min - Play Bot or Cancel+Refund';
             } else if (outcome === 'settled' || outcome === 'cancelled') {

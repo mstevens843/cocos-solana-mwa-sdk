@@ -292,16 +292,16 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         elements: {
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite' },
             // Header band (V3 - h 64→44, ≈-30%).
-            notificationBell:    { x: -296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            notificationBadge:   { x: -278, y: 656,  w: 22,  h: 22,  type: 'badge' },
+            notificationBell:    { x: -296, y: 638,  w: 48,  h: 48,  type: 'btnGhost' },
+            notificationBadge:   { x: -276, y: 656,  w: 22,  h: 22,  type: 'badge' },
             walletPill:          { x: 0,    y: 640,  w: 360, h: 60,  type: 'chip' },
             walletPillGlow:      { x: 0,    y: 640,  w: 380, h: 80,  type: 'sprite' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge' },
             pubkeyLabel:         { x: -50,  y: 0,    w: 220, h: 26,  type: 'label' },
             walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label' },
-            openLeaderboardBtn:  { x: -224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            openSettingsBtn:     { x:  224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
-            disconnectBtn:       { x:  296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
+            openLeaderboardBtn:  { x: -224, y: 638,  w: 48,  h: 48,  type: 'btnGhost' },
+            openSettingsBtn:     { x:  224, y: 638,  w: 48,  h: 48,  type: 'btnGhost' },
+            disconnectBtn:       { x:  296, y: 638,  w: 48,  h: 48,  type: 'btnGhost' },
             homeHeaderUnderline: { x: 0,    y: 600,  w: 640, h: 1,   type: 'sprite' },
             // V4 - level chip h 80→72 (8h tighter).
             homeLevelChip:       { x: 0,    y: 556,  w: 680, h: 72,  type: 'chip' },
@@ -622,14 +622,15 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // hero controls; Watchlist/LIVE scaled up proportionally. Row 2
             // (filter chips) stays small as secondary controls. Headers +
             // scroll shifted down to absorb the extra height.
-            search:          { x: 18,   y: 365,  w: 360, h: 60, type: 'editbox' },
-            searchClear:     { x: 192,  y: 365,  w: 36,  h: 36, type: 'btnGhost' },
-            feedTabDropdown: { x: -260, y: 365,  w: 180, h: 60, type: 'btnGhost' },
-            watchlistStar:   { x: 240,  y: 365,  w: 52,  h: 52, type: 'btnGhost' },
-            cancelWatchlist: { x: 240,  y: 365,  w: 44,  h: 44, type: 'btnGhost' },
-            liveIndicator:   { x: 312,  y: 365,  w: 80,  h: 28, type: 'label' },
+            // 2026-05-03 R2 — row 1 freed; LIVE/★/Cols cluster on row 2.
+            search:          { x: 110,  y: 365,  w: 440, h: 60, type: 'editbox' },
+            searchClear:     { x: 290,  y: 365,  w: 36,  h: 36, type: 'btnGhost' },
+            feedTabDropdown: { x: -220, y: 365,  w: 220, h: 60, type: 'btnGhost' },
+            watchlistStar:   { x: 225,  y: 311,  w: 44,  h: 44, type: 'btnGhost' },
+            cancelWatchlist: { x: 225,  y: 311,  w: 44,  h: 44, type: 'btnGhost' },
+            liveIndicator:   { x: 295,  y: 311,  w: 80,  h: 28, type: 'label' },
             minLiqDropdown:    { x: -16,  y: 311,  w: 110, h: 32,  type: 'chip' },
-            columnsBtn:        { x: 270,  y: 311,  w: 96,  h: 32,  type: 'chip' },
+            columnsBtn:        { x: 170,  y: 311,  w: 44,  h: 32,  type: 'chip' },
             // 2026-05-02 token-picker UX - column headers hidden (moved off-canvas).
             // The 3-zone row layout (LEFT identity / MIDDLE pills / RIGHT %+price)
             // is self-explanatory; the table-style header strip read as
@@ -859,17 +860,8 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         },
         allowedOverlaps: [],
     },
-    LevelUpOverlay: {
-        canvas: { w: 720, h: 1280 },
-        elements: {
-            title:    { x: 0, y: 200,  w: 600, h: 100, type: 'label' },
-            bigLevel: { x: 0, y: 30,   w: 600, h: 240, type: 'label' },
-            caption:  { x: 0, y: -190, w: 600, h: 36,  type: 'label' },
-            rake:     { x: 0, y: -260, w: 600, h: 32,  type: 'label' },
-            hint:     { x: 0, y: -560, w: 400, h: 22,  type: 'label' },
-        },
-        allowedOverlaps: [],
-    },
+    // 2026-05-03 - LevelUpOverlay is now runtime-built (see
+    // assets/token-duel/scripts/LevelUpOverlay.ts). No layout entry needed.
 };
 
 export default LayoutSpec;

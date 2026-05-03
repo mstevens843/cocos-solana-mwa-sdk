@@ -19,6 +19,7 @@
 
 import { Connection, PublicKey } from '@solana/web3.js';
 import { NotificationStore, NotificationKind } from './notification_store';
+import { markLobbyStarted } from './match_lobbies';
 
 const TAG = '[notification_listener]';
 
@@ -119,7 +120,14 @@ export class NotificationListener {
             const required = parseInt(requiredStr, 10);
             console.log(`${TAG} JOIN_JOIN match=${matchPda.slice(0, 8)} player=${player.slice(0, 8)} count=${playerCount}/${required} status=${status}`);
             if (status === 1 /* Active */) {
-                // Fan out match_started to ALL players in roster.
+                // Stamp started_at on the lobby row so analytics + history
+                // reflect the actual fill moment (idempotent — repeated logs
+                // for the same match flip don't double-write).
+                void markLobbyStarted(matchPda).catch((e) =>
+                    console.warn(`${TAG} markLobbyStarted | FAIL match=${matchPda.slice(0, 8)} err=${e?.message ?? e}`),
+                );
+                // Fan out match_started to ALL players in roster. CoD-lobby UX:
+                // tap deep-links straight into the race panel for that match.
                 const modeLabel = MODE_LABEL[ctx.mode] ?? `mode${ctx.mode}`;
                 const windowLabel = WINDOW_LABEL[ctx.window] ?? '?';
                 const wagerSol = Number(ctx.wagerLamports) / 1e9;
@@ -132,7 +140,7 @@ export class NotificationListener {
                         title: isCreator ? 'Lobby filled!' : 'Match starting!',
                         body: isCreator
                             ? `Your ${modeLabel} lobby just filled - race begins now (${windowLabel}, ${wagerSol.toFixed(3)} SOL).`
-                            : `${modeLabel} · ${windowLabel} race · ${wagerSol.toFixed(3)} SOL · tap to spectate.`,
+                            : `${modeLabel} · ${windowLabel} race · ${wagerSol.toFixed(3)} SOL · tap to enter.`,
                         payload: { matchPda },
                     });
                 }

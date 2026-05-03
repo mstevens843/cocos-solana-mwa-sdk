@@ -27,6 +27,8 @@ const driftSet      = new WeakSet<Node>();
 const softGlowSet   = new WeakSet<Node>();
 const softEllipseSet = new WeakSet<Node>();
 const vignetteSet   = new WeakSet<Node>();
+const orbitSet       = new WeakSet<Node>();
+const scaleBreathSet = new WeakSet<Node>();
 
 /**
  * Y-axis sine oscillation around the node's current position. Cancelable via
@@ -426,3 +428,101 @@ export function installLandingVignette(panel: Node | null): void {
     });
 }
 
+/**
+ * 2026-05-03 landing polish - violet/teal dot ring orbiting the mascot to
+ * replace the disabled MascotGlow halo (Fix 10E). Each dot is a queued
+ * Node+Graphics work unit (1 unit each, well under the safeGraphics 6/tick
+ * budget when interleaved with the existing ~10 particle-drift units).
+ *
+ * Renders a single rotating ring container with `count` dots placed at
+ * fixed angles around `parent`. Ring rotates linearly via a pure transform
+ * tween (no Graphics) so the rotation cost is constant regardless of dot
+ * count. Each dot also runs an opacity sine so the ring reads as breathing,
+ * not static.
+ *
+ * Sits behind the mascot (siblingIndex 0). Idempotent per-parent.
+ * No-op if `parent` is null or already orbiting.
+ */
+export function addOrbitDots(
+    parent: Node,
+    opts: { count?: number; radius?: number; periodSec?: number } = {},
+): void {
+    if (!parent || orbitSet.has(parent)) return;
+    orbitSet.add(parent);
+
+    const count     = opts.count     ?? 6;
+    const radius    = opts.radius    ?? 130;
+    const periodSec = opts.periodSec ?? 18;
+    const tints: [number, number, number][] = [
+        [153,  69, 255],  // violet
+        [ 20, 241, 149],  // teal
+    ];
+
+    const ring = new Node('LandingMascotOrbitRing');
+    parent.addChild(ring);
+    ring.addComponent(UITransform).setContentSize(radius * 2, radius * 2);
+    ring.setSiblingIndex(0);
+
+    for (let i = 0; i < count; i++) {
+        const angle     = (i / count) * Math.PI * 2;
+        const tint      = tints[i % tints.length];
+        const dotRadius = 3 + (i % 2);
+        const dotIndex  = i;
+
+        enqueuePostDraw(() => {
+            if (!ring.isValid) return;
+            const dot = new Node(`OrbitDot_${dotIndex}`);
+            ring.addChild(dot);
+            const ut = dot.addComponent(UITransform);
+            ut.setContentSize(8, 8);
+            const g = dot.addComponent(Graphics);
+            g.fillColor = new Color(tint[0], tint[1], tint[2], 200);
+            g.circle(0, 0, dotRadius);
+            g.fill();
+            dot.setPosition(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+
+            const op = dot.addComponent(UIOpacity);
+            op.opacity = 200;
+            tween(op)
+                .to(periodSec / 4, { opacity: 100 }, { easing: 'sineInOut' })
+                .to(periodSec / 4, { opacity: 200 }, { easing: 'sineInOut' })
+                .union()
+                .repeatForever()
+                .start();
+        });
+    }
+
+    tween(ring)
+        .by(periodSec, { eulerAngles: new Vec3(0, 0, 360) }, { easing: 'linear' })
+        .repeatForever()
+        .start();
+
+    console.log(`${TAG} addOrbitDots | parent=${parent.name} count=${count} r=${radius} period=${periodSec}`);
+}
+
+/**
+ * 2026-05-03 landing polish - subtle scale breath layered on top of addFloat
+ * to give the mascot "alive" presence without needing a Graphics-based glow.
+ * Pure transform tween, zero Graphics. Idempotent per-node.
+ */
+export function addScaleBreath(
+    node: Node,
+    opts: { peakScale?: number; periodSec?: number } = {},
+): void {
+    if (!node || scaleBreathSet.has(node)) return;
+    scaleBreathSet.add(node);
+
+    const peak   = opts.peakScale ?? 1.04;
+    const period = opts.periodSec ?? 2.6;
+    const baseScale = node.scale.clone();
+    const peakScale = new Vec3(baseScale.x * peak, baseScale.y * peak, baseScale.z);
+
+    tween(node)
+        .to(period / 2, { scale: peakScale }, { easing: 'sineInOut' })
+        .to(period / 2, { scale: baseScale }, { easing: 'sineInOut' })
+        .union()
+        .repeatForever()
+        .start();
+
+    console.log(`${TAG} addScaleBreath | ${node.name} peak=${peak} period=${period}`);
+}

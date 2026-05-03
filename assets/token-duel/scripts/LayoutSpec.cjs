@@ -910,10 +910,10 @@ const LayoutSpec = {
             // Action stack (top → bottom: Connect → Trust line → Play as Guest → Reconnect).
             connectBtn:          { x: 0,   y: landing.CONNECT_Y,   w: UNIFORM_LAYOUT.CONTENT_W, h: 108, type: 'btnPrimary', notes: '2026-04-29 demo-ready: h 126→108 (substantial, not bloated). PRIMARY - gradient + glow + chevron; "Stake SOL · Win SOL". Title fontSize override 28pt + paddingX override 28 passed from generate-scenes.js call site (does not touch ButtonTierSpec.primary which other primary CTAs depend on).' },
             connectChevron:      { x: 296, y: landing.CONNECT_Y,   w: 24,  h: 28,  type: 'label',      notes: '2026-04-29 demo-ready: x 290→296 (track new paddingX), › 42→36pt (proportional to smaller button), bbox 28/32 → 24/28.' },
-            trustLine:           { x: -150, y: landing.TRUST_Y,     w: 280, h: 28,  type: 'label',      notes: '2026-05-02 polish: 2-column chip row LEFT. x 0→-150, w 640→280, h 20→28, font 11→12pt, color #9C9AC0 α210, copy trimmed to "🔒 Non-custodial · you control your wallet".' },
-            // 2026-05-02 polish - TrustLine + LiveSignal form a 2-column chip row.
-            liveSignalLabel:     { x:  150, y: landing.LIVE_SIGNAL_Y,     w: 280, h: 28, type: 'label',     notes: '2026-05-02 polish: 2-column chip row RIGHT. x 0→+150, w 640→280, h 20→28, font 11→12pt, color #9C9AC0 α210. Paired with TrustLine.' },
-            liveSignalDot:       { x:   30, y: landing.LIVE_SIGNAL_Y,     w: 8,   h: 8,  type: 'sprite',    notes: '2026-05-02 polish: x -118→+30 (sit at left edge of LiveSignalLabel chip). Pulsed by LandingFX.addGlowPulse.' },
+            trustLine:           { x: -150, y: landing.TRUST_Y,     w: 280, h: 28,  type: 'label',      notes: '2026-05-03 polish: AppUI._polishLandingPanel runtime-overrides this back to x=0, w=640, font 14pt, α230, copy "🔒 Non-custodial · You control your wallet · Join in seconds" (single centered row). Left-shifted layout coords retained only so a fresh scene regen still places the node inside CTACardBg before the runtime override moves it.' },
+            // 2026-05-03 polish - TrustLine is now a single centered row (runtime). LiveSignal pair below is hidden in _polishLandingPanel because the live-signal moved to MascotStatusChip above the mascot. Layout entries kept so the generator still emits the nodes (avoids breaking the existing scene file or generate-scenes.js wiring).
+            liveSignalLabel:     { x:  150, y: landing.LIVE_SIGNAL_Y,     w: 280, h: 28, type: 'label',     notes: '2026-05-03 polish: HIDDEN at runtime (node.active = false in _polishLandingPanel). Truth-of-live moved to MascotStatusChip live-signal above the mascot.' },
+            liveSignalDot:       { x:   30, y: landing.LIVE_SIGNAL_Y,     w: 8,   h: 8,  type: 'sprite',    notes: '2026-05-03 polish: HIDDEN at runtime (node.active = false). Companion to liveSignalLabel above.' },
             playAsGuestBtn:      { x: 0,   y: landing.GUEST_Y,     w: UNIFORM_LAYOUT.CONTENT_W, h: 80,  type: 'btnSuccess', notes: '2026-04-29 demo-ready: h 88→80; same width as Connect (UNIFORM rule), shorter so Connect remains visibly dominant. Body opacity dropped to 180 + halo alpha 40 in AppUI.' },
             reconnBtn:           { x: 0,   y: landing.RECONNECT_Y, w: 520, h: 52,  type: 'btnGhost',   notes: '2026-05-02 polish: compact pill (w UNIFORM→520, h 64→52). Title centered (subtitle repurposed as ReconnectStatusInline status holder).' },
             connectionStatusPill:{ x: 0,   y: landing.STATUS_PILL_Y, w: 180, h: 40, type: 'chip',      notes: '2026-04-29 demo-ready: w 200→180; faint pill background (Palette.bg.card alpha 90) so the chip reads as part of the layout, not a floating label. Lifted to -540 to clear the home indicator.' },
@@ -971,8 +971,8 @@ const LayoutSpec = {
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite', notes: 'dim overlay behind content column - reduces starfield contrast' },
             // ── HUD HEADER (y=640, V3) - bell · WalletPill · 3 chrome icons ──
             // V3 - icon w/h 64→44 (≈-30% header band height per UX audit).
-            notificationBell:    { x: -296, y: home.HEADER_Y,       w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 - w/h 64→44 (-30% header tighten)' },
-            notificationBadge:   { x: -278, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (bell.x + 18 keeps top-right offset)' },
+            notificationBell:    { x: -296, y: 638,                 w: 48,  h: 48,  type: 'btnGhost', notes: '1.75x scale: w/h 44→48, y 640→638 to keep top edge fixed' },
+            notificationBadge:   { x: -276, y: home.HEADER_BADGE_Y, w: 22,  h: 22,  type: 'badge',    notes: 'unread count badge ON bell (x -278→-276 to track 48-wide bell right edge)' },
             walletPill:          { x: 0,    y: home.HEADER_Y,       w: 360, h: 60,  type: 'chip',     notes: 'centered glowing pill; pubkey + wallet name + status dot' },
             walletPillGlow:      { x: 0,    y: home.HEADER_Y,       w: 380, h: 80,  type: 'sprite',   notes: 'soft violet glow halo SIBLING of WalletPill, renders BEHIND it' },
             walletPillSecureDot: { x: -150, y: 0,    w: 12,  h: 12,  type: 'badge',    notes: 'green status dot at left edge of pill (relative to pill)' },
@@ -980,8 +980,8 @@ const LayoutSpec = {
             walletNameLabel:     { x: 120,  y: 0,    w: 100, h: 16,  type: 'label',    notes: 'right side of pill (vertically centered) so "Seed Vault" is visible' },
             // Phase N4: openPortfolioBtn removed (Portfolio collapsed into Leaderboard hub).
             // 5-icon bar reordered to [bell | trophy | wallet | cog | disconnect] with wallet centered.
-            openLeaderboardBtn:  { x: -224, y: home.HEADER_Y, w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 - w/h 64→44' },
-            openSettingsBtn:     { x:  224, y: home.HEADER_Y, w: 44,  h: 44,  type: 'btnGhost', notes: 'V3 - w/h 64→44' },
+            openLeaderboardBtn:  { x: -224, y: 638,            w: 48,  h: 48,  type: 'btnGhost', notes: '1.75x scale: w/h 44→48, y 640→638 to keep top edge fixed' },
+            openSettingsBtn:     { x:  224, y: 638,            w: 48,  h: 48,  type: 'btnGhost', notes: '1.75x scale: w/h 44→48, y 640→638 to keep top edge fixed' },
             // V3 NEW - subtle violet underline beneath header band.
             homeHeaderUnderline: { x: 0,    y: home.HEADER_UNDERLINE_Y, w: 640, h: 1, type: 'sprite', notes: 'V3 - 1×640 violetDim underline at low alpha; visual divider below header' },
             // ── XP MODULE - real progression bar, animated ──
@@ -1008,7 +1008,7 @@ const LayoutSpec = {
             homeTournamentBadge: { x: 0,    y: home.RECENT_CARD_Y, w: 680, h: 108, type: 'chip',     notes: 'tournament alternate; takes ticker slot when active (h matches V5 Last Result card)' },
             // Off-flow placeholders - superseded by SettingsPanel + DailyChallengePanel.
             homeRakeChip:        { x: 0,    y: home.LEGACY_RAKE_Y,    w: 700, h: 22,  type: 'chip',      notes: 'legacy node; off-flow until refactor cleanup' },
-            disconnectBtn:       { x:  296, y: home.HEADER_Y,         w: 44,  h: 44,  type: 'btnGhost',  notes: 'V3 - w/h 64→44' },
+            disconnectBtn:       { x:  296, y: 638,                    w: 48,  h: 48,  type: 'btnGhost',  notes: '1.75x scale: w/h 44→48, y 640→638 to keep top edge fixed' },
             deleteBtn:           { x: 180,  y: home.LEGACY_DELETE_Y,  w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             signOutGuestBtn:     { x: 0,    y: home.LEGACY_SIGNOUT_Y, w: 280, h: 56,  type: 'btnGhost',  notes: 'legacy node; account control moved to SettingsPanel' },
             // ── PRIMARY CTA TRIO (V4 - Find=hero > Start=secondary > MIP=neutral > Bot=training) ──
@@ -2154,10 +2154,14 @@ const LayoutSpec = {
             // 2026-04-29 v2: h 24 → 28 to fit larger subtitle font.
             subtitle:        { x: 0,    y: leaderboard.SUBTITLE_Y, w: 520, h: 28,  type: 'label' },
             // 2026-05-02 polish - header helper lines: scoring legitimacy +
-            // weekly reset context. Both static, set once at start(). Stack
-            // under subtitle inside the 70 px gap to MODE_TABS_Y.
+            // weekly reset context. Both static, set once at start().
+            // 2026-05-03 polish - season helper lifted out of the helper stack
+            // and pinned to the top-right of the subtitle row. It used to sit
+            // at SUBTITLE_Y - 46 (y=570), inside the 70 px gap to MODE_TABS_Y,
+            // where the pill row at y=548 (h=48, top edge 572) was clipping it
+            // by ~10 px. Subtitle row co-tenancy puts it well clear of the pills.
             scoringHelper:   { x: 0,    y: leaderboard.SUBTITLE_Y - 28, w: 600, h: 18, type: 'label' },
-            seasonHelper:    { x: 0,    y: leaderboard.SUBTITLE_Y - 46, w: 600, h: 16, type: 'label' },
+            seasonHelper:    { x: 220,  y: leaderboard.SUBTITLE_Y,      w: 220, h: 16, type: 'label' },
             // Standalone "This Week" chip on the right of the segmented control.
             // Node name kept as LBTab_season (modeU8=4) so the existing handler still binds.
             // 2026-04-29 v2: ModeTabsContainer (x=-90, asymmetric left-anchored sprite)
@@ -2550,19 +2554,21 @@ const LayoutSpec = {
             // FeedFrameCard - wraps in-card UI. Bottom shrinks with cut feed h.
             feedFrameCard:      { x: 0,    y: td.FEED_FRAME_Y,  w: 712, h: td.FEED_FRAME_H, type: 'sprite',
                 notes: 'unified card behind Row 1 + Row 2 + col headers + feed' },
-            // 2026-04-29 token-picker rebuild - Row 1 (search row) re-balanced so
-            // dropdown / search / star / LIVE share the 680-px content column with
-            // 12-px gaps and no overlap. Search gets priority width (332). LIVE
-            // sits flush against the safe right edge instead of overflowing.
-            // Layout L→R: dropdown(180) | gap | search(332) | gap | star(44) | gap | live(80)
-            search:             { x: 18,   y: td.SEARCH_Y, w: 360, h: 60, type: 'editbox' },
-            searchClear:        { x: 192,  y: td.SEARCH_Y, w: 36,  h: 36, type: 'btnGhost' },
-            feedTabDropdown:    { x: -260, y: td.SEARCH_Y, w: 180, h: 60, type: 'btnGhost' },
-            watchlistStar:      { x: 240,  y: td.SEARCH_Y, w: 52,  h: 52, type: 'btnGhost', notes: 'icon-only ★ button (no text)' },
-            cancelWatchlist:    { x: 240,  y: td.SEARCH_Y, w: 44,  h: 44, type: 'btnGhost' },
-            liveIndicator:      { x: 312,  y: td.SEARCH_Y, w: 80,  h: 28, type: 'label' },
-            minLiqDropdown:     { x: -16,  y: td.CHIPS_Y, w: 110, h: 32, type: 'chip' },
-            columnsBtn:         { x: 270,  y: td.CHIPS_Y, w: 96,  h: 32, type: 'chip' },
+            // 2026-05-03 token-picker R2 — row 1 freed of LIVE/★; just dropdown +
+            // search now butt-join to fill the 680-px content column. LIVE +
+            // watchlist + cols moved down to row 2 right cluster so the LIVE
+            // pill stops bleeding past the FeedFrameCard right edge.
+            //
+            // Row 1 L→R (y=SEARCH_Y): dropdown(220 @ -220) | search(440 @ +110)
+            // Row 2 L→R (y=CHIPS_Y): [Newest][Liquidity ▾][All ▾] ........ [⋮][★] LIVE
+            search:             { x: 110,  y: td.SEARCH_Y, w: 440, h: 60, type: 'editbox' },
+            searchClear:        { x: 290,  y: td.SEARCH_Y, w: 36,  h: 36, type: 'btnGhost' },
+            feedTabDropdown:    { x: -220, y: td.SEARCH_Y, w: 220, h: 60, type: 'btnGhost' },
+            watchlistStar:      { x: 225,  y: td.CHIPS_Y,  w: 44,  h: 44, type: 'btnGhost', notes: '2026-05-03 R2 — moved to row 2 right cluster; size 52→44 to match icon-only Cols overflow.' },
+            cancelWatchlist:    { x: 225,  y: td.CHIPS_Y,  w: 44,  h: 44, type: 'btnGhost', notes: '2026-05-03 R2 — mirrors watchlistStar position on row 2.' },
+            liveIndicator:      { x: 295,  y: td.CHIPS_Y,  w: 80,  h: 28, type: 'label',    notes: '2026-05-03 R2 — moved to row 2 right edge; was bleeding past FeedFrameCard.' },
+            minLiqDropdown:     { x: -16,  y: td.CHIPS_Y,  w: 110, h: 32, type: 'chip' },
+            columnsBtn:         { x: 170,  y: td.CHIPS_Y,  w: 44,  h: 32, type: 'chip',     notes: '2026-05-03 R2 — slimmed 96→44 to icon-only ⋮ overflow; shifted +270→+170 to make room for ★ + LIVE on the right.' },
             // 2026-05-02 token-picker UX - column headers hidden (moved off-canvas).
             // The 3-zone row layout (LEFT identity / MIDDLE pills / RIGHT %+price)
             // is self-explanatory; the table header strip read as "spreadsheet"
@@ -2639,10 +2645,12 @@ const LayoutSpec = {
             // 8d - popover containers + their internal labels/buttons. Each
             // popover is _active=false by default; AppUI toggles per-event.
             // Anchors follow their triggers - Δy = +45 from legacy.
-            searchSuggestionPopover: { x: -30, y: 390,  w: 560, h: 300, type: 'group',
-                notes: 'y = search.y(345) + 45 = 390' },
-            feedTabDropdownPopover:  { x: -200, y: 180, w: 240, h: 304, type: 'group',
-                notes: 'opens DOWN of FeedTabDropdownButton; y = feedTabDropdown.y(345) - 165 = 180' },
+            // 2026-05-03 R2 — search popover re-anchored under the wider search box (search.x +18→+110).
+            searchSuggestionPopover: { x: 110, y: 390,  w: 620, h: 300, type: 'group',
+                notes: '2026-05-03 R2 — x: -30 → +110 to match new search center; w: 560 → 620 to fill content column.' },
+            // 2026-05-03 R2 — dropdown popover re-anchored under feedTabDropdown (-260→-220) and widened so SMART MONEY / FRESHLY LISTED labels breathe.
+            feedTabDropdownPopover:  { x: -220, y: 180, w: 280, h: 304, type: 'group',
+                notes: '2026-05-03 R2 — x: -200 → -220 to align under wider dropdown (now at -220); w: 240 → 280 for label breathing room.' },
             minLiqDropdownPopover:   { x: -32,  y: 197, w: 120, h: 180, type: 'group',
                 notes: 'y = minLiqDropdown.y(293) - 96 = 197' },
             liqSortDropdownPopover:  { x: -160, y: 197, w: 140, h: 100, type: 'group',
@@ -3805,23 +3813,11 @@ const LayoutSpec = {
     },
 
     /* ───── LEVEL UP OVERLAY ────────────────────────────────────────── */
-    // Phase 10 - XP celebration cinematic. Scrim (alpha=235 dark purple) +
-    // tap-to-dismiss + "LEVEL UP" + big level digit + caption + rake-
-    // discount callout. Auto-dismisses after 2.8s.
-    LevelUpOverlay: {
-        canvas: { w: 720, h: 1280 },
-        elements: {
-            title:    { x: 0, y: 200,  w: 600, h: 100, type: 'label',
-                notes: 'gold, bold, 64pt' },
-            bigLevel: { x: 0, y: 30,   w: 600, h: 240, type: 'label',
-                notes: 'bold, 180pt; AppUI tweens count-up' },
-            caption:  { x: 0, y: -190, w: 600, h: 36,  type: 'label' },
-            rake:     { x: 0, y: -260, w: 600, h: 32,  type: 'label',
-                notes: 'teal-accent: "Your rake: X.X% (was Y.Y%)"' },
-            hint:     { x: 0, y: -560, w: 400, h: 22,  type: 'label' },
-        },
-        allowedOverlaps: [],
-    },
+    // 2026-05-03 - LevelUpOverlay is now runtime-built. The cinematic
+    // (centered card, mascot celebrate badge, level transition, XP bar,
+    // microcopy, Continue button) is constructed by
+    // assets/token-duel/scripts/LevelUpOverlay.ts and parented to Canvas
+    // at instantiation time. No scene-baked node, no layout entry.
 };
 
 module.exports = LayoutSpec;

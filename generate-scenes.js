@@ -184,7 +184,7 @@ function logGapDrift(panelKey, prev, cur) {
 
 function auditLayoutSpacing() {
     // Skip overlays / drawer panels with their own narrower column.
-    const NON_COLUMN = /^(BackgroundFX|JoinMatchConfirmOverlay|LiveStandingsOverlay|LiveStandingsRow|NotificationToastOverlay|NotificationToastSlot|NotificationPanel|CountdownOverlay|SigningOverlay|LoadingOverlay|LevelUpOverlay)$/;
+    const NON_COLUMN = /^(BackgroundFX|JoinMatchConfirmOverlay|LiveStandingsOverlay|LiveStandingsRow|NotificationToastOverlay|NotificationToastSlot|NotificationPanel|CountdownOverlay|SigningOverlay|LoadingOverlay)$/;
     let issues = 0;
     for (const panelKey of Object.keys(LAYOUT)) {
         if (panelKey.startsWith('_')) continue;             // _GLOBAL_, etc.
@@ -5329,6 +5329,9 @@ function generate() {
     const lbSeasonHelper = mkLabel(sb, 'LeaderboardSeasonHelperLabel', lbN,
         'Resets Monday 00:00 UTC', 12,
         LP.seasonHelper.y, LP.seasonHelper.w, LP.seasonHelper.h, 130, 138, 168);
+    // 2026-05-03 polish - top-right of subtitle row, right-aligned text.
+    sb.e[lbSeasonHelper]._lpos = v3(LP.seasonHelper.x, LP.seasonHelper.y, 0);
+    sb.e[sb.e[lbSeasonHelper]._components[1].__id__]._horizontalAlign = 2;
 
     // 2026-04-29 v2: ModeTabsContainer (asymmetric left-anchored x=-90 sprite) deleted.
     // Runtime LBModePill (AppUI._buildSegmentedPill, tier='mode') fully owns the visual;
@@ -6519,7 +6522,7 @@ function generate() {
     style(sb, wpMode, { mono: true });  // Phase 15 (B5): mixed numeric/mode line
     const wpRake     = mkLabel(sb, 'WaitingRakeLabel', wpN, '', 13,
         WPE.rake.y, WPE.rake.w, WPE.rake.h, 184, 184, 184);
-    const wpProgress = mkLabel(sb, 'WaitingProgressLabel', wpN, '0/2 players · 0:00 / 2:00', 18,
+    const wpProgress = mkLabel(sb, 'WaitingProgressLabel', wpN, '1/2 players · 0:00 / 2:00', 18,
         WPE.progress.y, WPE.progress.w, WPE.progress.h, 180, 190, 210);
     style(sb, wpProgress, { mono: true });  // Phase 15 (B5): live timer + count
     const wpSpinner  = mkLabel(sb, 'WaitingSpinnerLabel', wpN, '·  ·  ·', 28,
@@ -6527,10 +6530,14 @@ function generate() {
     const wpCancelBtn = mkBtn(sb, 'WaitingCancelButton', wpN, 'Cancel',
         WPE.cancelBtn.y, WPE.cancelBtn.w, WPE.cancelBtn.h, 55, 75, 95,
         { tier: 'tertiary' });
-    const wpBotBtn    = mkBtn(sb, 'WaitingPlayBotButton', wpN, '▶ Play vs Bot',
+    // Home button replaces the legacy "Play vs Bot" fallback. Bots get their
+    // own dedicated Home-page entrypoint; from the WaitingPanel the user just
+    // wants an escape hatch back to Home that leaves the lobby open in the
+    // background (re-enterable via Matches In Progress → Waiting tab).
+    const wpHomeBtn   = mkBtn(sb, 'WaitingHomeButton', wpN, '🏠 Home',
         WPE.botBtn.y, WPE.botBtn.w, WPE.botBtn.h, 48, 198, 155,
         { tier: 'secondary' });
-    sb.e[wpBotBtn]._active = false; // revealed after timeout or immediately on paper
+    sb.e[wpHomeBtn]._active = true;
     // Force-settle: revealed after match active 5+ min with missing players.
     // UX Phase 2b: IconBadge bolt attached by AppUI. Phase 2c: bold.
     const wpForceBtn  = mkBtn(sb, 'WaitingForceSettleButton', wpN, 'Force Settle (AFK)',
@@ -6545,7 +6552,7 @@ function generate() {
     const wpStatus = mkLabel(sb, 'WaitingStatusLabel', wpN, '', 12,
         WPE.status.y, WPE.status.w, WPE.status.h, 184, 184, 184);
 
-    sb.e[wpN]._children = [rf(wpTitle), rf(wpMode), rf(wpRake), rf(wpProgress), rf(wpSpinner), rf(wpStreakBanner), rf(wpCancelBtn), rf(wpBotBtn), rf(wpForceBtn), rf(wpStatus)];
+    sb.e[wpN]._children = [rf(wpTitle), rf(wpMode), rf(wpRake), rf(wpProgress), rf(wpSpinner), rf(wpStreakBanner), rf(wpCancelBtn), rf(wpHomeBtn), rf(wpForceBtn), rf(wpStatus)];
     sb.e[wpN]._active = false;
 
     // ═══════════════════════════════════════════════════════════════
@@ -8754,56 +8761,10 @@ function generate() {
 
     sb.e[loadingN]._children = [rf(loadingMascotN), rf(loadingSpinnerN), rf(loadingStatusN), rf(loadingTipN)];
 
-    // ═══════════════════════════════════════════════════════════════
-    // Phase H4 - LevelUpOverlay (full-screen XP celebration cinematic)
-    // Triggered from AppUI._onGameOver / _showPostMatchPanel when newLevel > previousLevel.
-    // Shows: scrim · "LEVEL UP" · big level number · rake-discount callout.
-    // Auto-dismisses after 2.8s; also tap-to-dismiss anywhere.
-    // ═══════════════════════════════════════════════════════════════
-    const LUE = LAYOUT.LevelUpOverlay.elements;
-    const luN = sb.e.length;
-    sb.node('LevelUpOverlay', canvas, [], [], v3(0, 0, 0));
-    const luUT = sb.ut(luN, LAYOUT.LevelUpOverlay.canvas.w, LAYOUT.LevelUpOverlay.canvas.h);
-    const luBgSpr = sb.add({
-        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(luN), _enabled: true, __prefab: null,
-        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
-        _color: cl(8, 6, 14, 235),
-        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
-        _type: 1, _fillType: 0, _sizeMode: 0,
-        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
-        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
-        _id: gid(),
-    });
-    // Tap-to-dismiss button covering the whole scrim. Wired by AppUI.
-    const luDismissBtn = sb.add({
-        __type__: 'cc.Button', _name: '', _objFlags: 0, __editorExtras__: {},
-        node: rf(luN), _enabled: true, __prefab: null,
-        _interactable: true, _transition: 0,
-        _normalColor: cl(255, 255, 255, 0), _hoverColor: cl(255, 255, 255, 0),
-        _pressedColor: cl(255, 255, 255, 0), _disabledColor: cl(100, 100, 100, 0),
-        _duration: 0.1, _zoomScale: 1, _target: rf(luN), _id: gid(),
-    });
-    sb.e[luN]._components = [rf(luUT), rf(luBgSpr), rf(luDismissBtn)];
-    // Title.
-    const luTitle = mkLabel(sb, 'LevelUpTitleLabel', luN, 'LEVEL UP', 64,
-        LUE.title.y, LUE.title.w, LUE.title.h, 255, 210, 74);
-    style(sb, luTitle, { bold: true });
-    // Big level number with count-up tween at runtime.
-    const luBigLevel = mkLabel(sb, 'LevelUpBigLevel', luN, '5', 180,
-        LUE.bigLevel.y, LUE.bigLevel.w, LUE.bigLevel.h, 255, 240, 200);
-    style(sb, luBigLevel, { bold: true });
-    // Caption (e.g. "Level 5 reached").
-    const luCaption = mkLabel(sb, 'LevelUpCaptionLabel', luN, 'Level 5 reached', 26,
-        LUE.caption.y, LUE.caption.w, LUE.caption.h, 255, 255, 255);
-    // Rake discount callout (teal accent).
-    const luRake = mkLabel(sb, 'LevelUpRakeLabel', luN, 'Your rake: 4.5% (was 5.0%)', 22,
-        LUE.rake.y, LUE.rake.w, LUE.rake.h, 48, 198, 155);
-    // Hint at the bottom.
-    const luHint = mkLabel(sb, 'LevelUpHintLabel', luN, 'tap to continue', 14,
-        LUE.hint.y, LUE.hint.w, LUE.hint.h, 184, 184, 184);
-    sb.e[luN]._children = [rf(luTitle), rf(luBigLevel), rf(luCaption), rf(luRake), rf(luHint)];
-    sb.e[luN]._active = false;
+    // 2026-05-03 - LevelUpOverlay is no longer scene-baked. The cinematic
+    // is built at runtime by assets/token-duel/scripts/LevelUpOverlay.ts and
+    // parented to Canvas at instantiation time (see AppUI._levelUpInstance).
+    // Removed from this generator + LayoutSpec.
 
     // ═══════════════════════════════════════════════════════════════
     // Phase N3 - NotificationPanel (right-side tray slide-in).
@@ -9142,7 +9103,7 @@ function generate() {
     // gameplay overlays (countdown/signing/loading/levelup/notification).
     // Re-parented from tdN to canvas root so lobbyMount() applies in the
     // correct coordinate space and the 1800-tall scrim covers full screen.
-    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(fxN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(mipN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(jcN), rf(lsoN), rf(racePanelN), rf(countdownN), rf(signingN), rf(loadingN), rf(luN), rf(npN), rf(toastOvN)];
+    sb.e[canvas]._children = [rf(camN), rf(bgN), rf(fxN), rf(mwaN), rf(lpN), rf(hpN), rf(tdN), rf(tdetN), rf(lbN), rf(dcN), rf(pfN), rf(mipN), rf(wpN), rf(pmN), rf(stN), rf(tutN), rf(specN), rf(tourN), rf(fmN), rf(jcN), rf(lsoN), rf(racePanelN), rf(countdownN), rf(signingN), rf(loadingN), rf(npN), rf(toastOvN)];
     sb.e[canvas]._components = [rf(cUT), rf(cCV), rf(cWG), rf(appUI)];
 
     // Scene Globals

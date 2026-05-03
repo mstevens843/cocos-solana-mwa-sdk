@@ -7,10 +7,15 @@
   "scripts": {
     "scenes": "node generate-scenes.js",
     "anchor-build": "anchor build",
-    "anchor-deploy": "anchor deploy --provider.cluster devnet"
+    "anchor-deploy": "anchor deploy --provider.cluster devnet",
+    "build:icons": "node scripts/build-lucide-icons.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "lucide-static": "^0.469.0"
   }
 }
