@@ -3529,19 +3529,20 @@ function generate() {
     sb.e[tdWagerDropdown]._children = wagerDropdownRows.map(rf);
 
     // ── betting-duel ($SKR): WagerCurrencyButton + WagerCurrencyDropdown ────
-    // Mirrors the pattern of WagerValueButton above. Caption "WAGER IN",
-    // body shows the active currency code + ▾. AppUI._onWagerCurrencyTap
-    // toggles the dropdown; _onWagerCurrencyRowTap updates the active
-    // currency, swaps the icon sprite frame, and rebuilds the value-tier
-    // label set. SpriteFrames for the coin icons are set at runtime in
-    // AppUI.start() via `_resolveAssetSpriteFrame('icons/sol' | 'icons/skr')`.
+    // Mirrors the pattern of WagerValueButton above. Caption "PAY WITH" (was
+    // "WAGER IN" — renamed 2026-05-02 polish for clarity), body shows the
+    // active currency code + ▾. AppUI._onWagerCurrencyTap toggles the
+    // dropdown; _onWagerCurrencyRowTap updates the active currency, swaps
+    // the icon sprite frame, and rebuilds the value-tier label set.
+    // SpriteFrames for the coin icons are set at runtime in AppUI.start()
+    // via `_resolveAssetSpriteFrame('icons/sol' | 'icons/skr')`.
     const tdWagerCurrencyBtn = mkBtnXY(sb, 'WagerCurrencyButton', tdN, 'SOL  ▾',
         TDE.wagerCurrencyButton.x, TDE.wagerCurrencyButton.y,
         TDE.wagerCurrencyButton.w, TDE.wagerCurrencyButton.h, 44, 24, 64);
     style(sb, tdWagerCurrencyBtn, { bold: true, fontSize: 22, color: cl(255, 210, 74, 255), spacing: 1 });
     sb.e[tdWagerCurrencyBtn + 1]._lpos = v3(20, -14, 0); // 'Label' child — shifted right of icon
     sb.e[tdWagerCurrencyBtn + 5]._contentSize = sz(160, 36);
-    const tdWagerCurrencyCaption = mkLabel(sb, 'WagerCurrencyCaptionLabel', tdWagerCurrencyBtn, 'WAGER IN', 10, 18,
+    const tdWagerCurrencyCaption = mkLabel(sb, 'WagerCurrencyCaptionLabel', tdWagerCurrencyBtn, 'PAY WITH', 10, 18,
         160, 14, 255, 210, 74);
     sb.e[tdWagerCurrencyCaption]._lpos = v3(0, 18, 0);
     sb.e[sb.e[tdWagerCurrencyCaption]._components[1].__id__]._isBold = true;
@@ -4404,9 +4405,12 @@ function generate() {
     });
     sb.e[mpTitleDividerN]._components = [rf(mpTitleDividerUT), rf(mpTitleDividerSpr)];
 
-    // Subtitle — sets the room: "Choose your mode, stake, and match rules".
+    // Subtitle — sets the room: "Set the rules before the race begins".
+    // 2026-05-02 polish — pre-match energy framing replaces the form-y "Choose
+    // your mode, stake, and match rules" line; reads as the moment before the
+    // duel starts, not a settings dialog.
     const mpSubtitle = mkLabel(sb, 'ModePickerSubtitleLabel', modePickerN,
-        'Choose your mode, stake, and match rules', 14,
+        'Set the rules before the race begins', 14,
         MPE.subtitle.y, MPE.subtitle.w, MPE.subtitle.h, 184, 184, 184);
     style(sb, mpSubtitle, { spacing: 0.4 });
 
@@ -4425,20 +4429,37 @@ function generate() {
     style(sb, mpSecDifficulty, { bold: true, spacing: 1.2 });
 
     // ── MODE zone — 2×2 dominant tile grid ─────────────────────────────
-    // 280×140 cards (was 320×96 flat buttons). Default body = Palette.bg.card
-    // (#1E2438 RGB 30/36/56). At h=140 ≥ BTN_CHROME_MIN_H, mkBtnXY adds
-    // TopHighlight + BottomShadow chrome → premium raised-card feel. AppUI
-    // runtime tints body teal + adds glow pulse on selected. tier='secondary'
-    // promotes label fontSize to 24pt per ButtonTierSpec.
+    // 2026-05-02 polish — title + descriptor stacked in each card via
+    // mkBtnHeroLayered so users instantly read what each mode means
+    // (Head-to-head race / 3-player token duel / etc.) instead of empty
+    // boxes. The body Sprite stays on the button node, so AppUI's existing
+    // teal-on-selected tint at _refreshModePickerUi is unchanged. Selected
+    // state also flips a small "✓ SELECTED" gold badge in the top-right
+    // corner of the chosen card so the locked-in mode reads decisively.
     const mpModeIndices = [];
+    const mpModeBadgeIndices = [];
     for (let i = 0; i < MPT.modeBtn.count; i++) {
         const key = MPT.modeBtn.keys[i];
-        const label = MPT.modeBtn.labels[i];
-        const pos = MPT.modeBtn.positions[i];
-        const mN = mkBtnXY(sb, `Mode_${key}`, modePickerN, label,
-            pos.x, pos.y, MPT.modeBtn.w, MPT.modeBtn.h, 26, 8, 32,
-            { tier: 'secondary' });
+        const title = MPT.modeBtn.labels[i];
+        const sub   = (MPT.modeBtn.sublabels && MPT.modeBtn.sublabels[i]) || '';
+        const pos   = MPT.modeBtn.positions[i];
+        const { btn: mN } = mkBtnHeroLayered(sb, `Mode_${key}`, modePickerN, title, sub,
+            pos.x, pos.y, MPT.modeBtn.w, MPT.modeBtn.h, 31, 36, 56,
+            { tier: 'secondary', titleFs: 24, subFs: 13 });
         mpModeIndices.push(mN);
+        // "✓ SELECTED" badge — gold, top-right of the 280×140 card. Hidden
+        // by default; AppUI._refreshModePickerUi toggles _active per card.
+        const badgeN = mkLabel(sb, 'ModeSelectedBadge', mN, '✓ SELECTED', 11,
+            52, 110, 16, 255, 210, 74);
+        style(sb, badgeN, { bold: true, spacing: 1.4 });
+        sb.e[badgeN]._lpos = v3(96, 52, 0);
+        sb.e[badgeN]._active = false;
+        mpModeBadgeIndices.push(badgeN);
+        // mkBtnHeroLayered already wired btn _children = [Ripple, TopHighlight,
+        // BottomShadow, TitleLabel, SubtitleLabel]; append the badge so it
+        // renders on top of the bevel/labels.
+        const existing = sb.e[mN]._children ?? [];
+        sb.e[mN]._children = [...existing, rf(badgeN)];
     }
 
     // ── SETTINGS zone — Duration pills (6×) ────────────────────────────
@@ -4464,6 +4485,15 @@ function generate() {
         MPE.realToggle.x, MPE.realToggle.y, MPE.realToggle.w, MPE.realToggle.h,
         31, 36, 56);
 
+    // 2026-05-02 polish — small helper line under the Paper/Real row so users
+    // know what each track *means* before they commit. AppUI._refreshModePicker
+    // toggles _active in lockstep with the Paper/Real buttons (hidden in
+    // Bot/Guest flow alongside the toggles themselves).
+    const pickerTrackHelper = mkLabel(sb, 'PickerTrackHelperLabel', modePickerN,
+        'Paper is practice · Real uses your wager', 12,
+        MPE.trackHelper.y, MPE.trackHelper.w, MPE.trackHelper.h, 140, 140, 140);
+    style(sb, pickerTrackHelper, { spacing: 0.4 });
+
     // ── SETTINGS zone — Difficulty pills (3×) ──────────────────────────
     // 184×56 (was 168×44); edge-to-edge spacing.
     const difficultyDefaultColors = [[31, 36, 56], [20, 241, 149], [31, 36, 56]];
@@ -4476,6 +4506,14 @@ function generate() {
         difficultyBtns.push(dN);
     }
     const [pickerEasyBtn, pickerMediumBtn, pickerHardBtn] = difficultyBtns;
+
+    // 2026-05-02 polish — helper line under the difficulty pills explains
+    // what difficulty actually controls. AppUI greys it when Real track is
+    // selected (host plays humans, difficulty only governs the bot fallback).
+    const pickerDifficultyHelper = mkLabel(sb, 'PickerDifficultyHelperLabel', modePickerN,
+        'Difficulty adjusts bot strength', 12,
+        MPE.difficultyHelper.y, MPE.difficultyHelper.w, MPE.difficultyHelper.h, 140, 140, 140);
+    style(sb, pickerDifficultyHelper, { spacing: 0.4 });
 
     // ── SUMMARY zone — premium gold-edged commitment card ──────────────
     // 620×180. Inner gradient sprite child (PickerSummaryGradient) gives
@@ -4504,20 +4542,35 @@ function generate() {
         _id: gid(),
     });
     sb.e[summaryGradientN]._components = [rf(summaryGradientUT), rf(summaryGradientSpr)];
-    // Label Y values scaled to the 196h hero card (2026-05-01 polish).
+    // 2026-05-02 polish — Duel Ticket framing. Tiny gold "DUEL TICKET" header
+    // at the top reframes the card from "settings summary" → "match contract".
+    // Label Y values retuned (mode 56→38, modifiers 14→-2, stake -50→-56) to
+    // make room for the header above and the new wager caption below without
+    // changing the card's 196h footprint.
+    const summaryTicketHdr = mkLabel(sb, 'PickerTicketHeaderLabel', summaryCardN,
+        'DUEL TICKET', 11, 78, 600, 16, 255, 210, 74);
+    style(sb, summaryTicketHdr, { bold: true, spacing: 1.6 });
     const summaryModeLbl = mkLabel(sb, 'PickerSummaryModeLabel', summaryCardN, '1v1 Duel', 26,
-        56, 600, 32, 255, 255, 255);
+        38, 600, 32, 255, 255, 255);
     style(sb, summaryModeLbl, { bold: true });
     const summaryModifiersLbl = mkLabel(sb, 'PickerSummaryModifiersLabel', summaryCardN,
-        '30s · Paper · Medium', 16, 14, 600, 22, 184, 184, 184);
+        '30s · Paper · Easy', 16, -2, 600, 22, 184, 184, 184);
     const summaryStakeLbl = mkLabel(sb, 'PickerSummaryStakeLabel', summaryCardN,
-        'Stake: 0.05 SOL', 32, -50, 600, 42, 255, 210, 74);
+        'Stake: 0.05 SOL', 32, -56, 600, 42, 255, 210, 74);
     style(sb, summaryStakeLbl, { bold: true, mono: true });
+    // 2026-05-02 polish — wager-risk caption. AppUI swaps copy by track:
+    // Paper/Bot → "Practice match · no SOL at risk · Bot Lv N";
+    // Real      → "Real wager · SOL at stake".
+    const summaryWagerCaption = mkLabel(sb, 'PickerSummaryWagerCaptionLabel', summaryCardN,
+        'Practice match · no SOL at risk · Bot Lv 1', 11, -82, 600, 16, 184, 184, 184);
+    style(sb, summaryWagerCaption, { spacing: 0.4 });
     const summaryEdge = mkCardEdge(sb, summaryCardN, MPSC.w, MPSC.h, 255, 210, 74);
     sb.e[summaryCardN]._components = [rf(summaryCardUT), rf(summaryCardSpr)];
     sb.e[summaryCardN]._children = [
         rf(summaryGradientN),
+        rf(summaryTicketHdr),
         rf(summaryModeLbl), rf(summaryModifiersLbl), rf(summaryStakeLbl),
+        rf(summaryWagerCaption),
         rf(summaryEdge),
     ];
 
@@ -4556,6 +4609,32 @@ function generate() {
     const pickerStartGlowN = pickerStartBundle.glow;
     const pickerStartBtn = pickerStartBundle.btn;
 
+    // 2026-05-02 polish — thin gold top edge so the CTA visually inherits the
+    // Duel Ticket's gold edge above it. Reads as "the ticket continues into
+    // the launch button" instead of "purple stripe disconnected from gold."
+    // 3 px sprite, anchored to top of button (y = h/2 - 1), inserted into the
+    // button's _children list AFTER existing kids so it renders above the body
+    // bevel but does not interfere with mkBtnHero's halo or ripple siblings
+    // (which are siblings of the button, not children).
+    const startGoldEdgeN = sb.e.length;
+    sb.node('StartButtonGoldEdge', pickerStartBtn, [], [],
+        v3(0, MPE.startBtn.h / 2 - 1, 0));
+    const startGoldEdgeUT = sb.ut(startGoldEdgeN, MPE.startBtn.w - 8, 3);
+    const startGoldEdgeSpr = sb.add({
+        __type__: 'cc.Sprite', _name: '', _objFlags: 0, __editorExtras__: {},
+        node: rf(startGoldEdgeN), _enabled: true, __prefab: null,
+        _customMaterial: null, _srcBlendFactor: 2, _dstBlendFactor: 4,
+        _color: cl(255, 210, 74, 220),
+        _spriteFrame: { __uuid__: UUID_WHITE_SPRITE },
+        _type: 1, _fillType: 0, _sizeMode: 0,
+        _fillCenter: v2(0, 0), _fillStart: 0, _fillRange: 0,
+        _isTrimmedMode: true, _useGrayscale: false, _atlas: null,
+        _id: gid(),
+    });
+    sb.e[startGoldEdgeN]._components = [rf(startGoldEdgeUT), rf(startGoldEdgeSpr)];
+    const existingStartChildren = sb.e[pickerStartBtn]._children ?? [];
+    sb.e[pickerStartBtn]._children = [...existingStartChildren, rf(startGoldEdgeN)];
+
     // Cancel X — ghost neutral (was dark-red 55,30,30) so it doesn't compete
     // with the gold title.
     const pickerCancelBtn = mkBtnXY(sb, 'PickerCancelButton', modePickerN, '✕',
@@ -4581,8 +4660,9 @@ function generate() {
         rf(mpTitle), rf(mpTitleDividerN), rf(mpSubtitle),
         rf(mpSecMode),       ...mpModeIndices.map(rf),
         rf(mpSecDuration),   ...windowIndices.map(rf),
-        rf(mpSecTrack),      rf(pickerPaperBtn), rf(pickerRealBtn),
+        rf(mpSecTrack),      rf(pickerPaperBtn), rf(pickerRealBtn), rf(pickerTrackHelper),
         rf(mpSecDifficulty), rf(pickerEasyBtn), rf(pickerMediumBtn), rf(pickerHardBtn),
+        rf(pickerDifficultyHelper),
         rf(summaryCardN), rf(summaryConnectorN),
         ...startBtnChildren,
         rf(pickerStatus),
@@ -6033,11 +6113,13 @@ function generate() {
     const mipSubtitle = mkLabel(sb, 'MatchesInProgressSubtitleLabel', mipN, 'All clear', 18,
         MIPE.subtitle.y, MIPE.subtitle.w, MIPE.subtitle.h, 255, 255, 255);
 
-    // 2026-05-02 — header LIVE dot. Sits just left of the centered subtitle
-    // ("LIVE NOW" when n>=1). AppUI toggles active + alpha-pulses on a 2s
-    // cycle in sync with per-row LIVE dots. Hidden by default (n=0).
+    // 2026-05-02 — header LIVE dot. AppUI repositions it inline with the
+    // dynamic subtitle ("2 LIVE NOW") each render, so the dot sits ~14px
+    // left of the leading edge of the rendered string. Pass-4: bumped
+    // 10×10 → 14×14 for legibility, deepened pulse amplitude in
+    // _mipFrameTick (110↔255 instead of 160↔255).
     const mipHeaderLiveDotN = mipSolidSprite('MIPHeaderLiveDot', mipN,
-        -58, MIPE.subtitle.y, 10, 10,
+        -58, MIPE.subtitle.y, 14, 14,
         48, 198, 155, 255);
     sb.e[mipHeaderLiveDotN]._active = false;
 
@@ -6228,6 +6310,16 @@ function generate() {
         sb.e[bigPhaseN]._lpos = v3(0, -28, 0);
         sb.e[bigPhaseN]._active = false;
 
+        // 2026-05-02 (pass-4) — small gold "FEATURED" pill at the top-left
+        // of the card, shown only on row 0 when n>=2 (stack mode). AppUI
+        // toggles _active in _renderMipRows. Scaffolded for all 6 rows so
+        // the bind loop is uniform; only row 0 ever activates.
+        const featuredBadgeN = mkLabel(sb, `MIPFeaturedBadge_${i}`, rowN,
+            'FEATURED', 9, 62, 80, 14, 255, 210, 74);
+        sb.e[featuredBadgeN]._lpos = v3(-292, 62, 0);
+        sb.e[featuredBadgeN]._active = false;
+        style(sb, featuredBadgeN, { bold: true, mono: true });
+
         // Z-order: cardGlow → cardBg → tap → edge → progressTrack → progressFill
         // → resumeGlow → resumeBtn → detailsBtn → liveGlow → liveDot → liveLabel → text labels.
         // (Resume glow under button so the button's solid fill draws on top.
@@ -6242,6 +6334,7 @@ function generate() {
             rf(liveGlowN), rf(liveDotN), rf(liveLabelN),
             rf(vsLblN), rf(stakeChipN), rf(statusLabelN), rf(timeLblN),
             rf(bigTimerN), rf(bigPhaseN),
+            rf(featuredBadgeN),
         ];
         sb.e[rowN]._active = false;
         mipRows.push(rowN);
@@ -6252,6 +6345,16 @@ function generate() {
         MIPE.moreLabel.y, MIPE.moreLabel.w, MIPE.moreLabel.h, 184, 184, 184);
     sb.e[mipMoreLblN]._active = false;
 
+    // 2026-05-02 (pass-4) — single muted helper line for the n=2 case
+    // (lots of empty space below the second card; n=1 hero owns the frame;
+    // n>=3 fills the rows; n=0 is empty-state). AppUI toggles _active in
+    // _renderMipRows. Comma copy locked, no em/en dashes.
+    const mipHelperLineN = mkLabel(sb, 'MIPHelperLine', mipN,
+        'Resume a live duel above, or find another match', 13,
+        MIPE.helperLine.y, MIPE.helperLine.w, MIPE.helperLine.h,
+        140, 148, 176);
+    sb.e[mipHelperLineN]._active = false;
+
     const mipStatus = mkLabel(sb, 'MatchesInProgressStatusLabel', mipN, '', 12,
         MIPE.status.y, MIPE.status.w, MIPE.status.h, 184, 184, 184);
 
@@ -6261,9 +6364,11 @@ function generate() {
         rf(mipScrimN),
         rf(mipBackLink), rf(mipBackBtnN),
         rf(mipTitle), rf(mipSubtitle),
+        rf(mipHeaderLiveDotN),
         rf(mipEmptyN),
         ...mipRows.map(rf),
         rf(mipMoreLblN),
+        rf(mipHelperLineN),
         rf(mipStatus),
     ];
     sb.e[mipN]._active = false;

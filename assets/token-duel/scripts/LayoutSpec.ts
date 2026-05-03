@@ -205,7 +205,7 @@ function _zone(topY: number, height: number): DashboardZone {
 }
 export function buildDashboardZones(opts: { includeModeSwitch: boolean }): DashboardZones {
     const TOP = 760;
-    const H = { header: 80, title: 104, modeSwitch: 60, subtab: 60 };
+    const H = { header: 80, title: 88, modeSwitch: 60, subtab: 60 };
     const header     = _zone(TOP, H.header);
     const title      = _zone(header.bottomY, H.title);
     const modeSwitch = opts.includeModeSwitch ? _zone(title.bottomY, H.modeSwitch) : null;
@@ -395,7 +395,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             sectionTrack:      { x: 0,    y: -24,  w: 580, h: 18, type: 'label' },
             paperToggle:       { x: -105, y: -72,  w: 200, h: 52, type: 'btnPrimary' },
             realToggle:        { x:  105, y: -72,  w: 200, h: 52, type: 'btnGhost' },
+            trackHelper:       { x: 0,    y: -100, w: 580, h: 18, type: 'label' },
             sectionDifficulty: { x: 0,    y: -116, w: 580, h: 18, type: 'label' },
+            difficultyHelper:  { x: 0,    y: -210, w: 580, h: 18, type: 'label' },
             summaryCard:       { x: 0,    y: -322, w: 640, h: 196, type: 'group' },
             summaryConnector:  { x: 0,    y: -432, w: 16,  h: 14,  type: 'sprite' },
             startBtn:          { x: 0,    y: -516, w: 640, h: 132, type: 'btnPrimary' },
@@ -410,12 +412,15 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['PickerSummaryCard', 'PickerSummaryModeLabel'],
             ['PickerSummaryCard', 'PickerSummaryModifiersLabel'],
             ['PickerSummaryCard', 'PickerSummaryStakeLabel'],
+            ['PickerSummaryCard', 'PickerTicketHeaderLabel'],
+            ['PickerSummaryCard', 'PickerSummaryWagerCaptionLabel'],
             ['PickerSummaryCard', 'CardEdgeAccent'],
             ['PickerSummaryCard', 'PickerSummaryGradient'],
             ['ModePickerTitleLabel', 'PickerCancelButton'],
             ['ModePickerTitleLabel', 'PickerBackButton'],
             ['PickerStartButton', 'BtnGlow_PickerStartButton'],
             ['PickerStartButton', 'Ripple_PickerStartButton'],
+            ['PickerStartButton', 'StartButtonGoldEdge'],
         ],
     },
     RacePanel: {

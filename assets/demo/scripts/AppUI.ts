@@ -153,10 +153,10 @@ export class AppUI extends Component {
      * AND when a real wallet connects (real wallet wins).
      */
     private _guestId: string | null = null;
-    // Footer status pill on Landing — replaces the old StatusLabel + floating
-    // debug "Disconnected" indicator. Driven by _setConnectionPill.
-    private _connectionStatusPill: Node | null = null;
-    private _connectionStatusLabel: Label | null = null;
+    // Inline status holder on the Reconnect pill — replaces the old floating
+    // ConnectionStatusPill at Y=-540 (UX overhaul 2026-05-02). Driven by
+    // _setConnectionPill on connecting/failed only; empty in 'disconnected'.
+    private _reconnectStatusInline: Label | null = null;
 
     // Home elements
     private _pubkeyLabel: Label = null!;
@@ -659,6 +659,21 @@ export class AppUI extends Component {
     // and IconBadge children only get created once per panel lifetime.
     private _pfHeroHeaderLabel: Label | null = null;
     private _pfStatsCardsStyled: boolean = false;
+    // 2026-05-02 player-record polish: mode-aware helper under the Paper/Real
+    // chip, hero footer note, "Next: L{n+1}" line, wallet+level header chips,
+    // section header labels, mode-aware empty-state copy.
+    private _pfModeHelperLabel: Label | null = null;
+    private _pfHeroFooterNote: Label | null = null;
+    private _pfXpNextLevelLabel: Label | null = null;
+    private _pfWalletChip: Node | null = null;
+    private _pfWalletChipLabel: Label | null = null;
+    private _pfLevelChip: Node | null = null;
+    private _pfLevelChipLabel: Label | null = null;
+    private _pfPerfHeaderLabel: Label | null = null;
+    private _pfActHeaderLabel: Label | null = null;
+    private _pfEmptyStateTitle: Label | null = null;
+    private _pfEmptyStateSubtitle: Label | null = null;
+    private _pfEmptyStateCtaLabel: Label | null = null;
 
     // Part 9 / Phase 28: tutorial overlay (gamified card carousel).
     private _tutorialOverlay: Node | null = null;
@@ -697,6 +712,8 @@ export class AppUI extends Component {
     private _qpTrackIndicator: Node | null = null;
     private _qpTrackPaperLabel: Label | null = null;
     private _qpTrackRealLabel: Label | null = null;
+    /** UX polish — risk-aware microcopy below the track pill (Paper=safe green, Real=warn amber). */
+    private _qpTrackHelpLabel: Label | null = null;
 
     // Part 11 A: cached share-summary query string for the last displayed
     // PostMatchPanel. `null` when no shareable match is in view (e.g. paper).
@@ -967,6 +984,13 @@ export class AppUI extends Component {
     private _mipBigTimerLabels: (Label | null)[] = [];
     private _mipBigPhaseLabels: (Label | null)[] = [];
     private _mipHeaderLiveDot: Sprite | null = null;
+    /** 2026-05-02 (pass-4) — small gold "FEATURED" pill on row 0 only when
+     *  n>=2 (stack mode). Scaffolded for all 6 rows; only row 0 activates. */
+    private _mipFeaturedBadges: (Label | null)[] = [];
+    /** 2026-05-02 (pass-4) — muted helper line below the row pool, shown
+     *  only when n=2 (lots of dead vertical space; n=1 hero owns the
+     *  frame, n>=3 fills rows naturally, n=0 is empty-state). */
+    private _mipHelperLine: Node | null = null;
     private _mipPrevLeaderHeight: number[] = [0, 0, 0, 0, 0, 0];
     private _mipPositiveStreak: number[] = [0, 0, 0, 0, 0, 0];
     private _mipLeaderTween: any[] = [null, null, null, null, null, null];
@@ -1256,14 +1280,6 @@ export class AppUI extends Component {
     private _pickedHeroSig: string | null = null;
     private _sessionDeltas: Record<string, number> | null = null;
 
-    // 2026-05-02 attempt 8 — runtime touch overlays parented to Canvas root
-    // (not PostMatchPanel). They sit on top of the existing Button nodes and
-    // dispatch raw TOUCH_END to the same handlers, bypassing whatever is
-    // killing Button.CLICK on the original CTAs. Per plan ~/.claude/plans/cozy-wobbling-goose.md.
-    private _postMatchHomeOverlay: Node | null = null;
-    private _postMatchAgainOverlay: Node | null = null;
-    private _postMatchOverlayInstalled = false;
-
     // RPC
     private _rpc!: SolanaRpc;
 
@@ -1281,7 +1297,7 @@ export class AppUI extends Component {
                 (globalThis as any).__fileSinkInstalled = true;
                 const __sinkBuf: string[] = [];
                 const __sinkPath = __native.fileUtils.getWritablePath() + 'td-attempt7.log';
-                const __TAGS = /^\[(BOOT_ATTEMPT_7|SE_ERROR_TRAP|StaleTween|TickErr|PostMatchBtn|ButtonHealth|AppUI|TWEEN_TRACKER|TouchTrace|StormTrap|MatchTickerRpc|MatchRpc|TokenDuelRpc|HwBack|PostMatchOverlay)\b/;
+                const __TAGS = /^\[(BOOT_ATTEMPT_7|SE_ERROR_TRAP|StaleTween|TickErr|PostMatchBtn|ButtonHealth|AppUI|TWEEN_TRACKER|TouchTrace|StormTrap|MatchTickerRpc|MatchRpc|TokenDuelRpc|HwBack)\b/;
                 const __flush = () => {
                     if (!__sinkBuf.length) return;
                     try {
@@ -1623,9 +1639,8 @@ export class AppUI extends Component {
         // ── Landing elements ──
         this._connectButton = this._landingPanel.getChildByName('ConnectButton')?.getComponent(Button)!;
         this._reconnectButton = this._landingPanel.getChildByName('ReconnectButton')?.getComponent(Button)!;
-        this._connectionStatusPill = this._landingPanel.getChildByName('ConnectionStatusPill') ?? null;
-        this._connectionStatusLabel = this._connectionStatusPill?.getChildByName('Label')?.getComponent(Label) ?? null;
-        console.log(`${TAG} start | ConnectButton=${!!this._connectButton} ReconnectButton=${!!this._reconnectButton} StatusPill=${!!this._connectionStatusPill}`);
+        this._reconnectStatusInline = this._reconnectButton?.node.getChildByName('ReconnectStatusInline')?.getComponent(Label) ?? null;
+        console.log(`${TAG} start | ConnectButton=${!!this._connectButton} ReconnectButton=${!!this._reconnectButton} ReconnectStatusInline=${!!this._reconnectStatusInline}`);
 
         this._connectButton?.node.on(Button.EventType.CLICK, this._onConnect, this);
         this._reconnectButton?.node.on(Button.EventType.CLICK, this._onReconnect, this);
@@ -2260,6 +2275,18 @@ export class AppUI extends Component {
             this._feedRowCheckboxes.push(chkN?.getComponent(Sprite) ?? null as any);
             this._feedRowSelectedEdges.push(selEdgeN ?? null as any);
             this._feedRowSquadBadges.push(sqBadgeN ?? null as any);
+            // Brighten the "IN SQUAD" pill so it reads as an active badge,
+            // not a faint outline. Solid teal fill + dark glyph beats the
+            // generator's alpha-60 wash. Prepend ✓ for instant scan.
+            if (sqBadgeN) {
+                const badgeSpr = sqBadgeN.getComponent(Sprite);
+                if (badgeSpr) badgeSpr.color = new Color(20, 241, 149, 230);
+                const badgeLbl = sqBadgeN.getChildByName('SquadBadgeLabel')?.getComponent(Label);
+                if (badgeLbl) {
+                    badgeLbl.string = '✓ IN SQUAD';
+                    badgeLbl.color = new Color(8, 24, 18, 255);
+                }
+            }
         }
         console.log(`${TAG} start | TokenDuel row_extras checkboxes=${this._feedRowCheckboxes.filter(Boolean).length}/${this._feedRowNodes.length} selected_edges=${this._feedRowSelectedEdges.filter(Boolean).length}/${this._feedRowNodes.length} squad_badges=${this._feedRowSquadBadges.filter(Boolean).length}/${this._feedRowNodes.length}`);
 
@@ -2681,11 +2708,15 @@ export class AppUI extends Component {
                 this._qpTrackIndicator  = tt?.getChildByName('QPTrackIndicator') ?? null;
                 this._qpTrackPaperLabel = tt?.getChildByName('QPTrackPaperLabel')?.getComponent(Label) ?? null;
                 this._qpTrackRealLabel  = tt?.getChildByName('QPTrackRealLabel')?.getComponent(Label) ?? null;
+                this._qpTrackHelpLabel  = qpCard.getChildByName('QPTrackHelpLabel')?.getComponent(Label) ?? null;
                 tt?.getChildByName('QPTrackPaperHit')?.getComponent(Button)?.node
                     .on(Button.EventType.CLICK, () => this._onQPTrackClick('paper'), this);
                 tt?.getChildByName('QPTrackRealHit')?.getComponent(Button)?.node
                     .on(Button.EventType.CLICK, () => this._onQPTrackClick('real'), this);
             }
+            // UX polish — runtime captions added so the page reads as a
+            // premium account screen instead of a generic settings panel.
+            this._installSettingsPolishCaptions();
         }
         const homeSettingsBtn = this._homePanel.getChildByName('OpenSettingsButton')?.getComponent(Button);
         homeSettingsBtn?.node.on(Button.EventType.CLICK, () => this._onOpenSettingsClick('home'), this);
@@ -2830,6 +2861,39 @@ export class AppUI extends Component {
             this._pfEmptyState = this._portfolioPanel.getChildByName('PortfolioEmptyState') ?? null;
             const emptyCta = this._pfEmptyState?.getChildByName('PortfolioEmptyStateCta')?.getComponent(Button);
             emptyCta?.node.on(Button.EventType.CLICK, () => this._onPortfolioEmptyStateStart(), this);
+            // 2026-05-02 player-record polish: resolve title/subtitle/CTA-label
+            // children so _applyPortfolioRecord can swap copy by mode.
+            this._pfEmptyStateTitle = this._pfEmptyState?.getChildByName('PortfolioEmptyStateTitle')?.getComponent(Label) ?? null;
+            this._pfEmptyStateSubtitle = this._pfEmptyState?.getChildByName('PortfolioEmptyStateSubtitle')?.getComponent(Label) ?? null;
+            this._pfEmptyStateCtaLabel = this._pfEmptyState?.getChildByName('PortfolioEmptyStateCta')?.getChildByName('Label')?.getComponent(Label) ?? null;
+            // 2026-05-02 polish: hide orphan scene labels that paint unconditionally.
+            // PortfolioHintLabel was a floating "Real mode stats..." note shown
+            // even while Paper was selected; the new helper under the mode chip
+            // (built in _styleStatsCardsOnce) replaces it. PortfolioStatusLabel
+            // ships with an empty string and has no writer either.
+            const hintN = this._portfolioPanel.getChildByName('PortfolioHintLabel');
+            if (hintN) hintN.active = false;
+            const statusN = this._portfolioPanel.getChildByName('PortfolioStatusLabel');
+            if (statusN) statusN.active = false;
+            // Section headers — restyle copy + restyle in _styleStatsCardsOnce.
+            this._pfPerfHeaderLabel = this._portfolioPanel.getChildByName('PortfolioGroupHeaderPerformance')?.getComponent(Label) ?? null;
+            this._pfActHeaderLabel  = this._portfolioPanel.getChildByName('PortfolioGroupHeaderActivity')?.getComponent(Label) ?? null;
+            if (this._pfPerfHeaderLabel) {
+                this._pfPerfHeaderLabel.string = 'MATCH RECORD';
+                this._pfPerfHeaderLabel.fontSize = 14;
+                this._pfPerfHeaderLabel.lineHeight = 18;
+                this._pfPerfHeaderLabel.color = themeColor.textMid();
+            }
+            if (this._pfActHeaderLabel) {
+                this._pfActHeaderLabel.string = 'ACTIVITY & PROGRESSION';
+                this._pfActHeaderLabel.fontSize = 14;
+                this._pfActHeaderLabel.lineHeight = 18;
+                this._pfActHeaderLabel.color = themeColor.textMid();
+            }
+            // Subtitle copy — mode is communicated by the helper line, not here.
+            const subN = this._portfolioPanel.getChildByName('PortfolioSubtitleLabel');
+            const subL = subN?.getComponent(Label);
+            if (subL) subL.string = 'Your duel record';
             // Batch-toggle list — every node that participates in the populated Stats body.
             // Excludes Paper/Real toggle buttons (already handled by the existing
             // _pfPaperTab/_pfRealTab show/hide path in _refreshPortfolioTopLevel)
@@ -3035,6 +3099,14 @@ export class AppUI extends Component {
             this._wagerCurrencyIconSprite = this._wagerCurrencyButton.node.getChildByName('WagerCurrencyIcon')?.getComponent(Sprite) ?? null;
             this._wagerCurrencyButton.node.on(Button.EventType.CLICK, () => this._onWagerCurrencyTap(), this);
             try { addPressPop(this._wagerCurrencyButton); setStrongPress(this._wagerCurrencyButton); } catch (_) { /* optional */ }
+            // 2026-05-02 polish — defensive runtime override of the caption.
+            // The generator emits "PAY WITH" but a half-regenerated scene
+            // would still ship the old "WAGER IN" string; this write makes
+            // the new copy land regardless of scene-regen state.
+            const captionLbl = this._wagerCurrencyButton.node
+                .getChildByName('WagerCurrencyCaptionLabel')
+                ?.getComponent(Label) ?? null;
+            if (captionLbl) captionLbl.string = 'PAY WITH';
         }
         this._wagerCurrencyDropdown = this._tokenDuelPanel.getChildByName('WagerCurrencyDropdown') ?? null;
         if (this._wagerCurrencyDropdown) {
@@ -3649,6 +3721,8 @@ export class AppUI extends Component {
             this._mipHeaderLiveDot = this._mipPanel.getChildByName('MIPHeaderLiveDot')?.getComponent(Sprite) ?? null;
             this._mipEmptyState = this._mipPanel.getChildByName('MIPEmptyState') ?? null;
             this._mipMoreLabel = this._mipPanel.getChildByName('MIPMoreLabel')?.getComponent(Label) ?? null;
+            // 2026-05-02 (pass-4) — muted helper line for the n=2 case.
+            this._mipHelperLine = this._mipPanel.getChildByName('MIPHelperLine') ?? null;
             const mipBackBtn = this._mipPanel.getChildByName('BackButton')?.getComponent(Button);
             mipBackBtn?.node.on(Button.EventType.CLICK, () => this._setActivePanel('home'), this);
             const emptyCta = this._mipEmptyState?.getChildByName('MIPEmptyCtaButton')?.getComponent(Button);
@@ -3717,6 +3791,11 @@ export class AppUI extends Component {
                 );
                 this._mipBigPhaseLabels.push(
                     rowN.getChildByName(`MIPBigPhase_${i}`)?.getComponent(Label) ?? null
+                );
+                // 2026-05-02 (pass-4) — featured-row badge. Always bound;
+                // only row 0 activates when n>=2 (stack mode).
+                this._mipFeaturedBadges.push(
+                    rowN.getChildByName(`MIPFeaturedBadge_${i}`)?.getComponent(Label) ?? null
                 );
 
                 const tap = rowN.getChildByName(`MIPTapTarget_${i}`)?.getComponent(Button);
@@ -4158,21 +4237,27 @@ export class AppUI extends Component {
     }
 
     /**
-     * Drive the Landing footer status pill. Replaces the old StatusLabel-as-
-     * connection-readout pattern. Three states cover every Landing path:
-     *   disconnected — idle, fresh or returning user (gray)
-     *   connecting   — wallet picker open, mid-authorize/reauthorize (amber)
-     *   failed       — last attempt errored; user can retry (rose)
+     * Drive the inline status text on the Reconnect pill. The old floating
+     * ConnectionStatusPill at Y=-540 was retired (2026-05-02 UX polish) — its
+     * 'disconnected' default read as dead UI. Now status is only painted when
+     * meaningful: 'connecting' (amber) or 'failed' (red), with Reconnect made
+     * visible so the user has a retry path. 'disconnected' clears the inline
+     * label and lets _showLanding's hasCached check govern Reconnect.active.
      */
     private _setConnectionPill(state: 'disconnected' | 'connecting' | 'failed'): void {
-        if (!this._connectionStatusLabel) return;
+        const lbl = this._reconnectStatusInline;
+        if (!lbl) return;
+        if (state === 'disconnected') {
+            lbl.string = '';
+            return;
+        }
         const map = {
-            disconnected: { text: '● Disconnected', color: themeColor.neutral() },
-            connecting:   { text: '● Connecting…', color: themeColor.warn() },
-            failed:       { text: '● Auth failed', color: themeColor.loss() },
+            connecting: { text: 'Connecting…',     color: themeColor.warn() },
+            failed:     { text: 'Connection failed', color: themeColor.loss() },
         };
-        this._connectionStatusLabel.string = map[state].text;
-        this._connectionStatusLabel.color = map[state].color;
+        lbl.string = map[state].text;
+        lbl.color = map[state].color;
+        if (this._reconnectButton) this._reconnectButton.node.active = true;
     }
 
     private _showHome(): void {
@@ -4682,6 +4767,21 @@ export class AppUI extends Component {
         if (which !== 'home') this._stopTournamentCountdown();
         // 2026-04-27 — stop MIP 1-s tick when leaving the MIP panel.
         if (which !== 'mip') this._stopMipTick();
+        // 2026-05-02 (pass-4) — explicit WalletPill toggle. The pill is a
+        // HomePanel child; without this, the swap-fade race can leave it
+        // visibly bleeding onto the MIP panel (the bottom "Connected: ..."
+        // chip the user complained dominates the live-arena page). Belt +
+        // suspenders: toggle the pill AND its glow halo regardless of
+        // whether HomePanel itself is mid-fade.
+        if (which === 'mip') {
+            if (this._walletPill) this._walletPill.active = false;
+            const wpGlow = this._homePanel?.getChildByName('WalletPillGlow');
+            if (wpGlow) wpGlow.active = false;
+        } else if (which === 'home') {
+            if (this._walletPill) this._walletPill.active = true;
+            const wpGlow = this._homePanel?.getChildByName('WalletPillGlow');
+            if (wpGlow) wpGlow.active = true;
+        }
         // 2026-04-27 — When home becomes active, paint the MIP count badge
         // immediately from in-memory local matches + cached on-chain, then
         // kick off an async on-chain refresh in the background.
@@ -4849,17 +4949,35 @@ export class AppUI extends Component {
         const n = this._mipMatches.length;
         const visible = Math.min(n, 6);
         if (this._mipEmptyState) this._mipEmptyState.active = (n === 0);
-        // 2026-05-02 — "Live Battle" v3 header treatment. Subtitle becomes
-        // "LIVE NOW" with a pulsing teal dot; "All clear" when zero.
+        // 2026-05-02 (pass-4) — header reads "● 2 LIVE NOW" with the dot
+        // riding inline ~14px left of the subtitle's leading edge so the
+        // pulse is visibly attached to the count. Single match prints
+        // "1 LIVE NOW" so the cadence stays consistent at any n.
         if (this._mipSubtitleLabel) {
-            this._mipSubtitleLabel.string = n === 0 ? 'All clear' : 'LIVE NOW';
+            this._mipSubtitleLabel.string = n === 0
+                ? 'All clear'
+                : (n === 1 ? '1 LIVE NOW' : `${n} LIVE NOW`);
         }
         if (this._mipHeaderLiveDot) {
             this._mipHeaderLiveDot.node.active = n > 0;
+            // Reposition the dot inline with the rendered subtitle. The
+            // subtitle is centered at x=0, so we estimate its rendered
+            // width via stringLen × 11 (matches the FindMatch heuristic)
+            // and park the dot 14px left of the leading edge. Subtitle Y
+            // is hardcoded 504 (mip.SUBTITLE_Y in LayoutSpec.cjs).
+            const approxW = (this._mipSubtitleLabel?.string.length ?? 0) * 11;
+            const halfW = approxW / 2;
+            this._mipHeaderLiveDot.node.setPosition(-(halfW + 14), 504, 0);
         }
         if (this._mipMoreLabel) {
             this._mipMoreLabel.node.active = n > 6;
             this._mipMoreLabel.string = n > 6 ? `+${n - 6} more` : '';
+        }
+        // 2026-05-02 (pass-4) — muted helper line shows ONLY at n=2. n=1
+        // hero card owns the visual frame; n>=3 fills rows naturally;
+        // n=0 has the empty-state CTA. n=2 is the dead-air case.
+        if (this._mipHelperLine) {
+            this._mipHelperLine.active = (n === 2);
         }
         // 2026-05-02 — apply hero geometry BEFORE per-row tinting/sizing so
         // children land at the right coords for the active layout.
@@ -4898,6 +5016,10 @@ export class AppUI extends Component {
                     const sol = Number(m.wagerLamports) / 1e9;
                     return `${sol < 0.01 ? sol.toFixed(4) : sol.toFixed(2)} SOL`;
                 })();
+            // 2026-05-02 (pass-4) — VS line gets demoted on stack rows so
+            // game state (time + leader chip) can lead. Hero (n=1, i=0)
+            // keeps the dramatic 32pt set in _applyMipHeroLayout.
+            const isHeroRowEarly = i === 0 && n === 1;
             const vsLbl = this._mipVsLabels[i];
             if (vsLbl) {
                 if (isBot) {
@@ -4905,6 +5027,10 @@ export class AppUI extends Component {
                 } else {
                     const display = this._getDisplayName ? this._getDisplayName(oppPubkey) : `${oppPubkey.slice(0, 4)}…${oppPubkey.slice(-4)}`;
                     vsLbl.string = `VS ${display} • ${stakeText}`;
+                }
+                if (!isHeroRowEarly) {
+                    vsLbl.fontSize = 18;
+                    vsLbl.color = new Color(168, 174, 201, 255);
                 }
             }
 
@@ -4915,9 +5041,12 @@ export class AppUI extends Component {
             this._mipRowFraction[i] = remainingFrac;
             const elapsedFrac = 1 - remainingFrac;
 
-            // Time slot is folded into statusLabel; drain the legacy label.
+            // 2026-05-02 (pass-4) — repurpose the legacy time slot. Stack
+            // rows now use it as a prominent 22pt time line (state-tinted
+            // below); the status label below shrinks to 13pt phase-only.
+            // Hero (n=1) keeps it empty because the big-timer centerpiece
+            // owns time presentation in that mode.
             const timeLbl = this._mipTimeLabels[i];
-            if (timeLbl) timeLbl.string = '';
 
             // Leader state.
             const myIdx = m.players.indexOf(me);
@@ -4929,20 +5058,33 @@ export class AppUI extends Component {
                 isPregame ? 'pregame' : isWinning ? 'winning' : 'losing';
             this._mipRowLeaderState[i] = state;
 
-            // 2026-04-29 v2 — merged phase + time line. On the n=1 hero card
-            // the timer is split into a 64pt big-timer + phase microcopy below
-            // (filled below); the merged status is hidden by _applyMipHeroLayout.
-            // Stack rows keep the merged line.
+            // 2026-05-02 (pass-4) — split phase + time on stack rows. Time
+            // moves to its own prominent 22pt line in `timeLbl` below;
+            // statusLbl shrinks to 13pt slate phase-only. Hero (n=1)
+            // suppresses both since the bigTimer/bigPhase centerpiece is
+            // activated by _applyMipHeroLayout for that mode.
             const phase = this._mipPhaseLabel(elapsedFrac);
+            const isHeroRow = i === 0 && n === 1;
             const statusLbl = this._mipStatusLabels[i];
-            if (statusLbl) {
-                statusLbl.string = `${phase} • ${this._formatRemainingTime(remainingMs)}`;
-                statusLbl.color = new Color(200, 206, 226, 255);
+            if (statusLbl && !isHeroRow) {
+                statusLbl.string = phase;
+                statusLbl.fontSize = 13;
+                statusLbl.color = new Color(140, 148, 176, 255);
+                statusLbl.node.setPosition(-36, -2, 0);
+            }
+            if (timeLbl) {
+                if (isHeroRow) {
+                    timeLbl.string = '';
+                } else {
+                    timeLbl.string = this._formatRemainingTime(remainingMs);
+                    timeLbl.fontSize = 22;
+                    timeLbl.horizontalAlign = HorizontalTextAlignment.LEFT;
+                    timeLbl.node.setPosition(-36, 22, 0);
+                }
             }
 
             // 2026-05-02 — hero centerpiece writes (row 0 only, n=1 only).
             // BigTimer = "23h 40m" 64pt gold; BigPhase = "Match just started" 18pt slate.
-            const isHeroRow = i === 0 && n === 1;
             if (isHeroRow) {
                 const bt = this._mipBigTimerLabels[0];
                 if (bt) bt.string = this._formatRemainingTime(remainingMs).replace(/\s*left$/, '');
@@ -4952,7 +5094,9 @@ export class AppUI extends Component {
 
             // Leader chip — "YOU +X.XX% ▲" (hero animates: smooth number tween
             // + ▲/▼ arrow + scale pop on update + positive-streak tracking).
-            // Stack rows keep the simpler static path.
+            // Stack rows keep the simpler static path. Pass-4 bumps stack-row
+            // chip 12 → 22pt so it dominates the row's secondary read after
+            // the prominent time line above.
             const leaderChip = this._mipStakeChipLabels[i];
             if (leaderChip) {
                 if (isPregame) {
@@ -4966,10 +5110,31 @@ export class AppUI extends Component {
                 } else if (isWinning) {
                     leaderChip.string = `YOU +${decodeScore(myHeight).toFixed(2)}%`;
                     leaderChip.color = new Color(48, 198, 155, 255);
+                    leaderChip.fontSize = 22;
                 } else {
                     leaderChip.string = `OPP +${decodeScore(leaderHeight).toFixed(2)}%`;
                     leaderChip.color = new Color(236, 88, 122, 255);
+                    leaderChip.fontSize = 22;
                 }
+            }
+            // 2026-05-02 (pass-4) — tint the new prominent stack-row time
+            // line with the same leader-state color so winning/losing reads
+            // at a glance from across the room.
+            if (timeLbl && !isHeroRow) {
+                if (isPregame) {
+                    timeLbl.color = new Color(200, 206, 226, 255);
+                } else if (isWinning) {
+                    timeLbl.color = new Color(48, 198, 155, 255);
+                } else {
+                    timeLbl.color = new Color(236, 88, 122, 255);
+                }
+            }
+            // 2026-05-02 (pass-4) — featured-row badge on row 0 only when
+            // n>=2 (stack mode). Hero (n=1) doesn't need it; the hero
+            // geometry already carries the visual weight.
+            const featuredBadge = this._mipFeaturedBadges[i];
+            if (featuredBadge) {
+                featuredBadge.node.active = (i === 0 && n >= 2);
             }
 
             // Edge stripe + glow-halo RGB tint per leader state. Glow alpha
@@ -5198,22 +5363,31 @@ export class AppUI extends Component {
             if (trackSpr)  trackSpr.node.setPosition(0, -58, 0);
             if (fillN)     fillN.setPosition(-312, -58, 0);
             if (fillUT)    fillUT.setContentSize(fillUT.contentSize.width, 6);
+            // 2026-05-02 (pass-4) — Resume CTA dominates Ranks. Resume
+            // bumped 116×44 → 140×52 (+ glow 150×72 → 176×80) and pulled
+            // inward to x=246 to keep the right margin tidy. Ranks shrunk
+            // 84×36 → 64×32 with an 11pt slate label so it reads as a
+            // secondary affordance.
             if (resumeGlow) {
-                resumeGlow.node.setPosition(254, -30, 0);
+                resumeGlow.node.setPosition(246, -30, 0);
                 const rgUT = resumeGlow.node.getComponent(UITransform);
-                if (rgUT) rgUT.setContentSize(150, 72);
+                if (rgUT) rgUT.setContentSize(176, 80);
             }
             if (resumeBtn) {
-                resumeBtn.node.setPosition(254, -30, 0);
+                resumeBtn.node.setPosition(246, -30, 0);
                 const rbUT = resumeBtn.node.getComponent(UITransform);
-                if (rbUT) rbUT.setContentSize(116, 44);
+                if (rbUT) rbUT.setContentSize(140, 52);
             }
             if (detailsBtn) {
-                detailsBtn.node.setPosition(128, -30, 0);
+                detailsBtn.node.setPosition(136, -30, 0);
                 const dbUT = detailsBtn.node.getComponent(UITransform);
-                if (dbUT) dbUT.setContentSize(84, 36);
+                if (dbUT) dbUT.setContentSize(64, 32);
                 const dbLbl = detailsBtn.node.getChildByName('Label')?.getComponent(Label);
-                if (dbLbl) dbLbl.string = 'Ranks';
+                if (dbLbl) {
+                    dbLbl.string = 'Ranks';
+                    dbLbl.fontSize = 11;
+                    dbLbl.color = new Color(168, 174, 201, 255);
+                }
             }
             // Reset hero-only animation state cleanly.
             this._mipPrevLeaderHeight[0] = 0;
@@ -5329,8 +5503,11 @@ export class AppUI extends Component {
             // as "confident" rather than "needy".
             const breatheSlow = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.5));
             // 2026-05-02 — 2s LIVE pulse cycle. Drives row dots + header dot.
+            // Pass-4: deepened amplitude (160→110 trough; peak still 255) so
+            // the header dot reads as a real pulse at arm's length instead
+            // of a static blob.
             const breatheFast = 0.5 + 0.5 * Math.sin((now / 1000) * (Math.PI * 2 / 2.0));
-            const liveAlpha = Math.round(160 + 95 * breatheFast);
+            const liveAlpha = Math.round(110 + 145 * breatheFast);
             // Header LIVE dot — only animates when n>=1 (active flag toggled
             // in _renderMipRows).
             const headerDot = this._mipHeaderLiveDot;
@@ -5359,6 +5536,17 @@ export class AppUI extends Component {
                         a = Math.round(48 + 64 * breathe);
                     } else {
                         a = state === 'winning' || state === 'losing' ? 56 : 36;
+                    }
+                    // 2026-05-02 (pass-4) — featured row 0 in stack mode
+                    // (n>=2, not hero) reads weightier than peers via a
+                    // steady alpha boost. +24 on active states / +12 on
+                    // pregame. Urgent-pulse cap is left untouched so the
+                    // <20% breath still dominates when time runs out.
+                    if (i === 0
+                        && this._mipMatches.length >= 2
+                        && !this._mipHeroActive
+                        && frac >= 0.2) {
+                        a += state === 'pregame' ? 12 : 24;
                     }
                     glow.color = new Color(glow.color.r, glow.color.g, glow.color.b, a);
                 }
@@ -6160,6 +6348,57 @@ export class AppUI extends Component {
     }
 
     /**
+     * UX polish — runtime captions that turn the Settings page from a generic
+     * settings panel into a premium account screen. Idempotent: safe to call
+     * once per panel setup. Skips silently if a caption already exists.
+     */
+    private _installSettingsPolishCaptions(): void {
+        if (!this._settingsPanel) return;
+        const ensureCaption = (
+            parent: Node,
+            name: string,
+            text: string,
+            x: number,
+            y: number,
+            opts: { width?: number; fontSize?: number; color?: Color; align?: HorizontalTextAlignment } = {},
+        ): void => {
+            if (parent.getChildByName(name)) return;
+            const node = new Node(name);
+            parent.addChild(node);
+            const ui = node.addComponent(UITransform);
+            ui.setContentSize(opts.width ?? 600, (opts.fontSize ?? 12) + 6);
+            ui.setAnchorPoint(0.5, 0.5);
+            const lbl = node.addComponent(Label);
+            lbl.string = text;
+            lbl.fontSize = opts.fontSize ?? 12;
+            lbl.lineHeight = (opts.fontSize ?? 12) + 6;
+            lbl.horizontalAlign = opts.align ?? HorizontalTextAlignment.CENTER;
+            lbl.verticalAlign = VerticalTextAlignment.CENTER;
+            lbl.color = opts.color ?? new Color(140, 140, 140, 255);
+            node.setPosition(x, y, 0);
+        };
+        // Subtitle directly under the gold "Settings" title (kills the
+        // bare-header feel and bridges the gap to the wallet card).
+        ensureCaption(this._settingsPanel, 'SettingsSubtitleLabel',
+            'Wallet, defaults, and game preferences',
+            0, 506, { width: 540, fontSize: 13, color: new Color(184, 184, 184, 255) });
+        // Available-balance caption under the wallet balance number.
+        const walletCard = this._settingsPanel.getChildByName('WalletCard');
+        if (walletCard) {
+            ensureCaption(walletCard, 'WalletBalanceCaption',
+                'Available balance',
+                200, -20, { width: 200, fontSize: 10, color: new Color(140, 140, 140, 255) });
+        }
+        // Danger-zone explainer sits right under the DANGER ZONE label.
+        const danger = this._settingsPanel.getChildByName('DangerZoneLabel');
+        if (danger) {
+            ensureCaption(danger, 'DangerZoneSubLabel',
+                'Permanent account actions',
+                0, -16, { width: 320, fontSize: 11, color: new Color(140, 140, 140, 255) });
+        }
+    }
+
+    /**
      * UX Phase 2d: apply idle-pulse + press-pop + stronger zoomScale to the
      * primary CTA buttons. Idle-pulse draws the eye to the action; press-pop
      * gives a satisfying tap response (layered on top of cc.Button's native
@@ -6315,17 +6554,41 @@ export class AppUI extends Component {
             op.opacity = 90;
         }
 
-        // 2026-04-28 polish — bottom "Disconnected" pill drops to footnote
-        // weight on initial paint. Color/text still flips via _setConnectionPill
-        // when state changes.
-        const pill = lp.getChildByName('ConnectionStatusPill');
-        if (pill) {
-            const op = pill.getComponent(UIOpacity) ?? pill.addComponent(UIOpacity);
-            // 2026-04-29 demo-ready pass: 140 → 170 (~67%). The pill now has
-            // a faint Palette.bg.card capsule around it (mkPill bgAlpha=90),
-            // so it reads as part of the layout. Slightly higher opacity
-            // makes the readable text legible without dominating.
-            op.opacity = 170;
+        // 2026-05-02 UX polish — ConnectionStatusPill retired. Status now lives
+        // inline on the Reconnect pill via _setConnectionPill → ReconnectStatusInline.
+
+        // Mascot status chip — built at runtime as a sibling above the mascot
+        // so it reads as the mascot speaking. Drift period matches the mascot's
+        // addFloat above (3.2s) so the chip rides with it. Construction avoids
+        // scene-file __id__ surgery for a fresh Node + Sprite + Label.
+        const chipExisting = lp.getChildByName('MascotStatusChip');
+        if (!chipExisting) {
+            const chip = new Node('MascotStatusChip');
+            chip.parent = lp;
+            chip.setPosition(new Vec3(0, 412, 0));
+            const chipUI = chip.addComponent(UITransform);
+            chipUI.contentSize = new Size(200, 32);
+            // Borrow the rounded-rect SpriteFrame from MascotShadow so we don't
+            // duplicate the asset reference or load a new SpriteFrame here.
+            const refSf = mascotShdw?.getComponent(Sprite)?.spriteFrame ?? null;
+            if (refSf) {
+                const bg = chip.addComponent(Sprite);
+                bg.spriteFrame = refSf;
+                bg.type = Sprite.Type.SLICED;
+                bg.color = new Color(26, 24, 48, 160);
+            }
+            const labelNode = new Node('Label');
+            labelNode.parent = chip;
+            const labelUI = labelNode.addComponent(UITransform);
+            labelUI.contentSize = new Size(196, 28);
+            const lbl = labelNode.addComponent(Label);
+            lbl.string = 'Ready to duel?';
+            lbl.fontSize = 14;
+            lbl.lineHeight = 18;
+            lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            lbl.verticalAlign = VerticalTextAlignment.CENTER;
+            lbl.color = new Color(185, 183, 255, 220);
+            addFloat(chip, 6, 3.2);
         }
 
         // 2026-04-28 — particle drift now spawned in _setActivePanel('landing')
@@ -11050,9 +11313,13 @@ export class AppUI extends Component {
             const selEdgeNode = this._feedRowSelectedEdges[i];
             const selEdgeSpr = selEdgeNode?.getComponent(Sprite) ?? null;
             if (selEdgeSpr) {
+                // Only the selected row carries the emerald strip. Unselected
+                // rows wash their edge to alpha 0 so the active selection has
+                // unambiguous focus. Belt-and-suspenders alongside the
+                // `selEdge.active = isSelected` gate above.
                 selEdgeSpr.color = isSelected
                     ? new Color(20, 241, 149, 255)
-                    : new Color(20, 241, 149, 180);
+                    : new Color(20, 241, 149, 0);
             }
             // 2026-04-29 god-tier UX pass — slight elevation pop on the
             // selected card (snap, no tween — selection rarely flips).
@@ -11568,16 +11835,16 @@ export class AppUI extends Component {
                     perfBar.color = new Color(93, 100, 133, 90);
                 }
                 if (edge) {
-                    // 2026-04-30 — empty slot edge is now violet (target-border
-                    // alpha) so the drop-zone reads as "available pick" with
-                    // brand color, not a generic white hairline. Bright violet
-                    // when actively targeted; mid violet on the default-target
-                    // (leftmost empty) so the user's eye lands there first.
+                    // 2026-04-30 — empty slot edge is violet (target-border).
+                    // 2026-05-02 polish — empty-slot dominance pass: drop the
+                    // default-target alpha (200→160) and idle alpha (130→100)
+                    // so empty slots stay inviting without competing with the
+                    // selected fighter card next to them.
                     edge.color = targeted
                         ? new Color(153, 69, 255, 240)
                         : defaultTargeted
-                            ? new Color(153, 69, 255, 200)
-                            : new Color(153, 69, 255, 130);
+                            ? new Color(153, 69, 255, 160)
+                            : new Color(153, 69, 255, 100);
                 }
                 if (removeBtn) removeBtn.active = false;
                 // 2026-05-01 squad-select pass — halo dim by default, brightens
@@ -11585,24 +11852,31 @@ export class AppUI extends Component {
                 // default-target (leftmost empty) gets a softer violet halo so
                 // it reads as "next up" without competing with explicit targeting.
                 if (haloSpr) {
+                    // 2026-05-02 polish — soften empty-slot halo so the
+                    // selected/filled card next to it carries the section.
+                    // Targeted: 90→60. DefaultTargeted: 60→30. Idle stays 0.
                     haloSpr.color = targeted
-                        ? new Color(153, 69, 255, 90)
+                        ? new Color(153, 69, 255, 60)
                         : defaultTargeted
-                            ? new Color(153, 69, 255, 60)
+                            ? new Color(153, 69, 255, 30)
                             : new Color(20, 241, 149, 0);
                 }
                 // 2026-04-30 — gentle idle pulse on empty slots so the user's
                 // eye is drawn to "tap me" zones. Idempotent — addIdlePulse
-                // returns early if already pulsing.
+                // returns early if already pulsing. 2026-05-02 polish — drop
+                // peak from 1.02 → 1.012 so the breathing doesn't fight the
+                // selected fighter card for visual weight.
                 if (slotNode) {
-                    try { addIdlePulse(slotNode, 1.02, 1.8); } catch (_) { /* optional */ }
+                    try { addIdlePulse(slotNode, 1.012, 1.8); } catch (_) { /* optional */ }
                 }
                 // Slot bg — slightly different shades for empty vs filled so
                 // filled fighter cards visually elevate above empty drop zones.
+                // 2026-05-02 polish — soften the targeted violet wash so
+                // empty slots recede behind the selected fighter card.
                 const slotSpr = slotNode?.getComponent(Sprite) ?? null;
                 if (slotSpr) {
                     slotSpr.color = targeted
-                        ? new Color(50, 20, 72, 240)        // violet-tinted target
+                        ? new Color(36, 14, 52, 220)        // violet-tinted target (softer)
                         : new Color(16, 4, 24, 240);        // empty drop zone
                 }
             } else {
@@ -11666,11 +11940,14 @@ export class AppUI extends Component {
                 // positive 24h%, rose when negative, slate when flat. Alpha
                 // bumps to 80 so the card visibly elevates above the panel bg.
                 if (haloSpr) {
+                    // 2026-05-02 polish — bump filled-card halo (80→110) so
+                    // the locked-in fighter visibly elevates above the
+                    // dampened empty drop zones beside it.
                     haloSpr.color = d > 0
-                        ? new Color(20, 241, 149, 80)
+                        ? new Color(20, 241, 149, 110)
                         : d < 0
-                            ? new Color(255, 77, 77, 80)
-                            : new Color(140, 140, 140, 50);
+                            ? new Color(255, 77, 77, 110)
+                            : new Color(140, 140, 140, 70);
                 }
                 // 2026-04-30 — stop the empty-slot idle pulse the moment a
                 // token lands so the "anchored / committed" read isn't fighting
@@ -11719,7 +11996,9 @@ export class AppUI extends Component {
         // 2026-04-29 god-tier UX pass — write live "N / 3 SELECTED" subtitle
         // into the squad header eyebrow. Color brightens to teal at 3/3.
         if (this._squadHeaderEyebrow) {
-            this._squadHeaderEyebrow.string = `${filledCount} / 3 SELECTED`;
+            // 2026-05-02 polish — lowercase "selected" per draft-board brief.
+            // Reads as a status caption ("1 / 3 selected"), not a tab label.
+            this._squadHeaderEyebrow.string = `${filledCount} / 3 selected`;
             this._squadHeaderEyebrow.color = filledCount >= 3
                 ? new Color(20, 241, 149, 255)
                 : new Color(168, 174, 201, 220);
@@ -11727,6 +12006,13 @@ export class AppUI extends Component {
         if (filledCount >= 3 && !this._squadFullPulseFired) {
             for (const sb of this._squadSlotButtons) {
                 try { popScale(sb.node, 1.08); } catch (_) { /* ignore */ }
+            }
+            // 2026-05-02 polish — pop the CTA at the squad-fills moment so
+            // the user sees the action button "unlock". Continuous
+            // Shimmer_WagerStartButton already provides the ambient sweep
+            // (wired in _enhancePrimaryCTAs); this is the distinctive beat.
+            if (this._wagerStartButton) {
+                try { popScale(this._wagerStartButton.node, 1.06); } catch (_) { /* ignore */ }
             }
             this._squadFullPulseFired = true;
         } else if (filledCount < 3) {
@@ -13027,139 +13313,6 @@ export class AppUI extends Component {
         showToast('Bot match — tap Commit to start');
     }
 
-    /**
-     * 2026-05-02 attempt 8 Option B — Build two raw touch-overlay nodes at
-     * Canvas root level, sized + positioned over the existing post-match
-     * CTAs. Each fires its handler on TOUCH_END (not Button.CLICK) so a
-     * broken Button component or panel-internal touch swallow doesn't kill
-     * the tap path. Idempotent: gated by `_postMatchOverlayInstalled`.
-     */
-    private _installPostMatchTouchOverlay(): void {
-        if (this._postMatchOverlayInstalled) return;
-        if (!this._postMatchPanel) {
-            console.log(`${TAG} _installPostMatchTouchOverlay | NO_PANEL`);
-            return;
-        }
-        // The two visible CTAs: 'sameSquad' = green PICK NEW SQUAD (calls _onPostMatchAgain),
-        // 'again' = dark HOME (calls _onPostMatchBack). See AppUI.ts:3076-3078.
-        const homeBtnNode = this._postMatchPanel.getChildByName('PostMatchAgainButton');
-        const newSquadBtnNode = this._postMatchPanel.getChildByName('PostMatchSameSquadButton');
-        if (!homeBtnNode || !newSquadBtnNode) {
-            console.log(`${TAG} _installPostMatchTouchOverlay | MISSING_BTN home=${!!homeBtnNode} newSquad=${!!newSquadBtnNode}`);
-            return;
-        }
-        // 2026-05-02 attempt 8 rev 3 — canvas-relative positions (Fix B).
-        // Don't read sourceNode.worldPosition; that may be stale during the
-        // cascade. Compute from the canvas's own UITransform so positions
-        // are deterministic regardless of when this runs.
-        const canvasUT = this.node.getComponent(UITransform);
-        const cw = canvasUT?.contentSize.width ?? 720;
-        const ch = canvasUT?.contentSize.height ?? 1602;
-        const yLocal = -ch / 2 + 152;
-        const xOffset = cw / 4 + 18; // ~180 for 720-wide
-        const newSquadLocal = new Vec3(-xOffset, yLocal, 0);
-        const homeLocal = new Vec3(+xOffset, yLocal, 0);
-        const buildOverlay = (label: string, localPos: Vec3, ctaText: string, handler: () => void): Node => {
-            const overlay = new Node(`PostMatchOverlay_${label}`);
-            // Fix 1 (rev 2, retained): set layer to canvas's so the UI camera
-            // actually dispatches input + renders to this node.
-            overlay.layer = this.node.layer;
-            const ut = overlay.addComponent(UITransform);
-            // Fix D: bigger hit zone, more forgiving tap target.
-            ut.setContentSize(360, 120);
-            this.node.addChild(overlay);
-            overlay.setPosition(localPos);
-            overlay.setSiblingIndex(this.node.children.length - 1);
-            overlay.on(Node.EventType.TOUCH_END, (ev: EventTouch) => {
-                console.log(`[PostMatchOverlay] TOUCH_END label=${label}`);
-                try {
-                    handler();
-                } catch (err: any) {
-                    console.log(`[PostMatchOverlay] handler threw label=${label} err=${err?.message ?? err}`);
-                }
-            }, this);
-            // Fix A: Label child (always renders in Cocos 3.8, no SpriteFrame
-            // needed). Bright yellow text overlays the existing CTA so the
-            // user has an unambiguous tappable target.
-            try {
-                const lblNode = new Node('overlay_label');
-                lblNode.layer = overlay.layer;
-                const lblUT = lblNode.addComponent(UITransform);
-                lblUT.setContentSize(360, 120);
-                const lbl = lblNode.addComponent(Label);
-                lbl.string = ctaText;
-                lbl.fontSize = 22;
-                lbl.lineHeight = 26;
-                lbl.color = new Color(255, 255, 0, 255);
-                lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
-                lbl.verticalAlign = VerticalTextAlignment.CENTER;
-                overlay.addChild(lblNode);
-            } catch (e: any) {
-                console.log(`[PostMatchOverlay] label_child threw label=${label} err=${e?.message ?? e}`);
-            }
-            overlay.active = false;
-            console.log(`[PostMatchOverlay] BUILT label=${label} layer=${overlay.layer} canvasLayer=${this.node.layer} size=360x120 localPos=(${localPos.x.toFixed(1)},${localPos.y.toFixed(1)}) parentChildren=${this.node.children.length}`);
-            return overlay;
-        };
-        this._postMatchHomeOverlay = buildOverlay('home', homeLocal, '⬅ TAP HERE FOR HOME', () => this._onPostMatchBack());
-        this._postMatchAgainOverlay = buildOverlay('newSquad', newSquadLocal, 'TAP HERE FOR NEW SQUAD', () => this._onPostMatchAgain());
-        // Fix E: visible reminder that hardware back also escapes the panel.
-        // Built once; activated/deactivated together with the overlays.
-        try {
-            const hint = new Node('PostMatchOverlay_hint');
-            hint.layer = this.node.layer;
-            const hintUT = hint.addComponent(UITransform);
-            hintUT.setContentSize(cw, 40);
-            this.node.addChild(hint);
-            hint.setPosition(new Vec3(0, ch / 2 - 60, 0));
-            hint.setSiblingIndex(this.node.children.length - 1);
-            const hintLbl = hint.addComponent(Label);
-            hintLbl.string = '⬅ Hardware back also works';
-            hintLbl.fontSize = 18;
-            hintLbl.lineHeight = 22;
-            hintLbl.color = new Color(255, 255, 0, 200);
-            hintLbl.horizontalAlign = HorizontalTextAlignment.CENTER;
-            hintLbl.verticalAlign = VerticalTextAlignment.CENTER;
-            hint.active = false;
-            (this as any)._postMatchHwBackHint = hint;
-        } catch (e: any) {
-            console.log(`[PostMatchOverlay] hint_label threw err=${e?.message ?? e}`);
-        }
-        this._postMatchOverlayInstalled = true;
-        console.log(`${TAG} _installPostMatchTouchOverlay | DONE attempt8_optionB rev3`);
-    }
-
-    /**
-     * 2026-05-02 attempt 8 Option B — toggle the two runtime touch overlays
-     * in lockstep with PostMatchPanel.active. Re-applies world position on
-     * each show in case viewport size changed since build time.
-     */
-    private _setPostMatchOverlayActive(active: boolean): void {
-        if (active) {
-            // 2026-05-02 attempt 8 rev 3 — Fix C: re-apply canvas-relative
-            // positions on each show (in case viewport resized between match
-            // and panel show). Same math as in _installPostMatchTouchOverlay.
-            const canvasUT = this.node.getComponent(UITransform);
-            const cw = canvasUT?.contentSize.width ?? 720;
-            const ch = canvasUT?.contentSize.height ?? 1602;
-            const yLocal = -ch / 2 + 152;
-            const xOffset = cw / 4 + 18;
-            if (this._postMatchHomeOverlay) {
-                this._postMatchHomeOverlay.setPosition(new Vec3(+xOffset, yLocal, 0));
-                this._postMatchHomeOverlay.setSiblingIndex(this.node.children.length - 1);
-            }
-            if (this._postMatchAgainOverlay) {
-                this._postMatchAgainOverlay.setPosition(new Vec3(-xOffset, yLocal, 0));
-                this._postMatchAgainOverlay.setSiblingIndex(this.node.children.length - 1);
-            }
-        }
-        if (this._postMatchHomeOverlay) this._postMatchHomeOverlay.active = active;
-        if (this._postMatchAgainOverlay) this._postMatchAgainOverlay.active = active;
-        const hint = (this as any)._postMatchHwBackHint as Node | undefined;
-        if (hint) hint.active = active;
-        console.log(`[PostMatchOverlay] SET_ACTIVE ${active} home=${!!this._postMatchHomeOverlay} again=${!!this._postMatchAgainOverlay} hint=${!!hint}`);
-    }
-
     private _showPostMatchPanel(outcome: {
         won: boolean;
         tie?: boolean;          // betting-duel: equal portfolio deltas → think mascot
@@ -13226,12 +13379,6 @@ export class AppUI extends Component {
         if (_backLink) _backLink.active = false;
         const ssBtnShow = this._postMatchPanel.getChildByName('PostMatchSameSquadButton')?.getComponent(Button) ?? null;
         ensureInteractable(ssBtnShow, 'sameSquad');
-        // 2026-05-02 attempt 8 Option B — install + activate runtime touch
-        // overlays at Canvas root. Idempotent install on first show, then
-        // active=true on every show. Hidden again in _onPostMatchBack /
-        // _onPostMatchAgain. Per plan ~/.claude/plans/cozy-wobbling-goose.md.
-        this._installPostMatchTouchOverlay();
-        this._setPostMatchOverlayActive(true);
         // Defensive show-time reset on the two visible CTAs — a re-entry from
         // a prior round (or a finalizer-stop race) can leave node.active or
         // interactable in a half-state. Force both to a known-good state
@@ -14372,10 +14519,33 @@ export class AppUI extends Component {
         setY('Mode_trio',                310 + headroom);
         setY('Mode_fourPlayer',          160 + headroom);
         setY('Mode_eightPlayer',         160 + headroom);
+        // Middle band — Duration / Track / Difficulty stack rides with
+        // headroom too. 2026-05-02 polish: previously the settings band
+        // stayed at design-canvas Y while mode cards floated up, opening
+        // a ~140px dead band between the mode grid bottom and the Duration
+        // header on tall (19.5:9+) viewports. Lifting the band with the
+        // mode grid keeps the configure-flow reading as one connected unit;
+        // any natural breathing room ends up between Difficulty and the
+        // Duel Ticket below — exactly where "you're committing to this"
+        // belongs. Difficulty + difficulty-helper ride with the same offset;
+        // the Bot/Guest SHIFT (handled in _refreshModePickerUi) still
+        // applies on top, so the collapse-when-Track-is-hidden behavior
+        // is intact.
+        setY('PickerSectionLabel_Duration',     80 + headroom);
+        setY('Window_30s',                      28 + headroom);
+        setY('Window_1m',                       28 + headroom);
+        setY('Window_5m',                       28 + headroom);
+        setY('Window_1h',                       28 + headroom);
+        setY('Window_24h',                      28 + headroom);
+        setY('Window_7d',                       28 + headroom);
+        setY('PickerSectionLabel_Track',       -24 + headroom);
+        setY('PickerPaperToggle',              -72 + headroom);
+        setY('PickerRealToggle',               -72 + headroom);
+        setY('PickerTrackHelperLabel',        -100 + headroom);
         // Bottom zone — headroom pushes the band closer to the safe-area
-        // bottom. Difficulty section is middle-zone and handled by SHIFT in
-        // _refreshModePickerUi separately, so the Bot/Guest collapse keeps
-        // working independently of viewport anchoring.
+        // bottom. The Difficulty section + helper are still nudged by
+        // SHIFT inside _refreshModePickerUi for the Bot/Guest flow on top
+        // of the base headroom (read there).
         // 2026-05-01 round 2 — constant +80 lift on every bottom-anchored Y
         // so the CTA + status microcopy aren't pinned against the viewport
         // bottom safe area on the user's device. Without this, on vh=1560
@@ -14779,8 +14949,6 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
-        // 2026-05-02 attempt 8 Option B — hide overlay in lockstep with panel.
-        this._setPostMatchOverlayActive(false);
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._showHome();
         // Resume Birdeye polling now that we're back on Home (trade tab visible).
@@ -14796,8 +14964,6 @@ export class AppUI extends Component {
         // 2026-04-30 — stop bg pulse + CTA idle pulses before hiding the panel
         // so no repeat-forever tween keeps ticking on a hidden node.
         this._clearPostMatchRevealTimers();
-        // 2026-05-02 attempt 8 Option B — hide overlay in lockstep with panel.
-        this._setPostMatchOverlayActive(false);
         if (this._postMatchPanel) this._postMatchPanel.active = false;
         this._tokenDuelPanel.active = true;
         // Re-open picker so user can pick mode/wager again. Squad still intact.
@@ -17025,18 +17191,21 @@ export class AppUI extends Component {
         // wager chip row was retired in the lock-in redesign — stake info now
         // lives in PickerSummaryCard's stake label, which is always visible.
         const hideTrack = this._isGuest() || this._pickerBotMode;
+        const trackHelper = this._modePickerOverlay?.getChildByName('PickerTrackHelperLabel');
         if (hideTrack) {
             this._pickerSelectedTrack = 'paper';
             if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = false;
             if (this._pickerRealToggle)  this._pickerRealToggle.node.active = false;
             const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
             if (trackHdr) trackHdr.active = false;
+            if (trackHelper) trackHelper.active = false;
             for (const btn of this._pickerWagerButtons.values()) btn.node.active = false;
         } else {
             if (this._pickerPaperToggle) this._pickerPaperToggle.node.active = true;
             if (this._pickerRealToggle)  this._pickerRealToggle.node.active = true;
             const trackHdr = this._modePickerOverlay?.getChildByName('PickerSectionLabel_Track');
             if (trackHdr) trackHdr.active = true;
+            if (trackHelper) trackHelper.active = true;
             for (const btn of this._pickerWagerButtons.values()) btn.node.active = true;
         }
         // 2026-04-30 arena redesign — only the middle-zone Difficulty band
@@ -17045,7 +17214,14 @@ export class AppUI extends Component {
         // and stay put regardless of Track visibility (the visual gap above
         // them communicates "you're committing to this" instead of feeling
         // like a dropped layout).
-        const SHIFT = hideTrack ? 80 : 0;
+        // 2026-05-02 polish — fold viewport headroom into the SHIFT so the
+        // Difficulty band tracks the rest of the middle band lifted in
+        // _relayoutModePickerToViewport. Without this, on tall (19.5:9+)
+        // devices the difficulty pills stayed at canvas-Y while the rest
+        // of the settings band rose with headroom, opening a fresh gap.
+        const _vh = view.getVisibleSize().height;
+        const _headroom = Math.max(0, (_vh - 1280) / 2);
+        const SHIFT = (hideTrack ? 80 : 0) + _headroom;
         const setY = (n: Node | null | undefined, baseY: number) => {
             if (!n) return;
             const p = n.position;
@@ -17055,6 +17231,10 @@ export class AppUI extends Component {
         // (sectionDifficulty -140→-116, difficultyBtn -200→-172).
         setY(this._modePickerOverlay?.getChildByName('PickerSectionLabel_Difficulty'), -116);
         for (const btn of this._pickerDifficultyButtons.values()) setY(btn.node, -172);
+        // 2026-05-02 polish — difficulty helper line ("Difficulty adjusts bot
+        // strength") rides with the difficulty pills so the section reads as
+        // one unit on every viewport.
+        setY(this._modePickerOverlay?.getChildByName('PickerDifficultyHelperLabel'), -210);
 
         // 2026-04-30 — color constants pulled from Theme.Palette so we don't
         // drift away from the rest of the app. tealActive = Solana teal at
@@ -17086,6 +17266,11 @@ export class AppUI extends Component {
             } else {
                 stopPulse(btn.node);
             }
+            // 2026-05-02 polish — "✓ SELECTED" gold badge in the top-right
+            // corner of the chosen card. Hidden by default in scene-gen;
+            // toggled per-card here so only one badge is visible at a time.
+            const badge = btn.node.getChildByName('ModeSelectedBadge');
+            if (badge) badge.active = isSelected;
         }
         // Wager tint. betting-duel: 8 chips. wagerKeys[i] → tier sceneToTierIdx[i].
         const wagerKeys = ['0001', '001', '005', '01', '025', '05', '1', '5'];
@@ -17124,6 +17309,16 @@ export class AppUI extends Component {
                     : pillIdle;
             }
         }
+        // 2026-05-02 polish — difficulty helper text fades when the band is
+        // greyed (Real track) so the helper visually matches the disabled-
+        // looking pills above it.
+        const diffHelperNode = this._modePickerOverlay?.getChildByName('PickerDifficultyHelperLabel');
+        const diffHelperLbl = diffHelperNode?.getComponent(Label);
+        if (diffHelperLbl) {
+            diffHelperLbl.color = difficultyVisible
+                ? new Color(140, 140, 140, 255)
+                : new Color(110, 116, 130, 180);
+        }
         // Lock-in summary card — three labels (mode / modifiers / stake)
         // tell the user exactly what they're about to commit to. Stake gets
         // the gold accent + larger font because it's the risk.
@@ -17144,10 +17339,42 @@ export class AppUI extends Component {
                     ? 'FREE · Practice'
                     : `Stake: ${WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex]}`);
         }
-        // Diagnostic footer — kept as low-key probe for QA. Color is already muted.
+        // 2026-05-02 polish — wager-risk caption inside the Duel Ticket. Bot
+        // Lv suffix appears whenever difficulty is in play (paper / bot /
+        // guest); real-track host plays humans so the level is intentionally
+        // omitted.
+        const wagerCaptionNode = this._modePickerOverlay
+            ?.getChildByName('PickerSummaryCard')
+            ?.getChildByName('PickerSummaryWagerCaptionLabel');
+        const wagerCaptionLbl = wagerCaptionNode?.getComponent(Label);
+        if (wagerCaptionLbl) {
+            const botLvByDiff: Record<BotDifficulty, number> = { easy: 1, medium: 3, hard: 5 };
+            const botLv = botLvByDiff[this._pickerSelectedDifficulty] ?? 1;
+            if (this._pickerBotMode) {
+                wagerCaptionLbl.string = `Bot match · no SOL at risk · Bot Lv ${botLv}`;
+            } else if (this._isGuest()) {
+                wagerCaptionLbl.string = `Guest practice · no SOL at risk · Bot Lv ${botLv}`;
+            } else if (this._pickerSelectedTrack === 'paper') {
+                wagerCaptionLbl.string = `Practice match · no SOL at risk · Bot Lv ${botLv}`;
+            } else {
+                wagerCaptionLbl.string = 'Real wager · SOL at stake';
+            }
+        }
+        // 2026-05-02 polish — footer microcopy reordered to mode → duration →
+        // track → difficulty → stake (matches the visual flow up the page).
+        // Mode short-labels keep the line compact.
         if (this._pickerStatusLabel) {
-            const trackLabel = this._pickerSelectedTrack === 'paper' ? `Paper · ${this._pickerSelectedDifficulty}` : 'Real';
-            this._pickerStatusLabel.string = `${modeLabel} · ${WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex]} · ${windowLabel} · ${trackLabel}`;
+            const modeShort: Record<string, string> = {
+                oneVone: '1v1', trio: 'Trio', fourPlayer: '4P FFA', eightPlayer: 'BR',
+            };
+            const m = modeShort[this._pickerSelectedMode] ?? modeLabel;
+            const stakeShort = this._pickerBotMode
+                ? 'FREE'
+                : (this._isGuest() ? 'FREE' : WAGER_TIERS_LABELS[this._pickerSelectedWagerIndex]);
+            const isPaper = this._pickerBotMode || this._pickerSelectedTrack === 'paper';
+            this._pickerStatusLabel.string = isPaper
+                ? `${m} · ${windowLabel} · Paper · ${cap(this._pickerSelectedDifficulty)} · ${stakeShort}`
+                : `${m} · ${windowLabel} · Real · ${stakeShort}`;
         }
     }
 
@@ -17201,10 +17428,10 @@ export class AppUI extends Component {
                     this._wagerStartLabel.string = ready
                         ? 'RESUME MATCH'
                         : filled === 0
-                            ? 'BUILD YOUR SQUAD'
+                            ? 'PICK 3 TOKENS'
                             : filled === 1
                                 ? 'PICK 2 MORE TO ENTER'
-                                : 'PICK 1 MORE, ALMOST THERE';
+                                : 'PICK 1 MORE TO ENTER';
                 }
             }
             if (this._wagerHintLabel) {
@@ -17218,7 +17445,7 @@ export class AppUI extends Component {
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
                     : new Color(168, 174, 201, 230);
-                this._wagerHintLabel.node.setPosition(0, -616, 0);
+                this._wagerHintLabel.node.setPosition(0, -642, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -17248,10 +17475,10 @@ export class AppUI extends Component {
                     this._wagerStartLabel.string = ready
                         ? 'JOIN MATCH'
                         : filled === 0
-                            ? 'BUILD YOUR SQUAD'
+                            ? 'PICK 3 TOKENS'
                             : filled === 1
                                 ? 'PICK 2 MORE TO ENTER'
-                                : 'PICK 1 MORE, ALMOST THERE';
+                                : 'PICK 1 MORE TO ENTER';
                 }
             }
             if (this._wagerHintLabel) {
@@ -17264,7 +17491,7 @@ export class AppUI extends Component {
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
                     : new Color(168, 174, 201, 230);
-                this._wagerHintLabel.node.setPosition(0, -616, 0);
+                this._wagerHintLabel.node.setPosition(0, -642, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -17295,24 +17522,26 @@ export class AppUI extends Component {
                     this._wagerStartLabel.string = ready
                         ? 'START BOT MATCH'
                         : filled === 0
-                            ? 'BUILD YOUR SQUAD'
+                            ? 'PICK 3 TOKENS'
                             : filled === 1
                                 ? 'PICK 2 MORE TO ENTER'
-                                : 'PICK 1 MORE, ALMOST THERE';
+                                : 'PICK 1 MORE TO ENTER';
                 }
             }
             if (this._wagerHintLabel) {
                 // 2026-05-01 r3 — BOT MODE: pill row is EMPTY (no stake
                 // selector, no lock chip), so pull the hint UP to where
                 // the pill would sit instead of leaving a gap.
-                // 2026-05-02 — pill y shifted -548 → -534 (compact resize).
+                // 2026-05-02 polish — wager-above-CTA reorder moved the pill
+                // anchor -542 → -444; BOT-mode hint follows it up so the
+                // row above the CTA isn't a gap.
                 this._wagerHintLabel.string = ready
                     ? '✓ Free practice · tap START BOT MATCH'
                     : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to play bots`;
                 this._wagerHintLabel.color = ready
                     ? new Color(20, 241, 149, 255)
                     : new Color(168, 174, 201, 230);
-                this._wagerHintLabel.node.setPosition(0, -542, 0);
+                this._wagerHintLabel.node.setPosition(0, -444, 0);
             }
             this._syncWagerStartPulse(ready);
             return;
@@ -17339,13 +17568,16 @@ export class AppUI extends Component {
         if (this._wagerStartButton) {
             this._wagerStartButton.interactable = ready;
             if (this._wagerStartLabel) {
+                // 2026-05-02 polish — CTA copy aligned to brief: punchy
+                // "ENTER DUEL" at full squad reads as the call-to-action,
+                // unfilled states mirror the helper text below the CTA.
                 this._wagerStartLabel.string = ready
-                    ? 'LOCK IN SQUAD'
+                    ? 'ENTER DUEL'
                     : filled === 0
-                        ? 'BUILD YOUR SQUAD'
+                        ? 'PICK 3 TOKENS'
                         : filled === 1
                             ? 'PICK 2 MORE TO ENTER'
-                            : 'PICK 1 MORE, ALMOST THERE';
+                            : 'PICK 1 MORE TO ENTER';
             }
         }
         if (this._wagerHintLabel) {
@@ -17354,10 +17586,12 @@ export class AppUI extends Component {
             // 2026-05-02 Pass 2 — wager amount baked into ready copy so the
             // user sees the stake at the moment of commitment.
             this._wagerHintLabel.string = ready
-                ? `✓ Wagering ${label} · tap LOCK IN SQUAD`
-                : filled === 2
-                    ? 'Pick your final token to lock in'
-                    : `Pick ${3 - filled} more token${3 - filled === 1 ? '' : 's'} to start`;
+                ? `✓ Wagering ${label} · tap ENTER DUEL`
+                : filled === 0
+                    ? 'Pick 3 tokens to enter'
+                    : filled === 1
+                        ? 'Pick 2 more tokens to enter'
+                        : 'Pick 1 more token to enter';
             this._wagerHintLabel.color = ready
                 ? new Color(20, 241, 149, 255)
                 : new Color(168, 174, 201, 230);
@@ -17715,16 +17949,16 @@ export class AppUI extends Component {
         }
         if (this._matchSetupHintLabel) {
             const remaining = 3 - filled;
-            // 2026-04-29 god-tier UX pass — copy lifted from brief; "enter the
-            // duel" reads as the call-to-action on first land, "tap Start Duel"
-            // closes the loop when squad is full.
+            // 2026-05-02 polish — brief copy: "to enter" instead of "to start"
+            // closes the loop with the CTA verb ("ENTER DUEL"), and the 3/3
+            // ready copy points at the punchier CTA label.
             this._matchSetupHintLabel.string = filled >= 3
-                ? 'Squad ready · tap Start Duel'
+                ? 'Squad ready · tap ENTER DUEL'
                 : filled === 0
-                    ? 'Pick 3 tokens to enter the duel'
+                    ? 'Pick 3 tokens to enter'
                     : remaining === 1
-                        ? 'Pick 1 more token to start'
-                        : `Pick ${remaining} more tokens to start`;
+                        ? 'Pick 1 more token to enter'
+                        : `Pick ${remaining} more tokens to enter`;
             this._matchSetupHintLabel.color = filled >= 3
                 ? new Color(20, 241, 149, 255)
                 : new Color(168, 174, 201, 230);
@@ -19164,6 +19398,16 @@ export class AppUI extends Component {
         }
         if (this._qpTrackPaperLabel) this._qpTrackPaperLabel.color = track === 'paper' ? new Color(255, 255, 255, 255) : new Color(160, 170, 190, 255);
         if (this._qpTrackRealLabel)  this._qpTrackRealLabel.color  = track === 'real'  ? new Color(255, 255, 255, 255) : new Color(160, 170, 190, 255);
+        // UX polish — risk-aware microcopy: Paper reads as safe-green, Real as warn-amber.
+        if (this._qpTrackHelpLabel) {
+            if (track === 'paper') {
+                this._qpTrackHelpLabel.string = 'Practice mode · no SOL at stake';
+                this._qpTrackHelpLabel.color = new Color(20, 241, 149, 255);
+            } else {
+                this._qpTrackHelpLabel.string = 'Real mode · SOL wagers active';
+                this._qpTrackHelpLabel.color = new Color(255, 180, 84, 255);
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -19219,10 +19463,20 @@ export class AppUI extends Component {
         const pubkey = mwa?.connectedPubkey ?? null;
         const walletName = this._resolveWalletName();
 
+        // UX polish — repurpose static WALLET header into a dynamic state
+        // strip ("WALLET CONNECTED" / "WALLET DISCONNECTED"), and let
+        // WalletNameLabel carry just the adapter name beneath it.
+        const walletHeaderLabel = this._settingsPanel?.getChildByName('WalletCard')
+            ?.getChildByName('HeaderLabel')?.getComponent(Label) ?? null;
+        if (walletHeaderLabel) {
+            walletHeaderLabel.string = pubkey ? 'WALLET CONNECTED' : 'WALLET DISCONNECTED';
+            walletHeaderLabel.color = pubkey
+                ? new Color(140, 140, 140, 255)
+                : new Color(140, 140, 140, 255);
+        }
         if (this._settingsWalletNameLabel) {
-            // Phase 29 — wallet card shows "Connected · {wallet}" when authed,
-            // "Not connected" otherwise. Status dot mirrors connection state.
-            this._settingsWalletNameLabel.string = pubkey ? `Connected · ${walletName}` : 'Not connected';
+            this._settingsWalletNameLabel.string = pubkey ? walletName : 'Tap a wallet from the home screen to connect';
+            this._settingsWalletNameLabel.color = new Color(184, 184, 184, 255);
         }
         const statusDot = this._settingsPanel?.getChildByName('WalletCard')?.getChildByName('WalletStatusDot');
         const statusDotSpr = statusDot?.getComponent(Sprite);
@@ -19656,6 +19910,11 @@ export class AppUI extends Component {
     private _refreshPortfolioTab(): void {
         // Drive the runtime mode pill; tints + animation handled inside the helper.
         this._pfModeSetActive?.(this._pfActiveTab);
+        if (this._pfModeHelperLabel) {
+            this._pfModeHelperLabel.string = this._pfActiveTab === 'paper'
+                ? 'Paper Mode · Practice results'
+                : 'Real Mode · Wagered match results';
+        }
         if (this._pfActiveTab === 'real') {
             const pubkey = MWAManager.instance?.connectedPubkey ?? '';
             if (!pubkey) {
@@ -19696,9 +19955,18 @@ export class AppUI extends Component {
                     if (this._pfActiveTab !== tabAtCall) return;
                     const local = Stats.load(tabAtCall);
                     const mergedXp = Math.max(local.xp, Number(remote.totalXp) || 0);
-                    const mergedGames = Math.max(local.games, Number(remote.gamesPlayed) || 0);
-                    const mergedWins = Math.max(local.wins, Number(remote.wins) || 0);
-                    const mergedLosses = Math.max(local.losses, Number(remote.losses) || 0);
+                    // Pick the (games, wins, losses) triple from whichever side
+                    // has the larger wins+losses total, then re-derive games so
+                    // the invariant `games == wins + losses` always holds.
+                    // Per-field Math.max desyncs the triple when local + remote
+                    // are each internally consistent but at different sync states,
+                    // producing impossible UI like 20W/1L/20G/100% (this fix).
+                    const remoteWins = Number(remote.wins) || 0;
+                    const remoteLosses = Number(remote.losses) || 0;
+                    const useRemote = (remoteWins + remoteLosses) >= (local.wins + local.losses);
+                    const mergedWins = useRemote ? remoteWins : local.wins;
+                    const mergedLosses = useRemote ? remoteLosses : local.losses;
+                    const mergedGames = mergedWins + mergedLosses;
                     // Profit can be negative — Math.max would bias toward zero,
                     // so prefer remote when present (it's the cross-device truth)
                     // and fall back to local when the server omits it (older
@@ -19711,7 +19979,7 @@ export class AppUI extends Component {
                         profitLamports: mergedProfit, xp: mergedXp,
                         level: levelFromXp(mergedXp), loaded: true,
                     });
-                    console.log(`${TAG} _refreshPortfolioTab | PAPER_BACKEND_MERGED local_xp=${local.xp} remote_xp=${remote.totalXp} merged_xp=${mergedXp} games=${mergedGames} wins=${mergedWins} losses=${mergedLosses} profit=${mergedProfit}`);
+                    console.log(`${TAG} _refreshPortfolioTab | PAPER_BACKEND_MERGED local_xp=${local.xp} remote_xp=${remote.totalXp} merged_xp=${mergedXp} games=${mergedGames} wins=${mergedWins} losses=${mergedLosses} profit=${mergedProfit} useRemote=${useRemote}`);
                 } catch (e) {
                     console.log(`${TAG} _refreshPortfolioTab | PAPER_BACKEND_ERR ${e}`);
                 }
@@ -19740,15 +20008,40 @@ export class AppUI extends Component {
         // (current or future) that lands here from a History/Trophies context
         // would otherwise pollute view state by reactivating Stats cards.
         if (this._pfTopLevelTab !== 'stats') return;
-        const isEmpty = (this._pfActiveTab === 'real' && !rec.loaded) || rec.games === 0;
+        // Stat invariant: games == wins + losses. Re-derive at the renderer
+        // boundary so the UI is always self-consistent regardless of which
+        // path produced the record (paper local/merge, real PDA, or any
+        // future caller). Cheap belt-and-suspenders for the merge fix above.
+        const isPaper = this._pfActiveTab === 'paper';
+        const games = Math.max(0, rec.wins + rec.losses);
+        const isEmpty = (this._pfActiveTab === 'real' && !rec.loaded) || games === 0;
         if (this._pfEmptyState) this._pfEmptyState.active = isEmpty;
         for (const n of this._pfStatsViewNodes) n.active = !isEmpty;
-        if (isEmpty) return;
+        if (isEmpty) {
+            // Mode-aware empty-state copy. Paper shows the practice prompt
+            // even after a wallet connects; Real shows the on-chain prompt
+            // both when the PDA is missing and when it has zero matches.
+            if (this._pfEmptyStateTitle) {
+                this._pfEmptyStateTitle.string = isPaper
+                    ? 'No paper matches yet'
+                    : 'No real matches yet';
+            }
+            if (this._pfEmptyStateSubtitle) {
+                this._pfEmptyStateSubtitle.string = isPaper
+                    ? 'Start a practice duel to build your record.'
+                    : 'Start a real duel to build your on-chain record.';
+            }
+            if (this._pfEmptyStateCtaLabel) {
+                this._pfEmptyStateCtaLabel.string = isPaper ? 'Start Match' : 'Find Match';
+            }
+            if (this._pfLevelChip) this._pfLevelChip.active = false;
+            return;
+        }
 
         // Secondary cards (wins/losses/winrate/games) via existing map path.
-        const winrate = rec.games > 0 ? `${Math.round((rec.wins / rec.games) * 100)}%` : '—';
+        const winrate = games > 0 ? `${Math.round((rec.wins / games) * 100)}%` : '—';
         this._setPortfolioCards(new Map<string, string>([
-            ['games',   String(rec.games)],
+            ['games',   String(games)],
             ['wins',    String(rec.wins)],
             ['losses',  String(rec.losses)],
             ['winrate', winrate],
@@ -19770,8 +20063,9 @@ export class AppUI extends Component {
         const sign = isPos ? '+' : isNeg ? '−' : '';
         const fmt = (v: number) => `${sign}${Math.abs(v).toFixed(3)} SOL`;
         if (this._pfHeroHeaderLabel) {
-            this._pfHeroHeaderLabel.string =
-                this._pfActiveTab === 'real' ? 'TOTAL PROFIT (REAL)' : 'TOTAL PROFIT (PAPER)';
+            this._pfHeroHeaderLabel.string = isPaper
+                ? 'NET PROFIT · PAPER'
+                : 'NET PROFIT · REAL';
         }
         if (this._pfHeroPnLValue) this._pfHeroPnLValue.color = valueColor;
         if (this._pfHeroPnLEdge)  this._pfHeroPnLEdge.color  = edgeColor;
@@ -19781,8 +20075,15 @@ export class AppUI extends Component {
             this._pfHeroPnLLast = pnlSol;
         }
         if (this._pfHeroPnLSubtitle) {
+            const word = isPaper ? 'paper' : 'real';
             this._pfHeroPnLSubtitle.string =
-                `Across ${rec.games} match${rec.games === 1 ? '' : 'es'}`;
+                `Across ${games} ${word} match${games === 1 ? '' : 'es'}`;
+        }
+        if (this._pfHeroFooterNote) {
+            this._pfHeroFooterNote.node.active = true;
+            this._pfHeroFooterNote.string = isPaper
+                ? 'Practice portfolio result'
+                : 'Wagered match result';
         }
 
         // XP/Level card.
@@ -19801,6 +20102,21 @@ export class AppUI extends Component {
                 ? 'Earn XP by winning matches'
                 : `${rec.xp - atLevel} / ${toLevel - atLevel} XP`;
         }
+        if (this._pfXpNextLevelLabel) {
+            this._pfXpNextLevelLabel.node.active = true;
+            this._pfXpNextLevelLabel.string = prog.progress >= 1
+                ? 'Max Level'
+                : `Next: L${prog.level + 1}`;
+        }
+
+        // Level chip beside the wallet chip. Hidden during empty-state
+        // (handled above), populated here once we have a real level.
+        if (this._pfLevelChipLabel) {
+            this._pfLevelChipLabel.string = isPaper
+                ? `Paper Mode · Level ${prog.level}`
+                : `Real Mode · Level ${prog.level}`;
+        }
+        if (this._pfLevelChip) this._pfLevelChip.active = true;
     }
 
     private _setPortfolioCards(values: Map<string, string>): void {
@@ -20010,7 +20326,148 @@ export class AppUI extends Component {
             valueFontSize: 26,
         });
 
+        // 2026-05-02 player-record polish — per-card top-edge accent color
+        // matches the card's semantic role (not the icon tint). The
+        // CardEdgeAccent Sprite ships from the scene with a SpriteFrame; we
+        // only retint it. No new Graphics, no new SpriteFrames.
+        const edgeFor: Array<[string, Color]> = [
+            ['PFStatCard_wins',    themeColor.win()],
+            ['PFStatCard_losses',  themeColor.loss()],
+            ['PFStatCard_winrate', themeColor.gold()],
+            ['PFStatCard_games',   themeColor.violet()],
+            ['PFStatCard_xp',      themeColor.teal()],
+        ];
+        for (const [name, color] of edgeFor) {
+            const card = this._portfolioPanel.getChildByName(name);
+            const accent = card?.getChildByName('CardEdgeAccent')?.getComponent(Sprite);
+            if (accent) accent.color = color;
+        }
+
+        // Hero footer note ("Practice portfolio result" / "Wagered match
+        // result") — runtime Label sibling under the existing Subtitle row.
+        if (heroCard) {
+            let footer = heroCard.getChildByName('PFHeroFooterNote');
+            if (!footer) {
+                footer = new Node('PFHeroFooterNote');
+                footer.parent = heroCard;
+                const ut = footer.addComponent(UITransform);
+                ut.contentSize = new Size(360, 18);
+                const lbl = footer.addComponent(Label);
+                lbl.fontSize = 12;
+                lbl.lineHeight = 16;
+                lbl.color = themeColor.textLo();
+                lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+                this._pfHeroFooterNote = lbl;
+            } else {
+                this._pfHeroFooterNote = footer.getComponent(Label);
+            }
+            const subY = this._pfHeroPnLSubtitle?.node.position.y ?? -50;
+            footer.setPosition(0, subY - 22, 0);
+        }
+
+        // "Next: L{n+1}" line on the LEVEL card, beneath the existing XP
+        // footer (which holds the numeric "X / Y XP" string).
+        const xpCardN = this._portfolioPanel.getChildByName('PFStatCard_xp');
+        if (xpCardN) {
+            let nextN = xpCardN.getChildByName('PFXpNextLevelLabel');
+            if (!nextN) {
+                nextN = new Node('PFXpNextLevelLabel');
+                nextN.parent = xpCardN;
+                const ut = nextN.addComponent(UITransform);
+                ut.contentSize = new Size(220, 16);
+                const lbl = nextN.addComponent(Label);
+                lbl.fontSize = 12;
+                lbl.lineHeight = 16;
+                lbl.color = themeColor.textLo();
+                lbl.horizontalAlign = HorizontalTextAlignment.LEFT;
+                this._pfXpNextLevelLabel = lbl;
+            } else {
+                this._pfXpNextLevelLabel = nextN.getComponent(Label);
+            }
+            const ut = nextN.getComponent(UITransform);
+            if (ut) ut.anchorX = 0;
+            const xpCardW = xpCardN.getComponent(UITransform)?.width ?? 600;
+            const footerY = this._pfXpFooter?.node.position.y ?? -32;
+            nextN.setPosition(-xpCardW * 0.42, footerY - 16, 0);
+        }
+
+        // Helper text under the Paper/Real chip — single Label always
+        // reflects the active mode. Replaces the orphan PortfolioHintLabel
+        // (which was hidden in the binding block).
+        let helperN = this._portfolioPanel.getChildByName('PortfolioModeHelperLabel');
+        if (!helperN) {
+            helperN = new Node('PortfolioModeHelperLabel');
+            helperN.parent = this._portfolioPanel;
+            const ut = helperN.addComponent(UITransform);
+            ut.contentSize = new Size(420, 16);
+            const lbl = helperN.addComponent(Label);
+            lbl.fontSize = 12;
+            lbl.lineHeight = 16;
+            lbl.color = themeColor.textMid();
+            lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            this._pfModeHelperLabel = lbl;
+        } else {
+            this._pfModeHelperLabel = helperN.getComponent(Label);
+        }
+        // 10px gap below the 36-tall mode chip.
+        const helperY = (DashboardLayoutSpec.portfolio.modeSwitch?.centerY ?? 0) - (36 / 2) - 10;
+        helperN.setPosition(0, helperY, 0);
+
+        // Wallet chip dot + Level chip on the header. Both are Label-only
+        // (no background sprite) — keeps us off the SpriteFrame discovery
+        // path and inside Cocos 3.8 native safety rules.
+        this._ensurePortfolioHeaderChips();
+
         console.log(`${TAG} _styleStatsCardsOnce | DONE icons + reflow applied`);
+    }
+
+    /**
+     * 2026-05-02 player-record polish — wallet chip (● dot beside the
+     * shortened pubkey) + level chip beside it. Runs once via the same
+     * _pfStatsCardsStyled guard as the rest of _styleStatsCardsOnce.
+     * Label-only (no Sprite/Graphics), so safe under Cocos 3.8 native.
+     */
+    private _ensurePortfolioHeaderChips(): void {
+        if (!this._portfolioPanel) return;
+        // Dot to the left of the existing PortfolioPubkeyLabel — gives the
+        // "live connection" cue without changing the label's text or layout.
+        const pubN = this._portfolioPanel.getChildByName('PortfolioPubkeyLabel');
+        if (pubN && !this._portfolioPanel.getChildByName('PortfolioWalletChipDot')) {
+            const dotN = new Node('PortfolioWalletChipDot');
+            dotN.parent = this._portfolioPanel;
+            const ut = dotN.addComponent(UITransform);
+            ut.contentSize = new Size(16, 16);
+            const lbl = dotN.addComponent(Label);
+            lbl.string = '●';
+            lbl.fontSize = 12;
+            lbl.lineHeight = 16;
+            lbl.color = themeColor.teal();
+            lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            // Tuck just to the left of the pubkey label. Pubkey label is
+            // centered at x=0, so x=-78 puts the dot ~10 px to its left
+            // (label is ~140 wide at fontSize 16).
+            dotN.setPosition(-78, pubN.position.y, 0);
+            this._pfWalletChip = dotN;
+            this._pfWalletChipLabel = lbl;
+        }
+        // Level chip — sits 18 px below the pubkey row. Idle until the
+        // _applyPortfolioRecord populates it (hidden during empty-state).
+        if (!this._portfolioPanel.getChildByName('PortfolioLevelChip')) {
+            const chipN = new Node('PortfolioLevelChip');
+            chipN.parent = this._portfolioPanel;
+            const ut = chipN.addComponent(UITransform);
+            ut.contentSize = new Size(280, 18);
+            const lbl = chipN.addComponent(Label);
+            lbl.fontSize = 12;
+            lbl.lineHeight = 16;
+            lbl.color = themeColor.textMid();
+            lbl.horizontalAlign = HorizontalTextAlignment.CENTER;
+            const pubY = pubN?.position.y ?? 600;
+            chipN.setPosition(0, pubY - 18, 0);
+            chipN.active = false;
+            this._pfLevelChip = chipN;
+            this._pfLevelChipLabel = lbl;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

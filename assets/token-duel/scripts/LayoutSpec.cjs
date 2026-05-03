@@ -138,7 +138,7 @@ function buildDashboardZones({ includeModeSwitch }) {
     // title=104 fits 3 stacked rows (title 44h + subtitle 18h + pubkey 24h)
     // with breathing room and leaves the modeSwitch eyebrow room to sit
     // above the Paper/Real chip without clipping the pubkey row.
-    const H = { header: 80, title: 104, modeSwitch: 60, subtab: 60 };
+    const H = { header: 80, title: 88, modeSwitch: 60, subtab: 60 };
     const header     = _zone(TOP, H.header);
     const title      = _zone(header.bottomY, H.title);
     const modeSwitch = includeModeSwitch ? _zone(title.bottomY, H.modeSwitch) : null;
@@ -231,7 +231,7 @@ const td = {
     WAGER_DROPDOWN_Y:   -436,    // mirror; opens upward from wager-value button
 
     // Footer.
-    STATUS_Y:           -580,    // 2026-04-30: -560→-580 to clear new wagerHintLabel at -528
+    STATUS_Y:           -680,    // 2026-05-02 polish: -580→-680 after wager-above-CTA reorder; CTA now spans down to -598 and hintLabel sits at -642, so status moves below the hint to avoid overlap.
 };
 
 // 2026-04-27 — PostMatch / Game Over deterministic Y anchors.
@@ -685,6 +685,11 @@ const mip = {
     // 2026-04-29 v2 — shifted -480 → -528 to follow the taller stack.
     MORE_LABEL_Y:    -528,
 
+    // 2026-05-02 — muted helper line shown only when n=2 (lots of dead
+    // vertical space below the second card, no "+N more" hint). Text:
+    // "Resume a live duel above, or find another match".
+    HELPER_LINE_Y:   -410,
+
     // Footer.
     STATUS_Y:         -740,
 
@@ -1121,7 +1126,7 @@ const LayoutSpec = {
             titleDivider:      { x: 0,    y: 472,  w: 220, h: 3,  type: 'sprite',
                 notes: 'Thicker gold divider under title for stronger header presence.' },
             subtitle:          { x: 0,    y: 440,  w: 600, h: 22, type: 'label',
-                notes: '"Choose your mode, stake, and match rules" — 14pt mid.' },
+                notes: '"Set the rules before the race begins" — 14pt mid.' },
 
             // ── MODE zone (middle) ────────────────────────────────────────
             sectionMode:       { x: 0,    y: 400,  w: 580, h: 18, type: 'label' },
@@ -1132,7 +1137,11 @@ const LayoutSpec = {
                 notes: 'Hidden in Bot/Guest flow; layout collapses up by 80px (SHIFT).' },
             paperToggle:       { x: -105, y: -72,  w: 200, h: 52, type: 'btnPrimary' },
             realToggle:        { x:  105, y: -72,  w: 200, h: 52, type: 'btnGhost' },
+            trackHelper:       { x: 0,    y: -100, w: 580, h: 18, type: 'label',
+                notes: '"Paper is practice · Real uses your wager" — hidden alongside Paper/Real in Bot/Guest flow.' },
             sectionDifficulty: { x: 0,    y: -116, w: 580, h: 18, type: 'label' },
+            difficultyHelper:  { x: 0,    y: -210, w: 580, h: 18, type: 'label',
+                notes: '"Difficulty adjusts bot strength" — greyed when Real track is selected.' },
 
             // ── SUMMARY zone (anchored to viewport bottom at runtime) ─────
             // Hero gold-edged card; focus anchor before the CTA.
@@ -1158,6 +1167,7 @@ const LayoutSpec = {
                 count: 4, w: 280, h: 140,
                 keys: ['oneVone', 'trio', 'fourPlayer', 'eightPlayer'],
                 labels: ['1 vs 1', 'Trio · 1v1v1', '4 Player FFA', 'Battle Royale'],
+                sublabels: ['Head-to-head race', '3-player token duel', 'Four-way free-for-all', 'Last token standing'],
                 positions: [
                     { x: -152, y: 310 },
                     { x:  152, y: 310 },
@@ -1187,6 +1197,8 @@ const LayoutSpec = {
             ['PickerSummaryCard', 'PickerSummaryModeLabel'],
             ['PickerSummaryCard', 'PickerSummaryModifiersLabel'],
             ['PickerSummaryCard', 'PickerSummaryStakeLabel'],
+            ['PickerSummaryCard', 'PickerTicketHeaderLabel'],
+            ['PickerSummaryCard', 'PickerSummaryWagerCaptionLabel'],
             ['PickerSummaryCard', 'CardEdgeAccent'],
             ['PickerSummaryCard', 'PickerSummaryGradient'],
             // Title (600w centered) and top-bar Back/Cancel chips share the
@@ -1196,6 +1208,7 @@ const LayoutSpec = {
             // Hero glow halo + ripple are intentionally siblings of the CTA.
             ['PickerStartButton', 'BtnGlow_PickerStartButton'],
             ['PickerStartButton', 'Ripple_PickerStartButton'],
+            ['PickerStartButton', 'StartButtonGoldEdge'],
         ],
     },
 
@@ -1945,6 +1958,8 @@ const LayoutSpec = {
                 notes: '"Start a Match" — routes to FindMatchPanel' },
             // "+N more" hint below the visible row pool.
             moreLabel: { x: 0, y: mip.MORE_LABEL_Y, w: 600, h: 18, type: 'label' },
+            // 2026-05-02 — muted helper line for the n=2 case.
+            helperLine: { x: 0, y: mip.HELPER_LINE_Y, w: 600, h: 18, type: 'label' },
             // Legacy scrollview entry — generator still creates a (now unused)
             // MIPScrollView container for row mounting; the active 6-row pool
             // lives as direct panel children but the generator still expects
@@ -2073,6 +2088,11 @@ const LayoutSpec = {
             ['MIPTapTarget', 'MIPBigTimer'],
             ['MIPTapTarget', 'MIPBigPhase'],
             ['Subtitle',     'MIPHeaderLiveDot'],
+            // 2026-05-02 — pass-4 polish: featured badge on row 0 floats over
+            // card chrome; helper line sits below the row pool in dead space.
+            ['MIPCardBg',    'MIPFeaturedBadge'],
+            ['MIPCardGlow',  'MIPFeaturedBadge'],
+            ['MIPTapTarget', 'MIPFeaturedBadge'],
         ],
     },
 
@@ -2537,26 +2557,25 @@ const LayoutSpec = {
             // status label or pill). Always shown, with state-based copy
             // (one label only, never two competing).
             wagerRowDivider:    { x: 0,    y: -388, w: 680, h: 1, type: 'sprite',
-                notes: '2026-05-02 token-picker UX — moved up 12 px to clear new taller CTA top edge (-400). 12 px below squad ambient bottom (-376), 12 px above CTA top (-400).' },
-            wagerStartButton:   { x:    0, y: -444, w: 640, h: 88, type: 'btnPrimary',
-                notes: '2026-05-02 token-picker UX — h 64→88 for more gravity on the primary action; y -456→-444 keeps halo bottom (-500) at the same 6-px clearance above stake-pill top (-506).' },
-            // betting-duel ($SKR): split the stake pill into a side-by-side
-            // currency-picker + amount-picker pair, both centered as a unit.
-            // Currency button (-130) sits left of amount button (+130); each
-            // 240→200 wide so the two pills + 60 px gap = 460 width fits in the
-            // 640 grid above. Y stays at -542 so the row alignment under the CTA
-            // halo doesn't shift.
-            wagerCurrencyButton:{ x: -130, y: -542, w: 200, h: 72, type: 'btnGhost',
-                notes: 'betting-duel ($SKR) — left half of the stake pill row. Caption "WAGER IN", body shows currency code + ▾. Click toggles `_wagerCurrencyDropdown`.' },
-            wagerValueButton:   { x: +130, y: -542, w: 200, h: 72, type: 'btnGhost',
-                notes: 'betting-duel ($SKR) — right half of the stake pill row. Caption "WAGER", body shows tier amount + currency + ▾. Was centered (x=0, w=240); shrunk to 200 / shifted right to make room for the new currency picker.' },
-            wagerLockChip:      { x: +130, y: -542, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (JOIN MODE). x/w match wagerValueButton.' },
-            wagerBotChip:       { x: +130, y: -542, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 Pass 2 — mirrors stacked stake pill (BOT MODE). x/w match wagerValueButton.' },
-            wagerHintLabel:     { x:    0, y: -616, w: 600, h: 28, type: 'label',      notes: '2026-05-01 r3 — own row BELOW the stake pill (y -616, gap 26 px below pill bottom -590). Always visible with state-based copy (Pick X more / Squad ready). Centered.' },
-            wagerDropdown:      { x: +130, y: -380, w: 360, h: 360, type: 'group',
-                notes: 'betting-duel — anchor follows wagerValueButton (right column).' },
-            wagerCurrencyDropdown: { x: -130, y: -380, w: 240, h: 130, type: 'group',
-                notes: 'betting-duel — currency picker popover, anchored above wagerCurrencyButton. 2 rows (SOL + SKR).' },
+                notes: '2026-05-02 token-picker UX — divider sits 20 px above wager pill top (-408). Wager-above-CTA reorder did not move this; the wager row anchors here regardless of CTA position.' },
+            // 2026-05-02 polish — REORDERED wager-above-CTA so the read order
+            // is "PAY WITH / WAGER → ENTER DUEL → helper". Wager pills moved
+            // up to where CTA used to sit (-444); CTA moved down to where the
+            // pills used to sit (-554, with extra 12 px breathing room from
+            // the old -542). Hint shifts down 14 px to clear the new CTA bottom.
+            wagerCurrencyButton:{ x: -130, y: -444, w: 200, h: 72, type: 'btnGhost',
+                notes: '2026-05-02 polish — moved -542 → -444 (above CTA). Caption is "PAY WITH" (renamed from "WAGER IN" for clarity). Body shows currency code + ▾. Click toggles `_wagerCurrencyDropdown`.' },
+            wagerValueButton:   { x: +130, y: -444, w: 200, h: 72, type: 'btnGhost',
+                notes: '2026-05-02 polish — moved -542 → -444 (above CTA). Caption "WAGER", body shows tier amount + currency + ▾. Right half of the wager pill row.' },
+            wagerLockChip:      { x: +130, y: -444, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 polish — mirrors wagerValueButton position (now -444). JOIN-mode lock chip.' },
+            wagerBotChip:       { x: +130, y: -444, w: 200, h: 72, type: 'chip',       notes: '2026-05-02 polish — mirrors wagerValueButton position (now -444). BOT-mode chip.' },
+            wagerStartButton:   { x:    0, y: -554, w: 640, h: 88, type: 'btnPrimary',
+                notes: '2026-05-02 polish — moved -444 → -554 (below wager pills). 30 px gap from wager-pill bottom (-480) to CTA top (-510); 30 px gap from CTA bottom (-598) to hint top (-628).' },
+            wagerHintLabel:     { x:    0, y: -642, w: 600, h: 28, type: 'label',      notes: '2026-05-02 polish — moved -616 → -642 to clear the new CTA bottom edge (-598). Always visible with state-based copy (Pick X more / Squad ready).' },
+            wagerDropdown:      { x: +130, y: -282, w: 360, h: 360, type: 'group',
+                notes: '2026-05-02 polish — shifted -380 → -282 to follow wagerValueButton up (delta 98 px = button delta -542→-444). Anchored above the wager amount pill.' },
+            wagerCurrencyDropdown: { x: -130, y: -282, w: 240, h: 130, type: 'group',
+                notes: '2026-05-02 polish — shifted -380 → -282 to follow wagerCurrencyButton up (delta 98 px). 2 rows (SOL + SKR), opens upward.' },
             // 8c — Legacy stake cluster (kept for node-name bindings; force-hidden
             // at scene-gen so verifier sees real state. AppUI._hideLegacyBettingDuelNodes
             // is belt-and-suspenders.)
@@ -3126,6 +3145,15 @@ const LayoutSpec = {
             ['MIPLiveDot', 'MIPLiveLabel'],
             // Stake chip + status label share the same y row; bboxes touch.
             ['MIPStakeChip', 'MIPStatusLabel'],
+            // 2026-05-02 — featured-row badge at top-left of card; floats
+            // over card chrome by design.
+            ['MIPFeaturedBadge', 'MIPCardBg'],
+            ['MIPFeaturedBadge', 'MIPCardGlow'],
+            ['MIPFeaturedBadge', 'MIPCardEdge'],
+            ['MIPFeaturedBadge', 'MIPTapTarget'],
+            ['MIPFeaturedBadge', 'MIPLiveGlow'],
+            ['MIPFeaturedBadge', 'MIPLiveDot'],
+            ['MIPFeaturedBadge', 'MIPLiveLabel'],
         ],
     },
 
