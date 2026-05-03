@@ -1,5 +1,5 @@
 /**
- * LandingUI.ts — Landing page: "Connect Wallet" and "Reconnect (Cached)" buttons.
+ * LandingUI.ts - Landing page: "Connect Wallet" and "Reconnect (Cached)" buttons.
  *
  * Port of:
  *   - Godot: main.gd (73 lines)
@@ -9,7 +9,7 @@
  * Reconnect button is only visible if a cached auth exists.
  *
  * NOTE: Uses find() to locate UI nodes by name instead of @property.
- * This eliminates manual inspector wiring — just add this component to Canvas.
+ * This eliminates manual inspector wiring - just add this component to Canvas.
  */
 
 import { _decorator, Component, Label, Button, director, find } from 'cc';
@@ -61,11 +61,11 @@ export class LandingUI extends Component {
     /**
      * start() runs AFTER all onLoad() calls complete across all nodes.
      * This ensures MWAManager.instance is initialized before we register events.
-     * (Parent onLoad fires before children in Cocos Creator — so LandingUI.onLoad
+     * (Parent onLoad fires before children in Cocos Creator - so LandingUI.onLoad
      * runs before MWAManager.onLoad when MWAManager is a child of Canvas.)
      */
     start(): void {
-        console.log(`${TAG} start | START — connecting MWAManager events`);
+        console.log(`${TAG} start | START - connecting MWAManager events`);
 
         const mwa = MWAManager.instance;
         if (mwa) {
@@ -74,7 +74,7 @@ export class LandingUI extends Component {
             mwa.node.on(MWA_STATUS, this._onStatusUpdated, this);
             console.log(`${TAG} start | MWAManager events connected`);
 
-            // Check for cached auth — show/hide reconnect button
+            // Check for cached auth - show/hide reconnect button
             const hasCached = mwa.cache?.hasCachedAuth() ?? false;
             this._reconnectButton.node.active = hasCached;
 
@@ -87,7 +87,7 @@ export class LandingUI extends Component {
                 console.log(`${TAG} start | cached_auth=false reconnect_visible=false`);
             }
         } else {
-            console.log(`${TAG} start | FAIL MWAManager.instance is STILL null — this should not happen`);
+            console.log(`${TAG} start | FAIL MWAManager.instance is STILL null - this should not happen`);
         }
 
         console.log(`${TAG} start | DONE`);
@@ -123,7 +123,7 @@ export class LandingUI extends Component {
 
         if (result) {
             // Direct transition fallback (in case MWA_AUTHORIZED event was missed)
-            console.log(`${TAG} onConnectPressed | authorize succeeded — transitioning to Home`);
+            console.log(`${TAG} onConnectPressed | authorize succeeded - transitioning to Home`);
             director.loadScene('Home');
         } else {
             this._setButtonsEnabled(true);
@@ -149,7 +149,7 @@ export class LandingUI extends Component {
 
     private _onAuthorized(pubkey: string): void {
         // Scene transition is handled directly in _onConnectPressed.
-        // This handler only updates UI — does NOT call loadScene to avoid double-transition loop.
+        // This handler only updates UI - does NOT call loadScene to avoid double-transition loop.
         console.log(`${TAG} onAuthorized | pubkey=${pubkey} (event received, scene transition handled by caller)`);
         showToast(`Connected: ${pubkey.substring(0, 4)}...${pubkey.substring(pubkey.length - 4)}`);
     }

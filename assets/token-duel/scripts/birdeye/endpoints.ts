@@ -1,5 +1,5 @@
 /**
- * Birdeye endpoint URL builders — Session 11 (solpulse parity).
+ * Birdeye endpoint URL builders - Session 11 (solpulse parity).
  *
  * Ported verbatim from the solpulse backend (`backend/api/tokenList.js` +
  * `backend/services/strategies/paid_api/*`) which is verified working
@@ -9,7 +9,7 @@
 export const BIRDEYE_BASE = 'https://public-api.birdeye.so';
 export const BIRDEYE_CHAIN = 'solana';
 
-/** Helper — encodes params as `?a=1&b=two` (values passed through encodeURIComponent). */
+/** Helper - encodes params as `?a=1&b=two` (values passed through encodeURIComponent). */
 function qs(params: Record<string, string | number | boolean | undefined>): string {
     const parts: string[] = [];
     for (const k of Object.keys(params)) {
@@ -36,7 +36,7 @@ export function trendingUrl(limit: number): string {
 }
 
 /**
- * True "gainers" via the v3 token list — Premium tier required.
+ * True "gainers" via the v3 token list - Premium tier required.
  *   GET /defi/v3/token/list?sort_by=price_change_24h_percent&sort_type=desc&min_liquidity=10000&limit=N&offset=0
  * Response: { data: { items/tokens: [...] } } with snake_case fields
  * (`price_change_24h_percent`, `volume_24h_usd`, `logo_uri`).
@@ -52,7 +52,7 @@ export function gainersUrl(limit: number): string {
 }
 
 /**
- * Smart-money rotation list — Premium tier.
+ * Smart-money rotation list - Premium tier.
  *   GET /smart-money/v1/token/list?interval=1d&trader_style=all&sort_by=smart_traders_no&sort_type=desc&limit=N&offset=0
  * Response shape mirrors the v3 endpoints (items/tokens under data). Fields
  * use snake_case, key is `token` not `address` for the mint.
@@ -106,13 +106,13 @@ export function priceVolumeMultiUrl(mints: string[], timeframe: string = '24h'):
  *
  * betting-duel branch: used by PortfolioRace to get entry/current spot
  * prices during a race. Wider token coverage than `/defi/price_volume/multi`
- * — in particular, new pump.fun tokens that 404 on price_volume/multi
+ * - in particular, new pump.fun tokens that 404 on price_volume/multi
  * still resolve here because multi_price queries the raw pool oracles.
  *
  * Response shape:
  *   { data: { "<mint>": { value: <usd>, updateUnixTime: <sec>,
  *                         priceChange24h?: <pct>, liquidity?: <usd> } } }
- * Note the price field is `value`, not `price` — differs from price_volume/multi.
+ * Note the price field is `value`, not `price` - differs from price_volume/multi.
  */
 export function multiPriceUrl(mints: string[]): string {
     const list = mints.slice(0, 100).join(',');
@@ -123,10 +123,10 @@ export function multiPriceUrl(mints: string[]): string {
 }
 
 /**
- * Batch token metadata (name, symbol, logo, socials, description) — up to 50.
+ * Batch token metadata (name, symbol, logo, socials, description) - up to 50.
  *   GET /defi/v3/token/meta-data/multiple?list_address=<csv>
  * Response: `{ data: [...] }` OR `{ data: { <mint>: {...} } }` depending on
- * Birdeye's current version — normalizer handles both.
+ * Birdeye's current version - normalizer handles both.
  */
 export function metaDataMultipleUrl(mints: string[]): string {
     const list = mints.slice(0, 50).join(',');
@@ -136,7 +136,7 @@ export function metaDataMultipleUrl(mints: string[]): string {
 }
 
 /**
- * Fuzzy search (GET with query params — NOT POST).
+ * Fuzzy search (GET with query params - NOT POST).
  *   GET /defi/v3/search?keyword=<q>&target=token&chain=solana&search_by=combination&search_mode=fuzzy&sort_by=volume_24h_usd&sort_type=desc&verify_token=true&limit=N&offset=0
  * Response: { data: { items: [{ type: 'token'|'market', result: [...] }] } }
  * token-group fields are snake_case.
@@ -170,7 +170,7 @@ export function ohlcvUrl(mint: string, type: string, fromSec: number, toSec: num
     })}`;
 }
 
-/** Path-only (for log correlation — stripped of query string + host). */
+/** Path-only (for log correlation - stripped of query string + host). */
 export function pathOf(url: string): string {
     const q = url.indexOf('?');
     const p = q >= 0 ? url.substring(0, q) : url;

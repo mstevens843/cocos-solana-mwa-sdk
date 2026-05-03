@@ -1,12 +1,12 @@
 /**
- * MatchTickerRpc.ts — Part 12 Bundle C.
+ * MatchTickerRpc.ts - Part 12 Bundle C.
  *
  * Fetches "recent, interesting" matches so the HomeMatchTicker can rotate
- * through them: Waiting matches (people haven't started yet — joinable!)
- * and recently-Active matches (currently in progress — watchable).
+ * through them: Waiting matches (people haven't started yet - joinable!)
+ * and recently-Active matches (currently in progress - watchable).
  *
  * Uses a single `getProgramAccounts` call with a `dataSize` filter fixed to
- * `8 + 411 = 419` bytes — the Part 9 MatchAccount layout. No other program
+ * `8 + 411 = 419` bytes - the Part 9 MatchAccount layout. No other program
  * account type matches that size, so the filter uniquely selects matches
  * without needing the account discriminator.
  *
@@ -66,7 +66,7 @@ export async function fetchRecentMatches(
         const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
             { dataSize: MATCH_ACCOUNT_DATA_SIZE },
         ]);
-        // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap. The
+        // 2026-05-02 attempt 7 rev 3 - Stage G: per-account StormTrap. The
         // post-game-over engine [SE_ERROR] storm fires immediately after
         // this getProgramAccounts returns, which means parseMatchAccount or
         // b64ToBytes is throwing on one of the returned accounts and the
@@ -123,7 +123,7 @@ export function tickerStatusIcon(entry: MatchTickerEntry): TickerIconName {
     return entry.status === 0 ? 'clock' : 'bolt';
 }
 
-/** Format one ticker line for display (text-only — caller pairs with tickerStatusIcon).
+/** Format one ticker line for display (text-only - caller pairs with tickerStatusIcon).
  *  Example: "4p Pot · 2/4 joined · 0.05 SOL · 1h · 42s ago"
  *  Tournament variant (Part 14): "TOURNAMENT · 4/10 joined · 0.001 SOL · 24h · 42s ago"
  */
@@ -165,7 +165,7 @@ export function extractTickerParts(entry: MatchTickerEntry, nowSec: number): Tic
 
 /**
  * Part 14: fetch any currently-open tournament match. Returns at most one
- * entry — only one tournament is active at a time by design.
+ * entry - only one tournament is active at a time by design.
  *
  * Uses `fetchRecentMatches` + client-side filter on `isTournament` (which
  * is set when players[0] matches TOURNAMENT_HOST_PUBKEY). Could memcmp

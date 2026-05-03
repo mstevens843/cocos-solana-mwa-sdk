@@ -1,5 +1,5 @@
 /**
- * notification_store.ts — Phase N5 backend notification queue.
+ * notification_store.ts - Phase N5 backend notification queue.
  *
  * Per-pubkey ring buffer of notification events plus a per-pubkey set of
  * subscribed WebSockets. The on-chain log listener (`notification_listener.ts`)
@@ -57,10 +57,10 @@ export class NotificationStore {
     private _byPlayer: Map<string, NotificationEvent[]> = new Map();
     private _subscribers: Map<string, Set<WebSocket>> = new Map();
     private _readBy: Map<string, Set<string>> = new Map();
-    /** DB Stage 6 — pubkeys whose in-memory ring has been hydrated from DB. */
+    /** DB Stage 6 - pubkeys whose in-memory ring has been hydrated from DB. */
     private _hydrated: Set<string> = new Set();
 
-    /** DB Stage 6 — fire-and-forget DB write. Failures don't block in-memory push. */
+    /** DB Stage 6 - fire-and-forget DB write. Failures don't block in-memory push. */
     private _persistAsync(event: NotificationEvent): void {
         if (!dbConfigured()) return;
         // Touch user FK first (notifications.pubkey REFERENCES users.pubkey).
@@ -76,7 +76,7 @@ export class NotificationStore {
         });
     }
 
-    /** DB Stage 6 — hydrate in-memory ring from DB on first read. */
+    /** DB Stage 6 - hydrate in-memory ring from DB on first read. */
     private async _hydrateFromDb(player: string): Promise<void> {
         if (this._hydrated.has(player)) return;
         if (!dbConfigured()) { this._hydrated.add(player); return; }
@@ -126,7 +126,7 @@ export class NotificationStore {
         };
         let buf = this._byPlayer.get(event.player);
         if (!buf) { buf = []; this._byPlayer.set(event.player, buf); }
-        // Dedupe — drop if same id already present in the buffer.
+        // Dedupe - drop if same id already present in the buffer.
         if (buf.some((e) => e.id === event.id)) {
             console.log(`${TAG} push | DEDUPE_SKIP id=${event.id} player=${event.player.slice(0, 8)}`);
             return event;
@@ -134,7 +134,7 @@ export class NotificationStore {
         buf.unshift(event);
         if (buf.length > STORE_LIMIT_PER_PLAYER) buf.length = STORE_LIMIT_PER_PLAYER;
         console.log(`${TAG} push | id=${event.id} kind=${event.kind} player=${event.player.slice(0, 8)} buf_len=${buf.length}`);
-        // DB Stage 6 — persist to Postgres in parallel. Fire-and-forget; failures
+        // DB Stage 6 - persist to Postgres in parallel. Fire-and-forget; failures
         // are logged but don't block the in-memory + WS push path.
         this._persistAsync(event);
         // Broadcast to live subscribers.
@@ -174,7 +174,7 @@ export class NotificationStore {
         if (!set) { set = new Set(); this._readBy.set(player, set); }
         if (set.has(id)) return false;
         set.add(id);
-        // DB Stage 6 — persist read_at. Fire-and-forget.
+        // DB Stage 6 - persist read_at. Fire-and-forget.
         if (dbConfigured()) {
             void query(
                 `UPDATE notifications SET read_at = now() WHERE id = $1 AND pubkey = $2 AND read_at IS NULL`,

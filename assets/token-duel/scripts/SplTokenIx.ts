@@ -1,5 +1,5 @@
 /**
- * SplTokenIx.ts — hand-rolled SPL Token + Associated Token Account
+ * SplTokenIx.ts - hand-rolled SPL Token + Associated Token Account
  * instruction builders, returned in `RawInstructionInput` shape so they can
  * be combined with Anchor instructions in a single multi-ix transaction.
  *
@@ -62,12 +62,12 @@ export function deriveAssociatedTokenAddress(
  * always emit this preflight than to query account-info each round-trip.
  *
  * Account order (matches spl-associated-token-account program v1):
- *   [0] funding (signer, mut)        — pays rent if create needed
- *   [1] associated_token_account (mut) — derived ATA, will be created if missing
- *   [2] wallet                        — the owner of the ATA
- *   [3] mint                          — the SPL mint the ATA holds
- *   [4] system_program                — used by the create branch
- *   [5] token_program                 — used to init the new account
+ *   [0] funding (signer, mut)        - pays rent if create needed
+ *   [1] associated_token_account (mut) - derived ATA, will be created if missing
+ *   [2] wallet                        - the owner of the ATA
+ *   [3] mint                          - the SPL mint the ATA holds
+ *   [4] system_program                - used by the create branch
+ *   [5] token_program                 - used to init the new account
  */
 export function buildCreateAtaIdempotentIx(
     fundingBase58: string,
@@ -97,10 +97,10 @@ export function buildCreateAtaIdempotentIx(
  * alongside Anchor instructions.
  *
  * Account order (matches spl-token v1):
- *   [0] source (mut)                  — sender's ATA
- *   [1] mint                          — readonly
- *   [2] destination (mut)             — receiver's ATA
- *   [3] authority (signer)            — owner of the source ATA
+ *   [0] source (mut)                  - sender's ATA
+ *   [1] mint                          - readonly
+ *   [2] destination (mut)             - receiver's ATA
+ *   [3] authority (signer)            - owner of the source ATA
  *
  * Data layout (10 bytes):
  *   [0]    discriminator = 12 (TransferChecked)

@@ -1,5 +1,5 @@
 /**
- * JupiterPriceClient.ts — Lite Jupiter price API as a fallback for Birdeye.
+ * JupiterPriceClient.ts - Lite Jupiter price API as a fallback for Birdeye.
  *
  * Background: PortfolioRace polls Birdeye `/defi/multi_price` every tick
  * during a betting-duel match. multi_price has narrower coverage than
@@ -18,7 +18,7 @@
  * Endpoint: https://lite-api.jup.ag/price/v3?ids=<comma-mints>
  * Free tier; no API key. Documented batch cap: 50 mints per call.
  *
- * Never throws — returns `{}` on any failure (matches the contract of
+ * Never throws - returns `{}` on any failure (matches the contract of
  * BirdeyeClient.spotPriceMulti). The caller already handles missing
  * mints by falling back to entry price (delta=0 for that mint), so a
  * Jupiter outage is a graceful degradation, not a crash.

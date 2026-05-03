@@ -1,9 +1,9 @@
 /**
- * squad_presets.ts — DB-backed cross-device squad preset list.
+ * squad_presets.ts - DB-backed cross-device squad preset list.
  *
  * One row per pubkey, full-list replace. Cap of 5 is enforced client-side
  * but we trim defensively here in case a misbehaving client posts more.
- * Conflict strategy is last-write-wins by `updated_at` — see the plan at
+ * Conflict strategy is last-write-wins by `updated_at` - see the plan at
  * ~/.claude/plans/db-persistence-ship-ready.md for why we don't merge per-row.
  *
  * Endpoints in server.ts:
@@ -24,7 +24,7 @@ export interface SquadPresetSlot {
 export interface SquadPreset {
     id: string;
     name: string;
-    slots: SquadPresetSlot[];     // exactly 3 — validated at write
+    slots: SquadPresetSlot[];     // exactly 3 - validated at write
     savedAt: number;              // unix ms
     winCount: number;
 }

@@ -1,5 +1,5 @@
 /**
- * NotificationFeedRpc.ts — Phase N6 client subscriber.
+ * NotificationFeedRpc.ts - Phase N6 client subscriber.
  *
  * Connects to the backend notification feed for a given pubkey:
  *   1. REST GET /notifications/:pubkey?since=<lastSeenTs>  (catchup batch)
@@ -11,8 +11,8 @@
  * (which dedupes by id).
  *
  * Backend payload shape:
- *   { kind: 'connected', pubkey, at }       — handshake on WS open
- *   { kind: 'event', event: BackendEvent }  — live notification
+ *   { kind: 'connected', pubkey, at }       - handshake on WS open
+ *   { kind: 'event', event: BackendEvent }  - live notification
  */
 
 import { RECEIPT_BACKEND_URL } from './constants';
@@ -45,7 +45,7 @@ const RECONNECT_MAX_BACKOFF_MS = 30_000;
 
 /**
  * Subscribe to backend notification feed for `pubkey`. Returns an
- * unsubscribe fn. `lastSeenTs` (unix ms) bounds the catchup batch — pass
+ * unsubscribe fn. `lastSeenTs` (unix ms) bounds the catchup batch - pass
  * 0 on first launch, or the most-recent createdAt from local store on
  * subsequent launches to skip already-known events.
  */
@@ -61,7 +61,7 @@ export function subscribeToNotifications(
 
     if (!RECEIPT_BACKEND_URL || RECEIPT_BACKEND_URL.includes('10.0.2.2')) {
         // Android-emulator default that real devices can't reach. Skip silently.
-        console.log(`${TAG} subscribe | SKIP url=${RECEIPT_BACKEND_URL || '(unset)'} — set globalThis.TD_RECEIPT_URL to enable`);
+        console.log(`${TAG} subscribe | SKIP url=${RECEIPT_BACKEND_URL || '(unset)'} - set globalThis.TD_RECEIPT_URL to enable`);
         return () => { stopped = true; };
     }
 
@@ -79,7 +79,7 @@ export function subscribeToNotifications(
             clearTimeout(timer);
             if (stopped) return;
             if (!res.ok) {
-                console.log(`${TAG} catchup | HTTP ${res.status} — skipping`);
+                console.log(`${TAG} catchup | HTTP ${res.status} - skipping`);
                 return;
             }
             const body = await res.json() as { events?: BackendEvent[] };
@@ -134,7 +134,7 @@ export function subscribeToNotifications(
             };
             ws.onerror = (evt) => { console.log(`${TAG} ws | ERROR ${evt}`); };
         } catch (e) {
-            console.log(`${TAG} ws | open failed ${e} — will retry`);
+            console.log(`${TAG} ws | open failed ${e} - will retry`);
             ws = null;
             if (!stopped && reconnectAttempts < RECONNECT_MAX_ATTEMPTS) {
                 const backoff = Math.min(RECONNECT_MAX_BACKOFF_MS, 1000 * Math.pow(2, reconnectAttempts));

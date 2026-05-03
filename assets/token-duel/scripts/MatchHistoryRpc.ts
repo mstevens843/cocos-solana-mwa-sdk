@@ -1,9 +1,9 @@
 /**
- * MatchHistoryRpc.ts — Part 9 paginated match-history fetcher.
+ * MatchHistoryRpc.ts - Part 9 paginated match-history fetcher.
  *
  * Data flow:
  *   1. Derive the caller's UserStats PDA (seeds: [b"userstats", player]).
- *   2. `getSignaturesForAddress(pda, { limit, before })` — every settle_match
+ *   2. `getSignaturesForAddress(pda, { limit, before })` - every settle_match
  *      tx touches the caller's UserStats account, so its signature log is
  *      the authoritative per-user match index.
  *   3. For each signature, fetch the transaction's logMessages and decode
@@ -56,7 +56,7 @@ export interface MatchHistoryPage {
 /**
  * Fetch one page of history, newest-first. Pass `beforeSig` to continue
  * pagination. `matchCache` memoizes Match-account RPC responses across
- * pages — populate the same Map on every call.
+ * pages - populate the same Map on every call.
  */
 export async function fetchMatchHistoryPage(opts: {
     rpc: TokenDuelRpc;
@@ -119,7 +119,7 @@ async function buildEntry(
         cache.set(ev.matchPda, match);
     }
     if (!match) {
-        console.log(`${TAG} buildEntry | MATCH_GONE pda=${ev.matchPda.substring(0, 8)}... — falling back to event-only`);
+        console.log(`${TAG} buildEntry | MATCH_GONE pda=${ev.matchPda.substring(0, 8)}... - falling back to event-only`);
         return {
             sig,
             at: Number(ev.at),

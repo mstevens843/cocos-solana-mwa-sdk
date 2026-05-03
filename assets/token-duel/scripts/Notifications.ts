@@ -1,10 +1,10 @@
 /**
- * Notifications.ts — Phase N1 client core for the notification system.
+ * Notifications.ts - Phase N1 client core for the notification system.
  *
  * Exports:
- *   - `NotificationKind` — enum-like union of the 11 notification kinds.
- *   - `Notification` — runtime shape of a single notification.
- *   - `NotificationStore` — singleton store with localStorage persistence.
+ *   - `NotificationKind` - enum-like union of the 11 notification kinds.
+ *   - `Notification` - runtime shape of a single notification.
+ *   - `NotificationStore` - singleton store with localStorage persistence.
  *
  * The store is the single source of truth for the bell badge + panel UI.
  * Locally-emitted notifications (from AppUI poll loops) and backend-pushed
@@ -90,9 +90,9 @@ export class NotificationStore {
     private _listeners: Set<NotificationListener> = new Set();
     /** Tracks recent (kind, dedupeKey) → ts to suppress floods. */
     private _dedupeTs: Map<string, number> = new Map();
-    /** DB Stage 10 — pubkey for fire-and-forget backend sync. Null = guest/disconnected. */
+    /** DB Stage 10 - pubkey for fire-and-forget backend sync. Null = guest/disconnected. */
     private _syncPubkey: string | null = null;
-    /** Ids that arrived via _ingestBackendEvent — never round-trip them back to the server. */
+    /** Ids that arrived via _ingestBackendEvent - never round-trip them back to the server. */
     private _serverOriginIds: Set<string> = new Set();
 
     /** Add a new notification. Returns the persisted record (with id+createdAt). */
@@ -109,7 +109,7 @@ export class NotificationStore {
          */
         dedupeKey?: string;
         /**
-         * Optional id override — useful when the backend listener pushes
+         * Optional id override - useful when the backend listener pushes
          * an event we may have already locally emitted. Same id → upsert
          * (no duplicate, no re-fire).
          */
@@ -154,7 +154,7 @@ export class NotificationStore {
         console.log(`${TAG} add | id=${n.id.slice(0, 8)} kind=${n.kind} title="${n.title}" total=${this._list.length}`);
         this._persist();
         this._fanout();
-        // DB Stage 10 — fire-and-forget backend write for *locally-emitted*
+        // DB Stage 10 - fire-and-forget backend write for *locally-emitted*
         // notifications. Server-origin entries (those passed through with
         // markServerOrigin) are not echoed back, since the server already
         // knows about them.
@@ -251,7 +251,7 @@ export class NotificationStore {
         return () => { this._listeners.delete(listener); };
     }
 
-    /** Wipe everything — used by tests + a future "clear all" UX. */
+    /** Wipe everything - used by tests + a future "clear all" UX. */
     clear(): void {
         this._list = [];
         this._dedupeTs.clear();
@@ -259,7 +259,7 @@ export class NotificationStore {
         this._fanout();
     }
 
-    // ── DB Stage 10 — backend sync ─────────────────────────────────────
+    // ── DB Stage 10 - backend sync ─────────────────────────────────────
 
     /** Bind to a pubkey for cross-device sync. Pass null to detach (guest mode / disconnect). */
     setSyncPubkey(pubkey: string | null): void {
@@ -273,7 +273,7 @@ export class NotificationStore {
      */
     markServerOrigin(id: string): void {
         this._serverOriginIds.add(id);
-        // Trim the set if it gets too big — we only need recent ids.
+        // Trim the set if it gets too big - we only need recent ids.
         if (this._serverOriginIds.size > STORE_LIMIT * 2) {
             const arr = Array.from(this._serverOriginIds);
             this._serverOriginIds = new Set(arr.slice(arr.length - STORE_LIMIT));
@@ -282,7 +282,7 @@ export class NotificationStore {
 
     /**
      * Pull the server's notification list and merge in. Server is
-     * authoritative on read_at/dismissed_at — once read on Device A, stays
+     * authoritative on read_at/dismissed_at - once read on Device A, stays
      * read on Device B. Local entries the server hasn't seen survive.
      */
     async hydrateFromBackend(pubkey: string): Promise<void> {
@@ -303,13 +303,13 @@ export class NotificationStore {
                     body: ev.body,
                     payload: ev.payload,
                     createdAt: ev.createdAt,
-                    // Server wins on readAt — once read anywhere, stays read.
+                    // Server wins on readAt - once read anywhere, stays read.
                     readAt: typeof remoteReadAt === 'number' ? remoteReadAt
                           : existing?.readAt ?? null,
                     // dismissed is currently device-local (no server column for it on this route);
                     // preserve local value if any.
                     dismissedAt: existing?.dismissedAt ?? null,
-                    // Hydrated entries are historical by definition — silence their
+                    // Hydrated entries are historical by definition - silence their
                     // toast so they don't fire over the home on every reconnect.
                     // The backend doesn't persist quietToast (no column), so we'd
                     // otherwise re-toast every level_up / payout / match_settled

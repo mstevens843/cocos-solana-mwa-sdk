@@ -1,15 +1,15 @@
 /**
- * MatchHistoryDbRpc.ts — DB Stage 4 client for the backend `match_history` table.
+ * MatchHistoryDbRpc.ts - DB Stage 4 client for the backend `match_history` table.
  *
  * Two ops:
- *   - `postMatchRecord` — fire-and-forget after settle to persist the row.
- *   - `listMatchHistory` — pulls per-player history for the Portfolio panel.
+ *   - `postMatchRecord` - fire-and-forget after settle to persist the row.
+ *   - `listMatchHistory` - pulls per-player history for the Portfolio panel.
  *
  * Coexists with `MatchHistoryRpc.ts` (the on-chain tx-log scanner). DB-backed
  * lookups are faster (one query vs N getTransaction calls) and survive when
  * RPC providers throttle. Falls back to MatchHistoryRpc when backend offline.
  *
- * Backend is idempotent on matchPda — both winner and loser can post without
+ * Backend is idempotent on matchPda - both winner and loser can post without
  * doubling counts. Posting from EVERY participant adds resilience: if one
  * client crashes between settle and post, the other completes the record.
  */
@@ -34,6 +34,9 @@ export interface MatchRecordPayload {
     createdAt: string;          // ISO timestamp
     startedAt?: string | null;
     settledAt: string;
+    /** Base58 wager-currency mint. NATIVE_SOL_MINT_BASE58 for SOL matches,
+     *  skrMintForCluster() for SKR. Drives Portfolio Real per-currency P/L. */
+    wagerMint: string;
     /** Per-pubkey squad mints used by token_winrates. Optional but recommended. */
     squadMintsByPlayer?: Record<string, string[]>;
 }
@@ -53,6 +56,9 @@ export interface MatchHistoryItem {
     created_at: string;
     started_at: string | null;
     settled_at: string;
+    /** Empty string on rows written before migration 006 - those rows match
+     *  neither the SOL nor the SKR aggregate filter so they're excluded. */
+    wager_mint: string;
 }
 
 /** Upload a settled-match record. Fire-and-forget; failures logged only. */

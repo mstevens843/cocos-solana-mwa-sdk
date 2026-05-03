@@ -1,5 +1,5 @@
 /**
- * AndroidToast.ts — Native Android toast notifications.
+ * AndroidToast.ts - Native Android toast notifications.
  *
  * Uses Cocos Creator's native.reflection to call Android Toast API directly.
  * Falls back to console.log on non-Android platforms (editor, web, iOS).

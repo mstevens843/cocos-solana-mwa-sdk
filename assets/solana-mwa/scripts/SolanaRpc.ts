@@ -1,5 +1,5 @@
 /**
- * SolanaRpc.ts — Minimal Solana JSON-RPC client using fetch().
+ * SolanaRpc.ts - Minimal Solana JSON-RPC client using fetch().
  *
  * Zero npm dependencies. No @solana/web3.js. Uses the standard fetch API
  * which is available in Cocos Creator's V8 runtime on all platforms.
@@ -232,7 +232,7 @@ export class SolanaRpc {
     private async _call<T>(method: string, params: any[] = []): Promise<T | null> {
         const id = this._nextId++;
         // Reset at the start of every call so `lastRpcError` always reflects
-        // the most recent `_call` outcome — never a stale earlier error.
+        // the most recent `_call` outcome - never a stale earlier error.
         this.lastRpcError = null;
 
         const body = JSON.stringify({

@@ -1,5 +1,5 @@
 /**
- * SquadPresets.ts — Part 10 Bundle 2.
+ * SquadPresets.ts - Part 10 Bundle 2.
  *
  * sys.localStorage-backed squad shortcuts. Player saves their favorite
  * 3-token combos with a name; Quick-Play uses the highest-winning preset
@@ -8,10 +8,10 @@
  * Storage shape (JSON array under `tokenduel:squadPresets`):
  *   [{ id, name, slots: [{mint,symbol,logoUri?}×3], savedAt, winCount }]
  *
- * Capped at MAX presets — saving a 6th evicts the oldest savedAt. Duplicate
+ * Capped at MAX presets - saving a 6th evicts the oldest savedAt. Duplicate
  * slot signatures (same 3 mints, any order) are de-duped on save.
  *
- * DB Stage 9 — every mutation fires a fire-and-forget PUT to the backend
+ * DB Stage 9 - every mutation fires a fire-and-forget PUT to the backend
  * mirror. Hydration on wallet connect uses last-write-wins by `updated_at`
  * at the list level: if the backend's updatedAt is newer than the newest
  * local savedAt, replace local with server; otherwise push local up.
@@ -92,7 +92,7 @@ export class SquadPresets {
     /**
      * Bind this device to a pubkey for cross-device sync. Pass null on
      * disconnect / guest mode to stop syncing. Does not push or pull on
-     * its own — call hydrateFromBackend() explicitly post-connect.
+     * its own - call hydrateFromBackend() explicitly post-connect.
      */
     static setSyncPubkey(pubkey: string | null): void {
         _syncPubkey = pubkey || null;

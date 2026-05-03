@@ -1,5 +1,5 @@
 /**
- * PortfolioRace.ts — live portfolio-delta race (betting-duel core).
+ * PortfolioRace.ts - live portfolio-delta race (betting-duel core).
  *
  * Given a squad of N mints and a time window, polls spot prices from
  * Birdeye at a window-appropriate cadence, tracks each token's % change
@@ -34,7 +34,7 @@ export interface PortfolioRaceOptions {
      * fetch returns nothing. If a mint is in `fallbackEntryPrices` AND
      * live fetch resolves it, live fetch wins.
      *
-     * Phase F5 — re-enabled. When live entry-price fetch fails for a mint
+     * Phase F5 - re-enabled. When live entry-price fetch fails for a mint
      * after retries, the cached priceUsd is used as the entry. Since the
      * snapshot computation also falls back to entry when current is missing
      * (delta=0 in that case), an unindexed token contributes 0% to the
@@ -48,13 +48,13 @@ export interface PortfolioRaceOptions {
     onComplete: (finalDeltaPct: number) => void;
     /** Optional: called after entry prices resolve but before polling begins. AppUI uses this for tutorial. */
     onBeforeStart?: () => Promise<void>;
-    /** Phase F5 — fired when a token's entry price came from fallback rather than Birdeye. */
+    /** Phase F5 - fired when a token's entry price came from fallback rather than Birdeye. */
     onPriceFallback?: (mint: string, fallbackEntry: number) => void;
-    /** Phase F6 — fired when a token's current price has been missing for >2 ticks. */
+    /** Phase F6 - fired when a token's current price has been missing for >2 ticks. */
     onStalePrice?: (mint: string, missingTicks: number) => void;
-    /** Phase F6 — fired when a previously-stale token's price recovers. */
+    /** Phase F6 - fired when a previously-stale token's price recovers. */
     onPriceRecovered?: (mint: string) => void;
-    /** Phase F6 — connection state aggregate ('ok' | 'degraded' | 'lost'). */
+    /** Phase F6 - connection state aggregate ('ok' | 'degraded' | 'lost'). */
     onConnectionState?: (state: 'ok' | 'degraded' | 'lost') => void;
 }
 
@@ -80,18 +80,18 @@ export class PortfolioRace {
     private _running = false;
     private _completed = false;
     private _mintKeys: string[] = [];
-    /** Phase F6 — track ticks since last successful price for each mint. */
+    /** Phase F6 - track ticks since last successful price for each mint. */
     private _missingTickCount: Record<string, number> = {};
-    /** Phase F6 — track which mints have currently fired onStalePrice (so we
+    /** Phase F6 - track which mints have currently fired onStalePrice (so we
      *  can fire onPriceRecovered when they come back). */
     private _staleMints: Set<string> = new Set();
-    /** Phase F6 — number of consecutive failed bulk fetches. Drives
+    /** Phase F6 - number of consecutive failed bulk fetches. Drives
      *  connection state: 0 → 'ok', 1 → 'degraded', ≥3 → 'lost'. */
     private _consecutiveFetchErrors = 0;
-    /** Phase F6 — last connection state we emitted, to avoid spam. */
+    /** Phase F6 - last connection state we emitted, to avoid spam. */
     private _lastConnectionState: 'ok' | 'degraded' | 'lost' | null = null;
     /**
-     * DEMO_FAKE_PRICES path — pre-computed per-mint final delta at t=windowMs.
+     * DEMO_FAKE_PRICES path - pre-computed per-mint final delta at t=windowMs.
      * Each `_tick` interpolates from 0 → final with an eased S-curve + jitter,
      * matching `LiveSquadBot.deltaAt` so player and bot animate the same way.
      */
@@ -107,7 +107,7 @@ export class PortfolioRace {
      */
     async start(): Promise<void> {
         if (this._running) {
-            console.log(`${TAG} start | ALREADY_RUNNING — ignoring`);
+            console.log(`${TAG} start | ALREADY_RUNNING - ignoring`);
             return;
         }
         this._running = true;
@@ -120,12 +120,12 @@ export class PortfolioRace {
             return;
         }
 
-        // 1. Fetch entry prices at RACE START — NOT at squad-pick time.
+        // 1. Fetch entry prices at RACE START - NOT at squad-pick time.
         // Fairness invariant: entry = spot price in the moment the race begins,
         // never the cached feed price from when the token was added to the
         // squad. If Birdeye's /defi/multi_price returns partial data (common
         // for just-launched tokens), retry up to 3x with 500ms backoff.
-        // After retries, any still-missing mint is DROPPED — it contributes
+        // After retries, any still-missing mint is DROPPED - it contributes
         // weight 0 to the equal-weighted portfolio delta. Never re-use the
         // squad's `slot.priceUsd` as entry; doing so would lock in pre-race
         // gains (the +10000% bug). `fallbackEntryPrices` option is kept on
@@ -147,7 +147,7 @@ export class PortfolioRace {
             missing = this._mintKeys.filter((m) => !(m in live));
             console.log(`${TAG} start | entry_fetch attempt=${attempt + 1} resolved=${Object.keys(live).length}/${this._mintKeys.length} missing=[${missing.map((m) => m.slice(0, 4)).join(',')}]`);
         }
-        // Phase F5 — apply fallback entry prices for mints Birdeye didn't
+        // Phase F5 - apply fallback entry prices for mints Birdeye didn't
         // index. The snapshot computation already returns delta=0 when
         // current is missing for a fallback-entry mint, so unindexed tokens
         // contribute 0% to the portfolio (fair across both players).
@@ -166,11 +166,11 @@ export class PortfolioRace {
         const resolvedEntries = Object.keys(this._entryPrices).length;
         const stillMissing = this._mintKeys.filter((m) => !(m in this._entryPrices));
         if (stillMissing.length > 0) {
-            console.log(`${TAG} start | ENTRY_PRICES_DROPPED count=${stillMissing.length} mints=[${stillMissing.map((m) => m.slice(0, 4)).join(',')}] — racing with ${resolvedEntries}/${this._mintKeys.length} (live=${resolvedEntries - fallbackCount} fallback=${fallbackCount} dropped=${stillMissing.length})`);
+            console.log(`${TAG} start | ENTRY_PRICES_DROPPED count=${stillMissing.length} mints=[${stillMissing.map((m) => m.slice(0, 4)).join(',')}] - racing with ${resolvedEntries}/${this._mintKeys.length} (live=${resolvedEntries - fallbackCount} fallback=${fallbackCount} dropped=${stillMissing.length})`);
         }
         console.log(`${TAG} start | entry_prices resolved=${resolvedEntries}/${this._mintKeys.length} fallback_used=${fallbackCount} sample=${JSON.stringify(this._sampleEntries(this._entryPrices))}`);
         if (resolvedEntries === 0) {
-            console.log(`${TAG} start | NO_ENTRY_PRICES — aborting race, emitting 0% delta`);
+            console.log(`${TAG} start | NO_ENTRY_PRICES - aborting race, emitting 0% delta`);
             this._completeOnce(0);
             return;
         }
@@ -180,7 +180,7 @@ export class PortfolioRace {
             try {
                 await this._opts.onBeforeStart();
             } catch (e) {
-                console.log(`${TAG} start | onBeforeStart_error ${e} — continuing`);
+                console.log(`${TAG} start | onBeforeStart_error ${e} - continuing`);
             }
         }
 
@@ -194,7 +194,7 @@ export class PortfolioRace {
         void this._tick();
     }
 
-    /** Explicit early termination — used when AppUI tears down the panel. */
+    /** Explicit early termination - used when AppUI tears down the panel. */
     destroy(): void {
         console.log(`${TAG} destroy | EXPLICIT_TEARDOWN running=${this._running} completed=${this._completed} had_poll=${!!this._pollTimer} had_window=${!!this._windowTimer}`);
         if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
@@ -204,7 +204,7 @@ export class PortfolioRace {
 
     /**
      * No-op kept for TokenDuelGame contract compatibility. Portfolio races
-     * have no player input — the outcome is purely the price feed.
+     * have no player input - the outcome is purely the price feed.
      */
     onTap(): void { /* no-op */ }
 
@@ -234,7 +234,7 @@ export class PortfolioRace {
 
     private _scheduleNextPoll(): void {
         if (!this._running || this._completed) return;
-        // Idempotent — clear any pending timer first. Without this, calling
+        // Idempotent - clear any pending timer first. Without this, calling
         // _scheduleNextPoll twice (e.g. once in start() before the immediate
         // _tick(), and again at the end of that _tick) leaves two timers
         // armed; both fire near-simultaneously and produce rapid-fire ticks
@@ -274,12 +274,12 @@ export class PortfolioRace {
                 this._consecutiveFetchErrors += 1;
                 const state: 'degraded' | 'lost' = this._consecutiveFetchErrors >= 3 ? 'lost' : 'degraded';
                 this._emitConnectionState(state);
-                console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} consecutive=${this._consecutiveFetchErrors} state=${state} error=${e?.message ?? e} — skipping tick`);
+                console.log(`${TAG} tick | TICK_FETCH_ERROR elapsed=${elapsed}ms remaining=${remaining}ms mints=${this._mintKeys.length} consecutive=${this._consecutiveFetchErrors} state=${state} error=${e?.message ?? e} - skipping tick`);
                 this._scheduleNextPoll();
                 return;
             }
         }
-        // Phase F6 — per-mint stale tracking.
+        // Phase F6 - per-mint stale tracking.
         for (const mint of this._mintKeys) {
             const v = current[mint];
             const ok = Number.isFinite(v) && v > 0;
@@ -316,13 +316,13 @@ export class PortfolioRace {
         if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
         let current: Record<string, number>;
         if (DEMO_FAKE_PRICES) {
-            // Final tick at progress=1, no jitter — matches LiveSquadBot.finalOutcome.
+            // Final tick at progress=1, no jitter - matches LiveSquadBot.finalOutcome.
             current = this._buildSyntheticCurrent(this._opts.windowMs, /* finalize */ true);
         } else {
             try {
                 current = await this._opts.priceFeed.getSpotPrices(this._mintKeys);
             } catch (e: any) {
-                console.log(`${TAG} finalize | FINALIZE_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} — completing with 0% (no end prices)`);
+                console.log(`${TAG} finalize | FINALIZE_FETCH_ERROR mints=${this._mintKeys.length} error=${e?.message ?? e} - completing with 0% (no end prices)`);
                 this._completeOnce(0);
                 return;
             }
@@ -368,7 +368,7 @@ export class PortfolioRace {
     // ── DEMO_FAKE_PRICES path ────────────────────────────────────────
     // Mirrors LiveSquadBot's seeded random walk so the player and bot
     // animate the same way during a recorded demo. Not used when the
-    // flag is off — see DemoFlags.ts.
+    // flag is off - see DemoFlags.ts.
 
     private async _startSynthetic(): Promise<void> {
         for (const mint of this._mintKeys) {
@@ -377,7 +377,7 @@ export class PortfolioRace {
             const prng = this._mulberry32(seed);
             // baseMagnitude 1.5% gives visibly-alive cards without looking absurd
             // over a 30s window. Eased S-curve in _buildSyntheticCurrent damps
-            // the early ticks; mid-race deltas land in the ±0.5–1.5% range.
+            // the early ticks; mid-race deltas land in the ±0.5-1.5% range.
             const baseMagnitude = 1.5;
             const direction = prng() > 0.5 ? 1 : -1;
             this._syntheticFinalDeltas.set(mint, direction * baseMagnitude * prng());
@@ -388,7 +388,7 @@ export class PortfolioRace {
             try {
                 await this._opts.onBeforeStart();
             } catch (e) {
-                console.log(`${TAG} _startSynthetic | onBeforeStart_error ${e} — continuing`);
+                console.log(`${TAG} _startSynthetic | onBeforeStart_error ${e} - continuing`);
             }
         }
 

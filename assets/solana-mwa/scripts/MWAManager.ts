@@ -1,9 +1,9 @@
 /**
- * MWAManager.ts — Core singleton for Solana Mobile Wallet Adapter operations.
+ * MWAManager.ts - Core singleton for Solana Mobile Wallet Adapter operations.
  *
  * Direct port of:
- *   - Unity:  MWAManager.cs  (359 lines) — grant-unity/Assets/Scripts/MWAManager.cs
- *   - Godot:  mwa_manager.gd (522 lines) — grant-godot/scripts/mwa_manager.gd
+ *   - Unity:  MWAManager.cs  (359 lines) - grant-unity/Assets/Scripts/MWAManager.cs
+ *   - Godot:  mwa_manager.gd (522 lines) - grant-godot/scripts/mwa_manager.gd
  *
  * This Component is the single entry point for all MWA operations.
  * Attach it to a Node in your scene and it persists across scene transitions.
@@ -14,14 +14,14 @@
  *   await MWAManager.instance.deauthorize();
  *
  * Bug Prevention Applied:
- *   G3  — Timeout + logging on every bridge command (no silent failures)
- *   G4  — Pubkey always string from JSON (no object type mismatch)
- *   G5  — Validate pubkey length > 20 before accepting (no empty false positives)
- *   G6  — Deauthorize sends command to native + clears local state
- *   G9  — Chain signMessage after authorize for biometric confirmation
- *   G10 — Require signMessage before deleteAccount
- *   U1  — Deauthorize sends MWA deauthorize RPC via bridge (not just local clear)
- *   U3  — Validate authToken.length after authorize (warn if empty)
+ *   G3  - Timeout + logging on every bridge command (no silent failures)
+ *   G4  - Pubkey always string from JSON (no object type mismatch)
+ *   G5  - Validate pubkey length > 20 before accepting (no empty false positives)
+ *   G6  - Deauthorize sends command to native + clears local state
+ *   G9  - Chain signMessage after authorize for biometric confirmation
+ *   G10 - Require signMessage before deleteAccount
+ *   U1  - Deauthorize sends MWA deauthorize RPC via bridge (not just local clear)
+ *   U3  - Validate authToken.length after authorize (warn if empty)
  */
 
 import { _decorator, Component, game, sys, director, view, screen, ResolutionPolicy } from 'cc';
@@ -73,7 +73,7 @@ export class MWAManager extends Component {
      *
      * The Cocos project ships without `settings/v2/packages/project.json`
      * populated, so the editor defaults leak in as 1280×720 landscape at
-     * SHOW_ALL — which when rendered inside a portrait-locked Activity
+     * SHOW_ALL - which when rendered inside a portrait-locked Activity
      * produces a small centered rectangle with massive black borders (the
      * "phone inside a phone" look).
      *
@@ -94,7 +94,7 @@ export class MWAManager extends Component {
             const devH = winSize?.height ?? -1;
             // Use FIXED_WIDTH so 720 units == device width. On a 1080×2340 phone
             // that gives a ~1.5× scale; content at y=640 still clips only if
-            // the device is shorter than 1280 design units scaled — virtually
+            // the device is shorter than 1280 design units scaled - virtually
             // no modern phone is, so fill is complete.
             view.setDesignResolutionSize(720, 1280, ResolutionPolicy.FIXED_WIDTH);
             MWAManager._resolutionSetupDone = true;
@@ -103,7 +103,7 @@ export class MWAManager extends Component {
             const scaleY = view.getScaleY?.() ?? -1;
             console.log(`${TAG} _setupPortraitResolution | DONE design_w=720 design_h=1280 policy=FIXED_WIDTH device_w=${devW} device_h=${devH} visible_w=${vs.width.toFixed(1)} visible_h=${vs.height.toFixed(1)} scale_x=${scaleX} scale_y=${scaleY}`);
         } catch (e: any) {
-            console.log(`${TAG} _setupPortraitResolution | FAIL error="${e?.message ?? e}" — scene will fall back to Cocos defaults (landscape letterbox)`);
+            console.log(`${TAG} _setupPortraitResolution | FAIL error="${e?.message ?? e}" - scene will fall back to Cocos defaults (landscape letterbox)`);
         }
     }
 
@@ -125,18 +125,18 @@ export class MWAManager extends Component {
     public connectedWalletPackage: string = '';
 
     /**
-     * Last error from the most recent MWA operation — populated in catch blocks
+     * Last error from the most recent MWA operation - populated in catch blocks
      * of signMessage/signTransaction/etc., cleared on successful start. Lets
      * UI code branch on specific error codes (e.g., WALLET_CRASHED) without
      * changing the return-empty-on-failure convention of the async methods.
      *
      * Notable codes:
-     *   - WALLET_CRASHED — wallet app closed WebSocket mid-request (e.g.,
+     *   - WALLET_CRASHED - wallet app closed WebSocket mid-request (e.g.,
      *     Solflare sign_messages bug). See KNOWN_ISSUES.md #6.
-     *   - USER_REJECTED  — user tapped reject in the wallet UI.
-     *   - TIMEOUT        — wallet did not respond within 60s.
-     *   - WALLET_ERROR   — generic wallet-side error with a message.
-     *   - INVALID_PAYLOADS — payload validation failed at the wallet.
+     *   - USER_REJECTED  - user tapped reject in the wallet UI.
+     *   - TIMEOUT        - wallet did not respond within 60s.
+     *   - WALLET_ERROR   - generic wallet-side error with a message.
+     *   - INVALID_PAYLOADS - payload validation failed at the wallet.
      */
     public lastError: { code: string; message: string } | null = null;
 
@@ -151,11 +151,11 @@ export class MWAManager extends Component {
     /** Guard against concurrent authorize calls. */
     private _authorizing: boolean = false;
 
-    /** Pubkeys that have been deleted this session — prevents reconnect to deleted account. */
+    /** Pubkeys that have been deleted this session - prevents reconnect to deleted account. */
     private _deletedPubkeys: Set<string> = new Set();
 
     /**
-     * Lazy Solana JSON-RPC client — instantiated on first use by
+     * Lazy Solana JSON-RPC client - instantiated on first use by
      * `_getRpc()`. Used by the Backpack sign+broadcast fallback
      * (`_signAndBroadcastViaRpc`) since Backpack's native
      * `sign_and_send_transactions` crashes with a deserialization bug.
@@ -163,7 +163,7 @@ export class MWAManager extends Component {
     private _rpc: SolanaRpc | null = null;
 
     /**
-     * Cached `get_capabilities` result for the current session — fetched
+     * Cached `get_capabilities` result for the current session - fetched
      * silently after authorize/reauthorize success. Feeds
      * `supportsSignMessages()` so the UI can hide the Sign Message button
      * on wallets that don't declare the feature (Phantom, Solflare).
@@ -176,12 +176,12 @@ export class MWAManager extends Component {
     onLoad(): void {
         console.log(`${TAG} onLoad | START instance_exists=${MWAManager._instance != null} node=${this.node.name}`);
 
-        // Session 5 fullscreen fix — runs FIRST so every subsequent UI component
+        // Session 5 fullscreen fix - runs FIRST so every subsequent UI component
         // gets the right viewport. Cocos defaults to 1280×720 landscape at
         // SHOW_ALL on this project (see build/android/data/src/settings.json),
         // which letterboxes a landscape design inside a portrait phone → tiny
         // centered rectangle with black borders. Overriding here at runtime is
-        // editor-proof — survives every rebuild regardless of editor state.
+        // editor-proof - survives every rebuild regardless of editor state.
         MWAManager._setupPortraitResolution();
 
         // Singleton enforcement
@@ -264,7 +264,7 @@ export class MWAManager extends Component {
      * @returns Array of {name, packageName, installed, storeUrl}
      */
     async detectWallets(): Promise<WalletInfo[]> {
-        console.log(`${TAG} detectWallets | START — sending detect_wallets to bridge`);
+        console.log(`${TAG} detectWallets | START - sending detect_wallets to bridge`);
         try {
             const result = await this._bridge.sendCommand<{ wallets: WalletInfo[] }>('detect_wallets', {});
             const wallets = result?.wallets ?? [];
@@ -349,7 +349,7 @@ export class MWAManager extends Component {
         // Seed Vault via sign_messages fallback) produce a proof-of-ownership
         // signature alongside the authorize token. Wallets that don't
         // implement the SIWS path degrade gracefully to a plain authorize
-        // session (Phantom/Solflare take this route — their sign_messages
+        // session (Phantom/Solflare take this route - their sign_messages
         // handler doesn't exist, so the 15 s JS timeout in authorizeSiws
         // fallback fires and we proceed without signInResult).
         const siws = getSiwsIdentity();
@@ -360,14 +360,14 @@ export class MWAManager extends Component {
 
         // Guard: don't allow concurrent authorizations
         if (this._authorizing) {
-            console.log(`${TAG} authorize | BLOCKED — already authorizing, ignoring duplicate call`);
+            console.log(`${TAG} authorize | BLOCKED - already authorizing, ignoring duplicate call`);
             return null;
         }
         this._authorizing = true;
 
         // Clear deleted keys on fresh connect (matches Unity/Godot behavior)
         if (this._deletedPubkeys.size > 0) {
-            console.log(`${TAG} authorize | clearing ${this._deletedPubkeys.size} deleted key(s) — fresh connect = clean slate`);
+            console.log(`${TAG} authorize | clearing ${this._deletedPubkeys.size} deleted key(s) - fresh connect = clean slate`);
             this._deletedPubkeys.clear();
         }
 
@@ -383,7 +383,7 @@ export class MWAManager extends Component {
                 cluster: identity.cluster,
             };
 
-            // Always use plain authorize — OS picker handles wallet selection
+            // Always use plain authorize - OS picker handles wallet selection
             const authorizeParams: Record<string, any> = { ...params };
             if (targetPackage) {
                 authorizeParams.targetPackage = targetPackage;
@@ -396,21 +396,21 @@ export class MWAManager extends Component {
             // Validate response (Bug G4, G5 prevention)
             if (!result || !result.pubkey) {
                 console.log(`${TAG} authorize | FAIL result is null or missing pubkey`);
-                this._updateStatus('Authorization failed — no response from wallet');
+                this._updateStatus('Authorization failed - no response from wallet');
                 this.node.emit(MWA_AUTH_FAILED, 'Wallet returned null or empty response');
                 return null;
             }
 
             if (!isValidBase58Pubkey(result.pubkey)) {
                 console.log(`${TAG} authorize | FAIL invalid pubkey="${result.pubkey}" length=${result.pubkey.length} (must be 32-44 base58 chars)`);
-                this._updateStatus('Authorization failed — invalid pubkey returned');
+                this._updateStatus('Authorization failed - invalid pubkey returned');
                 this.node.emit(MWA_AUTH_FAILED, `Invalid pubkey from wallet: ${result.pubkey}`);
                 return null;
             }
 
             // Bug U3 prevention: warn if auth token is empty
             if (!result.authToken || result.authToken.length === 0) {
-                console.log(`${TAG} authorize | WARN auth_token is empty — reauthorization may fail (Unity Bug U3)`);
+                console.log(`${TAG} authorize | WARN auth_token is empty - reauthorization may fail (Unity Bug U3)`);
             }
 
             // Set connected state (needed for signMessage to work)
@@ -430,7 +430,7 @@ export class MWAManager extends Component {
             this._updateStatus(`Connected: ${this._truncatePubkey(this.connectedPubkey)}`);
             this.node.emit(MWA_AUTHORIZED, this.connectedPubkey);
 
-            console.log(`${TAG} authorize | DONE connected=true pubkey=${this.connectedPubkey} — emitted MWA_AUTHORIZED`);
+            console.log(`${TAG} authorize | DONE connected=true pubkey=${this.connectedPubkey} - emitted MWA_AUTHORIZED`);
             return result;
 
         } catch (e: any) {
@@ -445,12 +445,12 @@ export class MWAManager extends Component {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  AUTHORIZE SIWS (MWA 2.0 — Sign In With Solana)
+    //  AUTHORIZE SIWS (MWA 2.0 - Sign In With Solana)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * MWA 2.0 authorize with Sign In With Solana (SIWS).
-     * One-shot connect + prove ownership — wallet returns a signed message
+     * One-shot connect + prove ownership - wallet returns a signed message
      * proving the user owns the account.
      *
      * Matches Godot connectWalletSiws (myAction=5) and Unity _Login SIWS path.
@@ -465,7 +465,7 @@ export class MWAManager extends Component {
         console.log(`${TAG} authorizeSiws | START domain=${domain} statement=${statement} targetPackage=${targetPackage || '(none)'} is_connected=${this.isConnected} authorizing=${this._authorizing}`);
 
         if (this._authorizing) {
-            console.log(`${TAG} authorizeSiws | BLOCKED — already authorizing, ignoring duplicate call`);
+            console.log(`${TAG} authorizeSiws | BLOCKED - already authorizing, ignoring duplicate call`);
             return null;
         }
         this._authorizing = true;
@@ -496,42 +496,42 @@ export class MWAManager extends Component {
             // STEP 4: Validate pubkey
             if (!result || !result.pubkey) {
                 console.log(`${TAG} authorizeSiws | STEP_4_FAIL result is null or missing pubkey elapsed_ms=${Date.now() - startTime}`);
-                this._updateStatus('SIWS authorization failed — no response from wallet');
+                this._updateStatus('SIWS authorization failed - no response from wallet');
                 this.node.emit(MWA_AUTH_FAILED, 'Wallet returned null or empty response');
                 return null;
             }
 
             if (!isValidBase58Pubkey(result.pubkey)) {
                 console.log(`${TAG} authorizeSiws | STEP_4_FAIL invalid pubkey="${result.pubkey}" length=${result.pubkey.length} elapsed_ms=${Date.now() - startTime}`);
-                this._updateStatus('SIWS authorization failed — invalid pubkey');
+                this._updateStatus('SIWS authorization failed - invalid pubkey');
                 this.node.emit(MWA_AUTH_FAILED, `Invalid pubkey from wallet: ${result.pubkey}`);
                 return null;
             }
             console.log(`${TAG} authorizeSiws | STEP_4_PUBKEY_VALID pubkey=${result.pubkey} elapsed_ms=${Date.now() - startTime}`);
 
             // STEP 5: Extract SIWS result. Pass 11: the native plugin now
-            // handles both paths inside a SINGLE LocalAssociationScenario —
+            // handles both paths inside a SINGLE LocalAssociationScenario -
             //   • native sign_in_result (Backpack, Seed Vault when supported)
             //   • in-session sign_messages fallback (Jupiter, …)
-            // — which is why there's only one OS wallet picker. Wallets that
-            // don't implement sign_messages at all (Phantom, Solflare —
+            // - which is why there's only one OS wallet picker. Wallets that
+            // don't implement sign_messages at all (Phantom, Solflare -
             // KNOWN_ISSUES #11) degrade via the Java-side 15s
             // SIWS_FALLBACK_TIMEOUT_MS and simply come back without
             // `signInResult`. See KNOWN_ISSUES.md #16.
             if (result.signInResult) {
                 console.log(`${TAG} authorizeSiws | STEP_5_SIWS_EXTRACTED address=${result.signInResult.address} sig_len=${result.signInResult.signature?.length || 0} sig_preview=${(result.signInResult.signature || '').substring(0, 20)}... signedMsg_len=${result.signInResult.signedMessage?.length || 0} sigType=${result.signInResult.signatureType} elapsed_ms=${Date.now() - startTime}`);
             } else {
-                console.log(`${TAG} authorizeSiws | STEP_5_SIWS_ABSENT — Java in-session fallback unavailable (wallet likely doesn't implement sign_messages); authorize-only session elapsed_ms=${Date.now() - startTime}`);
+                console.log(`${TAG} authorizeSiws | STEP_5_SIWS_ABSENT - Java in-session fallback unavailable (wallet likely doesn't implement sign_messages); authorize-only session elapsed_ms=${Date.now() - startTime}`);
             }
 
             console.log(`${TAG} authorizeSiws | STEP_5_ACCOUNT_META label="${result.accountLabel || ''}" chains="${result.accountChains || ''}" features="${result.accountFeatures || ''}" elapsed_ms=${Date.now() - startTime}`);
 
             if (!result.authToken || result.authToken.length === 0) {
-                console.log(`${TAG} authorizeSiws | STEP_5_WARN auth_token is empty — reauthorization may fail`);
+                console.log(`${TAG} authorizeSiws | STEP_5_WARN auth_token is empty - reauthorization may fail`);
             }
 
             // STEP 6: Commit connection state (post-authorize, once we know the
-            // bridge call succeeded — no more pre-fallback ordering hack).
+            // bridge call succeeded - no more pre-fallback ordering hack).
             this.connectedPubkey = result.pubkey;
             this.authToken = result.authToken || '';
             this.walletUriBase = result.walletUriBase || '';
@@ -568,12 +568,12 @@ export class MWAManager extends Component {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Reconnect silently from persistent cache — client-only operation.
+     * Reconnect silently from persistent cache - client-only operation.
      *
      * Parity with Unity `Login()` (returns cached pubkey via PlayerPrefs
      * without RPC), Godot cached-connect (trust local state), and React
      * Native account hydration from cache. No MWA RPC is sent to the wallet
-     * — doing so would require opening a LocalAssociationScenario which
+     * - doing so would require opening a LocalAssociationScenario which
      * would launch the wallet app and prompt the user. That's a UX bug
      * (observed: Backpack opened and prompted on "Reconnect (cached)").
      *
@@ -588,7 +588,7 @@ export class MWAManager extends Component {
      *
      * The next privileged operation (signMessage, signTransaction, etc.)
      * will validate the cached authToken implicitly inside its own
-     * transact() session — if the token is stale/expired, that call will
+     * transact() session - if the token is stale/expired, that call will
      * fail and the user can re-authorize then.
      *
      * @returns AuthorizeResult on cache hit, null on cache miss
@@ -603,18 +603,18 @@ export class MWAManager extends Component {
             return null;
         }
 
-        // Reject deleted pubkeys — prevent reconnect to an account the user
+        // Reject deleted pubkeys - prevent reconnect to an account the user
         // deleted earlier in this app session.
         if (this._deletedPubkeys.has(cached.pubkey)) {
             console.log(`${TAG} reauthorize | REJECTED pubkey=${cached.pubkey} is in deleted keys`);
-            this._updateStatus('Previously deleted account — please connect fresh');
+            this._updateStatus('Previously deleted account - please connect fresh');
             return null;
         }
 
         // Validate pubkey shape defensively (guards against corrupted cache)
         if (!cached.pubkey || !isValidBase58Pubkey(cached.pubkey)) {
-            console.log(`${TAG} reauthorize | FAIL cached pubkey invalid shape — treating as cache miss`);
-            this._updateStatus('Cached auth corrupted — please connect fresh');
+            console.log(`${TAG} reauthorize | FAIL cached pubkey invalid shape - treating as cache miss`);
+            this._updateStatus('Cached auth corrupted - please connect fresh');
             return null;
         }
 
@@ -631,7 +631,7 @@ export class MWAManager extends Component {
 
         // Bug U3: warn if cached token empty (signMessage may need to re-auth)
         if (!this.authToken) {
-            console.log(`${TAG} reauthorize | WARN cached auth_token is empty — next privileged op may fail`);
+            console.log(`${TAG} reauthorize | WARN cached auth_token is empty - next privileged op may fail`);
         }
 
         const result: AuthorizeResult = {
@@ -642,7 +642,7 @@ export class MWAManager extends Component {
 
         // Pass 10: re-write the cache entry so `isAuthenticated` flips back
         // to `true`. The Pass-3 flow left cache untouched here on the
-        // assumption that nothing had changed on disk — but after Pass 10
+        // assumption that nothing had changed on disk - but after Pass 10
         // `deauthorize()` marks the entry as disconnected, so a successful
         // reconnect needs to flip it back or cold-start auto-sign-in would
         // stay off until the next fresh authorize.
@@ -660,7 +660,7 @@ export class MWAManager extends Component {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Disconnect wallet — client-side only operation. Cache is RETAINED.
+     * Disconnect wallet - client-side only operation. Cache is RETAINED.
      *
      * Clears in-memory state (`isConnected`, `connectedPubkey`, `authToken`,
      * `walletUriBase`, `connectedWalletPackage`) so the user is no longer
@@ -671,7 +671,7 @@ export class MWAManager extends Component {
      *   - "Connect" → fresh OS-picker authorize (cache overwritten)
      *   - "Delete Account" (from Home) → protocol-level revoke + cache wipe
      *
-     * No MWA RPC is sent to the wallet — doing so would require opening a
+     * No MWA RPC is sent to the wallet - doing so would require opening a
      * LocalAssociationScenario which would launch the wallet app and prompt
      * the user for approval. That's a UX bug (observed: Backpack opened and
      * prompted on disconnect before Pass 2).
@@ -681,7 +681,7 @@ export class MWAManager extends Component {
      * `deleteAccount()` (sign-and-deauthorize + cache wipe).
      *
      * The wallet's copy of the auth token is orphaned until the user manually
-     * revokes in the wallet's "Connected Apps" UI — standard behavior across
+     * revokes in the wallet's "Connected Apps" UI - standard behavior across
      * all peer SDKs.
      */
     async deauthorize(): Promise<void> {
@@ -691,7 +691,7 @@ export class MWAManager extends Component {
         const oldPackage = this.connectedWalletPackage;
         const oldTokenLen = this.authToken?.length ?? 0;
 
-        // Clear in-memory state only — cache is kept so the Landing panel
+        // Clear in-memory state only - cache is kept so the Landing panel
         // can offer "Reconnect (cached)" for a one-tap restore.
         this.connectedPubkey = '';
         this.authToken = '';
@@ -704,7 +704,7 @@ export class MWAManager extends Component {
         // Pass 10: flip cache.isAuthenticated=false so cold-start auto-sign-in
         // stays off until the user explicitly reconnects. Preserves pubkey +
         // authToken so the Landing "Reconnect (cached)" button continues to
-        // work — the only thing that changes is `hasAutoLoginAuth()` returns
+        // work - the only thing that changes is `hasAutoLoginAuth()` returns
         // false until `reauthorize()` or `authorize()` re-writes the entry.
         if (oldPubkey) {
             this._cache.markDisconnected(oldPubkey);
@@ -716,10 +716,10 @@ export class MWAManager extends Component {
     }
 
     /**
-     * Protocol-level deauthorize — sends the MWA `deauthorize` RPC to the
+     * Protocol-level deauthorize - sends the MWA `deauthorize` RPC to the
      * wallet and clears local state. Opens the wallet app; user may see an
      * approval prompt. Use only when you explicitly need the wallet's copy
-     * of the auth token invalidated (rare — Unity's `DisconnectWallet()`
+     * of the auth token invalidated (rare - Unity's `DisconnectWallet()`
      * does this as a best-effort operation).
      *
      * Default UI "Disconnect" button maps to `deauthorize()` (client-only),
@@ -744,21 +744,21 @@ export class MWAManager extends Component {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  AUTH RECOVERY (Pass 14 — KNOWN_ISSUES #17)
+    //  AUTH RECOVERY (Pass 14 - KNOWN_ISSUES #17)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * Transparent recovery from `WALLET_AUTH_MISMATCH`. The wallet rejected
      * its own previously-issued cached `authToken` on `reauthorize` (the
      * wallet's process was killed, its session expired, or its local token
-     * store was rotated — see KNOWN_ISSUES.md #17). The cached state on the
+     * store was rotated - see KNOWN_ISSUES.md #17). The cached state on the
      * Cocos side is verifiably dead; the only way forward is to authorize
      * fresh and try again.
      *
      * Caller invokes the privileged op; on `lastError.code === 'WALLET_AUTH_MISMATCH'`,
      * caller invokes this helper. We wipe the dead token, call `authorize()`
      * (deep-link if `connectedWalletPackage` is known, else OS picker), and
-     * verify the new pubkey matches. If so, return `true` — caller retries
+     * verify the new pubkey matches. If so, return `true` - caller retries
      * the op once. If pubkey changed (user genuinely picked a different
      * wallet), set `WALLET_CHANGED` and return `false`. If re-auth itself
      * failed/dismissed, preserve `WALLET_AUTH_MISMATCH` and return `false`.
@@ -770,11 +770,11 @@ export class MWAManager extends Component {
 
         const originalPubkey = this.connectedPubkey;
         const targetPackage = this.connectedWalletPackage;
-        console.log(`${TAG} ${opName} | RECOVERY_START WALLET_AUTH_MISMATCH detected — transparent re-auth pubkey=${originalPubkey.slice(0, 8)}… target=${targetPackage || '(picker)'}`);
+        console.log(`${TAG} ${opName} | RECOVERY_START WALLET_AUTH_MISMATCH detected - transparent re-auth pubkey=${originalPubkey.slice(0, 8)}… target=${targetPackage || '(picker)'}`);
         this._updateStatus('Refreshing wallet session…');
 
         // Wipe the dead token. Keep connectedPubkey/isConnected so UI doesn't
-        // flash "disconnected" — authorize() overwrites both on success.
+        // flash "disconnected" - authorize() overwrites both on success.
         try { this._cache.clear(originalPubkey); } catch (_) { /* ignore */ }
         this.authToken = '';
         this.lastError = null;
@@ -873,7 +873,7 @@ export class MWAManager extends Component {
             // Validate response
             if (!result || !result.signatures || result.signatures.length === 0) {
                 console.log(`${TAG} signMessage | FAIL empty or missing signatures in response`);
-                this._updateStatus('Sign message failed — empty signature');
+                this._updateStatus('Sign message failed - empty signature');
                 this.lastError = { code: 'EMPTY_SIGNATURE', message: 'Wallet returned no signatures' };
                 return '';
             }
@@ -881,7 +881,7 @@ export class MWAManager extends Component {
             const sig = result.signatures[0];
             if (!sig || sig.length === 0) {
                 console.log(`${TAG} signMessage | FAIL signature[0] is empty`);
-                this._updateStatus('Sign message failed — empty signature');
+                this._updateStatus('Sign message failed - empty signature');
                 this.lastError = { code: 'EMPTY_SIGNATURE', message: 'Wallet returned an empty signature' };
                 return '';
             }
@@ -902,9 +902,9 @@ export class MWAManager extends Component {
             // wrong-wallet branch (KNOWN_ISSUES.md #17).
             let statusMsg: string;
             if (code === 'WALLET_CRASHED') {
-                statusMsg = 'Wallet crashed — try Backpack, Phantom, or Jupiter';
+                statusMsg = 'Wallet crashed - try Backpack, Phantom, or Jupiter';
             } else if (code === 'WALLET_AUTH_MISMATCH') {
-                statusMsg = 'Sign message failed — wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.';
+                statusMsg = 'Sign message failed - wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.';
             } else {
                 statusMsg = `Sign message failed: ${msg}`;
             }
@@ -969,7 +969,7 @@ export class MWAManager extends Component {
             console.log(`${TAG} signMessages | EXCEPTION code=${code} message=${msg}`);
             this.lastError = { code, message: msg };
             const statusMsg = code === 'WALLET_AUTH_MISMATCH'
-                ? 'Sign messages failed — wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
+                ? 'Sign messages failed - wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
                 : `Sign messages failed: ${msg}`;
             this._updateStatus(statusMsg);
             return [];
@@ -1004,7 +1004,7 @@ export class MWAManager extends Component {
      * Sign multiple transactions without broadcasting. Returns the signed tx bytes.
      *
      * The wallet injects signatures into each transaction and returns them.
-     * Unlike signAndSendTransactions, these are NOT broadcast — the caller
+     * Unlike signAndSendTransactions, these are NOT broadcast - the caller
      * can inspect the signed bytes, broadcast at their own pace, or discard.
      *
      * @param transactions - Array of serialized transactions (unsigned Uint8Arrays)
@@ -1051,7 +1051,7 @@ export class MWAManager extends Component {
 
             if (!result || !result.signedPayloads || result.signedPayloads.length === 0) {
                 console.log(`${TAG} signTransactions | FAIL empty or missing signedPayloads in response`);
-                this._updateStatus('Sign transaction failed — no signed data returned');
+                this._updateStatus('Sign transaction failed - no signed data returned');
                 return [];
             }
 
@@ -1074,11 +1074,11 @@ export class MWAManager extends Component {
             console.log(`${TAG} signTransactions | EXCEPTION code=${code} message=${msg}`);
             // Persist so `deleteAccount` (which gates on signTransactions) can
             // distinguish `WALLET_AUTH_MISMATCH` (Pass 13 / KNOWN_ISSUES #17
-            // — user picked a different wallet than the one that issued the
+            // - user picked a different wallet than the one that issued the
             // cached token) from the default `DELETE_CANCELLED` path.
             this.lastError = { code, message: msg };
             const statusMsg = code === 'WALLET_AUTH_MISMATCH'
-                ? 'Sign transaction failed — wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
+                ? 'Sign transaction failed - wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
                 : `Sign transaction failed: ${msg}`;
             this._updateStatus(statusMsg);
             return [];
@@ -1091,12 +1091,12 @@ export class MWAManager extends Component {
 
     /**
      * Sign and broadcast a single transaction (DEFAULT path: sign via MWA
-     * + broadcast via Solana JSON-RPC — Godot Node-level pattern).
+     * + broadcast via Solana JSON-RPC - Godot Node-level pattern).
      *
      * This pattern works for every wallet including Backpack, whose native
      * MWA `sign_and_send_transactions` handler crashes with a Kotlin
      * JsonDecodingException. Only one wallet intent is opened (the
-     * signTransactions call) — same UX as the native path, one approval.
+     * signTransactions call) - same UX as the native path, one approval.
      *
      * To use MWA 2.0's native `sign_and_send_transactions` RPC directly
      * (will fail on Backpack), call `signAndSendTransactionNative()` instead.
@@ -1115,7 +1115,7 @@ export class MWAManager extends Component {
 
     /**
      * Sign and broadcast multiple transactions (DEFAULT path: sign via MWA
-     * + broadcast via Solana JSON-RPC — Godot Node-level pattern).
+     * + broadcast via Solana JSON-RPC - Godot Node-level pattern).
      *
      * Always routes through `_signAndBroadcastViaRpc`. No wallet-identity
      * branching, no native MWA `sign_and_send_transactions` by default.
@@ -1143,7 +1143,7 @@ export class MWAManager extends Component {
         // Routing decision:
         //   1. Backpack → sign+RPC (native handler crashes, KNOWN_ISSUES #9)
         //   2. Known native-supporting wallet targeted via wallet-list button → native MWA
-        //      (Phantom, Jupiter — see _NATIVE_SIGN_AND_SEND_SUPPORTED)
+        //      (Phantom, Jupiter - see _NATIVE_SIGN_AND_SEND_SUPPORTED)
         //   3. Everything else (OS picker, Solflare, Seed Vault, unknown) → sign+RPC
         //      This is the safe default: works for every wallet tested and doesn't
         //      require us to guess wallet identity when the OS picker hides it.
@@ -1160,7 +1160,7 @@ export class MWAManager extends Component {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  SIGN AND SEND TRANSACTION — NATIVE MWA 2.0 (advanced, opt-in)
+    //  SIGN AND SEND TRANSACTION - NATIVE MWA 2.0 (advanced, opt-in)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
@@ -1233,7 +1233,7 @@ export class MWAManager extends Component {
             });
             console.log(`${TAG} signAndSendTransactionsNative | STEP_1_PAYLOADS_ENCODED count=${payloadsBase64.length} elapsed_ms=${Date.now() - startTime}`);
 
-            // STEP 2: Auto-fetch minContextSlot if not provided (Phantom requires it — solana-mobile#1146)
+            // STEP 2: Auto-fetch minContextSlot if not provided (Phantom requires it - solana-mobile#1146)
             let minContextSlot = options?.minContextSlot;
             if (minContextSlot == null) {
                 try {
@@ -1271,7 +1271,7 @@ export class MWAManager extends Component {
 
             if (!result || !result.signatures) {
                 console.log(`${TAG} signAndSendTransactionsNative | STEP_5_FAIL empty response elapsed_ms=${Date.now() - startTime}`);
-                this._updateStatus('Sign & send (native) failed — no signatures returned');
+                this._updateStatus('Sign & send (native) failed - no signatures returned');
                 return [];
             }
 
@@ -1293,9 +1293,9 @@ export class MWAManager extends Component {
             this.lastError = { code, message: msg };
             let statusMsg: string;
             if (code === 'WALLET_HUNG') {
-                statusMsg = 'Sign & send crashed — this wallet likely has the Backpack-class bug; use default signAndSendTransaction()';
+                statusMsg = 'Sign & send crashed - this wallet likely has the Backpack-class bug; use default signAndSendTransaction()';
             } else if (code === 'WALLET_AUTH_MISMATCH') {
-                statusMsg = 'Sign & send failed — wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.';
+                statusMsg = 'Sign & send failed - wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.';
             } else {
                 statusMsg = `Sign & send (native) failed: ${msg}`;
             }
@@ -1326,23 +1326,23 @@ export class MWAManager extends Component {
      * pattern: call MWA `sign_transactions` to get signed bytes back, then
      * broadcast each signed transaction via Solana JSON-RPC `sendTransaction`.
      *
-     * Works for every wallet — including Backpack, whose native MWA
+     * Works for every wallet - including Backpack, whose native MWA
      * `sign_and_send_transactions` handler crashes with `JsonDecodingException`.
      * Because Backpack's `sign_transactions` handler works fine, we go through
      * that and broadcast ourselves via the RPC endpoint configured in
      * `SolanaRpc.ts` (mainnet-beta or devnet per `getAppIdentity().cluster`).
      *
-     * Only one wallet intent is opened (the signTransactions call) — same
+     * Only one wallet intent is opened (the signTransactions call) - same
      * UX as MWA's native sign_and_send: one wallet approval. The RPC
      * broadcast is a server-to-server call with no wallet interaction.
      *
      * Logging is verbose and per-step so any failure mode is easy to locate:
-     *   STEP_0_ENTRY   — params snapshot (count + options)
-     *   STEP_1_MWA_SIGN_START / _DONE — signTransactions round-trip
-     *   STEP_2_DECODE[i] — per-tx base64 length check
-     *   STEP_3_RPC_SEND_START[i] / _DONE[i] — per-tx RPC call
-     *   STEP_4_EMIT     — MWA_TRANSACTIONS_SENT emitted
-     *   DONE            — total elapsed
+     *   STEP_0_ENTRY   - params snapshot (count + options)
+     *   STEP_1_MWA_SIGN_START / _DONE - signTransactions round-trip
+     *   STEP_2_DECODE[i] - per-tx base64 length check
+     *   STEP_3_RPC_SEND_START[i] / _DONE[i] - per-tx RPC call
+     *   STEP_4_EMIT     - MWA_TRANSACTIONS_SENT emitted
+     *   DONE            - total elapsed
      *
      * On any failure: populates `lastError` with a specific code and returns
      * an empty array.
@@ -1371,14 +1371,14 @@ export class MWAManager extends Component {
             if (this.connectedPubkey) {
                 const balance = await this._getRpc().getBalance(this.connectedPubkey);
                 if (balance < 0) {
-                    console.log(`${TAG} _signAndBroadcastViaRpc | STEP_PREFLIGHT_BALANCE_UNKNOWN — getBalance failed, proceeding anyway`);
+                    console.log(`${TAG} _signAndBroadcastViaRpc | STEP_PREFLIGHT_BALANCE_UNKNOWN - getBalance failed, proceeding anyway`);
                 } else if (balance < RENT_EXEMPT_MIN_BUFFER_LAMPORTS) {
                     console.log(`${TAG} _signAndBroadcastViaRpc | STEP_PREFLIGHT_FAIL balance=${balance} required=~${RENT_EXEMPT_MIN_BUFFER_LAMPORTS} pubkey=${this.connectedPubkey.substring(0, 8)}…`);
                     this.lastError = {
                         code: 'INSUFFICIENT_FUNDS_FOR_RENT',
                         message: `Fee-payer has ${balance} lamports. Send at least 0.001 SOL to ${this.connectedPubkey} before signing.`,
                     };
-                    this._updateStatus('Fee-payer account underfunded — send ≥0.001 SOL and retry');
+                    this._updateStatus('Fee-payer account underfunded - send ≥0.001 SOL and retry');
                     return [];
                 } else {
                     console.log(`${TAG} _signAndBroadcastViaRpc | STEP_PREFLIGHT_BALANCE_OK balance=${balance} threshold=${RENT_EXEMPT_MIN_BUFFER_LAMPORTS}`);
@@ -1390,13 +1390,13 @@ export class MWAManager extends Component {
             const signed = await this.signTransactions(transactions);
             const signElapsed = Date.now() - startTime;
             if (!signed || signed.length === 0) {
-                console.log(`${TAG} _signAndBroadcastViaRpc | STEP_1_MWA_SIGN_FAIL signTransactions returned empty — lastError=${this.lastError?.code ?? '(none)'} elapsed_ms=${signElapsed}`);
+                console.log(`${TAG} _signAndBroadcastViaRpc | STEP_1_MWA_SIGN_FAIL signTransactions returned empty - lastError=${this.lastError?.code ?? '(none)'} elapsed_ms=${signElapsed}`);
                 if (!this.lastError) {
                     this.lastError = { code: 'EMPTY_SIGNATURE', message: 'Wallet returned no signed transactions' };
                 }
                 this._updateStatus(this.lastError.code === 'WALLET_CRASHED'
                     ? 'Wallet crashed during signing'
-                    : 'Sign failed — nothing to broadcast');
+                    : 'Sign failed - nothing to broadcast');
                 return [];
             }
             console.log(`${TAG} _signAndBroadcastViaRpc | STEP_1_MWA_SIGN_DONE count=${signed.length} first_bytes=${signed[0]?.length ?? 0} elapsed_ms=${signElapsed}`);
@@ -1446,11 +1446,11 @@ export class MWAManager extends Component {
                             code: 'INSUFFICIENT_FUNDS_FOR_RENT',
                             message: `Fee-payer account underfunded. Send at least 0.001 SOL to ${this.connectedPubkey} and retry.`,
                         };
-                        this._updateStatus('Fee-payer account underfunded — send ≥0.001 SOL and retry');
+                        this._updateStatus('Fee-payer account underfunded - send ≥0.001 SOL and retry');
                     } else {
                         console.log(`${TAG} _signAndBroadcastViaRpc | STEP_3_RPC_SEND_FAIL[${i}] RPC returned empty signature rpc_elapsed_ms=${rpcElapsed} rpc_error_code=${rpcErr?.code ?? '(none)'} msg=${rpcErr?.message ?? '(none)'}`);
                         this.lastError = { code: 'RPC_BROADCAST_FAILED', message: rpcErr?.message || 'RPC sendTransaction returned empty signature' };
-                        this._updateStatus('Broadcast failed — RPC rejected the transaction');
+                        this._updateStatus('Broadcast failed - RPC rejected the transaction');
                     }
                     return [];
                 }
@@ -1549,9 +1549,9 @@ export class MWAManager extends Component {
      * Checked in priority order:
      *   1. If we have a cached `get_capabilities` response (from the user
      *      explicitly tapping Get Capabilities earlier in the session),
-     *      trust its `features[]` — per MWA spec that's the authoritative
+     *      trust its `features[]` - per MWA spec that's the authoritative
      *      declaration. Phantom advertises `supports_sign_and_send_transactions`,
-     *      Solflare advertises `solana:signTransactions` — neither includes
+     *      Solflare advertises `solana:signTransactions` - neither includes
      *      any sign_messages variant.
      *   2. Else fall back to a static map of known-bad wallet packages.
      *      Phantom Mobile (`app.phantom`) and Solflare Mobile
@@ -1563,7 +1563,7 @@ export class MWAManager extends Component {
      *      showing nothing.
      *
      * We deliberately do NOT proactively fetch `get_capabilities` after
-     * authorize/reauthorize — doing so would open a second wallet intent
+     * authorize/reauthorize - doing so would open a second wallet intent
      * (breaking the "cached reconnect = instant" UX contract) for no
      * benefit beyond what this static map already covers.
      */
@@ -1603,16 +1603,16 @@ export class MWAManager extends Component {
 
     /**
      * Wallet packages that advertise native MWA `sign_and_send_transactions`
-     * support via their `get_capabilities` feature list and — when targeted
+     * support via their `get_capabilities` feature list and - when targeted
      * via the in-app wallet-list button (which populates `connectedWalletPackage`)
-     * — should be routed to the native path instead of sign+RPC.
+     * - should be routed to the native path instead of sign+RPC.
      *
      * - `app.phantom`: advertises `supports_sign_and_send_transactions` (MWA 1.x)
      * - `ag.jup.app`: advertises `solana:signAndSendTransaction` (MWA 2.0)
      *
      * For OS-picker connections (where `connectedWalletPackage` is empty) we
      * don't know the wallet identity, so we stay on the current sign+RPC
-     * default — that path works for every wallet tested and is the safe
+     * default - that path works for every wallet tested and is the safe
      * behaviour when wallet identity is unknown. See KNOWN_ISSUES.md Issue #13.
      */
     private static readonly _NATIVE_SIGN_AND_SEND_SUPPORTED: Set<string> = new Set([
@@ -1637,14 +1637,14 @@ export class MWAManager extends Component {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Delete account — gated by a real user-intent sign via MWA
+     * Delete account - gated by a real user-intent sign via MWA
      * `sign_transactions` on a memo-only throwaway transaction.
      *
      * Evolution: Pass 6 tried `sign_messages` with SIWS-format text, then
      * empirical testing of `get_capabilities` revealed Phantom Mobile
      * (`features=["supports_sign_and_send_transactions"]`) and Solflare
      * Mobile (`features=["solana:signTransactions"]`) DO NOT declare
-     * `solana:signMessages` support — so `sign_messages` RPC either hangs
+     * `solana:signMessages` support - so `sign_messages` RPC either hangs
      * or is dropped without reply. See KNOWN_ISSUES.md #11.
      *
      * Fix: gate delete on `signTransactions` (which every wallet we target
@@ -1652,18 +1652,18 @@ export class MWAManager extends Component {
      * is the ownership-proof wording. Wallet UI shows "This program will
      * write a memo: <confirmation text>" and the user approves.
      *
-     * The signed transaction is NOT broadcast — we only want the signature
+     * The signed transaction is NOT broadcast - we only want the signature
      * as ownership proof. No on-chain cost, no lamports spent. The fresh
      * blockhash from `getLatestBlockhash` will expire harmlessly.
      *
      * On success: add pubkey to `_deletedPubkeys`, null in-memory state,
      * `_cache.clearAll()`, emit `MWA_DISCONNECTED`, status "Account deleted".
      * On empty sig (user reject / wallet hang / unsupported): leave state
-     * intact, status "Delete cancelled — confirmation required". `lastError`
+     * intact, status "Delete cancelled - confirmation required". `lastError`
      * is preserved from `signTransactions` so AppUI can branch on specific
      * codes (WALLET_CRASHED, WALLET_HUNG, etc.).
      *
-     * No `deauthorize` RPC — matches React Native, Unity, Godot behavior.
+     * No `deauthorize` RPC - matches React Native, Unity, Godot behavior.
      * The wallet-side auth_token is orphaned; `_deletedPubkeys` blocks
      * cached reconnect for the process lifetime.
      */
@@ -1671,8 +1671,8 @@ export class MWAManager extends Component {
         console.log(`${TAG} deleteAccount | START (signTransactions-gated, memo-only) pubkey=${this.connectedPubkey} is_connected=${this.isConnected}`);
 
         if (!this.isConnected) {
-            console.log(`${TAG} deleteAccount | FAIL not connected — nothing to delete`);
-            this._updateStatus('Not connected — cannot delete');
+            console.log(`${TAG} deleteAccount | FAIL not connected - nothing to delete`);
+            this._updateStatus('Not connected - cannot delete');
             return;
         }
 
@@ -1686,7 +1686,7 @@ export class MWAManager extends Component {
         if (!blockhashResult || !blockhashResult.blockhash) {
             console.log(`${TAG} deleteAccount | FAIL could not fetch blockhash`);
             this.lastError = { code: 'RPC_BLOCKHASH_FAILED', message: 'Could not fetch recent blockhash' };
-            this._updateStatus('Delete failed — could not reach Solana RPC');
+            this._updateStatus('Delete failed - could not reach Solana RPC');
             return;
         }
         console.log(`${TAG} deleteAccount | blockhash=${blockhashResult.blockhash.substring(0, 12)}...`);
@@ -1699,28 +1699,28 @@ export class MWAManager extends Component {
         if (!memoTx || memoTx.length === 0) {
             console.log(`${TAG} deleteAccount | FAIL memo tx build returned empty bytes`);
             this.lastError = { code: 'TX_BUILD_FAILED', message: 'Could not build memo transaction' };
-            this._updateStatus('Delete failed — could not build confirmation transaction');
+            this._updateStatus('Delete failed - could not build confirmation transaction');
             return;
         }
         console.log(`${TAG} deleteAccount | memo_tx_bytes=${memoTx.length} memo="${memoText}"`);
 
-        // Step 3: ask wallet to sign. DO NOT broadcast — we only need the
+        // Step 3: ask wallet to sign. DO NOT broadcast - we only need the
         // signature as ownership proof; the tx is intentionally throwaway.
         const signed = await this.signTransactions([memoTx]);
         if (!signed || signed.length === 0 || !signed[0] || signed[0].length === 0) {
             const code = this.lastError?.code ?? 'DELETE_CANCELLED';
             const msg = this.lastError?.message ?? 'User did not confirm';
-            console.log(`${TAG} deleteAccount | CANCELLED signed_count=${signed?.length ?? 0} code=${code} message=${msg} — leaving state intact`);
+            console.log(`${TAG} deleteAccount | CANCELLED signed_count=${signed?.length ?? 0} code=${code} message=${msg} - leaving state intact`);
             // Pass 13: when signTransactions failed with WALLET_AUTH_MISMATCH
             // (Pass 13 / KNOWN_ISSUES #17), tell the user what actually went
             // wrong instead of the misleading "User did not confirm" fallback.
             const statusMsg = code === 'WALLET_AUTH_MISMATCH'
-                ? 'Delete failed — wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
-                : 'Delete cancelled — confirmation required';
+                ? 'Delete failed - wrong wallet picked. Use the wallet you connected with, or Disconnect and Connect again.'
+                : 'Delete cancelled - confirmation required';
             this._updateStatus(statusMsg);
             return;
         }
-        console.log(`${TAG} deleteAccount | CONFIRMED signed_bytes=${signed[0].length} — clearing local state (no broadcast)`);
+        console.log(`${TAG} deleteAccount | CONFIRMED signed_bytes=${signed[0].length} - clearing local state (no broadcast)`);
 
         // Step 4: record deleted pubkey so reauthorize-from-cache rejects it later
         if (oldPubkey) {

@@ -1,5 +1,5 @@
 /**
- * notification_listener.ts — Phase N5 onchain → notifications bridge.
+ * notification_listener.ts - Phase N5 onchain → notifications bridge.
  *
  * Subscribes to program logs via `Connection.onLogs` (mirrors
  * `rake_listener.ts`) and parses raw `msg!()` lines from the program to
@@ -73,7 +73,7 @@ export class NotificationListener {
             console.log(`${TAG} start | OK sub_id=${this._subId} program=${this.opts.programId.toBase58()}`);
             this._retryDelayMs = 2_000;
         } catch (e) {
-            console.warn(`${TAG} start | FAIL ${e} — retrying in ${this._retryDelayMs}ms`);
+            console.warn(`${TAG} start | FAIL ${e} - retrying in ${this._retryDelayMs}ms`);
             this._scheduleRetry();
         }
     }
@@ -95,7 +95,7 @@ export class NotificationListener {
     }
 
     private _handleLine(line: string, slot: number): void {
-        // CREATE — first player joins a fresh match.
+        // CREATE - first player joins a fresh match.
         let m: RegExpExecArray | null;
         if ((m = JOIN_CREATE_RE.exec(line))) {
             const [, matchPda, player, modeStr, wagerStr, windowStr] = m;
@@ -108,7 +108,7 @@ export class NotificationListener {
             console.log(`${TAG} JOIN_CREATE match=${matchPda.slice(0, 8)} player=${player.slice(0, 8)} mode=${modeStr} wager=${wagerStr} window=${windowStr}`);
             return;
         }
-        // JOIN — additional player. Cache + emit on Active flip.
+        // JOIN - additional player. Cache + emit on Active flip.
         if ((m = JOIN_JOIN_RE.exec(line))) {
             const [, matchPda, player, countStr, requiredStr, statusStr] = m;
             const ctx = this._matchCtx.get(matchPda) ?? { players: [], mode: 0, wagerLamports: 0n, window: 0 };
@@ -131,7 +131,7 @@ export class NotificationListener {
                         player: p,
                         title: isCreator ? 'Lobby filled!' : 'Match starting!',
                         body: isCreator
-                            ? `Your ${modeLabel} lobby just filled — race begins now (${windowLabel}, ${wagerSol.toFixed(3)} SOL).`
+                            ? `Your ${modeLabel} lobby just filled - race begins now (${windowLabel}, ${wagerSol.toFixed(3)} SOL).`
                             : `${modeLabel} · ${windowLabel} race · ${wagerSol.toFixed(3)} SOL · tap to spectate.`,
                         payload: { matchPda },
                     });
@@ -139,7 +139,7 @@ export class NotificationListener {
             }
             return;
         }
-        // CANCEL — refund landed.
+        // CANCEL - refund landed.
         if ((m = CANCEL_RE.exec(line))) {
             const [, matchPda, refundLamports, recipient] = m;
             const sol = Number(BigInt(refundLamports)) / 1e9;
@@ -155,7 +155,7 @@ export class NotificationListener {
             this._matchCtx.delete(matchPda);
             return;
         }
-        // SETTLE — winner-take-all + per-player notify.
+        // SETTLE - winner-take-all + per-player notify.
         let settleMatch: RegExpExecArray | null = null;
         if ((settleMatch = SETTLE_VERIFIED_RE.exec(line)) || (settleMatch = FORCE_SETTLE_RE.exec(line)) || (settleMatch = SETTLE_RE.exec(line))) {
             const [, matchPda, winner, rakeStr, potStr] = settleMatch;
@@ -178,7 +178,7 @@ export class NotificationListener {
                 });
             }
             // Winner gets a separate payout notification with the amount.
-            // Top-1 takes (winner-bps × distributable / 10000) — for 1v1 that's 100% of distributable.
+            // Top-1 takes (winner-bps × distributable / 10000) - for 1v1 that's 100% of distributable.
             // For multi-player modes, the listener can't know per-rank payout without
             // fetching the match account; emit total distributable as the upper bound.
             const sol = Number(distributable) / 1e9;

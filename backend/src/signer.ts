@@ -2,9 +2,9 @@
  * Ed25519 receipt signer.
  *
  * Loads the server's secret key from either:
- *   1. `RECEIPT_SIGNER_SECRET` env var (base58-encoded 64-byte secret) — prod path.
+ *   1. `RECEIPT_SIGNER_SECRET` env var (base58-encoded 64-byte secret) - prod path.
  *   2. Deterministic derivation from `token-duel-receipt-signer-devnet-v1`
- *      seed — dev fallback that matches the `RECEIPT_SIGNER_PUBKEY` hard-coded
+ *      seed - dev fallback that matches the `RECEIPT_SIGNER_PUBKEY` hard-coded
  *      into programs/token-duel/src/state.rs. Signals loudly on startup.
  *
  * Produces a signed `ed25519_instruction.data` blob in the exact layout
@@ -37,7 +37,7 @@ function loadKeypairFromEnv(): Keypair {
     const seed = createHash('sha256').update(DEV_SEED_PHRASE).digest();
     const kp = Keypair.fromSeed(seed);
     console.warn(
-        `${TAG} ⚠ RECEIPT_SIGNER_SECRET not set — using deterministic DEV keypair. DO NOT RUN IN PRODUCTION.`,
+        `${TAG} ⚠ RECEIPT_SIGNER_SECRET not set - using deterministic DEV keypair. DO NOT RUN IN PRODUCTION.`,
     );
     console.warn(`${TAG} DEV pubkey=${kp.publicKey.toBase58()} (must match RECEIPT_SIGNER_PUBKEY in state.rs)`);
     return kp;
@@ -67,7 +67,7 @@ export class ReceiptSigner {
         matchPda: PublicKey;
         player: PublicKey;
         height: number;
-        signedAt: number; // unix seconds (i64) — matches Clock::unix_timestamp on-chain
+        signedAt: number; // unix seconds (i64) - matches Clock::unix_timestamp on-chain
     }): { ixDataB64: string; messageHex: string } {
         const message = Buffer.alloc(76);
         opts.matchPda.toBuffer().copy(message, 0);

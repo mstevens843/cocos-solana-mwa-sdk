@@ -1,5 +1,5 @@
 /**
- * MatchLivePnlRpc.ts — one-shot snapshot of every published squad in a
+ * MatchLivePnlRpc.ts - one-shot snapshot of every published squad in a
  * match plus current Birdeye spot prices, ranked by portfolio delta. Used
  * by the MIP "details" modal to render live standings without spinning up
  * a SpectatorRpc WebSocket.

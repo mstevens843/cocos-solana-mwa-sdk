@@ -1,5 +1,5 @@
 /**
- * sharecard.ts — Part 11 Bundle A.
+ * sharecard.ts - Part 11 Bundle A.
  *
  * Renders a 1200×630 PNG (Twitter card dimensions) summarizing a single
  * settled match. Used by the `/sharecard/:matchPda.png` route to produce
@@ -16,7 +16,7 @@
  *   - Right half: placement trophy + payout amount (gold) + mode/window badges
  *   - Footer: "Token Duel · Portfolio Race on Solana" + truncated match PDA
  *
- * The file uses @napi-rs/canvas — native bindings, no headless Chromium.
+ * The file uses @napi-rs/canvas - native bindings, no headless Chromium.
  */
 
 /** Score encoding (mirrors client-side `ScoreEncoding.ts`). */

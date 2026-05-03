@@ -1,12 +1,12 @@
 /**
- * match_history.ts — DB-backed per-player match history (DB Stage 4).
+ * match_history.ts - DB-backed per-player match history (DB Stage 4).
  *
  * Client-uploaded records. The on-chain MatchAccount remains the audit
  * source-of-truth; this table is a denormalized projection optimized for
  * "matches I've played" queries. INSERTs are idempotent on match_pda.
  *
  * Trust model: clients could lie about heights/winner. Acceptable for v1
- * because on-chain settlement is the authoritative scoreboard — DB is
+ * because on-chain settlement is the authoritative scoreboard - DB is
  * read-only display. Production would verify via Solana RPC fetch.
  */
 import { query, queryOne, dbConfigured } from './db';
@@ -28,6 +28,11 @@ export interface MatchHistoryRecord {
     createdAt: string | Date;
     startedAt?: string | Date | null;
     settledAt: string | Date;
+    /** Base58 mint of the wager currency. NATIVE_SOL_MINT for SOL matches,
+     *  SKR mint (cluster-specific) for SKR matches. Empty string on pre-006
+     *  rows; new writes always populate it. Drives Portfolio Real per-currency
+     *  P/L aggregation. */
+    wagerMint: string;
 }
 
 /** ISO week string for token_winrates bucket. e.g., "2026-W17". */
@@ -47,7 +52,7 @@ export interface RecordResult {
 
 /**
  * Upsert a match record. Returns { inserted: false } if a row with this
- * matchPda already exists (idempotent — second player's upload is a no-op).
+ * matchPda already exists (idempotent - second player's upload is a no-op).
  */
 export async function recordMatch(rec: MatchHistoryRecord, squadMintsByPlayer?: Record<string, string[]>): Promise<RecordResult> {
     if (!dbConfigured()) throw new Error('db not configured');
@@ -59,14 +64,14 @@ export async function recordMatch(rec: MatchHistoryRecord, squadMintsByPlayer?: 
         `INSERT INTO match_history
             (match_pda, mode_u8, wager_tier, wager_lamports, time_window,
              players, heights, winner_pubkey, payouts_json, rake_lamports,
-             status, created_at, started_at, settled_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)
+             status, created_at, started_at, settled_at, wager_mint)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (match_pda) DO NOTHING
          RETURNING match_pda`,
         [
             rec.matchPda, rec.modeU8, rec.wagerTier, rec.wagerLamports, rec.timeWindow,
             rec.players, rec.heights, rec.winnerPubkey, JSON.stringify(rec.payouts), rec.rakeLamports,
-            rec.status, rec.createdAt, rec.startedAt ?? null, rec.settledAt,
+            rec.status, rec.createdAt, rec.startedAt ?? null, rec.settledAt, rec.wagerMint ?? '',
         ],
     );
 
@@ -118,6 +123,7 @@ export interface HistoryListItem {
     created_at: Date;
     started_at: Date | null;
     settled_at: Date;
+    wager_mint: string;
 }
 
 /** Per-player history. Uses GIN index on players[] for fast lookup. */

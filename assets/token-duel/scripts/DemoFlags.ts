@@ -1,5 +1,5 @@
 /**
- * DemoFlags.ts — single-source switches for demo / video-recording modes.
+ * DemoFlags.ts - single-source switches for demo / video-recording modes.
  *
  * Keep this file tiny and grep-friendly. Imported by the small number of
  * runtime modules that have to behave differently when we're recording a
@@ -7,7 +7,7 @@
  */
 
 /**
- * DEMO_FAKE_PRICES — master switch for the recorded-demo race.
+ * DEMO_FAKE_PRICES - master switch for the recorded-demo race.
  *
  * `true`  → both player and bot use synthetic deltas (eased random walk).
  *           Use this for video recording: per-token cards animate even when
@@ -15,13 +15,13 @@
  *           movement inside a 30-second race.
  *
  * `false` → player uses real Birdeye prices (PortfolioRace polls every tick);
- *           bot remains synthetic (LiveSquadBot — same as has been shipping).
+ *           bot remains synthetic (LiveSquadBot - same as has been shipping).
  *           Wiring the bot to real Birdeye prices is a separate change.
  */
 export const DEMO_FAKE_PRICES = true;
 
 /**
- * DEBUG_POSTMATCH — verbose post-match panel diagnostics.
+ * DEBUG_POSTMATCH - verbose post-match panel diagnostics.
  *
  * `true`  → AppUI dumps button health (active / interactable / contentSize /
  *           UIOpacity / world AABB / parent-chain inactive ancestor) at
@@ -37,7 +37,7 @@ export const DEMO_FAKE_PRICES = true;
 export const DEBUG_POSTMATCH = true;
 
 /**
- * USE_POSTMATCH_V2 — Attempt 9 ground-up rebuild.
+ * USE_POSTMATCH_V2 - Attempt 9 ground-up rebuild.
  *
  * `true`  → AppUI._showPostMatchPanel routes to PostMatchPanelV2 (a fresh
  *           code-built panel parented to Canvas root with raw TOUCH_END

@@ -1,5 +1,5 @@
 /**
- * safeGraphics.ts — engine-safe Graphics attachment + boot-phase watcher.
+ * safeGraphics.ts - engine-safe Graphics attachment + boot-phase watcher.
  *
  * # The bug we're guarding against
  *
@@ -10,7 +10,7 @@
  * half-attached render entity. Dies as `Fatal signal 11 (SIGSEGV), code 1`.
  *
  * The fix is to defer the attach to `Director.EVENT_AFTER_DRAW`, which fires
- * at the end of the just-completed draw walk — the entity tree is stable
+ * at the end of the just-completed draw walk - the entity tree is stable
  * then, and the next DRAW walks it cleanly.
  *
  * Empirically validated 2026-04-29: scheduleOnce(0) is NOT sufficient
@@ -33,7 +33,7 @@
  *
  * The watcher logs every Graphics creation during the first 8 ticks with the
  * draw-phase context. If a SIGSEGV happens, the last `[SafeGraphics]
- * addComponent` log line before the crash names the offending Node — no
+ * addComponent` log line before the crash names the offending Node - no
  * bisection needed.
  */
 
@@ -82,7 +82,7 @@ function _schedulePump(): void {
  * construction (Graphics, Sprite-strip-and-replace, child-node-with-Graphics).
  *
  * Each call queues exactly one work unit. If you have N Graphics to add, make
- * N calls — the queue spreads them across ticks under the budget.
+ * N calls - the queue spreads them across ticks under the budget.
  */
 export function enqueuePostDraw(work: () => void): void {
     _queue.push(work);
@@ -130,16 +130,16 @@ export function safeAddGraphics(
  * call site (via `console.trace`). The watcher auto-uninstalls after maxTicks
  * to keep zero runtime cost post-boot.
  *
- * Idempotent — call once at boot. Safe to call from AppUI.start.
+ * Idempotent - call once at boot. Safe to call from AppUI.start.
  */
 export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOnUnsafe?: boolean; throwOnUnsafe?: boolean } = {}): void {
     if (_watcherInstalled) return;
     _watcherInstalled = true;
 
-    // 2026-04-30 Fix 11 — in dev (Cocos Editor preview / DEBUG APK), throw on
+    // 2026-04-30 Fix 11 - in dev (Cocos Editor preview / DEBUG APK), throw on
     // any tick<3 unsafe Graphics attach so the offending site fails loudly
     // instead of probabilistically SIGSEGV-ing later. Production builds keep
-    // warn-only behavior — never crash a shipped APK over a render-entity
+    // warn-only behavior - never crash a shipped APK over a render-entity
     // bug. EDITOR/DEBUG are Cocos build constants:
     // https://docs.cocos.com/creator/3.8/manual/en/scripting/build-constants.html
     /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -174,7 +174,7 @@ export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOn
     proto.addComponent = function (this: Node, ...args: any[]): any {
         const result = orig.apply(this, args);
 
-        // Auto-uninstall once we're past the boot window — restores native
+        // Auto-uninstall once we're past the boot window - restores native
         // method to keep runtime cost zero.
         if (_tickNum > maxTicks) {
             proto.addComponent = proto.__sg_orig_addComponent;
@@ -188,7 +188,7 @@ export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOn
             const argLabel = typeof arg0 === 'function' ? (arg0.name || '?') : String(arg0);
             console.log(`${TAG} addComponent | tick=${_tickNum} phase=${phase} type=${argLabel} on="${this.name}"`);
             if (!_inAfterDrawWindow && _tickNum < 3) {
-                const msg = `${TAG} Graphics added on "${this.name}" at tick=${_tickNum} OUTSIDE AFTER_DRAW — likely engine SIGSEGV (0x28) trigger. Wrap in safeAddGraphics() or enqueuePostDraw() from assets/token-duel/scripts/safeGraphics.ts.`;
+                const msg = `${TAG} Graphics added on "${this.name}" at tick=${_tickNum} OUTSIDE AFTER_DRAW - likely engine SIGSEGV (0x28) trigger. Wrap in safeAddGraphics() or enqueuePostDraw() from assets/token-duel/scripts/safeGraphics.ts.`;
                 if (throwOnUnsafe) {
                     // Dev (EDITOR || DEBUG): hard-fail at the offending site
                     // so the bug is impossible to ignore. Throwing here also
@@ -206,5 +206,5 @@ export function installGraphicsCreationWatcher(opts: { maxTicks?: number; warnOn
     };
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
-    console.log(`${TAG} watcher installed — logging Graphics creations for first ${maxTicks} ticks (auto-uninstalls after)`);
+    console.log(`${TAG} watcher installed - logging Graphics creations for first ${maxTicks} ticks (auto-uninstalls after)`);
 }

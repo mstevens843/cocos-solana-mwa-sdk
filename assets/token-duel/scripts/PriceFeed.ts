@@ -1,5 +1,5 @@
 /**
- * PriceFeed.ts — Live 24h price feed backed by Birdeye.
+ * PriceFeed.ts - Live 24h price feed backed by Birdeye.
  *
  * Replaces (but does not remove) `PriceFeedMock`. The mock remains the
  * fallback path when (a) Birdeye is unreachable, (b) the API key is
@@ -8,7 +8,7 @@
  *
  * Two consumption modes:
  *
- *   1. One-shot: `getSessionDeltas(mints)` — returns a map of mint → 24h %
+ *   1. One-shot: `getSessionDeltas(mints)` - returns a map of mint → 24h %
  *      as `{ [mint]: number }`. Mirrors the old PriceFeedMock signature so
  *      TokenDuelGame can drop this in without structural changes.
  *
@@ -54,7 +54,7 @@ export class PriceFeed {
     setTimeframe(window: TimeWindowId): void {
         const def = TIME_WINDOWS[window];
         if (!def) {
-            console.log(`${TAG} setTimeframe | UNKNOWN_WINDOW window="${window}" — keeping ${this._currentTimeframe}`);
+            console.log(`${TAG} setTimeframe | UNKNOWN_WINDOW window="${window}" - keeping ${this._currentTimeframe}`);
             return;
         }
         const prev = this._currentTimeframe;
@@ -88,7 +88,7 @@ export class PriceFeed {
         // for newly-launched pump.fun mints every match. Callers tolerate
         // an empty map (fallback entry prices come from the trending feed
         // snapshot already cached on the squad).
-        console.log(`${TAG} getSessionDeltas | BETTING_DUEL_SKIP_24H_DELTA mints=${mints.length} — spotPriceMulti drives the race`);
+        console.log(`${TAG} getSessionDeltas | BETTING_DUEL_SKIP_24H_DELTA mints=${mints.length} - spotPriceMulti drives the race`);
         return {};
     }
 
@@ -99,7 +99,7 @@ export class PriceFeed {
      * answered. Missing mints are omitted (caller must tolerate absence).
      *
      * Uses `/defi/multi_price` (broader token coverage than
-     * `/defi/price_volume/multi` — new pump.fun tokens that 404 on the
+     * `/defi/price_volume/multi` - new pump.fun tokens that 404 on the
      * latter resolve here). Delegates to BirdeyeClient.spotPriceMulti
      * which swallows network errors and returns {} on failure.
      */
@@ -122,7 +122,7 @@ export class PriceFeed {
         const jupiter = await this._jupiterClient.fetchPrices(missing);
         // Birdeye wins on overlap (it can't happen since we only asked Jupiter
         // for mints Birdeye missed, but spread order makes the precedence
-        // explicit — defensive against future contract drift).
+        // explicit - defensive against future contract drift).
         const merged: Record<string, number> = { ...jupiter, ...birdeye };
         const stillMissing = mints.length - Object.keys(merged).length;
         console.log(`${TAG} getSpotPrices | DONE mints=${mints.length} birdeye=${Object.keys(birdeye).length} jupiter=${Object.keys(jupiter).length} total=${Object.keys(merged).length} still_missing=${stillMissing}`);
@@ -133,7 +133,7 @@ export class PriceFeed {
      * Begin a polling loop against Birdeye every `PRICE_FEED_POLL_MS` ms.
      * Calls `onTick` once immediately, then on each interval.
      *
-     * Idempotent — calling `start` with new mints stops the previous loop.
+     * Idempotent - calling `start` with new mints stops the previous loop.
      */
     start(mints: string[], onTick: PriceTickListener): void {
         console.log(`${TAG} start | START mints=${mints.length}`);
@@ -141,10 +141,10 @@ export class PriceFeed {
         this._lastMints = mints.slice();
 
         if (typeof setInterval !== 'function') {
-            // Cocos Android runtime exposes setInterval via the JSB bridge — if
+            // Cocos Android runtime exposes setInterval via the JSB bridge - if
             // it's missing, the app is running in a stripped-down env (tests,
             // headless tooling). Fire a single tick instead of silent no-op.
-            console.log(`${TAG} start | NO_SET_INTERVAL — firing one-shot tick only`);
+            console.log(`${TAG} start | NO_SET_INTERVAL - firing one-shot tick only`);
             this._client.priceMulti(this._lastMints, this._currentTimeframe).then((updates) => {
                 try { onTick(updates); } catch (e) { console.log(`${TAG} start.tick | LISTENER_ERROR error=${e}`); }
             }).catch((e) => console.log(`${TAG} start | ONE_SHOT_ERROR error=${e}`));
@@ -181,7 +181,7 @@ export class PriceFeed {
     /**
      * Session 11: backfill price / 24h% / volume on rows that came back from
      * Birdeye without them. Particularly for `/defi/v2/tokens/new_listing`
-     * which only returns address + symbol + liquidity — the trade-tab UI
+     * which only returns address + symbol + liquidity - the trade-tab UI
      * needs price + change to render sensibly.
      *
      * Only calls Birdeye when there ARE rows missing data. Returns a NEW
@@ -200,7 +200,7 @@ export class PriceFeed {
         try {
             live = await this._client.priceMulti(mints);
         } catch (e) {
-            console.log(`${TAG} enrichRows | ENRICH_ERROR error=${e} — returning rows as-is`);
+            console.log(`${TAG} enrichRows | ENRICH_ERROR error=${e} - returning rows as-is`);
             return rows;
         }
         let applied = 0;
@@ -235,7 +235,7 @@ export class PriceFeed {
         try {
             meta = await this._client.getMetaDataMulti(needLogo.map((r) => r.address));
         } catch (e) {
-            console.log(`${TAG} enrichLogos | ERROR error=${e} — returning rows as-is`);
+            console.log(`${TAG} enrichLogos | ERROR error=${e} - returning rows as-is`);
             return rows;
         }
         let applied = 0;

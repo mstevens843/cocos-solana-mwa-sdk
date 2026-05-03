@@ -1,7 +1,7 @@
-// fees.js — Part 13 Bundle D.
+// fees.js - Part 13 Bundle D.
 // Loads the admin snapshot once on page load (the page is public;
 // no token gate) and populates the 3 hero stats. No auto-refresh
-// — users reload to see fresh numbers.
+// - users reload to see fresh numbers.
 
 (function () {
   'use strict';
@@ -30,7 +30,7 @@
       console.error('fees snapshot fetch failed:', e);
       ['rakeWeek', 'rakeAllTime', 'matchesWitnessed'].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.textContent = '—';
+        if (el) el.textContent = '-';
       });
     });
 })();

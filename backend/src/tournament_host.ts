@@ -1,9 +1,9 @@
 /**
- * tournament_host — Part 14 Bundle A.
+ * tournament_host - Part 14 Bundle A.
  *
  * Scheduled cron that seeds a BattleRoyale match every N minutes using a
  * dedicated "tournament host" keypair as player 0. The host's stake
- * subsidizes the winner pot (a "prize-seed bonus") — the host never
+ * subsidizes the winner pot (a "prize-seed bonus") - the host never
  * submits a height, so `force_settle` after 5 min forfeits its slot and
  * redistributes the full pot among the real players who did submit.
  *
@@ -38,9 +38,9 @@ const COUNTER_SEQ_OFFSET = 8;
 
 /** BattleRoyale mode byte (10 required players). */
 const MODE_BR: number = 3;
-/** INTRO wager tier index (0.001 SOL) — see state.rs WAGER_TIERS[5]. */
+/** INTRO wager tier index (0.001 SOL) - see state.rs WAGER_TIERS[5]. */
 const STAKE_TIER_INTRO: number = 5;
-/** Default time window byte (1 = 24h) — keeps widths generous for tournaments. */
+/** Default time window byte (1 = 24h) - keeps widths generous for tournaments. */
 const DEFAULT_TIME_WINDOW_24H: number = 1;
 
 export interface TournamentHostOptions {
@@ -134,7 +134,7 @@ export class TournamentHost {
                 lastErr = e;
                 const isRace = ['already in use', 'accountalreadyinuse', '0x0'].some((m) => msg.includes(m));
                 if (!isRace) throw e;
-                console.warn(`${TAG} createTournamentMatch | RACE attempt=${attempt}/3 — rereading counter`);
+                console.warn(`${TAG} createTournamentMatch | RACE attempt=${attempt}/3 - rereading counter`);
             }
         }
         throw lastErr ?? new Error(`${TAG} createTournamentMatch failed after 3 attempts`);
@@ -144,7 +144,7 @@ export class TournamentHost {
         const counterPda = new PublicKey(AnchorBackend.deriveMatchCounterPda());
         const info = await this.opts.connection.getAccountInfo(counterPda, 'confirmed');
         if (!info || !info.data) {
-            throw new Error(`${TAG} MatchCounter PDA not found at ${counterPda.toBase58()} — run scripts/init-match-counter first`);
+            throw new Error(`${TAG} MatchCounter PDA not found at ${counterPda.toBase58()} - run scripts/init-match-counter first`);
         }
         // Anchor account: 8-byte disc, then u64 LE seq.
         const data = info.data;

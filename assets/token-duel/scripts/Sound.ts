@@ -1,5 +1,5 @@
 /**
- * Sound.ts — Part 11 Bundle C.
+ * Sound.ts - Part 11 Bundle C.
  *
  * Lightweight wrapper over Cocos 3.8 `AudioSource` for short one-shot SFX.
  * Files live in `assets/token-duel/audio/`:
@@ -39,7 +39,7 @@ let _source: AudioSource | null = null;
 const _clips: Map<SoundKey, AudioClip> = new Map();
 let _volume: number = 0.7;   // 0..1
 let _enabled: boolean = true;
-/** DB Stage 10 — pubkey for cross-device preferences sync. Null = guest. */
+/** DB Stage 10 - pubkey for cross-device preferences sync. Null = guest. */
 let _syncPubkey: string | null = null;
 
 function _syncPref(patch: { soundEnabled?: boolean; soundVolume?: number }): void {
@@ -74,7 +74,7 @@ function loadSettings(): void {
     if (rawOn !== null) _enabled = rawOn === 'true';
 }
 
-/** Initialize Sound subsystem. Idempotent — safe to call from AppUI.onLoad. */
+/** Initialize Sound subsystem. Idempotent - safe to call from AppUI.onLoad. */
 export function initSound(parent: CCNode): void {
     if (_initialized) return;
     _initialized = true;
@@ -92,7 +92,7 @@ export function initSound(parent: CCNode): void {
     for (const k of keys) {
         resources.load(`${ASSET_PATH}/${k}`, AudioClip, (err, clip) => {
             if (err || !clip) {
-                console.log(`${TAG} load | MISSING ${k}.mp3 (${err?.message ?? 'no clip'}) — play('${k}') will no-op`);
+                console.log(`${TAG} load | MISSING ${k}.mp3 (${err?.message ?? 'no clip'}) - play('${k}') will no-op`);
                 return;
             }
             _clips.set(k, clip);
@@ -135,7 +135,7 @@ export function setEnabled(on: boolean): void {
 
 export function isEnabled(): boolean { return _enabled; }
 
-/** DB Stage 10 — bind audio settings to a pubkey for cross-device sync. Pass null to detach. */
+/** DB Stage 10 - bind audio settings to a pubkey for cross-device sync. Pass null to detach. */
 export function setSoundSyncPubkey(pubkey: string | null): void {
     _syncPubkey = pubkey || null;
 }

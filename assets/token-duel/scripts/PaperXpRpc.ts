@@ -1,8 +1,8 @@
 /**
- * PaperXpRpc.ts — DB Stage 3 client wrapper for cross-device paper/bot XP.
+ * PaperXpRpc.ts - DB Stage 3 client wrapper for cross-device paper/bot XP.
  *
  * Backend persistence at `paper_xp` table. Real-mode XP stays on-chain
- * (UserStats PDA) — this module only handles paper/bot training XP.
+ * (UserStats PDA) - this module only handles paper/bot training XP.
  *
  * Read pattern: stale-while-revalidate. Sync local cache returns instantly;
  * async fetch updates the cache for the next render.
@@ -59,9 +59,9 @@ export async function fetchPaperXp(pubkey: string): Promise<PaperXpResponse | nu
 /**
  * Post a paper-match XP delta. Fire-and-forget; failures are logged but
  * don't throw. The local Stats system remains the device-side source of
- * truth — next successful sync picks up the missed delta.
+ * truth - next successful sync picks up the missed delta.
  *
- * profitLamportsDelta is **signed** — losses send a negative value. Pass
+ * profitLamportsDelta is **signed** - losses send a negative value. Pass
  * `undefined` to skip profit accounting (back-compat with callers that
  * don't yet thread it through).
  */

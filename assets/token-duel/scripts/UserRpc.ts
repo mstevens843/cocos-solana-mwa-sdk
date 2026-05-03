@@ -1,5 +1,5 @@
 /**
- * UserRpc.ts — DB Stage 2 client wrapper for the backend `users` table.
+ * UserRpc.ts - DB Stage 2 client wrapper for the backend `users` table.
  *
  * Provides display-name lookup + setter. Fail-soft when backend is offline:
  * `getUsername` returns null, callers fall back to truncated pubkey.

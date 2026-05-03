@@ -1,5 +1,5 @@
 /**
- * AuthCache.ts — Persistent auth token cache for MWA session reuse.
+ * AuthCache.ts - Persistent auth token cache for MWA session reuse.
  *
  * Port of Unity's AuthCache.cs / Godot's auth_cache.gd.
  * Uses Cocos Creator's sys.localStorage (backed by SQLite on native).
@@ -91,7 +91,7 @@ export class AuthCache implements IMWAAuthCache {
 
         // Bug U3 prevention: warn if auth token is empty
         if (!authToken || authToken.length === 0) {
-            console.log(`${TAG} set | WARN auth_token is empty — reauthorization may not work`);
+            console.log(`${TAG} set | WARN auth_token is empty - reauthorization may not work`);
         }
 
         const cached: CachedAuth = {
@@ -122,7 +122,7 @@ export class AuthCache implements IMWAAuthCache {
     }
 
     /**
-     * Mark an existing cache entry as disconnected — flips `isAuthenticated`
+     * Mark an existing cache entry as disconnected - flips `isAuthenticated`
      * to `false` while preserving all other fields so the Landing Reconnect
      * (cached) button continues to work. Used by `MWAManager.deauthorize()`.
      * No-op when the entry doesn't exist.
@@ -152,7 +152,7 @@ export class AuthCache implements IMWAAuthCache {
             console.log(`${TAG} hasAutoLoginAuth | result=false reason=no_cached_auth`);
             return false;
         }
-        // Legacy pre-Pass-10 entries have `isAuthenticated === undefined` —
+        // Legacy pre-Pass-10 entries have `isAuthenticated === undefined` -
         // treat those as authenticated so upgrades don't log users out.
         const authed = latest.isAuthenticated !== false;
         console.log(`${TAG} hasAutoLoginAuth | result=${authed} pubkey=${latest.pubkey} isAuthenticated=${latest.isAuthenticated ?? '(legacy/undefined)'}`);

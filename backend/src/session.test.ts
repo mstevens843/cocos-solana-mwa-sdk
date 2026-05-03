@@ -1,5 +1,5 @@
 /**
- * session.test.ts — end-to-end WS smoke test.
+ * session.test.ts - end-to-end WS smoke test.
  *
  * Boots the backend in-process, POSTs /session/start, opens a WS, sends 3
  * valid drops + a finalize, and verifies the returned receipt is a valid

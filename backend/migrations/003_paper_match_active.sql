@@ -1,4 +1,4 @@
--- Token Duel — In-flight paper / bot matches (DB Stage 7)
+-- Token Duel - In-flight paper / bot matches (DB Stage 7)
 -- Signed-in users persist their currently-running paper matches here so MIP
 -- shows them cross-device. Guest matches stay in-memory client-side only.
 -- Rows are removed on race end (settle / forfeit / natural finish), and any

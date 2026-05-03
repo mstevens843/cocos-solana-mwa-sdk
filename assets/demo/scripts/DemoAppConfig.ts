@@ -1,5 +1,5 @@
 /**
- * DemoAppConfig.ts — Sets the app identity for the MWA demo app.
+ * DemoAppConfig.ts - Sets the app identity for the MWA demo app.
  *
  * Attach this Component to a persistent root node (or the same node as MWAManager).
  * It runs before LandingUI/HomeUI and configures the app identity
@@ -16,11 +16,11 @@ const TAG = '[DemoAppConfig]';
 export class DemoAppConfig extends Component {
 
     onLoad(): void {
-        console.log(`${TAG} onLoad | START — configuring demo app identity`);
+        console.log(`${TAG} onLoad | START - configuring demo app identity`);
 
         // betting-duel: point client HTTP + WS at the deployed Render backend
         // so live opponent delta (publish-squad + /match/:pda/spectate) works
-        // on real devices. Set BEFORE any code imports constants.ts — AppUI
+        // on real devices. Set BEFORE any code imports constants.ts - AppUI
         // reads RECEIPT_BACKEND_URL at module load, which resolves to
         // globalThis.TD_RECEIPT_URL if set, else falls back to the 10.0.2.2
         // emulator address.
@@ -37,13 +37,13 @@ export class DemoAppConfig extends Component {
         // devnet with a "network not supported" toast and never replies
         // (90s id=1 timeout inside the Kotlin client). Jupiter's Seeker
         // integration is also mainnet-only. Blowfish warnings on an
-        // unregistered dApp identity are a wallet UX policy, not a code bug —
+        // unregistered dApp identity are a wallet UX policy, not a code bug -
         // the real fix is registering the dApp with Phantom's verification
         // program, documented in KNOWN_ISSUES.md #12. Downstream SDK consumers
         // can still override via `setAppIdentity()` / `setCluster()`.
         // Phase 6: switched to devnet so the Token Duel panel can invoke the
         // deployed Anchor program at 14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd.
-        // Backpack rejects devnet (KNOWN_ISSUES.md #6) — accepted v1 limitation.
+        // Backpack rejects devnet (KNOWN_ISSUES.md #6) - accepted v1 limitation.
         // Phase 7 flips back to mainnet-beta once the program redeploys there.
         const identity = {
             appName: 'Cocos MWA SDK Demo',
@@ -56,7 +56,7 @@ export class DemoAppConfig extends Component {
         // Pass 12: SIWS-on-Connect is gated behind a feature flag so the demo
         // ships with the plain-`authorize` path that works on all five wallets
         // (including Solflare, whose MWA implementation crashes when the
-        // authorize request carries a `sign_in_payload` — KNOWN_ISSUES.md #6
+        // authorize request carries a `sign_in_payload` - KNOWN_ISSUES.md #6
         // and the test matrix in #16).
         //
         // Flip `USE_SIWS_ON_CONNECT` to `true` to re-engage the Pass 11 SIWS
@@ -66,7 +66,7 @@ export class DemoAppConfig extends Component {
         // Phantom degrades to authorize-only via the Java-side 15 s
         // `SIWS_FALLBACK_TIMEOUT_MS`, and Solflare crashes.
         //
-        // Routing is implemented in `MWAManager.authorize()` — when
+        // Routing is implemented in `MWAManager.authorize()` - when
         // `getSiwsIdentity().domain` is non-empty it delegates to
         // `authorizeSiws()`; empty domain takes the plain path. The SDK itself
         // is unchanged by this flag; downstream SDK consumers pick SIWS by
@@ -83,11 +83,11 @@ export class DemoAppConfig extends Component {
         } else {
             // Empty domain disables the SIWS route in `MWAManager.authorize()`.
             setSiwsIdentity({ domain: '', statement: '' });
-            console.log(`${TAG} onLoad | SIWS=off — Connect uses plain authorize (works on all 5 wallets including Solflare)`);
+            console.log(`${TAG} onLoad | SIWS=off - Connect uses plain authorize (works on all 5 wallets including Solflare)`);
         }
 
         console.log(`${TAG} onLoad | DONE appName="${identity.appName}" appUri="${identity.appUri}" appIconPath="${identity.appIconPath}" cluster="${identity.cluster}" siws_on_connect=${USE_SIWS_ON_CONNECT}`);
-        console.log(`${TAG} onLoad | NOTE demo cluster defaults to devnet (Phase 6 — Token Duel Anchor program lives at 14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd on devnet); Phase 7 flips back to mainnet-beta. Call setCluster('mainnet-beta') for mainnet testing.`);
+        console.log(`${TAG} onLoad | NOTE demo cluster defaults to devnet (Phase 6 - Token Duel Anchor program lives at 14H1RLeqzU2rCnpnsLakVCtcmfZcuS4LvzwfhiY3AQbd on devnet); Phase 7 flips back to mainnet-beta. Call setCluster('mainnet-beta') for mainnet testing.`);
         console.log(`${TAG} onLoad | NOTE flip USE_SIWS_ON_CONNECT=true in this file to re-engage Pass 11 SIWS flow (KNOWN_ISSUES.md #16)`);
     }
 }

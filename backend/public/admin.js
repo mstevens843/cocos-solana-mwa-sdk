@@ -1,4 +1,4 @@
-// admin.js — Part 12 Bundle B.
+// admin.js - Part 12 Bundle B.
 // Pure vanilla JS; no framework. Opens an EventSource on /admin/stream,
 // renders StatsSnapshot on each event. Auto-reconnects on drop via
 // EventSource's native behavior (browser handles it with exponential backoff).
@@ -53,7 +53,7 @@
 
   function renderReceipts(entries) {
     if (!entries || entries.length === 0) {
-      receiptsList.innerHTML = '<div class="log-empty">No receipts yet — waiting for the first match to finalize.</div>';
+      receiptsList.innerHTML = '<div class="log-empty">No receipts yet - waiting for the first match to finalize.</div>';
       return;
     }
     receiptsList.innerHTML = entries.map((e) => `
@@ -93,7 +93,7 @@
   function renderSettlements(entries) {
     if (!settlementsList) return;
     if (!entries || entries.length === 0) {
-      settlementsList.innerHTML = '<div class="log-empty">No settlements yet — listener is armed.</div>';
+      settlementsList.innerHTML = '<div class="log-empty">No settlements yet - listener is armed.</div>';
       return;
     }
     settlementsList.innerHTML = entries.map((e) => `
@@ -108,7 +108,7 @@
   function renderTokenStats(rows) {
     if (!tokenStatsBody) return;
     if (!rows || rows.length === 0) {
-      tokenStatsBody.innerHTML = '<tr><td colspan="4" class="empty">no matches yet — play a few to populate</td></tr>';
+      tokenStatsBody.innerHTML = '<tr><td colspan="4" class="empty">no matches yet - play a few to populate</td></tr>';
       return;
     }
     tokenStatsBody.innerHTML = rows.map((r) => `

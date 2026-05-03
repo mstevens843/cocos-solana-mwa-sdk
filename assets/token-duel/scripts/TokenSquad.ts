@@ -1,18 +1,18 @@
 /**
- * TokenSquad.ts — 3-slot token squad state for the Token Duel picker.
+ * TokenSquad.ts - 3-slot token squad state for the Token Duel picker.
  *
  * Plain TypeScript class (no Cocos coupling). AppUI owns the instance and
  * wires it to the feed-row taps; TokenDuelGame subscribes via `onChange` to
  * restyle falling blocks when the squad changes mid-game.
  *
- * Slots are ordered — index 0 is primary, 1/2 are secondaries. The game
+ * Slots are ordered - index 0 is primary, 1/2 are secondaries. The game
  * cycles through them in order when spawning blocks.
  *
  * Invariants:
  *   - `slots.length === SQUAD_SIZE` always.
  *   - An empty slot is represented by `null` (not `undefined`) so consumers
  *     can index without optional chaining collapsing empty + missing.
- *   - Adding a token that's already in another slot swaps — no duplicates.
+ *   - Adding a token that's already in another slot swaps - no duplicates.
  */
 
 import { SQUAD_SIZE } from './constants';
@@ -54,9 +54,9 @@ export class TokenSquad {
      */
     add(row: TokenRow): number {
         if (!row.address) {
-            // Caller handed us a malformed row — usually means a Birdeye
+            // Caller handed us a malformed row - usually means a Birdeye
             // response was missing `address`. Don't silently swallow.
-            console.log(`${TAG} add | MISSING_ADDRESS symbol="${row.symbol}" name="${row.name}" — rejecting`);
+            console.log(`${TAG} add | MISSING_ADDRESS symbol="${row.symbol}" name="${row.name}" - rejecting`);
             return -1;
         }
         const dup = this._findIndex(row.address);
@@ -67,7 +67,7 @@ export class TokenSquad {
 
         let idx = this._slots.indexOf(null);
         if (idx === -1) {
-            // Full — evict slot 0 (oldest), shift others left.
+            // Full - evict slot 0 (oldest), shift others left.
             console.log(`${TAG} add | FULL evicting slot0=${this._slots[0]?.symbol ?? 'null'}`);
             this._slots[0] = this._slots[1];
             this._slots[1] = this._slots[2];
@@ -118,7 +118,7 @@ export class TokenSquad {
 
     /**
      * Merge fresh 24h % data into whichever slots hold those mints.
-     * Non-destructive — rows not present in `priceMap` keep their last value.
+     * Non-destructive - rows not present in `priceMap` keep their last value.
      * Skips the emit if nothing changed so the game doesn't re-skin on every
      * no-op poll.
      */
@@ -132,8 +132,8 @@ export class TokenSquad {
             const update = priceMap[s.address];
             if (!update) { missingSlots++; continue; }
             if (!Number.isFinite(update.priceUsd) || !Number.isFinite(update.change24hPct) || !Number.isFinite(update.volume24hUsd)) {
-                // Guard against poisoning the squad UI with NaN — keep prior values.
-                console.log(`${TAG} applyPriceUpdates | NAN_UPDATE slot=${i} mint=${s.address} price=${update.priceUsd} change=${update.change24hPct} volume=${update.volume24hUsd} — keeping prior`);
+                // Guard against poisoning the squad UI with NaN - keep prior values.
+                console.log(`${TAG} applyPriceUpdates | NAN_UPDATE slot=${i} mint=${s.address} price=${update.priceUsd} change=${update.change24hPct} volume=${update.volume24hUsd} - keeping prior`);
                 nanGuarded++;
                 continue;
             }

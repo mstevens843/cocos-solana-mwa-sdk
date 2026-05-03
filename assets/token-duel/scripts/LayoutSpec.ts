@@ -1,11 +1,11 @@
 /**
- * LayoutSpec.ts — TypeScript twin of LayoutSpec.cjs.
+ * LayoutSpec.ts - TypeScript twin of LayoutSpec.cjs.
  *
  * KEEP IN SYNC with LayoutSpec.cjs (source of truth for scene-generator).
  * Update both files together.
  *
  * Imported from runtime code only when AppUI / a controller needs to
- * read a position at runtime (rare — most consumption is at scene-gen
+ * read a position at runtime (rare - most consumption is at scene-gen
  * time). Build-time scene generation reads the .cjs.
  */
 
@@ -34,7 +34,7 @@ export interface PanelSpec {
     allowedOverlaps: Array<[string, string]>;
 }
 
-// 2026-04-29 — uniform back/title/subtitle header band, mirrors MIP.
+// 2026-04-29 - uniform back/title/subtitle header band, mirrors MIP.
 // Every panel with a back button must use these exact panel-local Y values
 // and the (x, w, h) shape below. MatchesInProgressPanel is the canonical
 // reference (back on its own row, title 40 below, subtitle 36 below title).
@@ -46,7 +46,7 @@ export const UNIFORM_HEADER = {
     BACK_BTN:   { x: -280, w: 140, h: 36 },
 } as const;
 
-// 2026-04-29 — uniform text styling tokens. Title color = gold for action
+// 2026-04-29 - uniform text styling tokens. Title color = gold for action
 // panels (PostMatch keeps its 60pt white hero accent for "YOU WON"). Dim
 // text = one canonical RGB for subtitles, status labels, and section
 // eyebrows. Eyebrow font size = 12pt across panels.
@@ -57,7 +57,7 @@ export const UNIFORM_TEXT = {
     EYEBROW_FONT_SIZE: 12,
 } as const;
 
-// 2026-04-29 — UNIFORM spacing scale. Every sibling-to-sibling y delta in
+// 2026-04-29 - UNIFORM spacing scale. Every sibling-to-sibling y delta in
 // a panel must come from this set. No literal 36/40/56/72 etc. Compose
 // SPACE_32 + SPACE_16 to get 48; SPACE_32 + SPACE_24 for 56; etc.
 export const UNIFORM_SPACE = {
@@ -68,7 +68,7 @@ export const UNIFORM_SPACE = {
     SPACE_32: 32,
 } as const;
 
-// 2026-04-29 — UNIFORM centered content column. Cards / CTAs / list rows
+// 2026-04-29 - UNIFORM centered content column. Cards / CTAs / list rows
 // snap to CONTENT_W. Subtitles use BODY_W (narrower for line-length).
 // Chips use CHIP_W. Full-canvas backgrounds use CANVAS_W. SAFE_L/R define
 // the column edges for left-anchored content.
@@ -88,9 +88,9 @@ export const UNIFORM_LAYOUT = {
     TIGHT_GAP:          8,
 } as const;
 
-// 2026-04-29 (Prompt 1) — UNIFORM card geometry. Every card built via
+// 2026-04-29 (Prompt 1) - UNIFORM card geometry. Every card built via
 // generate-scenes.js mkCard() uses one of these heights. Row stride =
-// h + ROW_GAP. NOTIFICATION_H is a one-off — toast row chrome (left
+// h + ROW_GAP. NOTIFICATION_H is a one-off - toast row chrome (left
 // ColorStripe) is intentionally not in the unified card system.
 export const UNIFORM_CARD = {
     ROW_DENSE_H:     56,
@@ -103,9 +103,9 @@ export const UNIFORM_CARD = {
 // 2026-05-02 arena rebuild (Phase B). Filter section compacted ~324→180px:
 // Mode pill on its own row (full width 600), Duration + Stake side-by-side
 // on the second row (290w each), Hide-full toggle in the bottom band of
-// the filter card. Captions (Mode/Duration/Stake) hidden — pills are
+// the filter card. Captions (Mode/Duration/Stake) hidden - pills are
 // self-evident at this size. CTA + lobby pool lift up to fill freed space.
-// One source of truth — both LayoutSpec.cjs (scene-gen) and AppUI runtime
+// One source of truth - both LayoutSpec.cjs (scene-gen) and AppUI runtime
 // must read y/w/h from this block so the layout cannot drift.
 export const FINDMATCH_LAYOUT = {
     SECTION_GAP:     24,
@@ -114,10 +114,10 @@ export const FINDMATCH_LAYOUT = {
     CARD_PADDING:    16,
     HEADER_Y:       750,   // back link / level chip
     TITLE_Y:        695,   // own row, no overlap with mode pill
-    STATUS_Y:       655,   // "LIVE · N matches active now" — runtime opacity 230 when active
+    STATUS_Y:       655,   // "LIVE · N matches active now" - runtime opacity 230 when active
     TABS_Y:         615,   // Open Lobbies / Live Now
     FILTER_CARD:  { x: 0, y: 484, w: 640, h: 180 },
-    // Captions hidden in compact layout — pills are self-evident.
+    // Captions hidden in compact layout - pills are self-evident.
     MODE_LABEL_Y:   -2000,
     WINDOW_LABEL_Y: -2000,
     WAGER_LABEL_Y:  -2000,
@@ -130,7 +130,7 @@ export const FINDMATCH_LAYOUT = {
     PRIMARY_CTA_H:   72,
     ROW_BASE_Y:     206,   // first lobby card center (lifted 54→206)
     ROW_STRIDE_Y:  -156,   // 140h card + 16 gap (unchanged)
-    ROW_HEIGHT:     140,   // unchanged — internal sub-row offsets stay valid
+    ROW_HEIGHT:     140,   // unchanged - internal sub-row offsets stay valid
     PAGINATION_Y:  -360,   // 24px below row 3 bottom (-340)
 } as const;
 
@@ -149,9 +149,9 @@ export const POSTMATCH_SAFE_AREA_BOT =  96;
 // KEEP IN SYNC with LayoutSpec.cjs `pm.zones`.
 export const POSTMATCH_ZONES = {
     top: {
-        backLink:      -2000,    // hidden — back button removed from win screen
+        backLink:      -2000,    // hidden - back button removed from win screen
         backBtn:       -2000,
-        // 2026-04-29 game-over polish — hero block shifted ~48 px DOWN
+        // 2026-04-29 game-over polish - hero block shifted ~48 px DOWN
         // from safe-top, internal gaps tightened to (16/22/10/14/10).
         // KEEP IN SYNC with LayoutSpec.cjs `pm.zones.top`.
         title:           -56,
@@ -163,7 +163,7 @@ export const POSTMATCH_ZONES = {
         trophy:          -76,
     },
     center: {
-        // 2026-04-29 — mascot nudged 25 px up to balance lowered hero.
+        // 2026-04-29 - mascot nudged 25 px up to balance lowered hero.
         mascotGlow:       25,
         mascotContainer:  25,
     },
@@ -182,7 +182,7 @@ export const POSTMATCH_ZONES = {
     },
 } as const;
 
-// 2026-04-29 — Dashboard zone scaffold. Mirrors DashboardLayoutSpec in
+// 2026-04-29 - Dashboard zone scaffold. Mirrors DashboardLayoutSpec in
 // LayoutSpec.cjs. AppUI runtime pill builders (Stats/History/Trophies, Paper/
 // Real, 1v1/Trio/4p/8p, Portfolio/Leaderboard hub strip) read y from these
 // zones so they cannot drift into a sibling row.
@@ -282,7 +282,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         ],
     },
 
-    // 2026-04-28 V4 — "Play Now" hub. Find Match becomes hero (instant play),
+    // 2026-04-28 V4 - "Play Now" hub. Find Match becomes hero (instant play),
     // Start Match demoted to secondary, MIP neutralized (charcoal/btnGhost),
     // Bot Match grows full-width and absorbs Training Mode copy. Recent Match
     // card collapses to single-row (daily-challenge row dropped). Mirrors
@@ -291,7 +291,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1280 },
         elements: {
             homeContentScrim:    { x: 0,    y: 0,    w: 720, h: 1280, type: 'sprite' },
-            // Header band (V3 — h 64→44, ≈-30%).
+            // Header band (V3 - h 64→44, ≈-30%).
             notificationBell:    { x: -296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
             notificationBadge:   { x: -278, y: 656,  w: 22,  h: 22,  type: 'badge' },
             walletPill:          { x: 0,    y: 640,  w: 360, h: 60,  type: 'chip' },
@@ -303,12 +303,12 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             openSettingsBtn:     { x:  224, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
             disconnectBtn:       { x:  296, y: 640,  w: 44,  h: 44,  type: 'btnGhost' },
             homeHeaderUnderline: { x: 0,    y: 600,  w: 640, h: 1,   type: 'sprite' },
-            // V4 — level chip h 80→72 (8h tighter).
+            // V4 - level chip h 80→72 (8h tighter).
             homeLevelChip:       { x: 0,    y: 556,  w: 680, h: 72,  type: 'chip' },
             homeXpProgressLabel: { x: 310,  y: 14,   w: 280, h: 18,  type: 'label' },
             homeXpBarTrack:      { x: 0,    y: -14,  w: 640, h: 14,  type: 'sprite' },
             homeXpBarFill:       { x: -320, y: 0,    w: 0,   h: 14,  type: 'sprite' },
-            // V5 (2026-04-28 home UX) — repurposed as user-specific "Last
+            // V5 (2026-04-28 home UX) - repurposed as user-specific "Last
             // Result" anchor: outcome (WON/LOST) + delta + compact meta line.
             // h 96→108 for slightly more presence; chip generation replaced
             // by 4 label children + glow halo sibling.
@@ -320,7 +320,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             homeLastResultMeta:  { x: 0,    y: -34,  w: 620, h: 18,  type: 'label' },
             homeRecentCardElevation: { x: 0, y: -4,  w: 688, h: 116, type: 'sprite' },
             homeTournamentBadge: { x: 0,    y: 460,  w: 680, h: 108, type: 'chip' },
-            // V7 (2026-05-01) — CTA scale-up to 1.75x. Find HERO (teal, 160h),
+            // V7 (2026-05-01) - CTA scale-up to 1.75x. Find HERO (teal, 160h),
             // Start (purple, 122h), MIP (charcoal ghost, 122h), Bot (gold
             // full-width, 122h). Uniform 18px gaps. FIND top stays at y=388.
             // Mirrors LayoutSpec.cjs home.* constants.
@@ -341,7 +341,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             botMatchSubtitle:    { x: 0,    y: -24,  w: 620, h: 16,  type: 'label' },
             botMatchSubtitleLine2: { x: 0,  y: -42,  w: 620, h: 14,  type: 'label' },
             botMatchChevron:     { x: 310,  y: 0,    w: 24,  h: 24,  type: 'label' },
-            // V4 — Training card REMOVED. Mascot kept here as off-flow node
+            // V4 - Training card REMOVED. Mascot kept here as off-flow node
             // pinned below safe area (consumed by PostMatch panel only); kept
             // in spec to avoid breaking AppUI's mascot lookup when Home is
             // active (mascot is reparented to the HomePanel only by intent).
@@ -427,9 +427,9 @@ export const LayoutSpec: Record<string, PanelSpec> = {
         canvas: { w: 720, h: 1800 },
         elements: {
             // Battle-UI top row (2026-04-26): (Timer) [+0.00%]
-            // 2026-05-01 — Timer ring scaled +15% (132→152). Top edge of circle
+            // 2026-05-01 - Timer ring scaled +15% (132→152). Top edge of circle
             // is pinned to its prior world Y, so center drops 9 px (720→711).
-            // 2026-05-02 — RacePlayerLevelChip moved from top-left corner to
+            // 2026-05-02 - RacePlayerLevelChip moved from top-left corner to
             // centered above PlayerTokenCardsRow (mirrors OpponentIdentityCard
             // above OpponentTokenCardsRow). Width grew 120→200 for "YOU · Lv N".
             racePlayerLevelChip: { x: 0,    y: 625, w: 200, h: 40,   type: 'chip' },
@@ -446,12 +446,12 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             advantageSubtext:    { x: 0,    y: 42,  w: 300, h: 24,   type: 'label' },
             opponentIdentityCard:{ x: 0,    y: -20,  w: 280, h: 44,   type: 'sprite' },
             opponentTokenRow:    { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 132,  type: 'group' },
-            // 2026-05-01 — bot PnL pushed to -310 to mirror player PnL distance
+            // 2026-05-01 - bot PnL pushed to -310 to mirror player PnL distance
             // from cards (180 px center-to-center, matching heroDelta↔playerTokenRow).
             opponentPortfolioDelta: { x: -240, y: -310, w: 220, h: 80, type: 'label' },
             opponentCard:        { x: 0,    y: -400, w: 640, h: 110, type: 'sprite' },
             opponentStrip:       { x: 0,    y: -406, w: UNIFORM_LAYOUT.CONTENT_W, h: 260, type: 'group' },
-            // 2026-05-01 — Forfeit / Home pushed -260 → -380 to clear bot-PnL row.
+            // 2026-05-01 - Forfeit / Home pushed -260 → -380 to clear bot-PnL row.
             cancelBtn:           { x: 0,    y: -380, w: 140, h: 36,  type: 'btnGhost' },
             hintLabel:           { x: 0,    y: -430, w: 620, h: 24,  type: 'label' },
             mascot:              { x: 260,  y: -540, w: 120, h: 160, type: 'mascot' },
@@ -462,7 +462,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['RaceTokenCard_4', 'RaceOpponentCard'],
             ['RaceTokenCard_4', 'RaceOpponentStrip'],
             ['RaceOpponentCard', 'RaceOpponentStrip'],
-            // Round-advantage card — halo wraps border + labels by design.
+            // Round-advantage card - halo wraps border + labels by design.
             ['RaceAdvantageHalo', 'RaceAdvantageBorder'],
             ['RaceAdvantageHalo', 'RaceAdvantageCaption'],
             ['RaceAdvantageHalo', 'OpponentDeltaHeroLabel'],
@@ -470,7 +470,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['RaceAdvantageBorder', 'RaceAdvantageCaption'],
             ['RaceAdvantageBorder', 'OpponentDeltaHeroLabel'],
             ['RaceAdvantageBorder', 'RaceAdvantageSubtext'],
-            // 2026-05-02 — RacePlayerLevelChip moved to y=625 as squad header
+            // 2026-05-02 - RacePlayerLevelChip moved to y=625 as squad header
             // above PlayerTokenCardsRow (mirror of OpponentIdentityCard above
             // OpponentTokenCardsRow). Tight band between timer ring bottom
             // (y=635) and row container top (y=606) makes some bbox overlap
@@ -484,7 +484,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     SettingsPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // Phase 30 / 2026-04-30 polish — premium settings redesign. KEEP IN
+            // Phase 30 / 2026-04-30 polish - premium settings redesign. KEEP IN
             // SYNC with LayoutSpec.cjs. Wallet h 124→96 (single identity row),
             // Account h 232→200 (tighter rhythm), Danger Zone pulled up; sheet
             // grew to full canvas to kill parent-panel bleed at edges.
@@ -524,12 +524,12 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             leaderboardContentScrim: { x: 0, y: 0, w: 720, h: 1280, type: 'sprite' },
             backLink:         { x: UNIFORM_HEADER.BACK_LINK.x, y: 720, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:          { x: UNIFORM_HEADER.BACK_BTN.x,  y: 720, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            // 2026-04-30 — collapsed two-sibling title back into one inline-emoji label.
+            // 2026-04-30 - collapsed two-sibling title back into one inline-emoji label.
             title:            { x: 0,    y: 680,  w: 360, h: 44,  type: 'label' },
-            // 2026-05-02 polish — header helper lines: scoring legitimacy + weekly reset.
+            // 2026-05-02 polish - header helper lines: scoring legitimacy + weekly reset.
             scoringHelper:    { x: 0,    y: 588,  w: 600, h: 18,  type: 'label' },
             seasonHelper:     { x: 0,    y: 570,  w: 600, h: 16,  type: 'label' },
-            // 2026-05-02 polish — h grew 100→160 to host the new SublineLabel.
+            // 2026-05-02 polish - h grew 100→160 to host the new SublineLabel.
             personalRankCard: { x: 0,    y: -130, w: UNIFORM_LAYOUT.CONTENT_W, h: 160, type: 'group' },
             status:           { x: 0,    y: -740, w: 600, h: 22,  type: 'label' },
         },
@@ -538,11 +538,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     FindMatchPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // 2026-04-30 UX rebuild — full-canvas scrim kills BackgroundFX bleed
+            // 2026-04-30 UX rebuild - full-canvas scrim kills BackgroundFX bleed
             // (mirrors HomeContentScrim). MUST render first; sits behind every
             // other FindMatchPanel child. Color = Palette.bg.primary @ alpha 110.
             findMatchContentScrim: { x: 0, y: 0, w: 720, h: 1280, type: 'sprite' },
-            // 2026-04-29 god-tier UX rebuild — strict top-to-bottom flow,
+            // 2026-04-29 god-tier UX rebuild - strict top-to-bottom flow,
             // dominant primary CTA, FilterCard glass container, 4 tall cards.
             backLink:       { x: UNIFORM_HEADER.BACK_LINK.x, y: FINDMATCH_LAYOUT.HEADER_Y, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:        { x: UNIFORM_HEADER.BACK_BTN.x,  y: FINDMATCH_LAYOUT.HEADER_Y, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
@@ -550,11 +550,11 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             refreshBtn:     { x: 280,  y: FINDMATCH_LAYOUT.TITLE_Y,  w: 56,  h: 44, type: 'btnGhost' },
             countLabel:     { x: -80,  y: FINDMATCH_LAYOUT.STATUS_Y, w: 540, h: 22, type: 'label' },
             liveCountPulseDot:  { x: -300, y: FINDMATCH_LAYOUT.STATUS_Y, w: 14,  h: 14,  type: 'sprite' },
-            // FilterCard — flat dim section that visually groups the 3 filter
+            // FilterCard - flat dim section that visually groups the 3 filter
             // blocks and the Hide-Full toggle. Subtle bg contrast (alpha ~110),
-            // no floating-card edge — reads as a section of the page.
+            // no floating-card edge - reads as a section of the page.
             filterCard:     { x: FINDMATCH_LAYOUT.FILTER_CARD.x, y: FINDMATCH_LAYOUT.FILTER_CARD.y, w: FINDMATCH_LAYOUT.FILTER_CARD.w, h: FINDMATCH_LAYOUT.FILTER_CARD.h, type: 'sprite' },
-            // 2026-04-30 UX rebuild — label-above-pill block layout. Each
+            // 2026-04-30 UX rebuild - label-above-pill block layout. Each
             // filter is a 2-line block: left-anchored caption then a 600w pill
             // spanning the FilterCard. Inter-block gap 16px.
             fmModeLabel:        { x: -300, y: FINDMATCH_LAYOUT.MODE_LABEL_Y,   w: 200, h: 22, type: 'label' },
@@ -567,7 +567,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             // Top-right level chip; AppUI applies UIOpacity 178 (~70%) so it
             // does not compete with the title for visual weight.
             lvxpChip:       { x: 240, y: FINDMATCH_LAYOUT.HEADER_Y, w: 200, h: 32, type: 'chip' },
-            // Primary "FIND MATCH" CTA — dominant, full-width, below filters.
+            // Primary "FIND MATCH" CTA - dominant, full-width, below filters.
             // Wires to existing _onFindMatchHostTap (legacy handler kept).
             hostBtn:        { x: 0, y: FINDMATCH_LAYOUT.PRIMARY_CTA_Y, w: FINDMATCH_LAYOUT.PRIMARY_CTA_W, h: FINDMATCH_LAYOUT.PRIMARY_CTA_H, type: 'btnPrimary' },
             // Empty-state cluster (only visible when 0 lobbies match filters).
@@ -596,29 +596,29 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     TokenDuelPanel: {
         canvas: { w: 720, h: 1280 },
         elements: {
-            // 2026-04-27 v2 — classic stack restored, shifted +45 to align pills
+            // 2026-04-27 v2 - classic stack restored, shifted +45 to align pills
             // with HomePanel; FeedScrollView cut 30% (388→272). Mirrors `td`
             // constants block in LayoutSpec.cjs.
             backLink:        { x: UNIFORM_HEADER.BACK_LINK.x, y: 685, w: UNIFORM_HEADER.BACK_LINK.w, h: UNIFORM_HEADER.BACK_LINK.h, type: 'label' },
             backBtn:         { x: UNIFORM_HEADER.BACK_BTN.x,  y: 685, w: UNIFORM_HEADER.BACK_BTN.w,  h: UNIFORM_HEADER.BACK_BTN.h,  type: 'btnGhost' },
-            // 2026-04-29 token-picker rebuild — title raised 570→560, w 320→360, h 36→48.
+            // 2026-04-29 token-picker rebuild - title raised 570→560, w 320→360, h 36→48.
             title:           { x: 0,    y: 560,  w: 360, h: 48, type: 'label' },
-            // 2026-05-02 token-picker UX — DRAFT YOUR SQUAD eyebrow below title.
+            // 2026-05-02 token-picker UX - DRAFT YOUR SQUAD eyebrow below title.
             subtitle:        { x: 0,    y: 520,  w: 480, h: 18, type: 'label' },
-            // 2026-05-02 — superseded by subtitle eyebrow; off-canvas placeholder.
+            // 2026-05-02 - superseded by subtitle eyebrow; off-canvas placeholder.
             headerUnderline: { x: -2000, y: -2000, w: 1, h: 1, type: 'sprite' },
             levelPill:       { x: 120,  y: 620,  w: 140, h: 44, type: 'chip' },
             solPill:         { x: 265,  y: 620,  w: 140, h: 44, type: 'chip' },
-            // 2026-04-29 god-tier UX pass — mission bar h 64→80, recentered y
+            // 2026-04-29 god-tier UX pass - mission bar h 64→80, recentered y
             // 470→462 so top edge stays at 502; bottom 438→422.
             matchSetupCard:  { x: 0,    y: 462,  w: UNIFORM_LAYOUT.CONTENT_W, h: 80, type: 'group' },
             // ready-state underline at matchSetupCard bottom (y = 462 - 40 + 1 = 423).
             matchSetupReadyGlow: { x: 0, y: 423, w: UNIFORM_LAYOUT.CONTENT_W, h: 2, type: 'sprite' },
-            // 2026-05-01 squad-select pass — frame h 528→448 (-80) so the
+            // 2026-05-01 squad-select pass - frame h 528→448 (-80) so the
             // squad section can absorb 80 px of reclaimed space. Top stays
             // at 405; bottom shifts -123 → -43.
             feedFrameCard:   { x: 0,    y: 181,  w: 712, h: 448, type: 'sprite' },
-            // 2026-04-30 — Row 1 grown 44→60h. Trending + Search are the
+            // 2026-04-30 - Row 1 grown 44→60h. Trending + Search are the
             // hero controls; Watchlist/LIVE scaled up proportionally. Row 2
             // (filter chips) stays small as secondary controls. Headers +
             // scroll shifted down to absorb the extra height.
@@ -630,23 +630,28 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             liveIndicator:   { x: 312,  y: 365,  w: 80,  h: 28, type: 'label' },
             minLiqDropdown:    { x: -16,  y: 311,  w: 110, h: 32,  type: 'chip' },
             columnsBtn:        { x: 270,  y: 311,  w: 96,  h: 32,  type: 'chip' },
-            feedColumnHeaders: { x: 0,    y: 273,  w: UNIFORM_LAYOUT.CONTENT_W, h: 24,  type: 'group' },
-            // 2026-05-01 — scroll h 360→320 (fits shorter feed frame); ~2.5
+            // 2026-05-02 token-picker UX - column headers hidden (moved off-canvas).
+            // The 3-zone row layout (LEFT identity / MIDDLE pills / RIGHT %+price)
+            // is self-explanatory; the table-style header strip read as
+            // "spreadsheet" rather than "draft list" and competed with the
+            // YOUR SQUAD section for hierarchy.
+            feedColumnHeaders: { x: -2000, y: -2000, w: 1, h: 1,  type: 'group' },
+            // 2026-05-01 - scroll h 360→320 (fits shorter feed frame); ~2.5
             // visible rows at new feedRow.h=120.
             feedScrollView:    { x: 0,    y: 85,   w: UNIFORM_LAYOUT.CONTENT_W, h: 320, type: 'scrollview' },
-            // 2026-05-01 squad-select pass — soft ambient halo behind the
+            // 2026-05-01 squad-select pass - soft ambient halo behind the
             // 3 slot pillars. Single sprite (no Graphics) keeps SIGSEGV risk zero.
             squadAmbientGlow:  { x: 0,    y: -266, w: 720, h: 220, type: 'sprite' },
             squadPanel:        { x: 0,    y: -243, w: 720, h: 376, type: 'group' },
-            // 2026-05-01 r2.1 — eyebrow font 16 (h=18), label font 30 (h=38)
+            // 2026-05-01 r2.1 - eyebrow font 16 (h=18), label font 30 (h=38)
             squadHeaderEyebrow:{ x: 0,    y: -88,  w: 360, h: 18,  type: 'label' },
             squadHeaderLabel:  { x: 0,    y: -120, w: 460, h: 38,  type: 'label' },
             squadHeaderRule:   { x: 0,    y: -150, w: 240, h: 1,   type: 'sprite' },
-            // 2026-05-01 r3 — half-width chunky stake pill (320×84) centered
+            // 2026-05-01 r3 - half-width chunky stake pill (320×84) centered
             // below the CTA, single-line "0.05 SOL ▾" at 32pt gold. Helper
             // text gets its own row below the pill, always visible.
             wagerRowDivider:   { x: 0,    y: -388, w: 680, h: 1,   type: 'sprite' },
-            wagerStartButton:  { x:    0, y: -444, w: 640, h: 88,  type: 'btnPrimary' },
+            wagerStartButton:  { x:    0, y: -444, w: UNIFORM_LAYOUT.CONTENT_W, h: 88,  type: 'btnPrimary' },
             wagerValueButton:  { x:    0, y: -542, w: 240, h: 72,  type: 'btnGhost' },
             wagerLockChip:     { x:    0, y: -542, w: 240, h: 72,  type: 'chip' },
             wagerBotChip:      { x:    0, y: -542, w: 240, h: 72,  type: 'chip' },
@@ -689,7 +694,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
             ['SlotGlowHalo', 'PerformanceBar'],
             ['SlotGlowHalo', 'RemoveButton'],
             ['SlotGlowHalo', 'GradientTop'],
-            // 2026-05-01 r3 — stake pill and hint moved to separate rows;
+            // 2026-05-01 r3 - stake pill and hint moved to separate rows;
             // status moved off-canvas. No remaining intentional overlaps.
         ],
     },
@@ -786,7 +791,7 @@ export const LayoutSpec: Record<string, PanelSpec> = {
     PostMatchPanel: {
         canvas: { w: 720, h: 1800 },
         elements: {
-            // 2026-04-29 — mirrors PostMatchPanel.elements in LayoutSpec.cjs.
+            // 2026-04-29 - mirrors PostMatchPanel.elements in LayoutSpec.cjs.
             // Reward block sits above mascot in top zone; rake sits above
             // stat cards in bottom zone. Back nodes off-canvas.
             backLink:        { x: -2000, y: -2000, w: 1, h: 1, type: 'label' },

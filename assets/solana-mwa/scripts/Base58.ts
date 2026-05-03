@@ -1,5 +1,5 @@
 /**
- * Base58.ts — Pure TypeScript base58 encoder/decoder.
+ * Base58.ts - Pure TypeScript base58 encoder/decoder.
  * No dependencies. Uses the Bitcoin/Solana alphabet.
  */
 

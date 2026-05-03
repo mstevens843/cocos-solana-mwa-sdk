@@ -1,10 +1,10 @@
 /**
- * WatchlistRpc.ts — DB Stage 9 cross-device watchlist sync.
+ * WatchlistRpc.ts - DB Stage 9 cross-device watchlist sync.
  *
  * Stale-while-revalidate read; fire-and-forget add/remove. Local
  * Watchlist (sys.localStorage) is the device source of truth. On first
  * hydrate Watchlist does a union-merge (local ∪ server, dedup by mint,
- * earlier addedAt wins) — see ~/.claude/plans/db-persistence-ship-ready.md.
+ * earlier addedAt wins) - see ~/.claude/plans/db-persistence-ship-ready.md.
  */
 import { RECEIPT_BACKEND_URL } from './constants';
 

@@ -1,5 +1,5 @@
 /**
- * PanelTransitions.ts — fade+scale panel swap helper.
+ * PanelTransitions.ts - fade+scale panel swap helper.
  *
  * Replaces the instant `node.active = true/false` toggle in
  * AppUI._setActivePanel with a polished short transition. Drop a UIOpacity
@@ -114,7 +114,7 @@ function animateIn(node: Node, dir: PanelDir): void {
         .start();
 }
 
-/** Subtle "tap pop" — used on Squad slot select / button confirm.  */
+/** Subtle "tap pop" - used on Squad slot select / button confirm.  */
 export function popScale(node: Node, peak = 1.12): void {
     Tween.stopAllByTarget(node);
     tween(node)
@@ -123,7 +123,7 @@ export function popScale(node: Node, peak = 1.12): void {
         .start();
 }
 
-/** Brief shake on validation error / loss — ~12px horizontal jitter. */
+/** Brief shake on validation error / loss - ~12px horizontal jitter. */
 export function shake(node: Node, amplitude = 12): void {
     const original = node.position.clone();
     Tween.stopAllByTarget(node);

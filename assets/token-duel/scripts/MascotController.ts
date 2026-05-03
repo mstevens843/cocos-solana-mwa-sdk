@@ -1,5 +1,5 @@
 /**
- * MascotController.ts — procedural Token Duel mascot.
+ * MascotController.ts - procedural Token Duel mascot.
  *
  * Phase 2: builds a vector mascot (body + eyes + wand + sparkles) entirely
  *          from cc.Graphics + cc.tween. Lives on a MascotContainer node
@@ -10,10 +10,10 @@
  *          do not change.
  *
  * State machine:
- *   idle      — slow vertical bob + occasional wand twirl every ~6s
- *   celebrate — jump + 360° spin + sparkle burst (auto-returns to idle)
- *   think     — head tilt + question-mark overlay (held)
- *   lose      — slumped pose, dimmer tint (auto-returns to idle after 1.5s)
+ *   idle      - slow vertical bob + occasional wand twirl every ~6s
+ *   celebrate - jump + 360° spin + sparkle burst (auto-returns to idle)
+ *   think     - head tilt + question-mark overlay (held)
+ *   lose      - slumped pose, dimmer tint (auto-returns to idle after 1.5s)
  *
  * Performance: Graphics is drawn once on attach; ALL animation is transform
  * tweens (position, scale, angle) so per-frame redraw cost is zero.
@@ -66,7 +66,7 @@ export class MascotController extends Component {
     };
 
     onLoad(): void {
-        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'} — deferring _buildMascot to AFTER_DRAW`);
+        console.log(`${TAG} onLoad | ENTRY node=${this.node?.name ?? '?'} - deferring _buildMascot to AFTER_DRAW`);
         // FIX: defer runtime Node + Graphics creation off the first-frame draw
         // walk. If we addComponent(Graphics) on dynamically-created Nodes inside
         // onLoad, the engine's render-entity (UIModelProxy._renderDrawInfos)
@@ -75,7 +75,7 @@ export class MascotController extends Component {
         // std::vector<RenderDrawInfo*>::size() called from
         // js_cc_UIModelProxy_activeSubModels (jsb_2d_auto.cpp:2923).
         //
-        // 2026-04-29 — `scheduleOnce(0)` was NOT enough. It fires in the next
+        // 2026-04-29 - `scheduleOnce(0)` was NOT enough. It fires in the next
         // tick's UPDATE phase, before that tick's DRAW; the engine still walked
         // the half-attached render entities and SIGSEGV'd. `director.once(
         // EVENT_AFTER_DRAW)` fires at the end of the just-completed draw walk,
@@ -87,7 +87,7 @@ export class MascotController extends Component {
             console.log(`${TAG} onLoad | AFTER_buildMascot body=${!!this._bodyNode} wand=${!!this._wandNode} eyeL=${!!this._eyeL} eyeR=${!!this._eyeR}`);
             // Do NOT call setState('idle') here. _state is already 'idle' from
             // field init, and panels that start inactive (PostMatchPanel,
-            // RacePanel) hold this defer paused until they activate — by then
+            // RacePanel) hold this defer paused until they activate - by then
             // AppUI may have already set the outcome state on the same frame,
             // and a deferred reset to 'idle' on the next tick would clobber it
             // (the bug that pinned the Game Results mascot to idle).
@@ -100,7 +100,7 @@ export class MascotController extends Component {
     }
 
     update(dt: number): void {
-        // 2026-05-01 — wrap entire body so a single throw (e.g. assigning
+        // 2026-05-01 - wrap entire body so a single throw (e.g. assigning
         // spriteFrame on a destroyed Sprite, or _twirl on a stale wand node)
         // can't escalate to a 60 fps JSB error storm that starves input
         // dispatch. AppUI keys the post-game-over storm investigation on this
@@ -117,7 +117,7 @@ export class MascotController extends Component {
             }
             if (this._state !== 'idle') return;
             // The deferred _buildMascot (scheduleOnce in onLoad) hasn't fired on
-            // tick 1 yet, so the body/wand refs are still null. Bail until built —
+            // tick 1 yet, so the body/wand refs are still null. Bail until built -
             // otherwise _twirl reads `null.angle` and throws every frame.
             if (!this._wandNode || !this._wandNode.isValid) return;
             this._idleTimer += dt;
@@ -151,7 +151,7 @@ export class MascotController extends Component {
                 this._currentFrame = isLoop ? 0 : frames.length - 1;
             }
         }
-        // Defensive null-guard — a partial import (some PNGs missing .meta) can
+        // Defensive null-guard - a partial import (some PNGs missing .meta) can
         // leave undefined slots in the array; assigning null to spriteFrame is a
         // SIGSEGV in libcocos.so at offset 0x28. Skip the slot if missing.
         const next = frames[this._currentFrame];
@@ -166,7 +166,7 @@ export class MascotController extends Component {
 
     /** Switch state. Auto-returns to idle for celebrate/lose after their loop.
      *  `force=true` re-triggers the animation even when already in state `s`
-     *  (used by PostMatch on consecutive identical outcomes — second 'lose'
+     *  (used by PostMatch on consecutive identical outcomes - second 'lose'
      *  must replay the slump from frame 0 instead of staying clamped at the
      *  end of the previous one-shot). */
     setState(s: MascotState, force = false): void {
@@ -191,7 +191,7 @@ export class MascotController extends Component {
 
     /** Phase 3 swap: register per-state frame sequences to drive the body.
      *
-     * Pass `{ idle: [f1, f2, ...], celebrate: [...], ... }` — each state's
+     * Pass `{ idle: [f1, f2, ...], celebrate: [...], ... }` - each state's
      * frames are cycled at its configured fps (see `_stateFps`). Loops
      * (idle, think) wrap; one-shots (celebrate, lose) clamp to last frame.
      *
@@ -200,9 +200,16 @@ export class MascotController extends Component {
      * any state has frames; transform tweens (bob/spin/tilt/slump) still
      * compose on top of the per-frame sprite swap.
      */
+    /** 2026-05-02 attempt 9 rev 2 - expose the loaded sprite sheet so a
+     *  fresh MascotController instance (e.g. PostMatchPanelV2's mascot) can
+     *  re-use the same animated frames without reloading from disk. */
+    getFramesByState(): Partial<Record<MascotState, SpriteFrame[]>> {
+        return this._framesByState;
+    }
+
     setSpriteSheet(framesByState: Partial<Record<MascotState, SpriteFrame[]>>): void {
         console.log(`${TAG} setSpriteSheet | ENTRY node=${this.node?.name ?? '?'}`);
-        // Filter null/undefined entries AND any frame missing a backing texture —
+        // Filter null/undefined entries AND any frame missing a backing texture -
         // the latter is the libcocos.so SIGSEGV at offset 0x28 vector.
         const cleaned: Partial<Record<MascotState, SpriteFrame[]>> = {};
         let droppedNulls = 0;
@@ -252,7 +259,7 @@ export class MascotController extends Component {
         const ut = root.getComponent(UITransform) ?? root.addComponent(UITransform);
         ut.contentSize.set(180, 220);
 
-        // FIX 10C — each work unit creates Node + UITransform + Graphics
+        // FIX 10C - each work unit creates Node + UITransform + Graphics
         // ATOMICALLY in the same enqueuePostDraw tick. Previously Fix 10B
         // split Node creation (synchronous) from Graphics attachment (queued
         // for later ticks), leaving 12 bare Node+UITransform children in the
@@ -332,7 +339,7 @@ export class MascotController extends Component {
         const g = n.addComponent(Graphics); // safe: called from enqueuePostDraw queue work unit (one Graphics per tick budget slot)
         const violet = colorFromHex(Palette.accent.violet);
         const teal   = colorFromHex(Palette.accent.teal);
-        // Body — rounded square (head)
+        // Body - rounded square (head)
         g.fillColor = violet;
         g.roundRect(-50, -50, 100, 100, 26);
         g.fill();
@@ -340,7 +347,7 @@ export class MascotController extends Component {
         g.fillColor = colorFromHex(Palette.accent.violetDim);
         g.circle(-25, -10, 8); g.fill();
         g.circle(25, -10, 8); g.fill();
-        // Mouth — small smile arc
+        // Mouth - small smile arc
         g.strokeColor = teal;
         g.lineWidth = 4;
         g.moveTo(-12, -22); g.lineTo(0, -28); g.lineTo(12, -22);
@@ -412,7 +419,7 @@ export class MascotController extends Component {
         // Jump + spin. Bigger amplitude (60→90) so the bounce reads on the
         // PostMatch screen even at a glance. Looped float keeps motion alive
         // after the initial spin lands; auto-return to idle only when running
-        // the procedural body — the Seedance celebrate sequence is ~4s long
+        // the procedural body - the Seedance celebrate sequence is ~4s long
         // and clamps to its last frame.
         tween(body)
             .to(0.20, { position: new Vec3(baseX, baseY + 90, baseZ), angle: 180 }, { easing: 'cubicOut' })
@@ -433,7 +440,7 @@ export class MascotController extends Component {
                 }
             })
             .start();
-        // Sparkle burst — 8 nodes outward
+        // Sparkle burst - 8 nodes outward
         const cx = 0, cy = 0;
         this._sparkleNodes.forEach((s, i) => {
             s.active = true;
@@ -475,7 +482,7 @@ export class MascotController extends Component {
         const baseY = body.position.y;
         const baseX = body.position.x;
         const baseZ = body.position.z;
-        // Slumped, looping bounce-down — replaces the one-shot slump so the
+        // Slumped, looping bounce-down - replaces the one-shot slump so the
         // "deflated" mood reads continuously. Slow rocking tilt cross-loops
         // with the bounce. Auto-return to idle only on procedural body.
         tween(body)

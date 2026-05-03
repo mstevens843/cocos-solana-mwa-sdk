@@ -1,12 +1,12 @@
 /**
- * match_lobbies.ts — DB-backed open-lobby projection (DB Stage 6).
+ * match_lobbies.ts - DB-backed open-lobby projection (DB Stage 6).
  *
  * Client uploads a row right after `join_match_create` confirms. Used for
  * funnel analytics + future operator surfaces; live lobby discovery still
  * comes from on-chain getProgramAccounts so there's only one source of
  * truth for what's currently joinable.
  *
- * Idempotent on match_pda — counter-race retries that resolve to the same
+ * Idempotent on match_pda - counter-race retries that resolve to the same
  * PDA, or both clients posting after a join, can't double-insert.
  */
 import { query, queryOne, dbConfigured } from './db';

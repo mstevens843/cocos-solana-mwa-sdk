@@ -1,18 +1,18 @@
 /**
- * Birdeye API response shapes — Session 11.
+ * Birdeye API response shapes - Session 11.
  *
  * Ported to parity with solpulse's `backend/api/tokenList.js` normalizer
  * output so the cocos `TokenRow` carries every field the trade-tab UI
  * consumes: liquidity, marketCap, fdv, holders, blockUnixTime, source,
- * smartTraders, netFlow — on top of the core identification + price fields.
+ * smartTraders, netFlow - on top of the core identification + price fields.
  *
  * If Birdeye changes the schema, the `_normalize*` helpers in `BirdeyeClient`
  * are the single place to update. Raw interfaces below reflect the *current*
- * upstream shapes (snake_case vs camelCase differs per endpoint — caller
+ * upstream shapes (snake_case vs camelCase differs per endpoint - caller
  * branches by tab).
  */
 
-/** Normalized token row — what the feed list + squad picker consume. */
+/** Normalized token row - what the feed list + squad picker consume. */
 export interface TokenRow {
     /** Solana mint address, base58. */
     address: string;
@@ -108,7 +108,7 @@ export interface RawNewListingItem {
     logo_uri?: string;
     logoURI?: string;
     source?: string;
-    /** ISO-8601 string or unix seconds — normalizer coerces to unix sec. */
+    /** ISO-8601 string or unix seconds - normalizer coerces to unix sec. */
     liquidityAddedAt?: string | number;
     /** Fallback alternate spelling Birdeye sometimes ships. */
     block_unix_time?: number;
@@ -135,7 +135,7 @@ export interface RawSearchTokenItem {
 
 /** Raw /smart-money/v1/token/list response item. */
 export interface RawSmartMoneyItem {
-    /** Mint address — key is `token` not `address`. */
+    /** Mint address - key is `token` not `address`. */
     token?: string;
     address?: string;
     symbol?: string;
@@ -165,7 +165,7 @@ export interface RawMetaDataItem {
     description?: string;
 }
 
-/** Normalized metadata used by enricher — camelCase. */
+/** Normalized metadata used by enricher - camelCase. */
 export interface TokenMetaData {
     address: string;
     name: string;
@@ -198,7 +198,7 @@ export interface PriceUpdate {
 
 // ─── Session 13: OHLCV candles (chart detail view) ────────────────────
 
-/** Birdeye /defi/ohlcv `type` enum — maps 1:1 to solpulse timeframe buttons. */
+/** Birdeye /defi/ohlcv `type` enum - maps 1:1 to solpulse timeframe buttons. */
 export type OhlcvType = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';
 
 /** Raw /defi/ohlcv response item. Field names come straight from Birdeye. */
@@ -211,7 +211,7 @@ export interface RawOhlcvCandle {
     v: number;  // volume (base token)
 }
 
-/** Normalized candle — what CandlestickChart consumes. */
+/** Normalized candle - what CandlestickChart consumes. */
 export interface Candle {
     t: number; // unix seconds
     o: number;

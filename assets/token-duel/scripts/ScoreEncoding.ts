@@ -1,5 +1,5 @@
 /**
- * ScoreEncoding.ts — bidirectional map between portfolio delta % and the
+ * ScoreEncoding.ts - bidirectional map between portfolio delta % and the
  * u32 "height" field the on-chain `settle_match` expects.
  *
  * We reuse the existing Match PDA schema on betting-duel without any
@@ -25,7 +25,7 @@ export const SCORE_BIAS = 1_000_000;
 /** (deltaPct * DELTA_SCALE) is the portion encoded as u32 offset. */
 export const DELTA_SCALE = 100;
 
-/** u32 max — `settle_match` accepts u32 so we clamp both ends. */
+/** u32 max - `settle_match` accepts u32 so we clamp both ends. */
 export const U32_MAX = 0xFFFF_FFFF;
 
 /**
@@ -38,7 +38,7 @@ export const U32_MAX = 0xFFFF_FFFF;
  */
 export function encodeDeltaPct(deltaPct: number): number {
     if (!Number.isFinite(deltaPct)) {
-        console.log(`${TAG} encodeDeltaPct | NON_FINITE input=${deltaPct} — coercing to 0`);
+        console.log(`${TAG} encodeDeltaPct | NON_FINITE input=${deltaPct} - coercing to 0`);
         deltaPct = 0;
     }
     const raw = Math.round(deltaPct * DELTA_SCALE) + SCORE_BIAS;
@@ -59,11 +59,11 @@ export function encodeDeltaPct(deltaPct: number): number {
  */
 export function decodeScore(score: number): number {
     if (!Number.isFinite(score)) {
-        console.log(`${TAG} decodeScore | NON_FINITE_INPUT score=${score} — returning 0`);
+        console.log(`${TAG} decodeScore | NON_FINITE_INPUT score=${score} - returning 0`);
         return 0;
     }
     return (score - SCORE_BIAS) / DELTA_SCALE;
 }
 
-/** Sentinel score meaning "no submission yet" — decodes to 0%. */
+/** Sentinel score meaning "no submission yet" - decodes to 0%. */
 export const SCORE_ZERO = SCORE_BIAS;

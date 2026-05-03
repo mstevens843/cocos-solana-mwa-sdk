@@ -1,5 +1,5 @@
 /**
- * MWAEvents.ts — Event name constants for the Solana MWA SDK.
+ * MWAEvents.ts - Event name constants for the Solana MWA SDK.
  * Cocos Creator uses string-based EventTarget for node events.
  *
  * Usage:

@@ -1,11 +1,11 @@
--- Token Duel — User-collections persistence (DB Stage 9, ship-readiness pass)
+-- Token Duel - User-collections persistence (DB Stage 9, ship-readiness pass)
 -- Closes the cross-device gaps for squad presets, watchlist, and lifetime
 -- paper-mode profit. See ~/.claude/plans/db-persistence-ship-ready.md.
 -- Idempotent: safe to apply multiple times.
 
 -- ── paper_xp.profit_lamports ─────────────────────────────────────
 -- Lifetime PnL across paper + bot matches. Signed (BIGINT range
--- naturally allows negatives — losses subtract). Mirrors the
+-- naturally allows negatives - losses subtract). Mirrors the
 -- profitLamports field that Stats.ts has been writing to localStorage
 -- since Phase III but never had a backend home.
 ALTER TABLE paper_xp
@@ -13,7 +13,7 @@ ALTER TABLE paper_xp
 
 -- ── squad_presets ────────────────────────────────────────────────
 -- One row per pubkey holding the entire (≤5) preset list as JSONB.
--- Full-list replace via PUT — no per-row IDs survive server-side, so
+-- Full-list replace via PUT - no per-row IDs survive server-side, so
 -- there's no merge state to reconcile. Local conflict-resolution is
 -- last-write-wins by updated_at.
 --

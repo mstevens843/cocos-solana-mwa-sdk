@@ -1,5 +1,5 @@
 /**
- * rake_listener.ts — Part 13 Bundle B.
+ * rake_listener.ts - Part 13 Bundle B.
  *
  * Subscribes to program logs via `Connection.onLogs` and surfaces
  * `SettleMatch.FINAL` lines into the admin dashboard. Each such line
@@ -9,7 +9,7 @@
  *
  * We parse the raw `msg!()` output rather than decoding the Anchor event
  * (`emit!(MatchSettled { ... })`) because:
- *   1. No IDL dependency required — the msg format is pinned by source.
+ *   1. No IDL dependency required - the msg format is pinned by source.
  *   2. Event decoding needs the anchor-client IDL bundle, which adds 20KB+
  *      to the backend container.
  *   3. One-regex-per-log-line keeps this listener < 150 LOC.
@@ -61,7 +61,7 @@ export class RakeListener {
             console.log(`${TAG} start | OK sub_id=${this.subId} program=${this.opts.programId.toBase58()}`);
             this.retryDelayMs = 2_000; // reset backoff on success
         } catch (e) {
-            console.warn(`${TAG} start | FAIL ${e} — retrying in ${this.retryDelayMs}ms`);
+            console.warn(`${TAG} start | FAIL ${e} - retrying in ${this.retryDelayMs}ms`);
             this.scheduleRetry();
         }
     }
@@ -86,7 +86,7 @@ export class RakeListener {
             this.reconnectTimer = null;
             void this.start();
         }, this.retryDelayMs);
-        // Exponential backoff, capped at 30s — Solana ws drops at hourly scale.
+        // Exponential backoff, capped at 30s - Solana ws drops at hourly scale.
         this.retryDelayMs = Math.min(this.retryDelayMs * 2, 30_000);
     }
 

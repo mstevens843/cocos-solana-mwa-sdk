@@ -1,12 +1,12 @@
 /**
- * SeasonRpc.ts — Part 10 Bundle 3.
+ * SeasonRpc.ts - Part 10 Bundle 3.
  *
  * Read helper for the weekly Season PDA. Settle ixs accrue rake into it and
  * insert winning entries; cron's pay_season pays out 20% to top-3 on Monday.
  *
  * Layout (after 8-byte discriminator):
  *   season_id:              u64    (8)
- *   entries:                [SeasonEntry; 10] — each = 32+2+8 = 42 bytes
+ *   entries:                [SeasonEntry; 10] - each = 32+2+8 = 42 bytes
  *   total_rake_accumulated: u64    (8)
  *   started_at:             i64    (8)
  *   paid_out:               bool   (1)

@@ -1,5 +1,5 @@
 /**
- * EventDecoder.ts — Part 9 match-history helper.
+ * EventDecoder.ts - Part 9 match-history helper.
  *
  * Anchor emits `#[event]` structs as borsh-serialized bytes behind an
  * 8-byte discriminator (sha256("event:<Name>").slice(0, 8)), printed by
@@ -9,7 +9,7 @@
  *
  * Currently handled:
  *   - MatchSettled        (settle_match.rs & force_settle.rs both emit)
- *   - MatchForceSettled   (force_settle.rs only — lets the history view
+ *   - MatchForceSettled   (force_settle.rs only - lets the history view
  *                          tag AFK-reclaim matches)
  *
  * Client-side borsh is hand-rolled so we don't drag in a fat dep. The

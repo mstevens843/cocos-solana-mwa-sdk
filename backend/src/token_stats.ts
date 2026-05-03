@@ -1,14 +1,14 @@
 /**
- * token_stats.ts — Part 13 Bundle C.
+ * token_stats.ts - Part 13 Bundle C.
  *
  * Per-mint win/loss aggregator fed by `rake_listener.ts`. Evaporates on
  * restart (acceptable for devnet + demo; post-hackathon → Postgres).
  *
- * Sunday 00:00 UTC is the weekly reset boundary — matches the Season PDA
+ * Sunday 00:00 UTC is the weekly reset boundary - matches the Season PDA
  * cadence on-chain so "this week's winrate" lines up with weekly payouts.
  *
  * Winners get +1 win, losers get +1 match only. Each player's full squad
- * (3 mints) bumps together — if BONK was in the winning squad, BONK gets
+ * (3 mints) bumps together - if BONK was in the winning squad, BONK gets
  * a win; the other 2 mints in that squad also get wins. Losing squad's
  * mints each get a match-played but no win.
  */

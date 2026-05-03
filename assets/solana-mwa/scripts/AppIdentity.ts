@@ -1,5 +1,5 @@
 /**
- * AppIdentity.ts — Default app identity configuration for MWA authorization.
+ * AppIdentity.ts - Default app identity configuration for MWA authorization.
  *
  * Game developers override these values for their own app:
  *   import { setAppIdentity } from './AppIdentity';
@@ -19,7 +19,7 @@ let _currentIdentity: AppIdentity = {
 };
 
 /**
- * SIWS (Sign-In-With-Solana) identity — when `domain` is non-empty, the Connect
+ * SIWS (Sign-In-With-Solana) identity - when `domain` is non-empty, the Connect
  * flow uses MWA 2.0 `authorize_siws` with `sign_in_payload` instead of plain
  * authorize. Defaults to empty (SIWS opt-in). Apps opt in via
  * `setSiwsIdentity({ domain, statement })`.

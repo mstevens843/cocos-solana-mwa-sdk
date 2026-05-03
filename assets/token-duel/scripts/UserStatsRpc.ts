@@ -1,5 +1,5 @@
 /**
- * UserStatsRpc.ts — read helper + PDA derivation for on-chain per-player
+ * UserStatsRpc.ts - read helper + PDA derivation for on-chain per-player
  * UserStats PDA introduced in Session D.
  *
  * PDA seed: [b"userstats", player_pubkey].
@@ -36,7 +36,7 @@ export interface UserStatsState {
     lastPlayedAt: bigint;
     botGamesRemaining: number;
     bump: number;
-    // Part 10 Bundle 3 — v2 retention fields. 0-valued on pre-migration accounts.
+    // Part 10 Bundle 3 - v2 retention fields. 0-valued on pre-migration accounts.
     currentStreak: number;
     bestStreak: number;
     lastDailyClaimAt: bigint;
@@ -93,7 +93,7 @@ export function parseUserStats(pdaBase58: string, raw: Uint8Array): UserStatsSta
     const bump = raw[o]; o += 1;
 
     // Part 10 Bundle 3: v2 fields at offsets 72+. Guard so pre-migration
-    // accounts (72 bytes of data) still parse — they just report zeros.
+    // accounts (72 bytes of data) still parse - they just report zeros.
     const isV2 = raw.length >= 8 + 112;
     let currentStreak = 0;
     let bestStreak = 0;
@@ -108,7 +108,7 @@ export function parseUserStats(pdaBase58: string, raw: Uint8Array): UserStatsSta
         dailyChallengesBitmask = readU32LE(raw, o); o += 4;
         seasonWins = readU16LE(raw, o); o += 2;
         seasonId = readU64LE(raw, o); o += 8;
-        // _reserved [14] — skipped
+        // _reserved [14] - skipped
     }
 
     return {

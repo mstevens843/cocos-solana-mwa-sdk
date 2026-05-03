@@ -1,5 +1,5 @@
 /**
- * Token Duel backend — Express + ws entry point.
+ * Token Duel backend - Express + ws entry point.
  *
  * Responsibilities:
  *   - POST /session/start  → create session, return sessionId + serverPubkey.
@@ -43,6 +43,7 @@ import {
     updateHeights as updatePaperMatchHeights,
     deleteActive as deletePaperMatch,
     listActiveForUser as listPaperMatchesForUser,
+    listAllActive as listAllActivePaperMatches,
 } from './paper_match_active';
 import {
     recordPaperMatch as recordPaperMatchHistory,
@@ -80,13 +81,13 @@ app.get('/health', (_req, res) => {
     });
 });
 
-// DB Stage 1 — DB-specific health probe. Exposes pool latency for monitoring.
+// DB Stage 1 - DB-specific health probe. Exposes pool latency for monitoring.
 app.get('/health/db', async (_req, res) => {
     const result = await dbPing();
     res.status(result.ok ? 200 : 503).json(result);
 });
 
-// DB Stage 2 — user profile lookup. Returns 404 if user hasn't been seen yet.
+// DB Stage 2 - user profile lookup. Returns 404 if user hasn't been seen yet.
 app.get('/users/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
@@ -106,7 +107,7 @@ app.get('/users/:pubkey', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 3 — paper/bot XP read.
+// DB Stage 3 - paper/bot XP read.
 app.get('/paper-xp/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
@@ -138,7 +139,7 @@ app.get('/paper-xp/:pubkey', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 3 — paper/bot XP delta upload after match resolves.
+// DB Stage 3 - paper/bot XP delta upload after match resolves.
 app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
@@ -194,7 +195,7 @@ app.post('/paper-xp/:pubkey', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 9 — squad presets (cross-device, full-list replace).
+// DB Stage 9 - squad presets (cross-device, full-list replace).
 app.get('/users/:pubkey/squad-presets', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
@@ -240,7 +241,7 @@ app.put('/users/:pubkey/squad-presets', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 9 — user watchlist (cross-device, additive).
+// DB Stage 9 - user watchlist (cross-device, additive).
 app.get('/users/:pubkey/watchlist', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey;
@@ -313,7 +314,7 @@ app.delete('/users/:pubkey/watchlist/:mint', async (req: Request, res: Response)
     }
 });
 
-// DB Stage 4 — match history list (per-player).
+// DB Stage 4 - match history list (per-player).
 app.get('/matches/history', async (req: Request, res: Response) => {
     try {
         const player = String(req.query.player ?? '');
@@ -328,7 +329,7 @@ app.get('/matches/history', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 6 — open-lobby insert (idempotent on match_pda).
+// DB Stage 6 - open-lobby insert (idempotent on match_pda).
 // Client-uploaded immediately after `join_match_create` confirms. Powers
 // funnel analytics; on-chain stays authoritative for live discovery.
 app.post('/matches/lobby', async (req: Request, res: Response) => {
@@ -371,7 +372,7 @@ app.post('/matches/lobby', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 4 — match history insert (idempotent on match_pda).
+// DB Stage 4 - match history insert (idempotent on match_pda).
 // Client-uploaded after settle. Trust model documented in match_history.ts.
 app.post('/matches/history', async (req: Request, res: Response) => {
     try {
@@ -404,6 +405,7 @@ app.post('/matches/history', async (req: Request, res: Response) => {
             createdAt: body.createdAt ?? new Date().toISOString(),
             startedAt: body.startedAt ?? null,
             settledAt: body.settledAt ?? new Date().toISOString(),
+            wagerMint: typeof body.wagerMint === 'string' ? body.wagerMint : '',
         }, body.squadMintsByPlayer);
 
         // Touch participating users so their last_seen_at refreshes.
@@ -417,9 +419,9 @@ app.post('/matches/history', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 7 — paper / bot in-flight match tracking. Signed-in users post
+// DB Stage 7 - paper / bot in-flight match tracking. Signed-in users post
 // here when a paper match starts so MIP shows them cross-device. Guests
-// don't hit this — their matches stay in client memory.
+// don't hit this - their matches stay in client memory.
 app.post('/paper-match/active', async (req: Request, res: Response) => {
     try {
         const body = req.body as {
@@ -500,6 +502,19 @@ app.delete('/paper-match/active/:id', async (req: Request, res: Response) => {
     }
 });
 
+app.get('/paper-match/active', async (req: Request, res: Response) => {
+    try {
+        if (!dbConfigured()) return res.status(503).json({ error: 'db not configured' });
+        const limit  = Math.max(1, Math.min(200, Number(req.query.limit  ?? 50)));
+        const offset = Math.max(0, Number(req.query.offset ?? 0));
+        const rows = await listAllActivePaperMatches(limit, offset);
+        return res.json({ rows, hasMore: rows.length === limit });
+    } catch (e: any) {
+        console.log(`${TAG} GET /paper-match/active error | ${e?.message ?? e}`);
+        return res.status(500).json({ error: e?.message ?? 'internal error' });
+    }
+});
+
 app.get('/paper-match/active/:pubkey', async (req: Request, res: Response) => {
     try {
         const pubkey = req.params.pubkey ?? '';
@@ -514,7 +529,7 @@ app.get('/paper-match/active/:pubkey', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 8 — paper / bot finished match per-match history. Signed-in users
+// DB Stage 8 - paper / bot finished match per-match history. Signed-in users
 // post here on settle / forfeit so a "Match History" UI can show their full
 // off-chain history (mode, window, track, placement, XP earned). Guests skip.
 app.post('/paper-match/history', async (req: Request, res: Response) => {
@@ -594,9 +609,9 @@ app.get('/paper-match/history/:pubkey', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 2 — set username for a pubkey. Returns 409 if name is taken,
+// DB Stage 2 - set username for a pubkey. Returns 409 if name is taken,
 // 400 if invalid. NOTE: this endpoint does NOT verify that the caller
-// actually owns the pubkey — for hackathon scope we trust the client. A
+// actually owns the pubkey - for hackathon scope we trust the client. A
 // production version should require a signed message proving ownership.
 app.post('/users/:pubkey/username', async (req: Request, res: Response) => {
     try {
@@ -623,7 +638,7 @@ app.post('/users/:pubkey/username', async (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 10 — preferences (cross-device user settings).
+// DB Stage 10 - preferences (cross-device user settings).
 // Stored in users.metadata->'preferences' JSONB; no schema change.
 app.get('/users/:pubkey/preferences', async (req: Request, res: Response) => {
     try {
@@ -665,7 +680,7 @@ app.get('/pubkey', (_req, res) => {
 });
 
 /**
- * Phase F2 — direct receipt signing for betting-duel real-track matches.
+ * Phase F2 - direct receipt signing for betting-duel real-track matches.
  *
  * The legacy /session/start + WS path was tied to stack-jump physics
  * (drop-event validation). Betting-duel never streams drops, so finalize()
@@ -673,7 +688,7 @@ app.get('/pubkey', (_req, res) => {
  * session machinery: clients POST { matchPda, playerPubkey, height,
  * signedAt? } and get back a signed Ed25519 receipt that satisfies
  * `settle_match_verified`. Backend currently signs in attestation mode
- * (no independent height validation) — verification proves the backend
+ * (no independent height validation) - verification proves the backend
  * was reachable, which is what onchain enforces. Future Phase K can add
  * independent Birdeye recompute for full anti-cheat.
  */
@@ -710,7 +725,7 @@ app.post('/receipts/sign', (req: Request, res: Response) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// Part 12 Bundle B — admin live dashboard
+// Part 12 Bundle B - admin live dashboard
 // Seeds StatsBucket context so /admin/stream can show server pubkey + tree.
 // Mounts: /admin (static HTML/CSS/JS) + /admin/stream (SSE) + / → /admin redirect.
 // ═════════════════════════════════════════════════════════════════════
@@ -721,7 +736,7 @@ app.use(adminRouter());
 app.get('/', (_req, res) => res.redirect('/admin'));
 
 // ═════════════════════════════════════════════════════════════════════
-// Part 13 B — rake listener + per-token analytics
+// Part 13 B - rake listener + per-token analytics
 // Subscribes to program logs, parses SettleMatch.FINAL msgs, bumps
 // StatsBucket + TokenStatsBucket so the admin dashboard tracks rake +
 // per-mint winrate in real time.
@@ -738,7 +753,7 @@ const rakeListener = new RakeListener({
 void rakeListener.start();
 
 // ═════════════════════════════════════════════════════════════════════
-// Phase N5 — Notification listener + store.
+// Phase N5 - Notification listener + store.
 // Listens to the same program logs as RakeListener but parses different
 // patterns (JoinMatch.JOIN, SettleMatch.FINAL, CancelMatch) into
 // notification events keyed by recipient pubkey. Live delivery via WS
@@ -789,7 +804,7 @@ app.post('/notifications/:pubkey/:id/read', (req: Request, res: Response) => {
     }
 });
 
-// DB Stage 10 — client-emit notification (paper-mode match settles, etc).
+// DB Stage 10 - client-emit notification (paper-mode match settles, etc).
 // Real-mode events are still emitted server-side by notification_listener;
 // this route exists for events the server doesn't observe (paper matches,
 // local level-ups, etc).
@@ -819,7 +834,7 @@ app.post('/notifications/:pubkey', (req: Request, res: Response) => {
         if (body.title.length > 80 || body.body.length > 280) {
             return res.status(400).json({ error: 'title ≤80 chars, body ≤280 chars' });
         }
-        // Server is authoritative on the id — but accepts a client-supplied id
+        // Server is authoritative on the id - but accepts a client-supplied id
         // so locally-emitted notifications can dedupe with the in-memory store
         // (the store's push() already drops duplicates by id).
         const id = typeof body.id === 'string' && body.id.length > 0 && body.id.length <= 128
@@ -844,7 +859,7 @@ app.post('/notifications/:pubkey', (req: Request, res: Response) => {
 // Expose public /fees route as a clean alias to the static HTML page.
 app.get('/fees', (_req, res) => res.redirect('/fees.html'));
 // Also expose /admin/tokens JSON for direct inspection.
-// DB Stage 5 — falls back to in-memory TokenStatsBucket when DB not configured
+// DB Stage 5 - falls back to in-memory TokenStatsBucket when DB not configured
 // or when the requested week has no rows yet (fresh DB after deploy).
 app.get('/admin/tokens', async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit ?? 10)));
@@ -859,13 +874,13 @@ app.get('/admin/tokens', async (req, res) => {
             }
         }
     } catch (e: any) {
-        console.log(`${TAG} /admin/tokens db_err | ${e?.message ?? e} — falling back to in-memory`);
+        console.log(`${TAG} /admin/tokens db_err | ${e?.message ?? e} - falling back to in-memory`);
     }
     res.json({ tokens: tokenStats.getTopTokens(limit), source: 'memory' });
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// Part 14 A — Tournament host cron
+// Part 14 A - Tournament host cron
 // Seeds a BR10 match every TOURNAMENT_CADENCE_MS using a dedicated host
 // keypair as player 0. Host's stake subsidizes the winner pot (prize
 // seed bonus); `force_settle` after 5 min redistributes to real players.
@@ -896,12 +911,12 @@ if (process.env.TOURNAMENT_CRON_ENABLED !== 'false' && process.env.TOURNAMENT_HO
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// Part 11 Bundle A — share card PNG for Twitter/X
+// Part 11 Bundle A - share card PNG for Twitter/X
 // ═════════════════════════════════════════════════════════════════════
 
 /**
  * LRU-ish cache of rendered PNGs keyed by matchPda. 12-hr TTL; cap 2000.
- * No real LRU eviction on every access — we just sweep oldest when full.
+ * No real LRU eviction on every access - we just sweep oldest when full.
  */
 interface CacheEntry { png: Buffer; summary: MatchSummary; createdAt: number; }
 const sharecardCache = new Map<string, CacheEntry>();
@@ -939,7 +954,7 @@ app.get('/sharecard/:matchPda.png', async (req: Request, res: Response) => {
     // flow: client populates these from the PostMatchPanel state.
     const summary = parseMatchSummaryFromQuery(matchPda, req.query);
     if (!summary) {
-        return res.status(400).send('missing summary query params — supply placement, requiredPlayers, height, payoutLamports, wagerLamports, modeLabel, timeWindowLabel, track, squadSymbols, squadDeltas, verified');
+        return res.status(400).send('missing summary query params - supply placement, requiredPlayers, height, payoutLamports, wagerLamports, modeLabel, timeWindowLabel, track, squadSymbols, squadDeltas, verified');
     }
 
     try {
@@ -959,7 +974,7 @@ app.get('/sharecard/:matchPda.png', async (req: Request, res: Response) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// Part 11 Bundle B — NFT trophy metadata JSON
+// Part 11 Bundle B - NFT trophy metadata JSON
 // Served directly so Metaplex / Phantom can resolve token metadata without
 // needing external hosting (IPFS/Arweave). URL pattern matches what
 // `nft.ts::mintTrophy` bakes into the on-chain metadata's `uri` field.
@@ -980,7 +995,7 @@ app.get('/metadata/:weekId/:rank.json', (req: Request, res: Response) => {
     const body = trophyMetadataJson(weekId, rank, 0, imageBaseUrl);
     res.set({
         'content-type': 'application/json',
-        'cache-control': 'public, max-age=604800', // 7 days — rank metadata is immutable
+        'cache-control': 'public, max-age=604800', // 7 days - rank metadata is immutable
     });
     return res.json(body);
 });
@@ -1015,7 +1030,7 @@ function parseMatchSummaryFromQuery(matchPda: string, q: any): MatchSummary | nu
 }
 
 /**
- * betting-duel live opponent delta — client POSTs its 3 squad mints after
+ * betting-duel live opponent delta - client POSTs its 3 squad mints after
  * Real-match commit. Backend stores + fans out to any WS subscribers on
  * this matchPda. Both clients then compute opponent live delta locally via
  * the same Birdeye price feed they already poll for their own squad.
@@ -1035,7 +1050,7 @@ app.post('/match/:matchPda/publish-squad', (req: Request, res: Response) => {
 
         const result = sessions.publishMatchSquad(matchPda, body.playerPubkey, body.mints);
         if (!result.ok) return res.status(400).json({ error: result.reason });
-        // DB Stage 2 — auto-create / touch user row on every interaction.
+        // DB Stage 2 - auto-create / touch user row on every interaction.
         // Fire-and-forget; DB unavailability shouldn't block the squad publish.
         void touchUser(body.playerPubkey).catch((e) =>
             console.log(`${TAG} touchUser_err | ${e?.message ?? e}`),
@@ -1048,7 +1063,7 @@ app.post('/match/:matchPda/publish-squad', (req: Request, res: Response) => {
 });
 
 /**
- * Live race standings — one-shot snapshot of every published squad in a
+ * Live race standings - one-shot snapshot of every published squad in a
  * match, ranked by current portfolio delta. Used by the MIP "details" modal
  * on the client. Reads in-memory squad board (TTL-bounded), fetches a single
  * batched current-price call from Birdeye, and computes per-player
@@ -1071,7 +1086,7 @@ app.get('/match/:matchPda/live-pnl', async (req: Request, res: Response) => {
         if (boards.length === 0) {
             return res.json({ matchPda, fetchedAt, players: [] });
         }
-        // Distinct mints across every player — one batched Birdeye call.
+        // Distinct mints across every player - one batched Birdeye call.
         const mintSet = new Set<string>();
         for (const b of boards) for (const m of b.mints) mintSet.add(m);
         const currentPrices = await sessions.fetchSpotPrices([...mintSet]);
@@ -1190,7 +1205,7 @@ httpServer.on('upgrade', (request, socket, head) => {
         return;
     }
 
-    // Phase N5 — notification stream per pubkey: /notifications/:pubkey/stream
+    // Phase N5 - notification stream per pubkey: /notifications/:pubkey/stream
     const notifStream = url.match(/^\/notifications\/([^/]+)\/stream$/);
     if (notifStream) {
         const pubkey = notifStream[1];
@@ -1208,7 +1223,7 @@ httpServer.on('upgrade', (request, socket, head) => {
     socket.destroy();
 });
 
-/** Phase N5 — bind a WebSocket to the notification store for a given player. */
+/** Phase N5 - bind a WebSocket to the notification store for a given player. */
 function attachNotificationSubscriber(ws: WebSocket, pubkey: string): void {
     const unsubscribe = notificationStore.subscribe(pubkey, ws);
     console.log(`${TAG} notif_subscriber OPEN pubkey=${pubkey.slice(0, 8)}...`);
@@ -1235,7 +1250,7 @@ function attachSpectator(ws: WebSocket, sessionId: string, matchPda: string): vo
         return;
     }
     console.log(`${TAG} spectator OPEN session=${sessionId} match=${matchPda.slice(0, 8)}...`);
-    // Spectators can't send messages — ignore any inbound data, just in case.
+    // Spectators can't send messages - ignore any inbound data, just in case.
     ws.on('message', () => { /* read-only channel */ });
     ws.on('close', () => {
         sessions.removeSpectator(sessionId, ws);
@@ -1251,7 +1266,7 @@ function attachSpectator(ws: WebSocket, sessionId: string, matchPda: string): vo
 }
 
 /**
- * betting-duel live opponent delta — session-less spectator path. Registers
+ * betting-duel live opponent delta - session-less spectator path. Registers
  * a WS subscriber scoped to matchPda only (no physics session). Receives
  * `spectate-ready` (with current squads) + subsequent `opponent-squad`
  * broadcasts as each player publishes.
@@ -1339,7 +1354,7 @@ function handleMessage(ws: WebSocket, sessionId: string, msg: WsInbound): void {
 httpServer.listen(PORT, () => {
     console.log(`${TAG} listening on :${PORT} · serverPubkey=${signer.pubkey.toBase58()}`);
     console.log(`${TAG} CORS=${JSON.stringify(CORS_ORIGINS)} max_sessions=${MAX_CONCURRENT} birdeye=${BIRDEYE_KEY ? 'set' : 'MISSING (permissive physics)'}`);
-    // DB Stage 1 — auto-apply pending migrations on startup.
+    // DB Stage 1 - auto-apply pending migrations on startup.
     if (dbConfigured()) {
         runMigrations()
             .then((r) => {
@@ -1348,12 +1363,12 @@ httpServer.listen(PORT, () => {
             })
             .catch((e) => console.log(`${TAG} migration_failed | ${e?.message ?? e}`));
     } else {
-        console.log(`${TAG} db DISABLED (DATABASE_URL not set) — DB-backed routes return 503`);
+        console.log(`${TAG} db DISABLED (DATABASE_URL not set) - DB-backed routes return 503`);
     }
 });
 
-// Part 10 pt2: retention cron — skip if CRON_ENABLED=false (local dev default)
-// OR if ADMIN_SECRET is absent (missing credentials — no point starting).
+// Part 10 pt2: retention cron - skip if CRON_ENABLED=false (local dev default)
+// OR if ADMIN_SECRET is absent (missing credentials - no point starting).
 // CRON_DRY_RUN=1 overrides the missing-credentials skip (uses ephemeral kp).
 const cronEnabled = process.env.CRON_ENABLED !== 'false';
 const cronHasCreds = !!process.env.ADMIN_SECRET || process.env.CRON_DRY_RUN === '1';
@@ -1369,7 +1384,7 @@ if (cronEnabled && cronHasCreds) {
 }
 
 process.on('SIGTERM', () => {
-    console.log(`${TAG} SIGTERM — shutting down`);
+    console.log(`${TAG} SIGTERM - shutting down`);
     sessions.shutdown();
     void closePool();
     httpServer.close(() => process.exit(0));

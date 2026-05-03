@@ -1,15 +1,15 @@
 /**
- * LandingFX.ts — landing-screen ambient animations.
+ * LandingFX.ts - landing-screen ambient animations.
  *
  * Layer-compatible with ButtonFX (which already runs idle-pulse + press-pop on
  * landing CTAs) and AppUI._initStarfieldTwinkle (which already cycles 1-in-4
  * stars). All loops are `.repeatForever()` and idempotent via per-target
  * WeakSets so re-application is a no-op.
  *
- *   addFloat(node)     — Y-axis sine oscillation around the node's current
+ *   addFloat(node)     - Y-axis sine oscillation around the node's current
  *                        position. Drives the mascot's "alive" presence.
  *
- *   addGlowPulse(node) — opacity sine on a UIOpacity component. Drives the
+ *   addGlowPulse(node) - opacity sine on a UIOpacity component. Drives the
  *                        breathing on glow halos (TitleGlow, MascotGlow,
  *                        BtnGlow_ConnectButton).
  *
@@ -73,12 +73,12 @@ export function addGlowPulse(node: Node, peakAlpha = 130, periodSec = 2.6): void
 }
 
 /**
- * 2026-04-28 hackathon UX — drifting particle layer behind the mascot for
+ * 2026-04-28 hackathon UX - drifting particle layer behind the mascot for
  * "alive arena" feel. Spawns `count` small Graphics-drawn dots inside
  * `parent`, each tweening bottom→top with randomized X jitter, opacity,
  * scale, and start phase. All Graphics components are added in a single
  * synchronous pass before any tween starts (mirrors the confetti
- * pre-allocation pattern in AppUI._bindPostMatchConfetti — Cocos 3.8
+ * pre-allocation pattern in AppUI._bindPostMatchConfetti - Cocos 3.8
  * Android can SIGSEGV when many Graphics components attach mid-tween).
  *
  * Idempotent per-parent. Loops with `.repeatForever()`. No-op if `parent`
@@ -94,11 +94,11 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
     if (!parent || driftSet.has(parent)) return;
     driftSet.add(parent);
 
-    // 2026-04-29 — route Node + Graphics allocation through the budgeted
+    // 2026-04-29 - route Node + Graphics allocation through the budgeted
     // post-draw queue. Each particle becomes one queued work unit so the
     // queue spreads them across multiple AFTER_DRAW ticks (engine SIGSEGVs
     // at 0x28 in js_cc_UIModelProxy_activeSubModels when too many
-    // addComponent(Graphics) land in a single tick — empirical ceiling ~20).
+    // addComponent(Graphics) land in a single tick - empirical ceiling ~20).
 
     const densityCurve = opts.densityCurve ?? 'uniform';
 
@@ -108,11 +108,11 @@ export function addParticleDrift(parent: Node, count = 8, opts: { densityCurve?:
     // reads as "rising from below" rather than appearing mid-screen.
     //
     // `densityCurve='topHeavy'` only extends the upper travel a bit further
-    // (Y_END=640 vs 560) — both modes still spawn from the bottom.
+    // (Y_END=640 vs 560) - both modes still spawn from the bottom.
     const Y_START = -560;
     const Y_END   = densityCurve === 'topHeavy' ? 640 : 560;
 
-    // Violet (#9945FF) and teal (#14F195) — Theme.accent.violet/teal.
+    // Violet (#9945FF) and teal (#14F195) - Theme.accent.violet/teal.
     const tints: [number, number, number][] = [
         [153,  69, 255],  // violet
         [ 20, 241, 149],  // teal
@@ -204,7 +204,7 @@ export function ensureParticleDrift(parent: Node, count = 8, opts: { densityCurv
 }
 
 /**
- * 2026-04-28 home UX polish — portal-style micro-transition for hero CTA
+ * 2026-04-28 home UX polish - portal-style micro-transition for hero CTA
  * destinations (Find Match / Start Match). Run *after* the panel is set
  * active. Three layered effects:
  *
@@ -215,13 +215,13 @@ export function ensureParticleDrift(parent: Node, count = 8, opts: { densityCurv
  *      completes.
  *
  * No-op if `panelRoot` is null. Safe to call even when the panel was
- * already visible — the scale tween will run again, which still reads
+ * already visible - the scale tween will run again, which still reads
  * as a small "re-affirmation" flash.
  */
 export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): void {
     if (!panelRoot) return;
 
-    // Step 1 — panel scale + opacity entrance.
+    // Step 1 - panel scale + opacity entrance.
     panelRoot.setScale(0.96, 0.96, 1);
     const panelOp = panelRoot.getComponent(UIOpacity) ?? panelRoot.addComponent(UIOpacity);
     panelOp.opacity = 0;
@@ -234,9 +234,9 @@ export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): 
         .to(0.22, { opacity: 255 }, { easing: 'sineOut' })
         .start();
 
-    // Step 2 — one-shot radial glow burst at panel center. Uses Graphics
+    // Step 2 - one-shot radial glow burst at panel center. Uses Graphics
     // (filled circle) rather than Sprite to avoid needing a SpriteFrame
-    // UUID — same pattern as addParticleDrift's drifting dots.
+    // UUID - same pattern as addParticleDrift's drifting dots.
     // Routed through the budgeted post-draw queue (UIModelProxy SIGSEGV at
     // 0x28). See safeGraphics.enqueuePostDraw.
     enqueuePostDraw(() => {
@@ -266,7 +266,7 @@ export function panelEnterFlourish(panelRoot: Node | null, accentColor: Color): 
 }
 
 /**
- * 2026-04-29 landing UX — replace a hard-edged white-square Sprite halo with a
+ * 2026-04-29 landing UX - replace a hard-edged white-square Sprite halo with a
  * Graphics-drawn radial. Cocos Sprite has no soft-edge primitive, so the
  * "halo" sprites in the scene render as literal rectangles; on the Landing
  * panel (where nothing covers them) the artifact is glaringly visible.
@@ -293,13 +293,13 @@ export function installSoftGlow(node: Node | null, opts: { color: Color; peakAlp
     const peakAlpha = opts.peakAlpha ?? 130;
     const rings     = opts.rings ?? 14;
 
-    // 2026-04-29 — defer Graphics allocation past the first DRAW via the
+    // 2026-04-29 - defer Graphics allocation past the first DRAW via the
     // budgeted post-draw queue. Engine SIGSEGVs at 0x28 in
     // js_cc_UIModelProxy_activeSubModels when too many addComponent(Graphics)
     // land in a single AFTER_DRAW tick (empirical ceiling ~20).
     enqueuePostDraw(() => {
         if (!node.isValid) return;
-    // Strip the rectangular Sprite frame — that's the artifact source.
+    // Strip the rectangular Sprite frame - that's the artifact source.
     const oldSprite = node.getComponent(Sprite);
     if (oldSprite) oldSprite.destroy();
 
@@ -325,7 +325,7 @@ export function installSoftGlow(node: Node | null, opts: { color: Color; peakAlp
 }
 
 /**
- * 2026-04-29 landing UX — soft drop-shadow ellipse for under the mascot.
+ * 2026-04-29 landing UX - soft drop-shadow ellipse for under the mascot.
  * Same idea as installSoftGlow but draws scaled circles to fake an ellipse
  * (Cocos Graphics has g.ellipse, but stacking multiple filled ellipses with
  * fading alpha gives the cleanest soft edge).
@@ -339,7 +339,7 @@ export function installSoftEllipse(node: Node | null, opts: { color: Color; peak
     const peakAlpha = opts.peakAlpha ?? 80;
     const rings     = opts.rings ?? 8;
 
-    // 2026-04-29 — defer Graphics allocation via the budgeted post-draw queue
+    // 2026-04-29 - defer Graphics allocation via the budgeted post-draw queue
     // (UIModelProxy SIGSEGV at 0x28). See safeGraphics.enqueuePostDraw.
     enqueuePostDraw(() => {
         if (!node.isValid) return;
@@ -368,14 +368,14 @@ export function installSoftEllipse(node: Node | null, opts: { color: Color; peak
 }
 
 /**
- * 2026-04-29 landing UX — landing-only edge vignette overlay. Adds a
+ * 2026-04-29 landing UX - landing-only edge vignette overlay. Adds a
  * `LandingVignetteOverlay` child Node above the bg gradient stack but
- * below content (sibling index 6 — directly after the 6 BgGradient*
+ * below content (sibling index 6 - directly after the 6 BgGradient*
  * sprites). Subtle corner darken to focus the eye on center hero,
  * unify color tone, and hide the seams between gradient bands.
  *
  * Drawn as concentric translucent rings stroked from the panel edges
- * toward center — outer rings darker, inner rings transparent. Same
+ * toward center - outer rings darker, inner rings transparent. Same
  * Graphics primitives as installSoftGlow, just inverted (dark, edge-out).
  *
  * Idempotent per-panel. No-op if `panel` is null.
@@ -388,7 +388,7 @@ export function installLandingVignette(panel: Node | null): void {
     }
     vignetteSet.add(panel);
 
-    // 2026-04-29 — defer Node + Graphics allocation via the budgeted post-draw
+    // 2026-04-29 - defer Node + Graphics allocation via the budgeted post-draw
     // queue (UIModelProxy SIGSEGV at 0x28). See safeGraphics.enqueuePostDraw.
     enqueuePostDraw(() => {
         if (!panel.isValid) return;

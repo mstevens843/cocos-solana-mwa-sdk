@@ -1,5 +1,5 @@
 /**
- * FighterPickTransition.ts — Tekken-style cinematic for squad token selection.
+ * FighterPickTransition.ts - Tekken-style cinematic for squad token selection.
  *
  * Replaces the legacy 180ms ghost-fly (`AppUI._flyPickGhost`) on direct single
  * picks with a 5-phase morph: TAP -> LIFT -> HERO CARD -> HOLD -> SLOT ARC.
@@ -10,7 +10,7 @@
  * world->local conversion, safeAddGraphics for SIGSEGV safety, promise resolves
  * at landing).
  *
- * Bulk pick-mode ( _squadPickChecked.size > 0 ) bypasses this module — the
+ * Bulk pick-mode ( _squadPickChecked.size > 0 ) bypasses this module - the
  * caller falls back to _flyPickGhost so batched picks don't queue cinematics.
  */
 
@@ -138,7 +138,7 @@ export function runFighterPickIn(opts: FighterPickInOptions): Promise<void> {
         };
         _activeHandles.add(handle);
 
-        // Phase 1 — TAP (0–60 ms): row scale dip-recover.
+        // Phase 1 - TAP (0-60 ms): row scale dip-recover.
         if (rowSnapshot) {
             Tween.stopAllByTarget(rowSnapshot.node);
             tween(rowSnapshot.node)
@@ -147,7 +147,7 @@ export function runFighterPickIn(opts: FighterPickInOptions): Promise<void> {
                 .start();
         }
 
-        // Phase 2 — LIFT (60–260 ms): row floats up + fades, raised z-index.
+        // Phase 2 - LIFT (60-260 ms): row floats up + fades, raised z-index.
         if (rowSnapshot) {
             const rowNode = rowSnapshot.node;
             try {
@@ -170,7 +170,7 @@ export function runFighterPickIn(opts: FighterPickInOptions): Promise<void> {
             try { playSound('tap'); } catch (_) { /* asset may be missing */ }
         }
 
-        // Phase 3 — HERO build + travel (260–610 ms): card flies to center, scales up.
+        // Phase 3 - HERO build + travel (260-610 ms): card flies to center, scales up.
         const t2 = setTimeout(() => {
             if (!card.isValid) return;
             tween(cardOp).to(0.20, { opacity: 255 }, { easing: 'cubicOut' }).start();
@@ -184,7 +184,7 @@ export function runFighterPickIn(opts: FighterPickInOptions): Promise<void> {
         }, 260);
         handle.timers.push(t2);
 
-        // Phase 4 — HOLD (610–760 ms): subtle float + glow pulse.
+        // Phase 4 - HOLD (610-760 ms): subtle float + glow pulse.
         const t3 = setTimeout(() => {
             if (!card.isValid) return;
             try { addFloat(card, 4, 0.8); } catch (_) { /* ignore */ }
@@ -192,7 +192,7 @@ export function runFighterPickIn(opts: FighterPickInOptions): Promise<void> {
         }, 610);
         handle.timers.push(t3);
 
-        // Phase 5 — SLOT arc (760–1110 ms): card arcs into slot, lands.
+        // Phase 5 - SLOT arc (760-1110 ms): card arcs into slot, lands.
         const t4 = setTimeout(() => {
             if (!card.isValid) return;
             try { stopFloat(card); } catch (_) { /* ignore */ }
@@ -389,7 +389,7 @@ function _buildHeroCard(parent: Node, token: FighterTokenData): BuiltCard {
     cardUT.setContentSize(HERO_WIDTH, HERO_HEIGHT);
     card.addComponent(UIOpacity);
 
-    // Background — black glass with teal border. Routed through safeAddGraphics
+    // Background - black glass with teal border. Routed through safeAddGraphics
     // (Cocos 3.8 Android SIGSEGV at 0x28 if Graphics attaches mid-tick).
     const bg = new Node('Background');
     card.addChild(bg);
@@ -431,7 +431,7 @@ function _buildHeroCard(parent: Node, token: FighterTokenData): BuiltCard {
     // Symbol ($BONK).
     _addLabel(card, 'Symbol', `$${token.symbol || '?'}`, 28, themeColor.textHi(), 60, 60, 320, 36, true);
 
-    // Change (+12.4%) — color reflects sign.
+    // Change (+12.4%) - color reflects sign.
     const changeColor = token.changePct > 0
         ? themeColor.win()
         : token.changePct < 0 ? themeColor.loss() : themeColor.neutral();
@@ -523,13 +523,13 @@ function _burstParticles(parent: Node, atLocalPos: Vec3, count: number): void {
 }
 
 function _formatPct(n: number): string {
-    if (!Number.isFinite(n)) return '—';
+    if (!Number.isFinite(n)) return '-';
     const sign = n > 0 ? '+' : '';
     return `${sign}${n.toFixed(1)}%`;
 }
 
 function _formatUsdShort(n: number): string {
-    if (!Number.isFinite(n) || n <= 0) return '—';
+    if (!Number.isFinite(n) || n <= 0) return '-';
     if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
     if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
     if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
@@ -537,7 +537,7 @@ function _formatUsdShort(n: number): string {
 }
 
 function _formatPrice(n: number): string {
-    if (!Number.isFinite(n) || n <= 0) return '—';
+    if (!Number.isFinite(n) || n <= 0) return '-';
     if (n >= 1) return `$${n.toFixed(2)}`;
     if (n >= 0.01) return `$${n.toFixed(4)}`;
     return `$${n.toPrecision(3)}`;

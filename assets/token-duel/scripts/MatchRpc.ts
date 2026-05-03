@@ -1,10 +1,10 @@
 /**
- * MatchRpc.ts — read + derive helpers for the Match PDA system.
+ * MatchRpc.ts - read + derive helpers for the Match PDA system.
  *
  * Keep this thin: tx composition lives in AnchorBackend; the Matchmaker
  * orchestrates discovery + poll loops using these primitives.
  *
- * Wire shape matches the Rust `MatchAccount` struct in state.rs — if the
+ * Wire shape matches the Rust `MatchAccount` struct in state.rs - if the
  * struct reorders fields, update `parseMatchAccount` in lockstep.
  */
 
@@ -237,7 +237,7 @@ export async function findAllOpenMatchesUnfiltered(
     const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
         { dataSize: MATCH_ACCOUNT_BYTES },
     ]);
-    // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap.
+    // 2026-05-02 attempt 7 rev 3 - Stage G: per-account StormTrap.
     // Per plan ~/.claude/plans/cozy-wobbling-goose.md Stage G.
     const decoded: MatchState[] = [];
     for (const r of raw) {
@@ -256,7 +256,7 @@ export async function findAllOpenMatchesUnfiltered(
 }
 
 /**
- * Phase H2 — discover ACTIVE matches (currently racing) for the live
+ * Phase H2 - discover ACTIVE matches (currently racing) for the live
  * spectator feed. Same shape as findAllOpenMatchesUnfiltered but filters
  * status==Active (1). Sorted by startedAt desc so most-recently-started
  * appear first.
@@ -268,7 +268,7 @@ export async function findActiveMatchesUnfiltered(
     const raw = await rpc.getProgramAccounts(PROGRAM_ID, [
         { dataSize: MATCH_ACCOUNT_BYTES },
     ]);
-    // 2026-05-02 attempt 7 rev 3 — Stage G: per-account StormTrap.
+    // 2026-05-02 attempt 7 rev 3 - Stage G: per-account StormTrap.
     // The post-game-over [SE_ERROR] storm fires immediately after this
     // call returns 3 accounts; one of them likely has a malformed layout
     // causing parseMatchAccount or downstream UI updates to throw.

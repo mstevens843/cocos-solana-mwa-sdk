@@ -1,5 +1,5 @@
 /**
- * Haptics.ts — Part 11 Bundle C.
+ * Haptics.ts - Part 11 Bundle C.
  *
  * Thin wrapper over Android's native haptic feedback API. On non-Android
  * platforms (editor preview, web) every call no-ops so game code can sprinkle
@@ -26,7 +26,7 @@ export enum HapticType {
 }
 
 let _enabled: boolean | null = null; // lazy-loaded from storage on first access
-/** DB Stage 10 — pubkey for cross-device preferences sync. Null = guest. */
+/** DB Stage 10 - pubkey for cross-device preferences sync. Null = guest. */
 let _syncPubkey: string | null = null;
 
 function _syncPref(on: boolean): void {
@@ -73,7 +73,7 @@ export class Haptics {
         _syncPref(on);
     }
 
-    /** DB Stage 10 — bind haptics setting to a pubkey for cross-device sync. */
+    /** DB Stage 10 - bind haptics setting to a pubkey for cross-device sync. */
     static setSyncPubkey(pubkey: string | null): void {
         _syncPubkey = pubkey || null;
     }
@@ -100,7 +100,7 @@ export class Haptics {
                 type,
             );
         } catch (e) {
-            // Editor / web — no-op. Don't even log to keep dev console clean.
+            // Editor / web - no-op. Don't even log to keep dev console clean.
         }
     }
 }

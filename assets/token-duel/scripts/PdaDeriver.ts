@@ -1,5 +1,5 @@
 /**
- * PdaDeriver.ts — Solana `findProgramAddress` without @solana/web3.js.
+ * PdaDeriver.ts - Solana `findProgramAddress` without @solana/web3.js.
  *
  * Replaces `PublicKey.findProgramAddressSync` from web3.js, which we dropped
  * from the Cocos runtime because web3.js transitively pulls in `tr46` + a
@@ -7,7 +7,7 @@
  *
  * Deps:
  *   - js-sha256 for the sha256 hash (same as web3.js uses).
- *   - @noble/curves/ed25519 for the "is point on curve" check — returns a
+ *   - @noble/curves/ed25519 for the "is point on curve" check - returns a
  *     thrown exception if `Point.fromHex(bytes)` can't decompress to a valid
  *     ed25519 point. Off-curve = PDA-eligible.
  *
@@ -69,7 +69,7 @@ export function findProgramAddress(
 
     for (let bump = 255; bump >= 0; bump--) {
         const preimage = concat(...seeds, new Uint8Array([bump]), programId, PDA_MARKER);
-        // @noble/hashes/sha256 returns Uint8Array directly — no hex parsing needed.
+        // @noble/hashes/sha256 returns Uint8Array directly - no hex parsing needed.
         const hashBytes = sha256(preimage);
         if (!isOnCurve(hashBytes)) {
             const pda = base58Encode(hashBytes);

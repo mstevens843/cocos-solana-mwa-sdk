@@ -1,5 +1,5 @@
 /**
- * admin_signer — loads the admin keypair from env + sends pre-built admin txs.
+ * admin_signer - loads the admin keypair from env + sends pre-built admin txs.
  *
  * The cron uses this to send init_daily_challenge / init_season / pay_season.
  * ADMIN_SECRET is a base58 Ed25519 secret key (64 bytes before encoding).
@@ -29,7 +29,7 @@ export function loadAdminKeypair(): Keypair {
  * Deserialize a pre-built tx from `AnchorBackend.build*Tx(...)`, sign with
  * admin, send, confirm, log the explorer link. Returns the tx signature.
  *
- * Idempotent for PDAs that already exist — the RPC returns "already in use"
+ * Idempotent for PDAs that already exist - the RPC returns "already in use"
  * which we treat as success.
  */
 export async function sendAdminTx(

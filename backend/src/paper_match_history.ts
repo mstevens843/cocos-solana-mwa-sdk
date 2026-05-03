@@ -1,5 +1,5 @@
 /**
- * paper_match_history.ts — DB-backed per-match history for finished paper /
+ * paper_match_history.ts - DB-backed per-match history for finished paper /
  * bot matches (DB Stage 8). Mirror of match_history.ts but for off-chain
  * matches (no PDA, no wager, no payouts). One row per settled match.
  *

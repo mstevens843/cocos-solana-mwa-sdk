@@ -1,9 +1,9 @@
 /**
- * user_watchlist.ts — DB-backed per-user token watchlist.
+ * user_watchlist.ts - DB-backed per-user token watchlist.
  *
  * Composite PK (pubkey, mint) keeps "is this mint watched" cheap and
  * avoids a surrogate id we'd otherwise have to reconcile with the
- * client. Conflict strategy on first hydrate is union-merge — see the
+ * client. Conflict strategy on first hydrate is union-merge - see the
  * plan at ~/.claude/plans/db-persistence-ship-ready.md.
  *
  * Endpoints in server.ts:
@@ -55,7 +55,7 @@ export async function addToWatchlist(
 
     await touchUser(pubkey);
 
-    // Earlier-wins on conflict — protects "I added it on phone before this
+    // Earlier-wins on conflict - protects "I added it on phone before this
     // sync" semantics so a re-add doesn't reset added_at to now.
     const addedAtIso = item.addedAt && Number.isFinite(item.addedAt)
         ? new Date(item.addedAt * 1000).toISOString()

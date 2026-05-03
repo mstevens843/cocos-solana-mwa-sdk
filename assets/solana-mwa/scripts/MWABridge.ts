@@ -1,5 +1,5 @@
 /**
- * MWABridge.ts — Promise-based JsbBridge communication layer.
+ * MWABridge.ts - Promise-based JsbBridge communication layer.
  *
  * This is the core bridge between TypeScript and the Android native MWA layer.
  * Every MWA command goes through here. Every response comes back through here.
@@ -62,7 +62,7 @@ export class MWABridge {
             this._registerNativeCallback();
             console.log(`${TAG} constructor | DONE mode=native (JsbBridge registered)`);
         } else {
-            console.log(`${TAG} constructor | DONE mode=mock (editor/non-Android — will return fake responses)`);
+            console.log(`${TAG} constructor | DONE mode=mock (editor/non-Android - will return fake responses)`);
         }
 
         this._initialized = true;
@@ -108,7 +108,7 @@ export class MWABridge {
 
         // Mock mode for editor testing
         if (!this._isNativeAvailable) {
-            console.log(`${TAG} sendCommand | MOCK mode — generating fake response for cmd=${cmd}`);
+            console.log(`${TAG} sendCommand | MOCK mode - generating fake response for cmd=${cmd}`);
             return this._mockResponse<T>(cmd, params, id);
         }
 
@@ -165,7 +165,7 @@ export class MWABridge {
         }
 
         if (!arg1 || arg1.length === 0) {
-            console.log(`${TAG} onNative | WARN empty payload received — ignoring`);
+            console.log(`${TAG} onNative | WARN empty payload received - ignoring`);
             return;
         }
 
@@ -181,7 +181,7 @@ export class MWABridge {
         }
 
         if (!response.id) {
-            console.log(`${TAG} onNative | WARN response missing 'id' field — ignoring`);
+            console.log(`${TAG} onNative | WARN response missing 'id' field - ignoring`);
             return;
         }
 
@@ -211,7 +211,7 @@ export class MWABridge {
             console.log(`${TAG} onNative | RESOLVING id=${response.id} pending_count=${this._pendingRequests.size}`);
             pending.resolve(response.result);
         } else {
-            // Neither result nor error — treat as empty success
+            // Neither result nor error - treat as empty success
             console.log(`${TAG} onNative | EMPTY_RESPONSE id=${response.id} cmd=${pending.cmd} elapsed_ms=${elapsedMs} (treating as success)`);
             pending.resolve({});
         }
@@ -353,7 +353,7 @@ export class MWABridge {
                 break;
 
             default:
-                console.log(`${TAG} mockResponse | UNKNOWN cmd=${cmd} — returning empty`);
+                console.log(`${TAG} mockResponse | UNKNOWN cmd=${cmd} - returning empty`);
                 result = {};
         }
 

@@ -1,11 +1,11 @@
 /**
- * users.ts — DB-backed read/write helpers for the `users` table.
+ * users.ts - DB-backed read/write helpers for the `users` table.
  *
  * One row per wallet pubkey ever seen. Auto-created on first backend
  * interaction (publishSquad, paper_xp post, notification fetch, etc.).
  *
  * Username rules:
- *   - 3–20 chars
+ *   - 3-20 chars
  *   - alphanumeric + underscore + dash
  *   - case-insensitive uniqueness (LOWER(username) UNIQUE index)
  *   - reserved blocklist for obvious bad words / system names
@@ -102,7 +102,7 @@ export async function setUsername(pubkey: string, username: string): Promise<Use
     }
 }
 
-/** Bulk lookup — returns map of pubkey → username for the input list. Missing pubkeys omitted. */
+/** Bulk lookup - returns map of pubkey → username for the input list. Missing pubkeys omitted. */
 export async function getUsernamesBulk(pubkeys: string[]): Promise<Map<string, string>> {
     if (!dbConfigured() || pubkeys.length === 0) return new Map();
     const rows = await query<{ pubkey: string; username: string }>(
@@ -114,7 +114,7 @@ export async function getUsernamesBulk(pubkeys: string[]): Promise<Map<string, s
     return m;
 }
 
-// ── DB Stage 10 — preferences (cross-device user settings) ─────────────
+// ── DB Stage 10 - preferences (cross-device user settings) ─────────────
 //
 // Preferences live inside the existing `users.metadata` JSONB column under
 // the `preferences` key. No schema change needed. Shape on the client:

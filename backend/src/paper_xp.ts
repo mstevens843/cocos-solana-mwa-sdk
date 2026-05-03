@@ -1,5 +1,5 @@
 /**
- * paper_xp.ts — DB-backed cross-device paper/bot XP.
+ * paper_xp.ts - DB-backed cross-device paper/bot XP.
  *
  * Real-mode XP stays on-chain (UserStats PDA). This table only handles
  * paper-track XP that has no on-chain home. Schema in
@@ -41,11 +41,11 @@ export async function getPaperXp(pubkey: string): Promise<PaperXpRow | null> {
 
 /**
  * Bump XP totals after a paper-match resolves. Idempotent w.r.t. the
- * caller's responsibility — clients should NOT call twice for the same
+ * caller's responsibility - clients should NOT call twice for the same
  * match (no idempotency key in v1; could add one later via a separate
  * `paper_match_log` table).
  *
- * profitLamports is **signed** — losses send a negative delta. Do not
+ * profitLamports is **signed** - losses send a negative delta. Do not
  * gate it with the same xp >= 0 validator the route uses for xp.
  */
 export async function recordPaperMatch(

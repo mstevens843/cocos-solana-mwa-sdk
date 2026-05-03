@@ -1,4 +1,4 @@
--- Token Duel — Initial DB schema (DB Integration Stage 1)
+-- Token Duel - Initial DB schema (DB Integration Stage 1)
 -- See docs/BACKEND_DB.md for runbook + per-table rationale.
 -- Idempotent: safe to apply multiple times.
 
@@ -16,7 +16,7 @@ CREATE INDEX IF NOT EXISTS users_username_lower_idx ON users (LOWER(username));
 
 -- ── paper_xp ─────────────────────────────────────────────────────
 -- Cross-device paper + bot training XP (per-track breakdown for analytics).
--- Real-mode XP stays on-chain (UserStats.xp PDA) — DO NOT duplicate it here.
+-- Real-mode XP stays on-chain (UserStats.xp PDA) - DO NOT duplicate it here.
 CREATE TABLE IF NOT EXISTS paper_xp (
     pubkey          TEXT PRIMARY KEY REFERENCES users(pubkey) ON DELETE CASCADE,
     total_xp        BIGINT NOT NULL DEFAULT 0,

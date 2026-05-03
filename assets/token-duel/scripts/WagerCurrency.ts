@@ -1,11 +1,11 @@
 /**
- * WagerCurrency.ts — single source of truth for the SOL / SKR wager-currency
+ * WagerCurrency.ts - single source of truth for the SOL / SKR wager-currency
  * picker added in the betting-duel branch.
  *
  * Mirrors `state.rs` constants (WAGER_TIERS_SKR_ATOMS) and the on-chain
  * mint validation in `instructions/join_match_skr.rs`. Pubkeys are kept as
  * base58 strings (no `PublicKey` objects) to stay compatible with the Cocos
- * Android bundler — see constants.ts header for the rationale.
+ * Android bundler - see constants.ts header for the rationale.
  */
 
 import { CLUSTER, type SolanaCluster } from './constants';
@@ -15,6 +15,13 @@ export type WagerCurrency = 'SOL' | 'SKR';
 /** Native SOL has 9 decimals (lamports); SKR is a 6-decimal SPL token. */
 export const SOL_DECIMALS = 9;
 export const SKR_DECIMALS = 6;
+
+/**
+ * Sentinel base58 used in `MatchAccount.wager_mint` for native-SOL matches.
+ * Same value the on-chain program writes (System Program id). Kept here so
+ * the Portfolio aggregator and the post-settle DB write share one source.
+ */
+export const NATIVE_SOL_MINT_BASE58 = '11111111111111111111111111111111';
 
 /**
  * Canonical Solana Mobile $SKR mint on mainnet-beta.
@@ -49,12 +56,15 @@ export function isSkrAvailable(cluster: SolanaCluster = CLUSTER): boolean {
  * resolving correctly. New tiers go at the end.
  */
 export const WAGER_TIERS_SKR_ATOMS: bigint[] = [
-    100_000_000n,    // 100 SKR    — index 0
-    500_000_000n,    // 500 SKR    — index 1
-    1_000_000_000n,  // 1k SKR     — index 2
-    5_000_000_000n,  // 5k SKR     — index 3
-    10_000_000_000n, // 10k SKR    — index 4
-    25_000_000_000n, // 25k SKR    — index 5
+    100_000_000n,    // 100 SKR    - index 0
+    500_000_000n,    // 500 SKR    - index 1
+    1_000_000_000n,  // 1k SKR     - index 2
+    5_000_000_000n,  // 5k SKR     - index 3
+    10_000_000_000n, // 10k SKR    - index 4
+    25_000_000_000n, // 25k SKR    - index 5
+    2_000_000_000n,  // 2k SKR     - index 6
+    3_000_000_000n,  // 3k SKR     - index 7
+    4_000_000_000n,  // 4k SKR     - index 8
 ];
 
 export const WAGER_TIERS_SKR_LABELS: string[] = [
@@ -64,15 +74,21 @@ export const WAGER_TIERS_SKR_LABELS: string[] = [
     '5K SKR',
     '10K SKR',
     '25K SKR',
+    '2K SKR',
+    '3K SKR',
+    '4K SKR',
 ];
 
 /**
- * SKR dropdown display index → on-chain tier index. The wager dropdown for
- * SKR has fewer rows than SOL (no INTRO tier) so the mapping is identity.
- * Kept as a constant so the mapping is symmetric with `WAGER_DISPLAY_TO_TIER`
- * in ModeDefs.ts.
+ * SKR dropdown display index → on-chain tier index. Display order is largest
+ * → smallest top-to-bottom (smallest at the bottom row, per user request).
+ * The on-chain tier indices remain stable (append-only contract) so existing
+ * SKR matches keep resolving; only the visual order changes.
+ *
+ * Display top→bottom: 25K / 10K / 5K / 4K / 3K / 2K / 1K / 500 / 100
+ * On-chain idx     :   5  /  4  /  3 /  8 /  7 /  6 /  2 /  1  /  0
  */
-export const WAGER_DISPLAY_TO_TIER_SKR: readonly number[] = [0, 1, 2, 3, 4, 5];
+export const WAGER_DISPLAY_TO_TIER_SKR: readonly number[] = [5, 4, 3, 8, 7, 6, 2, 1, 0];
 
 /**
  * Format a raw atom amount for display. `atoms` is interpreted in the

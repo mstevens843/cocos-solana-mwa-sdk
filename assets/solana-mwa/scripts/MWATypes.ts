@@ -1,5 +1,5 @@
 /**
- * MWATypes.ts — All interfaces and types for the Solana MWA SDK.
+ * MWATypes.ts - All interfaces and types for the Solana MWA SDK.
  * This is the API contract. Everything else imports from here.
  */
 
@@ -41,7 +41,7 @@ export interface AuthorizeSiwsResult extends AuthorizeResult {
     accountFeatures?: string;      // comma-separated feature IDs
 }
 
-/** SIWS sign-in result — proof that the wallet owner authorized this app. */
+/** SIWS sign-in result - proof that the wallet owner authorized this app. */
 export interface SignInResult {
     address: string;        // base58 public key (matches pubkey)
     signature: string;      // base64-encoded Ed25519 signature
@@ -62,7 +62,7 @@ export interface CachedAuth {
      * `markDisconnected` when the user taps Disconnect (cache contents are
      * retained so Landing's Reconnect button still works). Used by
      * `hasAutoLoginAuth()` to decide cold-start auto-sign-in. Optional for
-     * backward compat with pre-Pass-10 cache entries — treat `undefined` as
+     * backward compat with pre-Pass-10 cache entries - treat `undefined` as
      * `true` so existing users don't get logged out on upgrade.
      */
     isAuthenticated?: boolean;
@@ -95,7 +95,7 @@ export interface IMWAAuthCache {
     markDisconnected(pubkey: string): void;
     /**
      * True iff the latest cached entry exists AND its `isAuthenticated`
-     * is `true` (or `undefined` — legacy entries from before Pass 10 are
+     * is `true` (or `undefined` - legacy entries from before Pass 10 are
      * treated as authenticated so existing users don't lose their
      * session on upgrade). Drives the cold-start auto-sign-in in
      * `AppUI.start()`.
@@ -176,16 +176,16 @@ export interface MWAResponse {
 /** Error returned from the native layer. */
 export interface MWAError {
     // Common codes: "USER_REJECTED", "TIMEOUT", "WALLET_ERROR",
-    // "WALLET_CRASHED" (peer closed WebSocket mid-request — KNOWN_ISSUES #6),
-    // "WALLET_HUNG" (no reply within SIGN_TIMEOUT_MS — #11),
+    // "WALLET_CRASHED" (peer closed WebSocket mid-request - KNOWN_ISSUES #6),
+    // "WALLET_HUNG" (no reply within SIGN_TIMEOUT_MS - #11),
     // "WALLET_AUTH_MISMATCH" (Pass 13: wallet rejected a cached authToken it
-    //     didn't issue — user picked a different wallet in the OS picker than
+    //     didn't issue - user picked a different wallet in the OS picker than
     //     the one that authorized OR the wallet's process was killed and lost
     //     the token; see KNOWN_ISSUES #17. Pass 14 transparently auto-recovers
     //     by re-authorizing with the same wallet; this code now only surfaces
     //     when the recovery picker is dismissed by the user.),
     // "WALLET_CHANGED" (Pass 14: auto-recovery succeeded but returned a
-    //     different pubkey — user genuinely picked a different wallet during
+    //     different pubkey - user genuinely picked a different wallet during
     //     the recovery prompt. Caller should treat this as "switch accounts"
     //     not "session expired".),
     // "INVALID_PAYLOADS", "NOT_SUBMITTED", "INSUFFICIENT_FUNDS_FOR_RENT".

@@ -1,12 +1,12 @@
 /**
- * paper_match_active.ts — DB-backed in-flight paper / bot matches (DB Stage 7).
+ * paper_match_active.ts - DB-backed in-flight paper / bot matches (DB Stage 7).
  *
  * Signed-in users post a row when a paper / bot match starts so the match
  * shows up in MIP cross-device. Rows are removed on race end (settle /
  * forfeit / natural finish). Stale rows (started_at + duration_ms < now())
  * are pruned at GET time so a crashed client can't leak rows forever.
  *
- * Guests don't hit this — their matches stay in client memory only.
+ * Guests don't hit this - their matches stay in client memory only.
  */
 import { query, queryOne, dbConfigured } from './db';
 import { touchUser } from './users';
@@ -79,7 +79,7 @@ export async function registerActive(p: RegisterPayload): Promise<PaperMatchActi
         [p.id, p.pubkey, p.modeU8, p.timeWindow, p.requiredPlayers, p.track, p.durationMs],
     );
     if (!row) {
-        // Conflict — fetch existing row.
+        // Conflict - fetch existing row.
         const existing = await queryOne<DbRow>(
             `SELECT * FROM paper_match_active WHERE id = $1`,
             [p.id],
@@ -134,6 +134,24 @@ export async function listActiveForUser(pubkey: string): Promise<PaperMatchActiv
           WHERE pubkey = $1
           ORDER BY started_at ASC`,
         [pubkey],
+    );
+    return rows.map(toRecord);
+}
+
+/**
+ * List in-flight rows across ALL users, paginated. Powers the FindMatchPanel
+ * "Live Now" feed so paper / bot matches surface alongside on-chain matches.
+ * Filters expired rows in the WHERE clause (no global DELETE - per-user GET
+ * still prunes opportunistically).
+ */
+export async function listAllActive(limit: number, offset: number): Promise<PaperMatchActiveRow[]> {
+    if (!dbConfigured()) return [];
+    const rows = await query<DbRow>(
+        `SELECT * FROM paper_match_active
+          WHERE started_at + (duration_ms * INTERVAL '1 millisecond') >= now()
+          ORDER BY started_at DESC
+          LIMIT $1 OFFSET $2`,
+        [limit, offset],
     );
     return rows.map(toRecord);
 }

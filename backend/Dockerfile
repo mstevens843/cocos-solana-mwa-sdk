@@ -5,7 +5,7 @@
 # doesn't need the shared directory on disk.
 #
 # Render settings for this Dockerfile:
-#   Root Directory: (empty — repo root)
+#   Root Directory: (empty - repo root)
 #   Dockerfile Path: backend/Dockerfile
 
 FROM node:20-alpine AS build
@@ -31,7 +31,7 @@ ENV NODE_ENV=production
 COPY backend/package.json backend/package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/backend/dist ./dist
-# DB Stage 1 — ship migration SQL files so runMigrations() can read them on
+# DB Stage 1 - ship migration SQL files so runMigrations() can read them on
 # startup. resolveMigrationsDir() in src/migrate.ts looks at $cwd/migrations
 # first, which is /app/backend/migrations once WORKDIR is set.
 COPY backend/migrations ./migrations

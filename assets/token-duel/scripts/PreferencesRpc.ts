@@ -1,5 +1,5 @@
 /**
- * PreferencesRpc.ts — DB Stage 10 cross-device user-preferences sync.
+ * PreferencesRpc.ts - DB Stage 10 cross-device user-preferences sync.
  *
  * Backed by users.metadata->'preferences' JSONB (no schema change). PUT
  * is merge-patch: the server folds the incoming object into the existing

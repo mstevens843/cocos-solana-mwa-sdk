@@ -1,5 +1,5 @@
 /**
- * ModeDefs.ts — game-mode constants + wager tiers + XP table.
+ * ModeDefs.ts - game-mode constants + wager tiers + XP table.
  *
  * Mirrors `programs/token-duel/src/state.rs`:
  *   - GameMode enum (OneVOne = 0 shipped; others reserved)
@@ -11,9 +11,9 @@
  */
 
 /**
- * ModeId — Stage 3 rebalance (2026-04-25):
+ * ModeId - Stage 3 rebalance (2026-04-25):
  *   modeU8=0: oneVone     (2p, unchanged)
- *   modeU8=1: trio        (3p, NEW — replaces former fourPlayer slot)
+ *   modeU8=1: trio        (3p, NEW - replaces former fourPlayer slot)
  *   modeU8=2: fourPlayer  (4p, slid down from u8=1)
  *   modeU8=3: eightPlayer (8p, slid down from u8=2; former battleRoyale retired)
  *
@@ -31,7 +31,7 @@ export interface ModeDef {
     /** Payout bps per rank. Sum ≤ 10_000. Unranked slots get 0. */
     payoutBps: number[];
     /**
-     * XP table per rank — BASE values (NOT including track multiplier).
+     * XP table per rank - BASE values (NOT including track multiplier).
      * For Real-track on-chain awards, the on-chain `xp_table()` already has
      * the 2.0× multiplier baked in (returns 200/350/500/1000 for 1st place).
      * Client uses these BASE values + applies multiplier per track:
@@ -98,7 +98,7 @@ export const MODES: Record<ModeId, ModeDef> = {
     },
 };
 
-/** Reverse lookup — resolve modeU8 byte → ModeDef. */
+/** Reverse lookup - resolve modeU8 byte → ModeDef. */
 export function modeFromU8(b: number): ModeDef {
     if (b === 0) return MODES.oneVone;
     if (b === 1) return MODES.trio;
@@ -107,7 +107,7 @@ export function modeFromU8(b: number): ModeDef {
     return MODES.oneVone;
 }
 
-/** Track-XP multipliers — applied client-side to base XP table (Stage 3). */
+/** Track-XP multipliers - applied client-side to base XP table (Stage 3). */
 export const TRACK_XP_MULTIPLIER: Record<'bot' | 'paper-real' | 'real', number> = {
     bot: 0.5,           // paper · vs bots · free practice
     'paper-real': 1.0,  // paper · PvP, no SOL
@@ -122,9 +122,9 @@ export const WAGER_TIERS_LAMPORTS: number[] = [
     100_000_000,   // 0.1 SOL
     250_000_000,   // 0.25 SOL
     500_000_000,   // 0.5 SOL
-    1_000_000,     // 0.001 SOL — INTRO tier (Part 11)
-    1_000_000_000, // 1 SOL — betting-duel
-    5_000_000_000, // 5 SOL — betting-duel
+    1_000_000,     // 0.001 SOL - INTRO tier (Part 11)
+    1_000_000_000, // 1 SOL - betting-duel
+    5_000_000_000, // 5 SOL - betting-duel
 ];
 
 export const WAGER_TIERS_LABELS: string[] = [
@@ -140,13 +140,15 @@ export const WAGER_TIERS_LABELS: string[] = [
 
 /**
  * WagerDropdownRow_N display index → on-chain tier index.
- * The dropdown renders tiers in ascending $$ order with INTRO pinned to the
- * bottom (user preference), while the on-chain tier index for INTRO remains
- * 5 for wire-compat. `AppUI._onWagerRowTap` uses this lookup.
- * Display order:  0.01 / 0.05 / 0.1 / 0.25 / 0.5 / 1 / 5 / INTRO
- * On-chain idx :    0  /   1  /  2  /  3   /  4  / 6 / 7 /   5
+ * The dropdown renders tiers in DESCENDING $$ order so the smallest tier
+ * sits at the bottom row (user preference). INTRO (0.001 SOL) is the
+ * smallest by definition and lands on the very bottom row naturally.
+ * On-chain tier indices remain stable for wire-compat; only the visual
+ * order changes. `AppUI._onWagerRowTap` uses this lookup.
+ * Display top→bottom: 5 / 1 / 0.5 / 0.25 / 0.1 / 0.05 / 0.01 / 0.001 INTRO
+ * On-chain idx     : 7 / 6 /  4  /  3   /  2  /  1   /  0   /  5
  */
-export const WAGER_DISPLAY_TO_TIER: readonly number[] = [0, 1, 2, 3, 4, 6, 7, 5];
+export const WAGER_DISPLAY_TO_TIER: readonly number[] = [7, 6, 4, 3, 2, 1, 0, 5];
 
 /** 3% rake (in basis points). Must match RAKE_BPS in state.rs. */
 export const RAKE_BPS = 300;
@@ -154,17 +156,17 @@ export const BPS_DENOM = 10_000;
 
 /** Match waiting timeout before anyone can cancel + refund. Mirrors state.rs.
  *  Phase D bumped 120_000 → 86_400_000 (24h). The Anchor program enforces
- *  the same constant — early cancel by the lone creator is allowed via the
+ *  the same constant - early cancel by the lone creator is allowed via the
  *  `cancel_match` Branch B path even before this timeout elapses. */
 export const MATCH_WAIT_TIMEOUT_MS = 86_400_000;
 
 /** Starting bot-handicap games for a new player. Mirrors BOT_HANDICAP_GAMES. */
 export const BOT_HANDICAP_GAMES = 5;
 
-/** Bot handicap height multiplier — bot height = raw × 0.7 during first N games. */
+/** Bot handicap height multiplier - bot height = raw × 0.7 during first N games. */
 export const BOT_HANDICAP_MULTIPLIER = 0.7;
 
-/** Phase E — per-difficulty height multiplier applied to bot delta in
+/** Phase E - per-difficulty height multiplier applied to bot delta in
  *  paper matches. Stacks with BOT_HANDICAP_MULTIPLIER for new players. */
 export const BOT_DIFFICULTY_MULTIPLIERS: Record<'easy' | 'medium' | 'hard', number> = {
     easy: 0.7,
@@ -173,7 +175,7 @@ export const BOT_DIFFICULTY_MULTIPLIERS: Record<'easy' | 'medium' | 'hard', numb
 };
 
 /**
- * Phase J1 — streak-based XP bonus tiers (client display only on first
+ * Phase J1 - streak-based XP bonus tiers (client display only on first
  * deploy). When the player's `currentStreak` matches or exceeds a tier,
  * multiplier applies to xpForPlacement to surface the bonus on PostMatch.
  *
@@ -200,7 +202,7 @@ export function streakBonusFor(currentStreak: number): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Part 9 — Time-window axis (originally 1h / 1d / 3d / 7d Birdeye delta)
+// Part 9 - Time-window axis (originally 1h / 1d / 3d / 7d Birdeye delta)
 // REPURPOSED ON betting-duel BRANCH (Phase 5):
 //   The on-chain `time_window` u8 and the four TimeWindowId members
 //   remain unchanged for wire-compat, but the UI + durationMs values
@@ -218,10 +220,10 @@ export function streakBonusFor(currentStreak: number): number {
 //   (getSpotPrices consumes `priceUsd`, independent of delta window).
 // ═══════════════════════════════════════════════════════════════════
 
-// 2026-04-27 — TimeWindowId re-keyed + extended 4→6. Labels now match real
+// 2026-04-27 - TimeWindowId re-keyed + extended 4→6. Labels now match real
 // durations (was confusingly compressed: id '1h' had label '30s', etc.).
 // New entries 24h (windowU8=4) and 7d (windowU8=5) for longer-running matches.
-// NOTE: on-chain Anchor program currently bounds-checks windowU8 ≤ 3 — using
+// NOTE: on-chain Anchor program currently bounds-checks windowU8 ≤ 3 - using
 // 4 or 5 for REAL track will fail tx submission until program is updated.
 // PAPER track + bot mode work freely with any windowU8.
 export type TimeWindowId = '30s' | '1m' | '5m' | '1h' | '24h' | '7d';
@@ -232,7 +234,7 @@ export interface TimeWindowDef {
     label: string;
     /** Value passed as `type` to Birdeye's `/defi/price_volume/multi`. Unused by PortfolioRace. */
     birdeyeTypeParam: string;
-    /** Match duration in ms — how long the betting-duel race runs before settle. */
+    /** Match duration in ms - how long the betting-duel race runs before settle. */
     durationMs: number;
 }
 
@@ -248,7 +250,7 @@ export const TIME_WINDOWS: Record<TimeWindowId, TimeWindowDef> = {
 /** Default to the shortest race for rapid iteration during testing. */
 export const DEFAULT_TIME_WINDOW: TimeWindowId = '30s';
 
-/** Reverse lookup — resolve windowU8 byte → TimeWindowDef. */
+/** Reverse lookup - resolve windowU8 byte → TimeWindowDef. */
 export function timeWindowFromU8(b: number): TimeWindowDef {
     if (b === 0) return TIME_WINDOWS['30s'];
     if (b === 1) return TIME_WINDOWS['1m'];

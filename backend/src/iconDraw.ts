@@ -1,5 +1,5 @@
 /**
- * iconDraw.ts — node-canvas procedural icon drawings for sharecard rendering.
+ * iconDraw.ts - node-canvas procedural icon drawings for sharecard rendering.
  *
  * Mirrors a subset of the client's IconLibrary (assets/token-duel/scripts/
  * IconLibrary.ts) on the backend Path2D/CanvasRenderingContext2D API. Used by

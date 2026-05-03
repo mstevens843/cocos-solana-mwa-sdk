@@ -1,5 +1,5 @@
 /**
- * NotificationToast.ts — Phase N2 toast queue.
+ * NotificationToast.ts - Phase N2 toast queue.
  *
  * Manages 3 pre-instantiated NotificationToastSlot_0..2 Nodes from the
  * scene. Each slot animates in (slide-down + fade), runs a 3.5s progress
@@ -45,7 +45,7 @@ const KIND_CONFIG: Record<NotificationKind, {
     challenge_done:      { rgb: [48, 198, 155],  icon: 'check',  sound: 'tap',       haptic: HapticType.MEDIUM },
 };
 
-/** Optional per-notification tap handler — supplied by AppUI when emitting. */
+/** Optional per-notification tap handler - supplied by AppUI when emitting. */
 export type ToastTapHandler = (n: Notification) => void;
 
 interface SlotState {
@@ -111,7 +111,7 @@ export class NotificationToastQueue {
                 if (n.quietToast) continue;
                 this.enqueue(n);
             }
-            // Keep the seen-set bounded — only the most-recent 200 ids matter.
+            // Keep the seen-set bounded - only the most-recent 200 ids matter.
             if (seen.size > 200) {
                 const trimmed = snapshot.slice(0, 200).map((x) => x.id);
                 seen.clear();
@@ -152,7 +152,7 @@ export class NotificationToastQueue {
         const bodyNode = node.getChildByName(`ToastBodyLabel_${idx}`);
         const progressNode = node.getChildByName(`ToastProgressBar_${idx}`);
         const dismissNode = node.getChildByName(`ToastDismissButton_${idx}`);
-        // The slot itself has no Button component in the scene — wire one to the
+        // The slot itself has no Button component in the scene - wire one to the
         // body text by reusing the title's underlying node? Actually simpler:
         // attach a Button to the slot node itself so any non-dismiss tap fires
         // the body handler.
@@ -218,7 +218,7 @@ export class NotificationToastQueue {
             .to(ENTER_MS / 1000, { opacity: 255 }, { easing: 'cubicOut' })
             .start();
 
-        // Progress bar — shrink scaleX 1→0 over DURATION_MS.
+        // Progress bar - shrink scaleX 1→0 over DURATION_MS.
         if (s.progressNode) {
             Tween.stopAllByTarget(s.progressNode);
             s.progressNode.setScale(1, 1, 1);

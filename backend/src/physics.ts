@@ -1,9 +1,9 @@
 /**
- * Physics validator — gates every block-drop event the client sends over WS
+ * Physics validator - gates every block-drop event the client sends over WS
  * against plausibility rules. If a session accumulates too many rejects,
  * the session manager tears it down and refuses to sign a receipt.
  *
- * The numbers here mirror TokenDuelGame.ts constants — if the game constants
+ * The numbers here mirror TokenDuelGame.ts constants - if the game constants
  * change, update these in lockstep. The validator is intentionally strict
  * on the honest path (flag early) and permissive on edge cases so a single
  * laggy frame doesn't nuke a real player's session.
@@ -58,7 +58,7 @@ export class Physics {
         // Block index cycles through the 3-token squad: block i → squad[i % 3].
         // expectedWidth === 0 (or undefined) means backend couldn't resolve
         // the delta (no Birdeye key in dev, or Birdeye was down). Allow the
-        // client's value rather than fail-closed — a Birdeye gap shouldn't
+        // client's value rather than fail-closed - a Birdeye gap shouldn't
         // cost an honest player their match.
         const mintForBlock = session.squadMints[ev.blockIdx % session.squadMints.length];
         const expectedWidth = session.expectedWidths[mintForBlock];

@@ -1,15 +1,15 @@
 /**
- * TokenDuelGame.ts — compatibility shim on `betting-duel` branch.
+ * TokenDuelGame.ts - compatibility shim on `betting-duel` branch.
  *
  * The stack-jump implementation has been replaced. This class now wraps
  * `PortfolioRace` so AppUI can continue using the `TokenDuelGame` ctor
- * shape unchanged through Phases 2–4; Phase 5 (ModePicker updates)
+ * shape unchanged through Phases 2-4; Phase 5 (ModePicker updates)
  * renames things end-to-end and retires this shim.
  *
  * On `onComplete(deltaPct)` we encode the portfolio % into the u32 score
  * expected by the on-chain `settle_match` and fire the existing
  * `onGameOver(score, {})` callback. Downstream AppUI logic continues to
- * treat that integer as "height" — it is now an encoded delta bias.
+ * treat that integer as "height" - it is now an encoded delta bias.
  */
 
 import { Label, Node, Sprite } from 'cc';
@@ -42,12 +42,12 @@ export interface TokenDuelGameOptions {
     windowMs?: number;
     /**
      * Optional pre-resolved entry prices keyed by mint. AppUI passes the
-     * squad's cached prices from the trending feed — so races can start
+     * squad's cached prices from the trending feed - so races can start
      * even when Birdeye's multi_price endpoint doesn't index the mint.
      */
     fallbackEntryPrices?: Record<string, number>;
     onBeforeFirstBlock?: () => Promise<void>;
-    /** Retained for contract parity — PortfolioRace has no block-drop stream. */
+    /** Retained for contract parity - PortfolioRace has no block-drop stream. */
     onBlockDrop?: (ev: {
         blockIdx: number;
         tsMs: number;
@@ -58,7 +58,7 @@ export interface TokenDuelGameOptions {
     /** Fires on each PortfolioRace poll; drives the live RacePanel UI. */
     onRaceTick?: (snap: RaceSnapshot) => void;
     onGameOver: (height: number, deltas: Record<string, number>) => void;
-    /** Phase F5/F6 — forwarded from PortfolioRace. */
+    /** Phase F5/F6 - forwarded from PortfolioRace. */
     onPriceFallback?: (mint: string, fallbackEntry: number) => void;
     onStalePrice?: (mint: string, missingTicks: number) => void;
     onPriceRecovered?: (mint: string) => void;
@@ -78,7 +78,7 @@ export class TokenDuelGame {
 
     async start(): Promise<void> {
         if (!this._opts.priceFeed) {
-            console.log(`${TAG} start | NO_PRICE_FEED — completing immediately with score=0`);
+            console.log(`${TAG} start | NO_PRICE_FEED - completing immediately with score=0`);
             this._complete(0, {});
             return;
         }
@@ -122,7 +122,7 @@ export class TokenDuelGame {
         try {
             await this._race.start();
         } catch (e: any) {
-            console.log(`${TAG} start | RACE_START_ERROR windowMs=${windowMs} holdings=${this._opts.holdings?.length ?? 0} error=${e?.message ?? e} — completing with score=0`);
+            console.log(`${TAG} start | RACE_START_ERROR windowMs=${windowMs} holdings=${this._opts.holdings?.length ?? 0} error=${e?.message ?? e} - completing with score=0`);
             this._complete(0, {});
         }
     }
@@ -139,7 +139,7 @@ export class TokenDuelGame {
 
     private _complete(deltaPct: number, deltas: Record<string, number>): void {
         if (this._done) {
-            console.log(`${TAG} complete | DOUBLE_COMPLETE_IGNORED deltaPct=${deltaPct.toFixed(2)}% — first call already fired onGameOver`);
+            console.log(`${TAG} complete | DOUBLE_COMPLETE_IGNORED deltaPct=${deltaPct.toFixed(2)}% - first call already fired onGameOver`);
             return;
         }
         this._done = true;

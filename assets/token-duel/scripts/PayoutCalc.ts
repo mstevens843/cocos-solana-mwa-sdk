@@ -1,11 +1,11 @@
 /**
- * PayoutCalc.ts — pure-JS mirror of Rust `compute_1v1_payout` +
+ * PayoutCalc.ts - pure-JS mirror of Rust `compute_1v1_payout` +
  * `level_from_xp` from `programs/token-duel/src/state.rs`.
  *
  * Used by PostMatchPanel to show payout preview AND by the paper-mode
  * settlement path (no Anchor program touched for paper).
  *
- * Keep in lockstep with Rust — any formula change must happen in both.
+ * Keep in lockstep with Rust - any formula change must happen in both.
  */
 
 import { RAKE_BPS, BPS_DENOM, MODES, ModeId, ModeDef, modeFromU8 } from './ModeDefs';
@@ -23,7 +23,7 @@ export const RAKE_BPS_MIN = 300; // 3.00% at level 10+
  * Rake basis-points for a player of `level`. Linear interp 1..10 → 500..300,
  * capped on both ends. Level 0 (uninitialized) treated as level 1.
  *
- * Mirror of Rust `rake_bps_for_level` — update both in lockstep.
+ * Mirror of Rust `rake_bps_for_level` - update both in lockstep.
  */
 export function rakeBpsForLevel(level: number): number {
     const clamped = Math.max(1, Math.min(10, Math.floor(level)));
@@ -44,14 +44,14 @@ export interface ModePayoutBreakdown {
     sortedSlots: number[];
     /** Lamports per rank (1st, 2nd, …). Length = payout table. Unranked slots get 0. */
     winnerLamports: number[];
-    /** Same length as winnerLamports — the slot index that won each rank. */
+    /** Same length as winnerLamports - the slot index that won each rank. */
     winnerSlots: number[];
     toTreasuryLamports: number;
     potLamports: number;
 }
 
 /**
- * Mirror of Rust `compute_1v1_payout` — kept for 1v1 callers.
+ * Mirror of Rust `compute_1v1_payout` - kept for 1v1 callers.
  */
 export function compute1v1Payout(potLamports: number, heights: [number, number]): PayoutBreakdown {
     const winnerSlot = heights[0] >= heights[1] ? 0 : 1;
@@ -72,7 +72,7 @@ export function compute1v1Payout(potLamports: number, heights: [number, number])
  *
  * Part 13: when `levels` is supplied, rake scales per-player via
  * `rakeBpsForLevel`. Without levels, falls back to the flat `RAKE_BPS`
- * legacy rate — caller responsibility to pass levels when on the verified
+ * legacy rate - caller responsibility to pass levels when on the verified
  * settle path. (Paper mode and pre-settle previews are OK with the
  * conservative RAKE_BPS default.)
  */
@@ -162,17 +162,17 @@ export function levelProgress(xp: number): { level: number; progress: number; to
 }
 
 /**
- * Stage 5 — payoutPreview: returns rake-honest per-rank lamports for a given
+ * Stage 5 - payoutPreview: returns rake-honest per-rank lamports for a given
  * mode + wager tier + level, accounting for the 5%→3% rake taken from the
  * full pot before split. Used to power the JoinMatchConfirmOverlay copy +
  * ModePicker readouts so users see real take-home, not gross pot %.
  *
  * Returns:
- *   first  — lamports won by 1st place
- *   second — lamports won by 2nd place (0 for 1v1 / Trio)
- *   third  — lamports won by 3rd place (0 for 1v1 / Trio / 4p)
- *   rake   — total rake withheld (informational)
- *   pot    — total pot (informational)
+ *   first  - lamports won by 1st place
+ *   second - lamports won by 2nd place (0 for 1v1 / Trio)
+ *   third  - lamports won by 3rd place (0 for 1v1 / Trio / 4p)
+ *   rake   - total rake withheld (informational)
+ *   pot    - total pot (informational)
  *
  * Assumes uniform level across all players (uses `level` for per-player rake
  * estimate). Real splits can vary because rake_bps_for_level reads each

@@ -1,8 +1,8 @@
 /**
- * MatchLobbyDbRpc.ts — DB Stage 6 client for the backend `match_lobbies` table.
+ * MatchLobbyDbRpc.ts - DB Stage 6 client for the backend `match_lobbies` table.
  *
  * Fire-and-forget POST after a host confirms `join_match_create`. Failures
- * are logged but never thrown — backend hiccups must not block gameplay.
+ * are logged but never thrown - backend hiccups must not block gameplay.
  * Coexists with MatchHistoryDbRpc which mirrors settlement; together they
  * give the backend a full open→settle funnel without duplicating live
  * lobby discovery (still on-chain).

@@ -1,8 +1,8 @@
 /**
- * stats.ts — Part 12 Bundle B.
+ * stats.ts - Part 12 Bundle B.
  *
  * In-memory counters + recent-event ring buffers for the admin dashboard
- * (`/admin`). Evaporates on server restart — intentionally ephemeral;
+ * (`/admin`). Evaporates on server restart - intentionally ephemeral;
  * persistent analytics is a post-hackathon concern.
  *
  * Session lifecycle bumps counters here (see session.ts), and `/admin/stream`
@@ -103,7 +103,7 @@ class StatsBucketImpl {
     // Part 13: rake + settlement tracking. Lifetime lamports as BigInt for
     // overflow safety (even a decade of devnet won't exhaust u64, but
     // mainnet could). Daily/weekly derived from `_recentSettlements` at
-    // snapshot time — no timer needed.
+    // snapshot time - no timer needed.
     private _rakeAllTime: bigint = 0n;
     private _recentSettlements: SettlementLogEntry[] = [];
     private _tokenStats: TokenStatsRow[] = [];
@@ -111,9 +111,9 @@ class StatsBucketImpl {
     private _tournamentHost = '';
     private _tournamentsSeededEver = 0;
     private _tournamentsCompletedEver = 0;
-    /** Timestamps of recent tournament seeds — used to derive "today" count. */
+    /** Timestamps of recent tournament seeds - used to derive "today" count. */
     private _tournamentsSeededAts: number[] = [];
-    /** Set of matchPdas seeded by the host — lets rake_listener recognize
+    /** Set of matchPdas seeded by the host - lets rake_listener recognize
      *  tournament completions without re-reading the Match PDA. Bounded
      *  via a prune pass when it grows past 500 entries. */
     private _seededTournamentPdas: Set<string> = new Set();
@@ -163,14 +163,14 @@ class StatsBucketImpl {
     /**
      * Part 13: record a MatchSettled event. Rake + pot are lamport strings;
      * we parse to BigInt for the all-time accumulator. Settlement log
-     * retains a 100-entry ring — that's enough to derive a 7-day weekly
+     * retains a 100-entry ring - that's enough to derive a 7-day weekly
      * bucket at devnet match cadence without unbounded growth.
      */
     bumpSettlement(entry: SettlementLogEntry): void {
         try {
             this._rakeAllTime += BigInt(entry.rakeLamports);
         } catch (_) {
-            /* malformed — skip accumulation but keep the log entry */
+            /* malformed - skip accumulation but keep the log entry */
         }
         this._recentSettlements.unshift(entry);
         if (this._recentSettlements.length > 100) this._recentSettlements.length = 100;
@@ -192,7 +192,7 @@ class StatsBucketImpl {
         this._tournamentsSeededAts.unshift(Math.floor(Date.now() / 1000));
         this._seededTournamentPdas.add(matchPda);
         if (this._seededTournamentPdas.size > 500) {
-            // Prune oldest entries — convert to array, drop the first 100.
+            // Prune oldest entries - convert to array, drop the first 100.
             const arr = Array.from(this._seededTournamentPdas);
             this._seededTournamentPdas = new Set(arr.slice(100));
         }

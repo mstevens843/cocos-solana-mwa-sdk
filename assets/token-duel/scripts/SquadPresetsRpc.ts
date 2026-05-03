@@ -1,5 +1,5 @@
 /**
- * SquadPresetsRpc.ts — DB Stage 9 cross-device squad-preset sync.
+ * SquadPresetsRpc.ts - DB Stage 9 cross-device squad-preset sync.
  *
  * Mirrors PaperXpRpc.ts shape: stale-while-revalidate read, fire-and-
  * forget write. Local sys.localStorage (via SquadPresets) is the device

@@ -2,7 +2,7 @@
   "name": "token-duel-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Part 10 Bundle 1 — Ed25519 receipt-signer backend for Token Duel. Observes gameplay over WebSocket, validates physics, signs height receipts the Solana program can verify via its Ed25519 precompile.",
+  "description": "Part 10 Bundle 1 - Ed25519 receipt-signer backend for Token Duel. Observes gameplay over WebSocket, validates physics, signs height receipts the Solana program can verify via its Ed25519 precompile.",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

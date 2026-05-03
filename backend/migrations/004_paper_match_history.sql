@@ -1,7 +1,7 @@
--- Token Duel — Paper / bot finished match history (DB Stage 8)
+-- Token Duel - Paper / bot finished match history (DB Stage 8)
 -- Per-match record of every paper / bot match a signed-in user finishes.
 -- Mirrors `match_history` but for off-chain matches (no PDA, no wager, no
--- payouts). Powers a future "Match History" UI. Guests skip — synthetic ids
+-- payouts). Powers a future "Match History" UI. Guests skip - synthetic ids
 -- would break the FK.
 CREATE TABLE IF NOT EXISTS paper_match_history (
     id                 TEXT PRIMARY KEY,            -- same synthetic id used in paper_match_active

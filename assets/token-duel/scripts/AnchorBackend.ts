@@ -1,9 +1,9 @@
 /**
- * AnchorBackend.ts — builds Token Duel Anchor-program transactions as raw
+ * AnchorBackend.ts - builds Token Duel Anchor-program transactions as raw
  * Uint8Array bytes that the existing MWAManager.signAndSendTransaction()
  * surface consumes.
  *
- * No @solana/web3.js in the Cocos bundle — web3.js transitively pulls in
+ * No @solana/web3.js in the Cocos bundle - web3.js transitively pulls in
  * `tr46` which Cocos's Rollup bundler can't resolve. We build tx bytes via
  * the SDK's own `buildAnchorTransaction` helper (pure-TS, zero external
  * deps), derive PDAs via `PdaDeriver` (sha256 + @noble/curves ed25519
@@ -33,13 +33,13 @@ import {
     deriveAssociatedTokenAddress,
 } from './SplTokenIx';
 
-/** Legacy singleton leaderboard PDA — seeds [b"leaderboard"]. Used by solo settle. */
+/** Legacy singleton leaderboard PDA - seeds [b"leaderboard"]. Used by solo settle. */
 function deriveLeaderboardPda(): string {
     const [pda] = findProgramAddress([SEEDS.LEADERBOARD], PROGRAM_ID);
     return pda;
 }
 
-/** Per-mode leaderboard PDA — seeds [b"leaderboard", &[mode]]. Session D Part 7. */
+/** Per-mode leaderboard PDA - seeds [b"leaderboard", &[mode]]. Session D Part 7. */
 function deriveModeLeaderboardPda(modeU8: number): string {
     const modeByte = new Uint8Array([modeU8 & 0xff]);
     const [pda] = findProgramAddress([SEEDS.LEADERBOARD, modeByte], PROGRAM_ID);
@@ -159,7 +159,7 @@ export class AnchorBackend {
      * Session 3 Phase B: `settle` now requires a Leaderboard account. The
      * program amends the PDA's entries after payout succeeds. If the PDA
      * isn't initialized yet (pre-B5 devnet state), the tx will revert with
-     * an Anchor AccountNotInitialized error — fix by running the B6 init script.
+     * an Anchor AccountNotInitialized error - fix by running the B6 init script.
      */
     static buildSettleTx(
         playerBase58: string,
@@ -241,7 +241,7 @@ export class AnchorBackend {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Session D — Match-making, UserStats, Treasury tx builders
+    // Session D - Match-making, UserStats, Treasury tx builders
     // Ix account order MUST match #[derive(Accounts)] in Rust instruction
     // files. If Rust struct order changes, break this wire protocol.
     // ═══════════════════════════════════════════════════════════════════
@@ -252,7 +252,7 @@ export class AnchorBackend {
         return pda;
     }
 
-    /** Derive Pool PDA (Session D Part 8 — legacy pool, still holds residual SOL). */
+    /** Derive Pool PDA (Session D Part 8 - legacy pool, still holds residual SOL). */
     static derivePoolPda(): string {
         const [pda] = findProgramAddress([SEEDS.POOL], PROGRAM_ID);
         return pda;
@@ -546,7 +546,7 @@ export class AnchorBackend {
      *
      * Named accounts on the Anchor ix (7):
      *   [player, match, match_escrow, treasury, leaderboard, system_program, ix_sysvar]
-     * Remaining accounts (N + K): same as settle_match — stats[] + payout recipients[].
+     * Remaining accounts (N + K): same as settle_match - stats[] + payout recipients[].
      */
     static buildSettleMatchVerifiedTx(
         playerBase58: string,
@@ -563,7 +563,7 @@ export class AnchorBackend {
         const treasury = this.deriveTreasuryPda();
         const leaderboard = deriveModeLeaderboardPda(matchModeU8);
 
-        // ix[0] — Ed25519 precompile. Data is verbatim what the backend emitted.
+        // ix[0] - Ed25519 precompile. Data is verbatim what the backend emitted.
         const ed25519Data = base64ToBytes(ed25519IxDataB64);
         const ed25519Ix: RawInstructionInput = {
             programIdBase58: ED25519_PROGRAM_ID,
@@ -571,7 +571,7 @@ export class AnchorBackend {
             data: ed25519Data,
         };
 
-        // ix[1] — settle_match_verified(height u32 LE, signed_at i64 LE).
+        // ix[1] - settle_match_verified(height u32 LE, signed_at i64 LE).
         const disc = this.discriminator('settle_match_verified');
         const argBytes = new Uint8Array(4 + 8);
         argBytes[0] = height & 0xff;
@@ -618,13 +618,13 @@ export class AnchorBackend {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Part 10 Bundle 3 — retention tx builders
+    // Part 10 Bundle 3 - retention tx builders
     // ═══════════════════════════════════════════════════════════════════
 
     /**
      * Migrate a player's UserStats from v1 (72B) to v2 (112B).
      * Keys: [player (signer+mut), stats (mut,realloc), system_program].
-     * Data: [disc(migrate_user_stats)] — no args.
+     * Data: [disc(migrate_user_stats)] - no args.
      */
     static buildMigrateUserStatsTx(playerBase58: string, blockhash: string): Uint8Array {
         const stats = this.deriveUserStatsPda(playerBase58);
@@ -807,7 +807,7 @@ export class AnchorBackend {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // betting-duel — $SKR (SPL-token) wager tx builders
+    // betting-duel - $SKR (SPL-token) wager tx builders
     //
     // Account orders MUST match the #[derive(Accounts)] structs in
     // `programs/token-duel/src/instructions/{join_match_skr,
@@ -833,7 +833,7 @@ export class AnchorBackend {
 
     /**
      * Build a single-instruction tx that idempotently creates `wallet`'s
-     * ATA for `mint`. Cheap preflight — no-op if the ATA already exists.
+     * ATA for `mint`. Cheap preflight - no-op if the ATA already exists.
      */
     static buildEnsureAtaTx(
         fundingBase58: string,
@@ -935,7 +935,7 @@ export class AnchorBackend {
     }
 
     /**
-     * Build unsigned settle_match_verified_skr tx — Ed25519 precompile +
+     * Build unsigned settle_match_verified_skr tx - Ed25519 precompile +
      * Anchor ix in a single atomic transaction.
      *
      * Caller responsibilities:
@@ -944,7 +944,7 @@ export class AnchorBackend {
      *   - Pass `payoutRecipientsBase58` in rank order (1st, 2nd, ...) of
      *     length K = mode.payoutBps.length. Each recipient's SKR ATA is
      *     derived here. **The recipient ATAs MUST exist** before this tx
-     *     runs — preflight `buildEnsureAtaTx` for any winner who hasn't
+     *     runs - preflight `buildEnsureAtaTx` for any winner who hasn't
      *     held SKR before.
      *
      * Account order matches `SettleMatchVerifiedSkr`:

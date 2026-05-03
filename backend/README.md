@@ -1,10 +1,10 @@
-# Token Duel Backend — Receipt Signer (Part 10 Bundle 1)
+# Token Duel Backend - Receipt Signer (Part 10 Bundle 1)
 
 Tiny Node service that observes Token Duel gameplay over WebSocket, validates
 each block drop against physics rules, and signs an Ed25519 receipt at game
 over. The Solana program (`settle_match_verified` instruction) verifies that
 receipt via the native Ed25519 precompile before settling. A modified APK can
-submit any u32 height it wants to the *legacy* `settle_match` path — but it
+submit any u32 height it wants to the *legacy* `settle_match` path - but it
 cannot forge a server signature. On mainnet, disable the legacy fallback and
 the cheat loophole is fully closed.
 
@@ -22,7 +22,7 @@ npm run test:receipt    # sign + verify a receipt end-to-end
 npm run dev             # tsx watch src/server.ts (hot reload)
 ```
 
-Without `RECEIPT_SIGNER_SECRET`, the signer derives a **deterministic dev keypair** from the seed `"token-duel-receipt-signer-devnet-v1"` — pubkey `EiAotb9jwAbGjAWZ54bgHsS4QmUGQdETZL1Zmey4qRVA`. This exact pubkey is hard-coded as `RECEIPT_SIGNER_PUBKEY` in `programs/token-duel/src/state.rs`, so local dev works without any key management.
+Without `RECEIPT_SIGNER_SECRET`, the signer derives a **deterministic dev keypair** from the seed `"token-duel-receipt-signer-devnet-v1"` - pubkey `EiAotb9jwAbGjAWZ54bgHsS4QmUGQdETZL1Zmey4qRVA`. This exact pubkey is hard-coded as `RECEIPT_SIGNER_PUBKEY` in `programs/token-duel/src/state.rs`, so local dev works without any key management.
 
 ```bash
 curl http://localhost:3000/health
@@ -138,11 +138,11 @@ To rotate the signer keypair (e.g. after a leak or for mainnet launch):
 
 1. Generate new keypair: `cd scripts && npm run keygen-receipt-signer`.
 2. Update `RECEIPT_SIGNER_PUBKEY` in `programs/token-duel/src/state.rs`.
-3. `anchor build && anchor deploy` — this is a program upgrade.
+3. `anchor build && anchor deploy` - this is a program upgrade.
 4. Rolling deploy: set new `RECEIPT_SIGNER_SECRET` in backend env, redeploy.
-5. All in-flight receipts signed with the old key become invalid — players mid-match will get `InvalidReceiptSigner` and have to replay. Acceptable for a rare rotation.
+5. All in-flight receipts signed with the old key become invalid - players mid-match will get `InvalidReceiptSigner` and have to replay. Acceptable for a rare rotation.
 
-For zero-downtime rotation, accept **two** signer pubkeys in Rust for a transition window (not implemented in v1 — add if rotation becomes routine).
+For zero-downtime rotation, accept **two** signer pubkeys in Rust for a transition window (not implemented in v1 - add if rotation becomes routine).
 
 ---
 
@@ -156,7 +156,7 @@ For zero-downtime rotation, accept **two** signer pubkeys in Rust for a transiti
 
 ## Cheat detection
 
-Each rejected drop increments `session.rejectedCount`. After 3 rejects, the player's pubkey is blacklisted for 1 hour — no new sessions, no signatures. Blacklist is in-memory; it evaporates on restart. For persistent blacklist, wire up a tiny SQLite layer (TODO Part 11).
+Each rejected drop increments `session.rejectedCount`. After 3 rejects, the player's pubkey is blacklisted for 1 hour - no new sessions, no signatures. Blacklist is in-memory; it evaporates on restart. For persistent blacklist, wire up a tiny SQLite layer (TODO Part 11).
 
 The physics validator catches:
 - Superhuman tap timing (< 150ms between drops)
@@ -166,7 +166,7 @@ The physics validator catches:
 - Stall bots (> 8s gap)
 - Session timeouts (> 3 min)
 
-It does **not** catch AI-assisted perfect-timing bots yet — they'd pass physics but achieve superhuman heights. Mitigation for v2: add a macro-detection heuristic (too-perfect x-position centering) or require per-match random seeds that force different optimal paths.
+It does **not** catch AI-assisted perfect-timing bots yet - they'd pass physics but achieve superhuman heights. Mitigation for v2: add a macro-detection heuristic (too-perfect x-position centering) or require per-match random seeds that force different optimal paths.
 
 ---
 
@@ -174,4 +174,4 @@ It does **not** catch AI-assisted perfect-timing bots yet — they'd pass physic
 
 If the backend is unreachable (network error, 5xx, or the client skips `/session/start`), the client falls back to legacy `settle_match`. The match still settles; the player just doesn't get a verified receipt. On the PostMatch panel they see a yellow "⚠ Unverified" badge. This keeps the game playable even when the backend is down, at the cost of cheat-resistance for that round.
 
-For **mainnet launch**: disable the fallback path entirely — require verified receipts for all real matches. Set `TD_REQUIRE_VERIFIED = true` in the client build and the legacy ix dispatcher can be removed from the program (future breaking upgrade).
+For **mainnet launch**: disable the fallback path entirely - require verified receipts for all real matches. Set `TD_REQUIRE_VERIFIED = true` in the client build and the legacy ix dispatcher can be removed from the program (future breaking upgrade).

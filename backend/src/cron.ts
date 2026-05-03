@@ -1,5 +1,5 @@
 /**
- * cron — pure-JS daily tick for Token Duel retention PDAs.
+ * cron - pure-JS daily tick for Token Duel retention PDAs.
  *
  * Schedule (UTC):
  *   - Every day @ 00:00 UTC: init_daily_challenge for today (from challenges.json rotation).
@@ -12,7 +12,7 @@
  *   CRON_DRY_RUN=1      log what would be sent, skip the actual send.
  *   RUN_NOW=daily|weekly|payout   fire that one immediately at startup, then
  *                                 continue normal schedule. Useful for testing.
- *   ADMIN_SECRET                  required unless CRON_DRY_RUN — see admin_signer.
+ *   ADMIN_SECRET                  required unless CRON_DRY_RUN - see admin_signer.
  *   RPC_URL                       Solana cluster endpoint.
  */
 
@@ -120,7 +120,7 @@ async function tickPayout(connection: Connection, admin: ReturnType<typeof loadA
         return;
     }
     // Parse Season PDA to extract top-3 recipients. We don't ship a parser in
-    // backend/ — cron imports the client SeasonRpc parser instead.
+    // backend/ - cron imports the client SeasonRpc parser instead.
     const { parseSeason } = await import('../../assets/token-duel/scripts/SeasonRpc');
     const raw = new Uint8Array(info.data);
     const state = parseSeason(pda, raw);
@@ -152,11 +152,11 @@ async function tickPayout(connection: Connection, admin: ReturnType<typeof loadA
     await sendAdminTx(connection, admin, txBytes, `pay_season prev_season_id=${prevSeasonId}`);
 
     // ── Part 12 Bundle A: best-effort cNFT trophy mint follow-up. ────
-    // Failures here DO NOT block future payout cycles — the SOL payout already
+    // Failures here DO NOT block future payout cycles - the SOL payout already
     // landed; the trophy is the icing. Admin can re-mint manually later.
     const treeAddress = process.env.TROPHY_TREE_ADDRESS?.trim();
     if (!treeAddress) {
-        console.warn(`${TAG} tickPayout | trophy mint skipped — TROPHY_TREE_ADDRESS env var not set. Run scripts/init-trophy-tree.ts to create one.`);
+        console.warn(`${TAG} tickPayout | trophy mint skipped - TROPHY_TREE_ADDRESS env var not set. Run scripts/init-trophy-tree.ts to create one.`);
         return;
     }
     const metadataBaseUrl = (process.env.BACKEND_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 3000}`).replace(/\/$/, '');
@@ -165,7 +165,7 @@ async function tickPayout(connection: Connection, admin: ReturnType<typeof loadA
     try {
         umi = createUmiForMint(RPC_URL, adminSecretB58);
     } catch (e) {
-        console.error(`${TAG} tickPayout | trophy mint init failed — ${e}`);
+        console.error(`${TAG} tickPayout | trophy mint init failed - ${e}`);
         return;
     }
     console.log(`${TAG} tickPayout | minting ${top3Entries.length} trophies for week ${prevSeasonId}...`);
@@ -194,7 +194,7 @@ async function tickPayout(connection: Connection, admin: ReturnType<typeof loadA
 }
 
 /**
- * Round 3 — cluster-wide sweep that prunes paper_match_active rows whose
+ * Round 3 - cluster-wide sweep that prunes paper_match_active rows whose
  * window expired more than 1 day ago. Mirrors the per-user opportunistic
  * prune in paper_match_active.ts:listActiveForUser, but covers users who
  * never log back in. The 1-day buffer avoids racing a user opening the app
@@ -245,7 +245,7 @@ export async function startCron(): Promise<void> {
         admin = loadAdminKeypair();
     } catch (e: any) {
         if (dryRun) {
-            console.warn(`${TAG} startCron | DRY_RUN no ADMIN_SECRET — using ephemeral keypair for dry-run only`);
+            console.warn(`${TAG} startCron | DRY_RUN no ADMIN_SECRET - using ephemeral keypair for dry-run only`);
             const { Keypair } = await import('@solana/web3.js');
             admin = Keypair.generate();
         } else {

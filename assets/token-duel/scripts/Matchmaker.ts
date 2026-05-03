@@ -1,15 +1,15 @@
 /**
- * Matchmaker.ts — orchestrates match lifecycle.
+ * Matchmaker.ts - orchestrates match lifecycle.
  *
  * This session's MVP ships:
- *   - `runPaperBotMatch(...)` — immediate client-side bot match (paper track)
- *   - `tryFindRealMatch(...)` — SCAFFOLD, returns null until Part 3 wires the
+ *   - `runPaperBotMatch(...)` - immediate client-side bot match (paper track)
+ *   - `tryFindRealMatch(...)` - SCAFFOLD, returns null until Part 3 wires the
  *     full getProgramAccounts discovery + 3s poll loop
  *
  * Part 3 will extend this with:
- *   - `joinOrCreateRealMatch(...)` — compose + sign + submit join_match tx
- *   - `waitForOpponent(matchPda, timeoutMs, onPoll)` — 3s poll until Active or timeout
- *   - `fallbackToBot(...)` — when real match times out, offer bot
+ *   - `joinOrCreateRealMatch(...)` - compose + sign + submit join_match tx
+ *   - `waitForOpponent(matchPda, timeoutMs, onPoll)` - 3s poll until Active or timeout
+ *   - `fallbackToBot(...)` - when real match times out, offer bot
  */
 
 import { ModeId, MODES, WAGER_TIERS_LAMPORTS, MATCH_WAIT_TIMEOUT_MS } from './ModeDefs';
@@ -41,12 +41,12 @@ export interface MatchOutcome {
     xpGained: number;
     track: 'paper' | 'real';
     isBot: boolean;
-    /** betting-duel: bot squads for PostMatchPanel reveal (optional — real matches won't populate). */
+    /** betting-duel: bot squads for PostMatchPanel reveal (optional - real matches won't populate). */
     botSquads?: BotSquadEntry[][];
 }
 
 /**
- * Run a paper bot match immediately — no chain interaction.
+ * Run a paper bot match immediately - no chain interaction.
  *
  * betting-duel: samples N-1 bot squads via SquadBot.sampleInstantBotOutcome,
  * encodes each bot's portfolio delta, ranks player vs bots by delta, and
@@ -57,7 +57,7 @@ export interface MatchOutcome {
  * matches rank-by-delta. Higher score = higher delta = better rank.
  *
  * `opts.leaderboardHeights` and `botGamesRemaining` are legacy stack-jump
- * params — unused on betting-duel (bot distribution isn't anchored to a
+ * params - unused on betting-duel (bot distribution isn't anchored to a
  * per-player leaderboard), but kept in the signature for call-site stability.
  */
 export function runPaperBotMatch(opts: {
@@ -68,9 +68,9 @@ export function runPaperBotMatch(opts: {
     botGamesRemaining: number;
     /** betting-duel: window from ModePicker, drives bot delta magnitude. */
     windowMs?: number;
-    /** Phase E — bot difficulty (default medium for back-compat). */
+    /** Phase E - bot difficulty (default medium for back-compat). */
     difficulty?: BotDifficulty;
-    /** Phase E — caller-supplied Birdeye gainers snapshot for Hard mode. */
+    /** Phase E - caller-supplied Birdeye gainers snapshot for Hard mode. */
     hardGainersSnapshot?: VettedMint[];
 }): MatchOutcome {
     const mode = MODES[opts.mode];
@@ -109,7 +109,7 @@ export function runPaperBotMatch(opts: {
         atSec: Math.floor(Date.now() / 1000),
     });
 
-    // Best opponent = highest-scoring bot (not the sorted-slot neighbor —
+    // Best opponent = highest-scoring bot (not the sorted-slot neighbor -
     // we want the strongest competitor for the reveal's BEST OPP card).
     const bestOpp = botHeights.reduce((a, b) => (b > a ? b : a), 0);
 
@@ -130,7 +130,7 @@ export function runPaperBotMatch(opts: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Session D Part 3 — real-mode orchestration (tx builder + poll loop)
+// Session D Part 3 - real-mode orchestration (tx builder + poll loop)
 // AppUI owns MWA signing; Matchmaker supplies tx bytes + blockhash.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -309,7 +309,7 @@ export async function joinOrCreateWithRetry(opts: {
         } catch (e: any) {
             lastError = e instanceof Error ? e : new Error(String(e));
             if (!isCounterRace(e)) {
-                console.log(`${TAG} joinOrCreateWithRetry | NON_RACE_ERROR attempt=${attempt} msg="${lastError.message}" — bubbling up`);
+                console.log(`${TAG} joinOrCreateWithRetry | NON_RACE_ERROR attempt=${attempt} msg="${lastError.message}" - bubbling up`);
                 throw lastError;
             }
             if (attempt >= maxRetries) {
@@ -344,7 +344,7 @@ export async function waitForOpponent(
     onPoll?: (u: WaitPollUpdate) => void,
 ): Promise<{ outcome: 'active' | 'settled' | 'cancelled' | 'timeout'; state: MatchState | null }> {
     const start = Date.now();
-    // Phase D — stepped cadence: 3s for the first 2 min (typical match-fill
+    // Phase D - stepped cadence: 3s for the first 2 min (typical match-fill
     // window) then 30s for the rest of the 24h lobby ttl. Saves RPC.
     const FAST_INTERVAL_MS = 3_000;
     const SLOW_INTERVAL_MS = 30_000;
@@ -457,7 +457,7 @@ export function buildSettleMatchTxFor(opts: {
 /**
  * Part 9: build a force_settle tx for an Active match that's past its AFK
  * timeout. Mirrors the final-settler path of buildSettleMatchTxFor but
- * normalizes u32::MAX height slots to 0 before ranking — on-chain, the
+ * normalizes u32::MAX height slots to 0 before ranking - on-chain, the
  * program does the same before reusing compute_mode_payout.
  */
 export function buildForceSettleTxFor(opts: {
@@ -470,7 +470,7 @@ export function buildForceSettleTxFor(opts: {
     const allPlayers = matchState.players.slice(0, n);
     const mode = modeFromU8(matchState.mode);
 
-    // AFK players have u32::MAX — treat them as 0 for ranking (u32::MAX would
+    // AFK players have u32::MAX - treat them as 0 for ranking (u32::MAX would
     // sort to top if left alone). This mirrors force_settle.rs scope 1.
     const heights = matchState.heights.slice(0, n).map((h) => (h === 0xffffffff ? 0 : h));
     const pot = Number(matchState.wagerLamports) * n;

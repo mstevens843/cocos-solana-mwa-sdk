@@ -1,5 +1,5 @@
 /**
- * db.ts — Postgres connection pool + thin query helpers.
+ * db.ts - Postgres connection pool + thin query helpers.
  *
  * Reads `DATABASE_URL` from env. Designed for both:
  *   • Local dev: postgres://$USER@localhost:5432/token_duel_dev (no SSL)
@@ -21,7 +21,7 @@ const poolMax = parseInt(process.env.DB_POOL_MAX ?? '10', 10);
 const sslEnabled = process.env.DB_SSL === 'true';
 
 if (!databaseUrl) {
-    console.log(`${TAG} init | WARN DATABASE_URL not set — DB features disabled`);
+    console.log(`${TAG} init | WARN DATABASE_URL not set - DB features disabled`);
 }
 
 export const pool = new Pool({
@@ -73,7 +73,7 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(
     return rows[0] ?? null;
 }
 
-/** Health probe — used by /health/db endpoint. */
+/** Health probe - used by /health/db endpoint. */
 export async function ping(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     if (!dbConfigured()) return { ok: false, latencyMs: 0, error: 'DATABASE_URL not set' };
     const start = Date.now();
@@ -85,7 +85,7 @@ export async function ping(): Promise<{ ok: boolean; latencyMs: number; error?: 
     }
 }
 
-/** Graceful shutdown — call from server.ts on SIGTERM/SIGINT. */
+/** Graceful shutdown - call from server.ts on SIGTERM/SIGINT. */
 export async function closePool(): Promise<void> {
     try {
         await pool.end();

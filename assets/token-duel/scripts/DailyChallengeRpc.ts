@@ -1,12 +1,12 @@
 /**
- * DailyChallengeRpc.ts — Part 10 Bundle 3.
+ * DailyChallengeRpc.ts - Part 10 Bundle 3.
  *
  * Read helper for the per-UTC-day DailyChallenge PDA. The cron initializes
  * one of these every 00:00 UTC; settle ixs require!() day_id matches today.
  *
  * Layout (after 8-byte discriminator):
  *   day_id:      u64     (8)
- *   challenges:  [Challenge; 3] — each = u8 kind + u32 target + u16 reward_xp = 7 bytes
+ *   challenges:  [Challenge; 3] - each = u8 kind + u32 target + u16 reward_xp = 7 bytes
  *   created_at:  i64     (8)
  *   bump:        u8      (1)
  * Total data = 38 bytes, plus 8 discriminator = 46 bytes account size.
@@ -107,7 +107,7 @@ export async function getCurrentDailyChallenge(rpc: TokenDuelRpc): Promise<Daily
     const pda = deriveDailyChallengePda(dayId);
     const info = await rpc.getAccountInfo(pda);
     if (!info || !info.dataBase64) {
-        console.log(`${TAG} getCurrentDailyChallenge | NOT_INIT day_id=${dayId} pda=${pda} — cron hasn't run?`);
+        console.log(`${TAG} getCurrentDailyChallenge | NOT_INIT day_id=${dayId} pda=${pda} - cron hasn't run?`);
         return null;
     }
     const raw = b64ToBytes(info.dataBase64);

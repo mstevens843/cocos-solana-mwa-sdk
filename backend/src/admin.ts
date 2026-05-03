@@ -1,8 +1,8 @@
 /**
- * admin.ts — Part 12 Bundle B.
+ * admin.ts - Part 12 Bundle B.
  *
  * Express mini-router that mounts:
- *   GET /admin/stream    Server-Sent Events — 2s cadence StatsBucket.snapshot()
+ *   GET /admin/stream    Server-Sent Events - 2s cadence StatsBucket.snapshot()
  *   GET /admin/snapshot  One-shot JSON (for tests + polling clients)
  *
  * Optional auth via `ADMIN_DASHBOARD_TOKEN` env var: if set, clients must
@@ -29,7 +29,7 @@ export function adminRouter(): Router {
 
     // Part 13 D: curated public subset for the fees.html marketing page.
     // Intentionally omits server pubkey, session/spectator gauges, reject
-    // log, and token-stats mints — just the three numbers judges care about.
+    // log, and token-stats mints - just the three numbers judges care about.
     router.get('/fees/snapshot', (_req: Request, res: Response) => {
         const snap = StatsBucket.snapshot();
         res.json({
@@ -57,7 +57,7 @@ export function adminRouter(): Router {
             try {
                 write(res, StatsBucket.snapshot());
             } catch (e) {
-                // Client disconnected — clean up.
+                // Client disconnected - clean up.
                 clearInterval(timer);
             }
         }, SSE_TICK_MS);
@@ -77,10 +77,10 @@ function write(res: Response, data: unknown): void {
 
 function checkToken(req: Request, res: Response): boolean {
     const required = process.env.ADMIN_DASHBOARD_TOKEN?.trim();
-    if (!required) return true; // demo mode — no gate
+    if (!required) return true; // demo mode - no gate
     const provided = (req.query.token as string | undefined)?.trim();
     if (!provided || provided !== required) {
-        res.status(401).json({ error: 'unauthorized — pass ?token=<ADMIN_DASHBOARD_TOKEN>' });
+        res.status(401).json({ error: 'unauthorized - pass ?token=<ADMIN_DASHBOARD_TOKEN>' });
         return false;
     }
     return true;

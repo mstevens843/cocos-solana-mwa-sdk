@@ -1,5 +1,5 @@
 /**
- * TransactionBuilder.ts — Manual Solana transaction binary serializer.
+ * TransactionBuilder.ts - Manual Solana transaction binary serializer.
  *
  * Zero dependencies. Builds raw legacy transaction bytes that MWA wallets
  * can sign via sign_and_send_transactions.
@@ -31,7 +31,7 @@ const TAG = '[TransactionBuilder]';
 
 // ─── Well-Known Program IDs (32 bytes each) ──────────────────────────────────
 
-/** System Program: 11111111111111111111111111111111 — all zero bytes */
+/** System Program: 11111111111111111111111111111111 - all zero bytes */
 const SYSTEM_PROGRAM_ID = new Uint8Array(32); // 32 zero bytes
 
 /** Memo Program v2: MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr */
@@ -68,7 +68,7 @@ interface Instruction {
 
 /**
  * Build an unsigned memo transaction.
- * The simplest possible Solana transaction — writes a text memo on-chain.
+ * The simplest possible Solana transaction - writes a text memo on-chain.
  *
  * @param feePayerBase58 Fee payer public key (base58)
  * @param memoText The memo string
@@ -226,7 +226,7 @@ export function buildSplTokenTransfer(
 }
 
 /**
- * Input shape for `buildAnchorTransaction` — mirrors web3.js `AccountMeta`
+ * Input shape for `buildAnchorTransaction` - mirrors web3.js `AccountMeta`
  * but in base58 + booleans, so callers don't need web3.js or Buffer.
  */
 export interface AnchorAccountMetaInput {
@@ -238,12 +238,12 @@ export interface AnchorAccountMetaInput {
 /**
  * Build an unsigned transaction carrying a single Anchor instruction.
  *
- * Input format is base58 strings + raw bytes — no web3.js, no Buffer.
+ * Input format is base58 strings + raw bytes - no web3.js, no Buffer.
  * Serialized output matches `Transaction.serialize({requireAllSignatures:false})`
  * byte-for-byte (verified against the Node smoke test).
  *
  * @param programIdBase58 Base58 program ID (e.g., Token Duel program).
- * @param accounts Ordered accounts — MUST match the #[derive(Accounts)] struct
+ * @param accounts Ordered accounts - MUST match the #[derive(Accounts)] struct
  *                 field order in the target Rust program.
  * @param data Instruction data = 8-byte discriminator + borsh-encoded args.
  * @param feePayerBase58 Base58 fee payer (typically the player).
@@ -369,7 +369,7 @@ function serializeTransaction(
     // Use a map keyed by hex string to deduplicate
     const accountMap = new Map<string, AccountMeta>();
 
-    // Fee payer is always first — writable signer
+    // Fee payer is always first - writable signer
     const feePayerHex = uint8ArrayToHex(feePayer);
     accountMap.set(feePayerHex, { pubkey: feePayer, isSigner: true, isWritable: true });
 

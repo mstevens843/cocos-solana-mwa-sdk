@@ -1,5 +1,5 @@
 /**
- * TokenScore.ts — 0-100 composite score per token.
+ * TokenScore.ts - 0-100 composite score per token.
  *
  * Port of solpulse's `frontend/src/utils/tokenScore.js`. Pure function, no
  * network, no side effects. Weights match solpulse verbatim:
@@ -11,7 +11,7 @@
  *
  * Individual components clamped to 0..100 before being mixed.
  *
- * Deliberately no per-call logging — this runs in the row-render loop and
+ * Deliberately no per-call logging - this runs in the row-render loop and
  * would flood the log tape. If a future bug suggests mis-scoring, add a
  * one-off debug log in the caller, not here.
  */
@@ -32,7 +32,7 @@ function clamp100(n: number): number {
     return n;
 }
 
-/** log10(max(1, x)) / divisor * 100 — standard Birdeye-style metric ramp. */
+/** log10(max(1, x)) / divisor * 100 - standard Birdeye-style metric ramp. */
 function logRamp(x: number, divisor: number): number {
     if (!Number.isFinite(x) || x <= 0) return 0;
     const log = Math.log10(Math.max(1, x));
@@ -43,7 +43,7 @@ function logRamp(x: number, divisor: number): number {
 function ageScore(blockUnixTime: number): number {
     if (!blockUnixTime || blockUnixTime <= 0) return 0;
     const ageSec = Math.floor(Date.now() / 1000) - blockUnixTime;
-    if (ageSec < 300) return 100;       // <5 min — fresh
+    if (ageSec < 300) return 100;       // <5 min - fresh
     if (ageSec < 1800) return 80;       // <30 min
     if (ageSec < 7200) return 60;       // <2 h
     if (ageSec < 86400) return 40;      // <24 h

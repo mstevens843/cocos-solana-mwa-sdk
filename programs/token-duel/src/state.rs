@@ -169,13 +169,16 @@ pub const WAGER_TIERS: [u64; 8] = [
 /// MUST match client `WAGER_TIERS_SKR_ATOMS` in `WagerCurrency.ts`.
 /// Append-only: pre-existing SKR matches with `wager_tier: 0..N` resolve
 /// against the entries below.
-pub const WAGER_TIERS_SKR_ATOMS: [u64; 6] = [
+pub const WAGER_TIERS_SKR_ATOMS: [u64; 9] = [
     100_000_000,    // 100 SKR    — index 0
     500_000_000,    // 500 SKR    — index 1
     1_000_000_000,  // 1k SKR     — index 2
     5_000_000_000,  // 5k SKR     — index 3
     10_000_000_000, // 10k SKR    — index 4
     25_000_000_000, // 25k SKR    — index 5
+    2_000_000_000,  // 2k SKR     — index 6
+    3_000_000_000,  // 3k SKR     — index 7
+    4_000_000_000,  // 4k SKR     — index 8
 ];
 
 /// Canonical $SKR mint on Solana mainnet-beta. Source:

@@ -1,8 +1,8 @@
 /**
- * TokenStatsRpc.ts — Part 13 Bundle C.
+ * TokenStatsRpc.ts - Part 13 Bundle C.
  *
  * Client-side fetch for the backend's /admin/tokens aggregate. Caches
- * responses in-memory for 5 minutes — the backend's bucket changes slowly
+ * responses in-memory for 5 minutes - the backend's bucket changes slowly
  * (one match at a time), so rapid-fire UI re-renders shouldn't hammer the
  * endpoint.
  *
@@ -33,7 +33,7 @@ let _inFlight: Promise<TokenStatsRow[]> | null = null;
 
 /**
  * Returns the current top-10 token stats. Populates cache on first call;
- * serves cache thereafter until TTL. Resilient to backend unavailability —
+ * serves cache thereafter until TTL. Resilient to backend unavailability -
  * returns `[]` rather than throwing.
  */
 export async function fetchTopTokens(limit: number = 10): Promise<TokenStatsRow[]> {
@@ -66,7 +66,7 @@ export async function fetchTopTokens(limit: number = 10): Promise<TokenStatsRow[
 
 /**
  * Winrate for a single mint, or null when absent / below the display
- * threshold (10 matches). Reads from the cached top-N list — does NOT
+ * threshold (10 matches). Reads from the cached top-N list - does NOT
  * round-trip a per-mint endpoint because the admin snapshot already
  * includes top-10 and we don't want to chase the long tail.
  */

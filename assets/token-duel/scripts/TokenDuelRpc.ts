@@ -1,12 +1,12 @@
 /**
- * TokenDuelRpc.ts — Token Duel-specific RPC helpers.
+ * TokenDuelRpc.ts - Token Duel-specific RPC helpers.
  *
  * Plain TypeScript class (NOT a Cocos Component) so it doesn't need a
  * class UUID registered in `generate-scenes.js`. AppUI owns the instance.
  *
  * Session 3 role: holdings read is the legacy fallback when the player
  * hasn't built a squad yet. Primary data source for the panel is now
- * `BirdeyeClient` (trending / gainers / new-listings / search) — see
+ * `BirdeyeClient` (trending / gainers / new-listings / search) - see
  * `assets/token-duel/scripts/birdeye/BirdeyeClient.ts`. This module also
  * hosts `getLeaderboard()` which reads the on-chain Leaderboard PDA.
  */
@@ -151,7 +151,7 @@ export class TokenDuelRpc {
     }
 
     /**
-     * Raw RPC — parses the 165-byte SPL Account layout from base64.
+     * Raw RPC - parses the 165-byte SPL Account layout from base64.
      * Returns `{ mint, amount }` per account; decimals lookup is done
      * against the hardcoded table to avoid a second RPC call.
      */
@@ -263,7 +263,7 @@ export class TokenDuelRpc {
     }
 
     /**
-     * Thin getProgramAccounts wrapper — accepts raw Solana filter objects
+     * Thin getProgramAccounts wrapper - accepts raw Solana filter objects
      * (memcmp offsets in bytes, base58-encoded pattern bytes). Returns
      * array of `{ pubkey, dataBase64, owner, lamports }`.
      */
@@ -297,7 +297,7 @@ export class TokenDuelRpc {
     }
 
     /**
-     * Part 9: `getSignaturesForAddress` — paginated wrapper used by
+     * Part 9: `getSignaturesForAddress` - paginated wrapper used by
      * MatchHistoryRpc to walk back through a user's UserStats-PDA
      * signature log. `before` is the cursor (last signature from prior
      * page); `until` stops the walk at a known older signature.
@@ -324,7 +324,7 @@ export class TokenDuelRpc {
     }
 
     /**
-     * Part 9: `getTransaction` — fetch a single tx (we use the log messages
+     * Part 9: `getTransaction` - fetch a single tx (we use the log messages
      * only). MatchHistoryRpc scans `meta.logMessages` for `Program data:`
      * lines and decodes MatchSettled/MatchForceSettled events.
      */
@@ -371,7 +371,7 @@ export class TokenDuelRpc {
     }
 
     // CP4: retry once on transient failures (HTTP 429 / 5xx / network errors).
-    // Hard RPC errors (bad method args, unknown account) aren't retried — those
+    // Hard RPC errors (bad method args, unknown account) aren't retried - those
     // are user-facing issues, not rate limits.
     private async _call<T>(method: string, params: any[] = []): Promise<T | null> {
         const attempt = async (): Promise<{ result: T | null; transient: boolean }> => {

@@ -1,4 +1,4 @@
-# Fly.io config — alternative to Railway if preferred.
+# Fly.io config - alternative to Railway if preferred.
 # `fly launch` uses this to pick the app name + regions.
 
 app = "token-duel-backend"

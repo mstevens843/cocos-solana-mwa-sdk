@@ -1,16 +1,16 @@
 /**
- * Watchlist.ts — sys.localStorage-backed token watchlist.
+ * Watchlist.ts - sys.localStorage-backed token watchlist.
  *
  * Mirrors solpulse's `NewPairsFeed.jsx` watchlist behavior:
  *   - Persistence key (ours): `tokenduel:watchlist`
- *   - Schema: `WatchlistItem[]` — dedupe by `baseMint`
+ *   - Schema: `WatchlistItem[]` - dedupe by `baseMint`
  *   - Hot `has(mint)` lookup via an in-memory Set mirror
  *
  * Graceful degradation: if storage is unavailable (sandboxed Cocos
  * preview, SSR), the watchlist runs in-memory for the session and logs
  * `STORAGE_UNAVAILABLE` so missing persistence is visible.
  *
- * DB Stage 9 — every mutation fires fire-and-forget add/remove against
+ * DB Stage 9 - every mutation fires fire-and-forget add/remove against
  * the backend mirror. On wallet connect, hydrateFromBackend does a
  * union-merge (local ∪ server, dedup by mint, earlier addedAt wins).
  */
@@ -44,7 +44,7 @@ class WatchlistImpl {
         const ls = this._ls();
         if (!ls) {
             this._storageOk = false;
-            console.log(`${TAG} LOAD | STORAGE_UNAVAILABLE — running in-memory only, no persistence`);
+            console.log(`${TAG} LOAD | STORAGE_UNAVAILABLE - running in-memory only, no persistence`);
             return;
         }
 
@@ -52,7 +52,7 @@ class WatchlistImpl {
         try {
             raw = ls.getItem(WATCHLIST_LS_KEY);
         } catch (e) {
-            console.log(`${TAG} LOAD | READ_ERROR error=${e} — starting empty`);
+            console.log(`${TAG} LOAD | READ_ERROR error=${e} - starting empty`);
             this._storageOk = false;
             return;
         }
@@ -75,7 +75,7 @@ class WatchlistImpl {
                 console.log(`${TAG} LOAD | MALFORMED expected_array got=${typeof parsed}`);
             }
         } catch (e) {
-            console.log(`${TAG} LOAD | PARSE_ERROR error=${e} — starting empty`);
+            console.log(`${TAG} LOAD | PARSE_ERROR error=${e} - starting empty`);
         }
     }
 
@@ -92,7 +92,7 @@ class WatchlistImpl {
         }
     }
 
-    /** Safe accessor — prefers Cocos sys.localStorage (SQLite-backed on
+    /** Safe accessor - prefers Cocos sys.localStorage (SQLite-backed on
      *  native), falls back to web localStorage. Returns null in fully
      *  sandboxed contexts. */
     private _ls(): { getItem(k: string): string | null;
@@ -252,7 +252,7 @@ class WatchlistImpl {
         }
     }
 
-    /** Toggle — returns the resulting state (true = now in watchlist). */
+    /** Toggle - returns the resulting state (true = now in watchlist). */
     toggle(row: TokenRow): boolean {
         this._ensureLoaded();
         if (this._mintSet.has(row.address)) {
@@ -292,7 +292,7 @@ class WatchlistImpl {
     }
 
     /**
-     * Convert stored items back to `TokenRow` shape (lossy — missing
+     * Convert stored items back to `TokenRow` shape (lossy - missing
      * price/vol/etc). Caller should enrich via `PriceFeed.enrichRows`
      * before rendering on the watchlist tab.
      */

@@ -1,12 +1,12 @@
 /**
- * Theme.ts — single source of truth for Token Duel UX.
+ * Theme.ts - single source of truth for Token Duel UX.
  *
  * Palette, spacing, radii, typography, motion. Replaces the hardcoded RGB
  * tuples scattered through generate-scenes.js (line 31, 195+) and AppUI
  * tween call sites.
  *
  * KEEP IN SYNC with Theme.cjs (CommonJS twin used by generate-scenes.js).
- * The two files mirror each other intentionally — a generator was overkill
+ * The two files mirror each other intentionally - a generator was overkill
  * for ~150 lines of constants. If you change a value here, change it in
  * Theme.cjs too.
  */
@@ -17,14 +17,14 @@ import { Color } from 'cc';
 
 export const Palette = {
     bg: {
-        // 2026-04-30 v3 — wine eggplant rollout (Option 3, user-confirmed).
+        // 2026-04-30 v3 - wine eggplant rollout (Option 3, user-confirmed).
         // Slightly transparent panels (alpha 235) sit over the purple/green
         // game bg without competing with mascot's gold/violet/teal accents.
         primary:   '#0A0410',  // drawer/modal backdrop
         surface:   '#1A0820',  // primary card surface
         card:      '#1A0820',  // canonical card body
         cardHover: '#321448',  // hover lift
-        // 2026-04-27 Landing UX upgrade — vertical depth gradient on landing.
+        // 2026-04-27 Landing UX upgrade - vertical depth gradient on landing.
         gradientTop: '#1A0B2E',
         gradientBot: '#050810',
         // Pill trays/chips: one step lighter than card so chips read as inset.
@@ -46,15 +46,15 @@ export const Palette = {
         // 2026-04-30 high-contrast pass: kill the blue-grey wash. Secondary
         // text now resolves to warm-neutral whites at fixed alphas so labels
         // read like a competitive HUD, not a muted dashboard.
-        hi:      '#FFFFFF',  // was '#F4F5F9' — pure white for titles/values
-        mid:     '#B8B8B8',  // was '#A8AEC9' — secondary readable (~72%)
-        lo:      '#8C8C8C',  // was '#5D6485' — last-resort tiny helper text
+        hi:      '#FFFFFF',  // was '#F4F5F9' - pure white for titles/values
+        mid:     '#B8B8B8',  // was '#A8AEC9' - secondary readable (~72%)
+        lo:      '#8C8C8C',  // was '#5D6485' - last-resort tiny helper text
         inverse: '#05070D',  // matches new bg.primary
     },
     status: {
         win:     '#14F195',
         loss:    '#FF4D4D',
-        neutral: '#B8B8B8',  // was '#A8AEC9' — match text.mid
+        neutral: '#B8B8B8',  // was '#A8AEC9' - match text.mid
         warn:    '#FFB454',
     },
     rank: {
@@ -67,7 +67,7 @@ export const Palette = {
         subtleHex: '#FFFFFF14',  // 8% alpha
         strongHex: '#FFFFFF29',  // 16% alpha
     },
-    // 2026-04-28 fighter-card redesign — squad slot pillar palette.
+    // 2026-04-28 fighter-card redesign - squad slot pillar palette.
     // emptyBg: dark drop-zone background; filledBg: slightly lifted to give the
     // selected fighter card visual elevation; emptyBorder/targetBorder are the
     // CardEdgeAccent strip alphas swapped at runtime.
@@ -78,16 +78,16 @@ export const Palette = {
         targetBorder:   '#9945FFDC',
         silhouetteFill: '#5D648540',
     },
-    // 2026-04-28 fighter-card redesign — alpha applied to WagerStartButton
+    // 2026-04-28 fighter-card redesign - alpha applied to WagerStartButton
     // sprite when the squad is incomplete, so the CTA visibly dims.
     ctaDimAlpha: 130,
-    // Phase 14 (B4) — card edge-accent palette.
+    // Phase 14 (B4) - card edge-accent palette.
     cardEdge: {
         amber:    [255, 210, 74],
         amberW:   [255, 180, 84],
         teal:     [20, 241, 149],
         violet:   [153, 69, 255],
-        // 2026-04-27 UI overhaul — selected/active glow.
+        // 2026-04-27 UI overhaul - selected/active glow.
         violetActive: [153, 69, 255],
         rose:     [255, 77,  77],
         gold:     [255, 210, 74],
@@ -99,30 +99,30 @@ export const Palette = {
         edgeAlpha:        255,
         edgeThicknessPx:  4,
     },
-    // 2026-04-27 FindMatch redesign — pulse dot beside the count label.
+    // 2026-04-27 FindMatch redesign - pulse dot beside the count label.
     // Tab-conditional: rose when on Live, teal when on Open Lobbies.
     live: {
         pulseOpen: [20, 241, 149],
         pulseLive: [255, 92, 138],
     },
-    // Phase 13 (B3) — premium button bevel + halo alphas.
+    // Phase 13 (B3) - premium button bevel + halo alphas.
     btn: {
         bevelTopAlpha:    52,
         bevelBottomAlpha: 46,
         glowAlpha:        80,
         glowPaddingPx:    12,
     },
-    // 2026-04-27 — Game-Over screen palette. Replaces full-screen pink/teal
+    // 2026-04-27 - Game-Over screen palette. Replaces full-screen pink/teal
     // wash with a deep-dark base + colored radial glow. Keeps colors out of
     // AppUI (where they were hardcoded as Color(48,198,155,255) literals).
     result: {
-        baseDark:    '#0B0E1A',  // canvas wash — deep, near-black
-        cardBg:      '#121826',  // stat-card surface — slightly above bg
+        baseDark:    '#0B0E1A',  // canvas wash - deep, near-black
+        cardBg:      '#121826',  // stat-card surface - slightly above bg
         cardEdge:    '#1F2A44',  // muted blue-gray for secondary chrome
         win:  { glow: '#1FE0A5', accent: '#22E39A', sub: '#7FE9C4' },
         loss: { glow: '#FF5A6A', accent: '#FF6B7A', sub: '#F2A0AB' },
     },
-    // Phase 12 (B1+B2) — neon-trading background polish.
+    // Phase 12 (B1+B2) - neon-trading background polish.
     glow: {
         violet:   '#9945FF3C',
         teal:     '#14F19532',
@@ -130,7 +130,7 @@ export const Palette = {
         starFar:  '#FFFFFF40',
         starMid:  '#FFFFFF96',
         starNear: '#FFFFFFC8',
-        // 2026-04-27 Landing UX — gold halo behind TitleLabel.
+        // 2026-04-27 Landing UX - gold halo behind TitleLabel.
         gold:     '#FFD24A40',
     },
 } as const;
@@ -145,7 +145,7 @@ export const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 } as const;
 
 /* ── Card system ─────────────────────────────────────────────────────── */
 
-// 2026-04-29 (Prompt 1) — unified card chrome. Every card built via
+// 2026-04-29 (Prompt 1) - unified card chrome. Every card built via
 // generate-scenes.js mkCard() reads from this block. Body color is one
 // canonical surface (Palette.bg.card); corners are a single 16 px 9-slice
 // SpriteFrame (asset: assets/demo/resources/ui/card_bg_r16.png); padding is
@@ -153,7 +153,7 @@ export const Radius  = { sm: 6, md: 12, lg: 20, pill: 999, btn: 16 } as const;
 // interactive. Edge accent color stays per-card-semantic (Palette.cardEdge.*).
 export const Card = {
     bgHex: Palette.bg.card,            // 2026-04-30: now '#0A0D14' (was '#1E2438')
-    bgAlpha: 235,                      // ~92% — slightly denser for black-glass read
+    bgAlpha: 235,                      // ~92% - slightly denser for black-glass read
     radiusPx: 16,                      // asset-driven; tokenized for docs
     padding: {
         dense:   12,                   // leaderboard rows, history rows
@@ -190,10 +190,10 @@ export const FontSize = {
 /* ── Motion ──────────────────────────────────────────────────────────── */
 
 export const Motion = {
-    fast: 0.12,   // 120ms — micro-interactions, tap feedback
-    base: 0.22,   // 220ms — panel swaps, modal show
-    slow: 0.40,   // 400ms — celebration, level-up
-    bg:   0.60,   // 600ms — ambient background loops
+    fast: 0.12,   // 120ms - micro-interactions, tap feedback
+    base: 0.22,   // 220ms - panel swaps, modal show
+    slow: 0.40,   // 400ms - celebration, level-up
+    bg:   0.60,   // 600ms - ambient background loops
 } as const;
 
 export const Easing = {
@@ -205,10 +205,10 @@ export const Easing = {
 
 /* ── Button hierarchy ────────────────────────────────────────────────── */
 
-// 2026-04-29 (Prompt 1) — global button hierarchy. Every button in the app
+// 2026-04-29 (Prompt 1) - global button hierarchy. Every button in the app
 // resolves to one of four tiers; ButtonTierSpec[tier] dictates structural
 // properties (size, glow, effects). Color/variant is still chosen at the
-// call site via ButtonVariants — tier is hierarchy, variant is brand.
+// call site via ButtonVariants - tier is hierarchy, variant is brand.
 //
 //   primary    → hero CTA. Find Match, Start Match, Connect, Play Again.
 //   secondary  → major nav. Matches In Progress, Reconnect.
@@ -241,13 +241,13 @@ export const ButtonTierSpec: Record<ButtonTier, {
 
 /* ── Tab hierarchy ───────────────────────────────────────────────────── */
 
-// 2026-04-29 (Prompt 2) — global tab hierarchy. _buildSegmentedPill in
+// 2026-04-29 (Prompt 2) - global tab hierarchy. _buildSegmentedPill in
 // AppUI.ts pulls all visual properties from TabTierSpec[tier]. Three tiers:
-//   hub  → primary navigation (Portfolio / Leaderboard) — violet, tallest.
-//   mode → mode switching (1v1 / Trio / 4p / 8p, Open / Live) — teal, mid.
-//   sub  → content filtering (Stats / History / Trophies) — teal, smallest.
+//   hub  → primary navigation (Portfolio / Leaderboard) - violet, tallest.
+//   mode → mode switching (1v1 / Trio / 4p / 8p, Open / Live) - teal, mid.
+//   sub  → content filtering (Stats / History / Trophies) - teal, smallest.
 //
-// Inactive label alpha is locked at 180 (~70%) per Prompt 2 spec — never
+// Inactive label alpha is locked at 180 (~70%) per Prompt 2 spec - never
 // fade below readability.
 export type TabTier = 'hub' | 'mode' | 'sub';
 

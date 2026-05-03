@@ -1,5 +1,5 @@
 /**
- * IconLibrary.ts — code-drawn icon registry for Token Duel UX overhaul.
+ * IconLibrary.ts - code-drawn icon registry for Token Duel UX overhaul.
  *
  * Phase 1: every icon is rendered procedurally via cc.Graphics so we can
  *          ship a polish jump with zero new asset dependencies.
@@ -34,12 +34,12 @@ export type IconName =
     | 'sparkle' | 'star' | 'starOutline' | 'circle' | 'triangle' | 'starBurst'
     | 'clock' | 'check' | 'cross' | 'arrowUp' | 'arrowDown'
     | 'plus' | 'eye' | 'lock' | 'wand' | 'trade'
-    // Phase 2b additions — emoji replacements for scene chrome.
+    // Phase 2b additions - emoji replacements for scene chrome.
     | 'cog' | 'user' | 'book' | 'bulb' | 'robot' | 'trash' | 'save'
     | 'speaker' | 'speakerMuted' | 'vibration' | 'hand' | 'flag' | 'clipboard'
-    // Phase N3 — Notification system
+    // Phase N3 - Notification system
     | 'bell'
-    // Phase N4 — Disconnect (Home wallet sign-out; Phase 3 PNG = disconnect.png)
+    // Phase N4 - Disconnect (Home wallet sign-out; Phase 3 PNG = disconnect.png)
     | 'disconnect'
     // Matches In Progress row (Phase 3 PNG = play.png)
     | 'play';
@@ -102,7 +102,7 @@ export class IconLibrary {
         // re-calls _attachStaticIconBadges once PNG SpriteFrames are loaded
         // (~100ms after launch); icons render via Sprite path then. Until
         // then, the badge node stays empty (no render component → no crash).
-        console.log(`${TAG} attach | NO_PNG_YET icon=${name} — skipping Graphics fallback (Phase 3 will swap to Sprite)`);
+        console.log(`${TAG} attach | NO_PNG_YET icon=${name} - skipping Graphics fallback (Phase 3 will swap to Sprite)`);
     }
 
     /** Phase 3 hook: register a PNG sprite frame for `name`. */
@@ -407,12 +407,12 @@ function drawClock(g: Graphics, size: number, color: Color): void {
 }
 
 function drawBell(g: Graphics, size: number, color: Color): void {
-    // Phase N3 — bell with curved dome + flared lip + clapper.
+    // Phase N3 - bell with curved dome + flared lip + clapper.
     const lineW = Math.max(2, size * 0.06);
     g.strokeColor = color;
     g.lineWidth = lineW;
     setFill(g, color, 0.18);
-    // Dome — wide arc that flares slightly at the bottom.
+    // Dome - wide arc that flares slightly at the bottom.
     const top = size * 0.34;
     const bottom = -size * 0.18;
     const halfWidth = size * 0.30;
@@ -427,7 +427,7 @@ function drawBell(g: Graphics, size: number, color: Color): void {
     g.close();
     g.fill();
     g.stroke();
-    // Lip — short rectangle below the dome.
+    // Lip - short rectangle below the dome.
     g.moveTo(-halfWidth - size * 0.06, bottom);
     g.lineTo(halfWidth + size * 0.06, bottom);
     g.lineTo(halfWidth + size * 0.06, bottom - size * 0.05);
@@ -435,10 +435,10 @@ function drawBell(g: Graphics, size: number, color: Color): void {
     g.close();
     setFill(g, color);
     g.fill();
-    // Clapper — small filled circle below the lip.
+    // Clapper - small filled circle below the lip.
     g.circle(0, bottom - size * 0.13, size * 0.07);
     g.fill();
-    // Top knob — single dot at the top.
+    // Top knob - single dot at the top.
     g.circle(0, top + size * 0.04, size * 0.05);
     g.fill();
 }
@@ -526,7 +526,7 @@ function drawTrade(g: Graphics, size: number, color: Color): void {
 
 function drawCog(g: Graphics, size: number, color: Color): void {
     setFill(g, color);
-    // 8-tooth gear — alternate outer/inner vertex polygon
+    // 8-tooth gear - alternate outer/inner vertex polygon
     const teeth = 8;
     const rOuter = size * 0.44;
     const rInner = size * 0.34;
@@ -605,7 +605,7 @@ function drawBulb(g: Graphics, size: number, color: Color): void {
     g.lineWidth = Math.max(1, size * 0.03);
     g.moveTo(-size * 0.14, -size * 0.20); g.lineTo(size * 0.14, -size * 0.20); g.stroke();
     g.moveTo(-size * 0.12, -size * 0.26); g.lineTo(size * 0.12, -size * 0.26); g.stroke();
-    // Filament suggestion — small bright dot
+    // Filament suggestion - small bright dot
     setFill(g, new Color(255, 255, 255, 220));
     g.circle(-size * 0.08, size * 0.16, size * 0.04); g.fill();
 }
@@ -702,7 +702,7 @@ function drawSpeaker(g: Graphics, size: number, color: Color, muted: boolean): v
         g.moveTo(size * 0.18, -size * 0.20); g.lineTo(size * 0.40, size * 0.02); g.stroke();
         g.moveTo(size * 0.40, -size * 0.20); g.lineTo(size * 0.18, size * 0.02); g.stroke();
     } else {
-        // Sound waves — 3 arcs to the right
+        // Sound waves - 3 arcs to the right
         g.strokeColor = color;
         g.lineWidth = Math.max(2, size * 0.05);
         g.arc(size * 0.10, 0, size * 0.18, -Math.PI / 3, Math.PI / 3, false); g.stroke();
@@ -750,7 +750,7 @@ function drawHand(g: Graphics, size: number, color: Color): void {
         g.roundRect(x, fingerY, fingerW, fingerH, size * 0.04);
         g.fill();
     }
-    // Thumb — angled left
+    // Thumb - angled left
     polygon(g, [
         [-size * 0.30, size * 0.02],
         [-size * 0.40, -size * 0.08],
@@ -774,7 +774,7 @@ function drawFlag(g: Graphics, size: number, color: Color): void {
     // Pole
     setFill(g, color);
     g.rect(-size * 0.26, -size * 0.42, size * 0.06, size * 0.84); g.fill();
-    // Checkered flag — 4x2 grid
+    // Checkered flag - 4x2 grid
     const cellW = size * 0.12;
     const cellH = size * 0.12;
     const startX = -size * 0.20;

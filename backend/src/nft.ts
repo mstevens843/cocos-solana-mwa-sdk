@@ -1,5 +1,5 @@
 /**
- * nft.ts — Part 11 Bundle B.
+ * nft.ts - Part 11 Bundle B.
  *
  * Mints compressed NFTs (Bubblegum cNFTs) as weekly season trophies. Called
  * from the cron's `payoutWeeklySeason` tick after `pay_season` confirms.
@@ -11,7 +11,7 @@
  * Metadata JSON is served by our own backend at `/metadata/:weekId/:rank.json`
  * so cost stays in-house (no IPFS / Arweave setup needed for hackathon).
  *
- * Failure mode: mint is "best-effort" — if it fails the season payout
+ * Failure mode: mint is "best-effort" - if it fails the season payout
  * already happened; the trophy is the icing, not the cake. Logged + moved on.
  */
 

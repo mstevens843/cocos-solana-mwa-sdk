@@ -1,21 +1,21 @@
 /**
- * ButtonFX.ts — tactile feedback helpers for primary CTA buttons.
+ * ButtonFX.ts - tactile feedback helpers for primary CTA buttons.
  *
  * Three effects, layer-compatible:
  *
- *   addIdlePulse(node)  — subtle breathing scale loop (1.0 ↔ 1.03, sineInOut,
+ *   addIdlePulse(node)  - subtle breathing scale loop (1.0 ↔ 1.03, sineInOut,
  *                         1.5s). Draws the eye to the action without noise.
  *                         Cancelable via stopPulse().
  *
- *   addPressPop(button) — on CLICK, plays a subtle scale dip (1.0 → 0.97 →
+ *   addPressPop(button) - on CLICK, plays a subtle scale dip (1.0 → 0.97 →
  *                         1.0 over ~140ms, cubicIn/backOut) plus a brief
  *                         flash of the sibling BtnGlow_<name> halo. No
- *                         overshoot — the dip + flash combo reads as
+ *                         overshoot - the dip + flash combo reads as
  *                         "intentional press" without competing with idle
  *                         pulses. Also brightens the base sprite by ~+28
  *                         on each channel for 100ms.
  *
- *   setStrongPress(btn) — one-shot: bumps cc.Button._zoomScale to 1.08 (from
+ *   setStrongPress(btn) - one-shot: bumps cc.Button._zoomScale to 1.08 (from
  *                         the default 1.05) so tap-down feedback is
  *                         more noticeable.
  *
@@ -38,7 +38,7 @@ const pulseSet = new WeakSet<Node>();
 
 /**
  * Start a subtle scale-pulse loop on the node. Cancelable via stopPulse().
- * Idempotent — double-starts are no-ops.
+ * Idempotent - double-starts are no-ops.
  */
 export function addIdlePulse(node: Node, peak = 1.03, durationSec = 1.5): void {
     if (pulseSet.has(node)) return;
@@ -55,7 +55,7 @@ export function addIdlePulse(node: Node, peak = 1.03, durationSec = 1.5): void {
 /**
  * Subtler pulse for the "almost ready" state (squad 2/3). Smaller scale band
  * (1.0 ↔ 1.015) and slower cycle (2.5s) so it reads as anticipation rather
- * than a call-to-action. Same registry as addIdlePulse — only one pulse can
+ * than a call-to-action. Same registry as addIdlePulse - only one pulse can
  * be active at a time.
  */
 export function addAlmostReadyPulse(node: Node): void {
@@ -106,7 +106,7 @@ export function addPressPop(button: Button): void {
         }
         node.setScale(1, 1, 1);
 
-        // Scale dip — subtle inward press, no overshoot.
+        // Scale dip - subtle inward press, no overshoot.
         tween(node)
             .to(0.07, { scale: new Vec3(0.97, 0.97, 1) }, { easing: 'cubicIn' })
             .to(0.07, { scale: new Vec3(1, 1, 1) },       { easing: 'backOut' })
@@ -131,7 +131,7 @@ export function addPressPop(button: Button): void {
                 .start();
         }
 
-        // Color flash on the base sprite — softer than before so it layers
+        // Color flash on the base sprite - softer than before so it layers
         // under the glow flash rather than competing with it.
         const spr = node.getComponent(Sprite);
         if (spr) {
@@ -154,7 +154,7 @@ export function setStrongPress(button: Button, zoom = 1.08): void {
 }
 
 /**
- * Phase 18 — ripple-on-click for hero CTAs.
+ * Phase 18 - ripple-on-click for hero CTAs.
  *
  * Looks for a `Ripple_<button.name>` child sprite created by mkBtnHero at
  * scene-gen time. On CLICK: activates it, scales 0.4× → 2.5× + opacity
@@ -166,7 +166,7 @@ export function setStrongPress(button: Button, zoom = 1.08): void {
 export function addRipple(button: Button): void {
     const node = button.node;
     const ripple = node.getChildByName(`Ripple_${node.name}`);
-    if (!ripple) return; // not a hero button — silent skip
+    if (!ripple) return; // not a hero button - silent skip
     button.node.on(Button.EventType.CLICK, () => {
         ripple.active = true;
         Tween.stopAllByTarget(ripple);
@@ -184,17 +184,17 @@ export function addRipple(button: Button): void {
     });
 }
 
-/** Registry of active shimmer tweens — keyed by the Shimmer_ child node. */
+/** Registry of active shimmer tweens - keyed by the Shimmer_ child node. */
 const shimmerSet = new WeakSet<Node>();
 
 /**
- * 2026-04-28 polish — periodic shimmer pass across a hero CTA. Looks for a
+ * 2026-04-28 polish - periodic shimmer pass across a hero CTA. Looks for a
  * `Shimmer_<button.name>` child sprite (90px-wide vertical band, additive
  * blend) created by mkBtnHeroLayered. Tweens it from off-button-left to
  * off-button-right over `sweepSec`, idles for `idleSec`, repeats forever.
  *
  * Idempotent. Silent no-op if no Shimmer_ child exists. Layers atop
- * idle-pulse + glow-pulse without competing for the eye — the band is
+ * idle-pulse + glow-pulse without competing for the eye - the band is
  * white-alpha 80 and only crosses the button briefly.
  */
 export function addShimmerSweep(node: Node | null, sweepSec = 0.9, idleSec = 3.5): void {
@@ -223,11 +223,11 @@ export function addShimmerSweep(node: Node | null, sweepSec = 0.9, idleSec = 3.5
         .start();
 }
 
-/** Registry of active signal-flicker tweens — keyed by the flickering node. */
+/** Registry of active signal-flicker tweens - keyed by the flickering node. */
 const flickerSet = new WeakSet<Node>();
 
 /**
- * 2026-04-28 home UX polish — slow opacity flicker on the FindMatch live-
+ * 2026-04-28 home UX polish - slow opacity flicker on the FindMatch live-
  * count badge so it reads as a "signal pulse" rather than a static chip.
  * Idempotent. Apply when the badge is visible (count > 0); leave alone
  * when hidden.
@@ -262,17 +262,17 @@ export function enhancePrimaryCTA(node: Node | null): void {
     addIdlePulse(node);
     addPressPop(btn);
     setStrongPress(btn);
-    addRipple(btn);  // Phase 18 — ripple on hero CTAs (silent no-op if no Ripple_ child)
+    addRipple(btn);  // Phase 18 - ripple on hero CTAs (silent no-op if no Ripple_ child)
     console.log(`${TAG} enhancePrimaryCTA | applied to ${node.name}`);
 }
 
 /**
- * 2026-04-29 (Prompt 1) — global button-hierarchy dispatcher.
+ * 2026-04-29 (Prompt 1) - global button-hierarchy dispatcher.
  *
  * Applies the right effect bundle for a tier:
  *   primary    → idle pulse + press dip + strong press + ripple (full hero treatment).
  *   secondary  → press dip + strong press only (no idle pulse, no ripple).
- *   tertiary   → press dip only — no zoom bump, no glow flash.
+ *   tertiary   → press dip only - no zoom bump, no glow flash.
  *   danger     → press dip with rose-tint override on the glow flash; no idle pulse.
  *
  * Replaces the per-call hand-wiring of addIdlePulse / addPressPop / addRipple
@@ -305,7 +305,7 @@ export function applyButtonTier(node: Node | null, tier: ButtonTier): void {
 }
 
 /**
- * Danger-tier press feedback — same scale dip as addPressPop but the glow
+ * Danger-tier press feedback - same scale dip as addPressPop but the glow
  * flash uses rose (#FF4D4D from Palette.accent.rose) so destructive presses
  * read as a tinted consequence cue rather than a neutral confirmation.
  */
@@ -337,7 +337,7 @@ function addDangerPressPop(button: Button): void {
                 .start();
         }
 
-        // Sprite color flash — shift toward rose for ~120ms, then restore.
+        // Sprite color flash - shift toward rose for ~120ms, then restore.
         const spr = node.getComponent(Sprite);
         if (spr) {
             const orig = spr.color.clone();

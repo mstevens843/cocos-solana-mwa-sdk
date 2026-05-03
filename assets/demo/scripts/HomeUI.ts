@@ -1,12 +1,12 @@
 /**
- * HomeUI.ts — Home page: connected wallet pubkey and action buttons.
+ * HomeUI.ts - Home page: connected wallet pubkey and action buttons.
  *
  * Port of:
  *   - Godot: home.gd (144 lines)
  *   - Unity: HomeUI.cs
  *
  * NOTE: Uses getChildByName() to locate UI nodes instead of @property.
- * This eliminates manual inspector wiring — just add this component to Canvas.
+ * This eliminates manual inspector wiring - just add this component to Canvas.
  */
 
 import { _decorator, Component, Label, Button, director } from 'cc';
@@ -33,7 +33,7 @@ export class HomeUI extends Component {
 
         const mwa = MWAManager.instance;
         if (!mwa) {
-            console.log(`${TAG} onLoad | FAIL MWAManager.instance is null — returning to Landing`);
+            console.log(`${TAG} onLoad | FAIL MWAManager.instance is null - returning to Landing`);
             director.loadScene('Landing');
             return;
         }
@@ -94,7 +94,7 @@ export class HomeUI extends Component {
         mwa.node.on(MWA_DISCONNECTED, this._onDisconnected, this);
         mwa.node.on(MWA_STATUS, this._onStatusUpdated, this);
 
-        if (this._statusLabel) this._statusLabel.string = 'Connected — choose an action';
+        if (this._statusLabel) this._statusLabel.string = 'Connected - choose an action';
         console.log(`${TAG} onLoad | DONE buttons_wired=${this._allButtons.length}`);
     }
 
@@ -150,7 +150,7 @@ export class HomeUI extends Component {
             return;
         }
 
-        console.log(`${TAG} onSignTransaction | tx_bytes=${tx.length} — signing & sending`);
+        console.log(`${TAG} onSignTransaction | tx_bytes=${tx.length} - signing & sending`);
         const sigs = await MWAManager.instance!.signAndSendTransactions([tx]);
         if (sigs.length > 0 && sigs[0]) {
             console.log(`${TAG} onSignTransaction | SUCCESS sig=${sigs[0].substring(0, 20)}...`);

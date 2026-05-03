@@ -1,5 +1,5 @@
 /**
- * TrophyRpc.ts — Part 11 Bundle B.
+ * TrophyRpc.ts - Part 11 Bundle B.
  *
  * Queries Helius DAS (Digital Asset Standard) API for a player's cNFTs filtered
  * to Token Duel's trophy merkle tree. Parses the metadata → returns a typed
@@ -8,7 +8,7 @@
  * Helius DAS docs: https://docs.helius.dev/compression-and-das-api/digital-asset-standard-das-api
  *
  * Fallback: if Helius is unreachable or returns a non-JSON response, returns [].
- * Render layer shows "No trophies yet — win a weekly season" empty state.
+ * Render layer shows "No trophies yet - win a weekly season" empty state.
  */
 
 import { HELIUS_DAS_URL, TROPHY_TREE_ADDRESS } from './constants';
@@ -42,11 +42,11 @@ interface DasAsset {
  */
 export async function getPlayerTrophies(playerPubkey: string): Promise<Trophy[]> {
     if (!HELIUS_DAS_URL || HELIUS_DAS_URL.includes('YOUR_HELIUS_KEY')) {
-        console.log(`${TAG} getPlayerTrophies | HELIUS_DAS_URL not configured — returning []`);
+        console.log(`${TAG} getPlayerTrophies | HELIUS_DAS_URL not configured - returning []`);
         return [];
     }
     if (!TROPHY_TREE_ADDRESS) {
-        console.log(`${TAG} getPlayerTrophies | TROPHY_TREE_ADDRESS not set — returning []`);
+        console.log(`${TAG} getPlayerTrophies | TROPHY_TREE_ADDRESS not set - returning []`);
         return [];
     }
 

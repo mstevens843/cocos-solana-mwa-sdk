@@ -1,5 +1,5 @@
 /**
- * BirdeyeClient.ts — HTTP wrapper around Birdeye's public-api endpoints.
+ * BirdeyeClient.ts - HTTP wrapper around Birdeye's public-api endpoints.
  *
  * Mirrors the logging + retry pattern from `TokenDuelRpc._call` so Token
  * Duel has one consistent network story:
@@ -11,7 +11,7 @@
  *
  * API-key strategy for v1 (hackathon): the key is embedded in the Cocos
  * bundle via `constants.ts`. Known trade-off: APK-decompile gets you the
- * key. Acceptable scope — Birdeye key is read-only + CU-metered, can't
+ * key. Acceptable scope - Birdeye key is read-only + CU-metered, can't
  * sign. Post-hackathon: proxy via backend.
  */
 
@@ -48,7 +48,7 @@ import {
 // Session 9: prefixed with `AppUI:` so the entire Birdeye log stream passes
 // through the user's default adb logcat grep filter (which anchors on
 // `\[(MWA|AppUI|...)`). Without this, HTTP_ERROR / OK / PARSE_ERROR lines
-// are stripped before they reach the terminal — which is exactly what
+// are stripped before they reach the terminal - which is exactly what
 // silently burned 3 debug rounds (Sessions 2, 4, 8).
 const TAG = '[AppUI:Birdeye]';
 
@@ -67,9 +67,9 @@ export class BirdeyeClient {
         const keyTail = keyLen >= 4 ? apiKey.substring(keyLen - 4) : apiKey;
         // Birdeye returns 401 (non-transient, caller-bug) on empty keys. Log
         // up-front so failing calls are traceable to configuration, not the
-        // network layer — the retry path would otherwise mask it.
+        // network layer - the retry path would otherwise mask it.
         if (keyLen === 0) {
-            console.log(`${TAG} ctor | NO_API_KEY — every request will 401; PriceFeed will fall back to mock`);
+            console.log(`${TAG} ctor | NO_API_KEY - every request will 401; PriceFeed will fall back to mock`);
         }
         console.log(`${TAG} ctor | DONE chain=${BIRDEYE_CHAIN} api_key_len=${keyLen} api_key_tail="${keyTail}"`);
     }
@@ -81,7 +81,7 @@ export class BirdeyeClient {
      */
     async getTrending(tab: FeedTab, limit: number): Promise<TokenRow[]> {
         const callId = this._nextCallId++;
-        // Session 10: defensive — Birdeye validates limit as integer in [1, 20]
+        // Session 10: defensive - Birdeye validates limit as integer in [1, 20]
         // for token_trending/new_listing and [1, 100] for v3/token/list.
         // `limit=0` (which is what happens when the UI row pool is empty at
         // call time) produces a 400 "limit should be integer, range 1-N"
@@ -111,7 +111,7 @@ export class BirdeyeClient {
         if (tab === 'new') {
             const raw = await this._getWithRetry<{ data?: { items?: RawNewListingItem[] } }>(url, callId, 'getTrending.new');
             if (raw === null) {
-                console.log(`${TAG} getTrending | NULL_RESPONSE call_id=${callId} tab=${tab} — retry exhausted`);
+                console.log(`${TAG} getTrending | NULL_RESPONSE call_id=${callId} tab=${tab} - retry exhausted`);
                 return [];
             }
             if (!raw.data) {
@@ -137,7 +137,7 @@ export class BirdeyeClient {
         // rows despite 54 KB of data at `data.items`.
         const raw = await this._getWithRetry<{ data?: { tokens?: unknown[]; items?: unknown[]; total?: number } }>(url, callId, `getTrending.${tab}`);
         if (raw === null) {
-            console.log(`${TAG} getTrending | NULL_RESPONSE call_id=${callId} tab=${tab} — retry exhausted`);
+            console.log(`${TAG} getTrending | NULL_RESPONSE call_id=${callId} tab=${tab} - retry exhausted`);
             return [];
         }
         if (!raw.data) {
@@ -150,7 +150,7 @@ export class BirdeyeClient {
             return [];
         }
         if (items.length === 0) {
-            console.log(`${TAG} getTrending | EMPTY_ITEMS call_id=${callId} tab=${tab} raw_data_keys=${Object.keys(raw.data).join(',')} — check if shape shifted`);
+            console.log(`${TAG} getTrending | EMPTY_ITEMS call_id=${callId} tab=${tab} raw_data_keys=${Object.keys(raw.data).join(',')} - check if shape shifted`);
         }
         let rows: TokenRow[];
         if (tab === 'gainers') {
@@ -177,14 +177,14 @@ export class BirdeyeClient {
     /**
      * Fuzzy search by keyword (symbol, name, or mint address).
      *
-     * If the keyword already looks like a base58 Solana mint (32–44 chars,
+     * If the keyword already looks like a base58 Solana mint (32-44 chars,
      * no whitespace, valid chars), Birdeye returns an exact match. Otherwise
      * fuzzy-matches against symbol + name.
      */
     async search(keyword: string, limit: number): Promise<TokenRow[]> {
         const callId = this._nextCallId++;
         const trimmed = keyword.trim();
-        // Session 10: same guard as getTrending — /defi/v3/search rejects
+        // Session 10: same guard as getTrending - /defi/v3/search rejects
         // limit=0 as out-of-range. Force to a sane default on bad input.
         const requested = limit;
         if (!Number.isFinite(limit) || limit <= 0) limit = FEED_ROW_LIMIT;
@@ -200,7 +200,7 @@ export class BirdeyeClient {
         }
 
         // Session 8: Birdeye /defi/v3/search is GET with query params, not POST.
-        // Previous POST implementation returned 0 results on every call — see
+        // Previous POST implementation returned 0 results on every call - see
         // Session 8 plan for details.
         const url = searchUrl(trimmed, limit);
         const raw = await this._getWithRetry<{
@@ -208,7 +208,7 @@ export class BirdeyeClient {
         }>(url, callId, 'search');
 
         if (raw === null) {
-            console.log(`${TAG} search | NULL_RESPONSE call_id=${callId} keyword="${trimmed}" — retry exhausted`);
+            console.log(`${TAG} search | NULL_RESPONSE call_id=${callId} keyword="${trimmed}" - retry exhausted`);
             return [];
         }
         if (!raw.data) {
@@ -239,7 +239,7 @@ export class BirdeyeClient {
 
     /**
      * Batch-fetch price + % change for up to 50 mints on the given window.
-     * `timeframe` ∈ {'1h','24h','3d','7d'} — Part 9 added 1h/3d/7d alongside
+     * `timeframe` ∈ {'1h','24h','3d','7d'} - Part 9 added 1h/3d/7d alongside
      * the pre-existing 24h default. Returned map keys = mint addresses;
      * missing mints (unlisted) are omitted.
      */
@@ -257,7 +257,7 @@ export class BirdeyeClient {
         const raw = await this._getWithRetry<{ data?: RawPriceVolumeMulti }>(url, callId, `priceMulti.${timeframe}`);
 
         if (raw === null) {
-            console.log(`${TAG} priceMulti | NULL_RESPONSE call_id=${callId} mints=${uniq.length} — retry exhausted`);
+            console.log(`${TAG} priceMulti | NULL_RESPONSE call_id=${callId} mints=${uniq.length} - retry exhausted`);
             return {};
         }
         if (!raw.data) {
@@ -290,11 +290,11 @@ export class BirdeyeClient {
                 ts: entry.updateUnixTime ? entry.updateUnixTime * 1000 : nowMs,
             };
         }
-        // Entries present in `data` but not in `uniq` (shouldn't happen — means
+        // Entries present in `data` but not in `uniq` (shouldn't happen - means
         // Birdeye returned a mint we didn't ask for). Log so we notice.
         for (const mint of Object.keys(data)) {
             if (uniq.indexOf(mint) === -1) {
-                console.log(`${TAG} priceMulti | UNEXPECTED_MINT call_id=${callId} mint=${mint} — not in request list`);
+                console.log(`${TAG} priceMulti | UNEXPECTED_MINT call_id=${callId} mint=${mint} - not in request list`);
                 nullEntryCount++;
             }
         }
@@ -303,14 +303,14 @@ export class BirdeyeClient {
     }
 
     /**
-     * betting-duel — lightweight spot-price batch.
+     * betting-duel - lightweight spot-price batch.
      *
      * Uses `/defi/multi_price` which has broader token coverage than the
      * `priceMulti` endpoint used for feed delta rendering. Returns a simple
      * mint → priceUsd map (no volume, no % change). Missing mints are
      * omitted from the output.
      *
-     * Never throws — returns `{}` on any network / parse failure so the
+     * Never throws - returns `{}` on any network / parse failure so the
      * PortfolioRace can fall back to its squad-cached prices.
      */
     async spotPriceMulti(mints: string[]): Promise<Record<string, number>> {
@@ -324,7 +324,7 @@ export class BirdeyeClient {
         const url = multiPriceUrl(uniq);
         const raw = await this._getWithRetry<{ data?: Record<string, { value?: number }> }>(url, callId, `spotPriceMulti`);
         if (raw === null) {
-            console.log(`${TAG} spotPriceMulti | NULL_RESPONSE call_id=${callId} mints=${uniq.length} — retry exhausted`);
+            console.log(`${TAG} spotPriceMulti | NULL_RESPONSE call_id=${callId} mints=${uniq.length} - retry exhausted`);
             return {};
         }
         if (!raw.data || typeof raw.data !== 'object') {
@@ -354,7 +354,7 @@ export class BirdeyeClient {
      * META_DATA_BATCH mints per chunk. Used to hydrate rows that come back
      * without a `logoURI` (common on /defi/token_trending and /smart-money).
      *
-     * Returns a mint-keyed record — missing entries are omitted (NOT zeroed)
+     * Returns a mint-keyed record - missing entries are omitted (NOT zeroed)
      * so callers can distinguish "Birdeye has no metadata" from "we asked
      * and got an empty object".
      */
@@ -381,7 +381,7 @@ export class BirdeyeClient {
             const url = metaDataMultipleUrl(chunk);
             const raw = await this._getWithRetry<{ data?: RawMetaDataItem[] | Record<string, RawMetaDataItem> }>(url, callId, `metaDataMulti.${chunkIdx}`);
             if (raw === null || !raw.data) {
-                console.log(`${TAG} getMetaDataMulti | CHUNK_NULL call_id=${callId} chunk=${chunkIdx} — skip`);
+                console.log(`${TAG} getMetaDataMulti | CHUNK_NULL call_id=${callId} chunk=${chunkIdx} - skip`);
                 continue;
             }
             // Birdeye ships either an array or a mint-keyed object. Solpulse's
@@ -424,7 +424,7 @@ export class BirdeyeClient {
         const url = ohlcvUrl(mint, type, fromSec, toSec);
         const raw = await this._getWithRetry<{ data?: { items?: RawOhlcvCandle[] } }>(url, callId, `ohlcv.${type}`);
         if (raw === null) {
-            console.log(`${TAG} getOhlcv | NULL_RESPONSE call_id=${callId} — retry exhausted`);
+            console.log(`${TAG} getOhlcv | NULL_RESPONSE call_id=${callId} - retry exhausted`);
             return [];
         }
         if (!raw.data) {
@@ -452,7 +452,7 @@ export class BirdeyeClient {
     //
     // Session 11: all normalizers populate the extended TokenRow shape
     // (liquidity, marketCap, fdv, holders, blockUnixTime, source). Fields
-    // unknown to a given endpoint are zero-valued — never left undefined, so
+    // unknown to a given endpoint are zero-valued - never left undefined, so
     // downstream render code can safely read any field without optional checks.
 
     /** Safe number coercion; returns 0 for null/undef/NaN/Infinity. */
@@ -536,7 +536,7 @@ export class BirdeyeClient {
             address: i.address ?? '',
             symbol: i.symbol ?? '',
             name: i.name ?? '',
-            // New-listing endpoint does not return price/change/volume — those
+            // New-listing endpoint does not return price/change/volume - those
             // get backfilled by the PriceFeed.enrichRows pass after fetch.
             priceUsd: 0,
             change24hPct: 0,
@@ -635,7 +635,7 @@ export class BirdeyeClient {
     }
 
     private async _getOnce<T>(url: string, callId: number, label: string, attempt: number): Promise<FetchOutcome<T>> {
-        // Session 8: log the URL (with API key stripped — it's in the header
+        // Session 8: log the URL (with API key stripped - it's in the header
         // anyway) + attempt number so the user can correlate each call with
         // exactly what went out. `path_only` keeps the log line short.
         const pathOnly = url.length > 100 ? url.substring(0, 100) + '...' : url;
@@ -650,7 +650,7 @@ export class BirdeyeClient {
         if (!response.ok) {
             const transient = response.status === 429 || response.status >= 500;
             const auth = response.status === 401 || response.status === 403;
-            // Try to capture the error body for the user — helps distinguish
+            // Try to capture the error body for the user - helps distinguish
             // "invalid api key" from "param rejected" vs "rate limit".
             let errBody = '';
             try { errBody = (await response.text()).substring(0, 200); } catch (_) { /* ignore */ }

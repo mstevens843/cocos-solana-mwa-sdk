@@ -1,5 +1,5 @@
 /**
- * receipt.test.ts — unit test for ReceiptSigner.
+ * receipt.test.ts - unit test for ReceiptSigner.
  *
  * Verifies:
  *   1. Produced ix data decodes to a valid Ed25519 precompile layout.
@@ -46,7 +46,7 @@ function main() {
     console.log(`${TAG} offsets: sig=${sigOff} pk=${pkOff} msg=${msgOff} msg_size=${msgSize} total_len=${ixBytes.length}`);
 
     // @solana/web3.js Ed25519Program.createInstructionWithPublicKey lays out
-    // header|pubkey|sig|msg — pk at 16, sig at 48, msg at 112, total 188.
+    // header|pubkey|sig|msg - pk at 16, sig at 48, msg at 112, total 188.
     // This matches what our Rust `settle_match_verified` accepts since it
     // reads offsets from the header rather than hard-coding them.
     assert(pkOff === 16, `pk_off expected 16 (web3.js layout), got ${pkOff}`);

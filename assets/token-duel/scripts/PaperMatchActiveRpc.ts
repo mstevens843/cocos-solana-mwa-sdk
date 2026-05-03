@@ -1,9 +1,9 @@
 /**
- * PaperMatchActiveRpc.ts — backend client for the paper_match_active table
+ * PaperMatchActiveRpc.ts - backend client for the paper_match_active table
  * (DB Stage 7). Signed-in users persist their in-flight paper / bot matches
  * here so MIP shows them cross-device. Guests stay in client memory only.
  *
- * All calls are best-effort — failures are logged but never thrown so a
+ * All calls are best-effort - failures are logged but never thrown so a
  * backend hiccup can't block gameplay.
  */
 import { RECEIPT_BACKEND_URL } from './constants';
@@ -99,6 +99,27 @@ export async function listPaperMatchesActive(pubkey: string): Promise<PaperMatch
         return Array.isArray(body?.rows) ? body.rows : [];
     } catch (e) {
         console.log(`${TAG} list | NET_ERR ${e}`);
+        return [];
+    }
+}
+
+export async function listAllPaperMatchesActive(
+    limit: number = 50,
+    offset: number = 0,
+): Promise<PaperMatchActiveRow[]> {
+    if (!RECEIPT_BACKEND_URL) return [];
+    try {
+        const res = await fetch(
+            `${RECEIPT_BACKEND_URL}/paper-match/active?limit=${limit}&offset=${offset}`,
+        );
+        if (!res.ok) {
+            console.log(`${TAG} listAll | HTTP ${res.status}`);
+            return [];
+        }
+        const body = (await res.json()) as { rows: PaperMatchActiveRow[] };
+        return Array.isArray(body?.rows) ? body.rows : [];
+    } catch (e) {
+        console.log(`${TAG} listAll | NET_ERR ${e}`);
         return [];
     }
 }

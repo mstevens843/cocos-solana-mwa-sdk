@@ -1,5 +1,5 @@
 /**
- * migrate.ts — minimal file-based Postgres migration runner.
+ * migrate.ts - minimal file-based Postgres migration runner.
  *
  * Reads `backend/migrations/*.sql` in lex order and applies any not yet
  * recorded in the `schema_migrations` table. Idempotent; safe to call on
@@ -77,7 +77,7 @@ async function applyMigration(m: MigrationFile): Promise<void> {
 
 export async function runMigrations(opts: { dry?: boolean } = {}): Promise<{ applied: string[]; pending: string[] }> {
     if (!dbConfigured()) {
-        console.log(`${TAG} DATABASE_URL not set — skipping migrations`);
+        console.log(`${TAG} DATABASE_URL not set - skipping migrations`);
         return { applied: [], pending: [] };
     }
     const dir = resolveMigrationsDir();
@@ -114,7 +114,7 @@ if (isMain) {
     (async () => {
         const result = await runMigrations({ dry });
         if (dry && result.pending.length > 0) {
-            console.log(`${TAG} DRY RUN — would apply ${result.pending.length} migration(s)`);
+            console.log(`${TAG} DRY RUN - would apply ${result.pending.length} migration(s)`);
         }
         await closePool();
         process.exit(0);

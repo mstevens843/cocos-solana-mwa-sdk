@@ -1,16 +1,16 @@
 /**
- * Session manager — owns per-match state from WS open to receipt issuance.
+ * Session manager - owns per-match state from WS open to receipt issuance.
  *
  * Flow:
- *   1. `create(req)` — fetches squad price deltas from Birdeye for the
+ *   1. `create(req)` - fetches squad price deltas from Birdeye for the
  *      requested time_window, caches expected widths. Returns SessionState.
- *   2. `recordDrop(sessionId, event)` — forwards to Physics.validate. On
+ *   2. `recordDrop(sessionId, event)` - forwards to Physics.validate. On
  *      reject, increments rejectedCount and blacklists player if >= 3.
- *   3. `finalize(sessionId, finalHeight)` — returns the final height that
+ *   3. `finalize(sessionId, finalHeight)` - returns the final height that
  *      matches the session's drop count (or a reject if mismatched).
  *      Caller then passes the height to ReceiptSigner to produce a
  *      receipt. Session is marked finalized; no further drops accepted.
- *   4. `cleanup()` — runs every 60s via interval, removes sessions older
+ *   4. `cleanup()` - runs every 60s via interval, removes sessions older
  *      than MAX_SESSION_MS × 2.
  */
 
@@ -53,7 +53,7 @@ export class SessionManager {
     // backend session appear here; legacy (unverified) matches aren't indexed.
     private sessionsByMatchPda = new Map<string, string>();
 
-    // betting-duel live opponent delta — squad publication board.
+    // betting-duel live opponent delta - squad publication board.
     // Independent of the physics-session flow (which is dead on betting-duel).
     // Clients POST their 3 squad mints at match-commit time; backend stores +
     // broadcasts to anyone subscribed to that matchPda via WS.
@@ -66,7 +66,7 @@ export class SessionManager {
     private matchSquads = new Map<string, Map<string, { mints: string[]; entryPrices: Record<string, number>; publishedAt: number }>>();
     // matchPda → spectator WS set (separate from session-based spectators).
     private matchSpectators = new Map<string, Set<WebSocket>>();
-    // 10-minute TTL on squad entries — 1h race max + buffer.
+    // 10-minute TTL on squad entries - 1h race max + buffer.
     private static readonly SQUAD_TTL_MS = 10 * 60 * 1000;
 
     constructor(
@@ -203,7 +203,7 @@ export class SessionManager {
      * that contributed, returning the per-player squad mints. Used by the
      * rake listener to feed `TokenStatsBucket` on each MatchSettled event.
      *
-     * Finds ALL sessions that share the same matchPda — multiplayer modes
+     * Finds ALL sessions that share the same matchPda - multiplayer modes
      * open one session per player. Returns a map keyed by player pubkey.
      * Returns null when no session is known (e.g., legacy settle paths).
      */
@@ -252,7 +252,7 @@ export class SessionManager {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // betting-duel live opponent delta — squad publication board
+    // betting-duel live opponent delta - squad publication board
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -276,7 +276,7 @@ export class SessionManager {
         board.set(playerPubkey, entry);
         console.log(`${TAG} publishMatchSquad match=${matchPda.slice(0, 8)}... player=${playerPubkey.slice(0, 8)}... mints=[${mints.map(m => m.slice(0, 8)).join(',')}] board_size=${board.size}`);
         this.broadcastMatchSquadEvent(matchPda, { kind: 'opponent-squad', playerPubkey, mints });
-        // Fire-and-forget entry-price capture. Race-start is "now" — Birdeye
+        // Fire-and-forget entry-price capture. Race-start is "now" - Birdeye
         // /defi/multi_price gives the per-mint USD price, which we cache so a
         // later GET /match/:pda/live-pnl can compute (current-entry)/entry.
         // Failures stay non-fatal; entryPrices remains empty for that player.
@@ -304,7 +304,7 @@ export class SessionManager {
     }
 
     /**
-     * Entries-aware variant — bundles each player's cached entry prices
+     * Entries-aware variant - bundles each player's cached entry prices
      * alongside their mints so /match/:pda/live-pnl can compute portfolio
      * deltas without a second board lookup. Mirrors getMatchSquads's TTL.
      */
@@ -352,7 +352,7 @@ export class SessionManager {
 
     /**
      * Resolve each mint's expected block width via Birdeye. Falls back to
-     * BASE_WIDTH (fully-permissive) if Birdeye returns nothing — better to
+     * BASE_WIDTH (fully-permissive) if Birdeye returns nothing - better to
      * under-validate than fail honest players on a flaky upstream.
      */
     private async resolveExpectedWidths(mints: string[], window: string): Promise<Record<string, number>> {
@@ -369,7 +369,7 @@ export class SessionManager {
                 headers: { 'accept': 'application/json', 'x-chain': 'solana', 'X-API-KEY': this.birdeyeApiKey },
             });
             if (!res.ok) {
-                console.warn(`${TAG} birdeye HTTP ${res.status} — widths unknown, permissive mode`);
+                console.warn(`${TAG} birdeye HTTP ${res.status} - widths unknown, permissive mode`);
                 for (const m of mints) out[m] = 0;
                 return out;
             }
@@ -380,14 +380,14 @@ export class SessionManager {
             }
             return out;
         } catch (e) {
-            console.warn(`${TAG} birdeye fetch error ${e} — permissive mode`);
+            console.warn(`${TAG} birdeye fetch error ${e} - permissive mode`);
             for (const m of mints) out[m] = 0;
             return out;
         }
     }
 
     /**
-     * Birdeye /defi/multi_price — returns USD spot price per mint. Best-effort:
+     * Birdeye /defi/multi_price - returns USD spot price per mint. Best-effort:
      * unindexed mints + transport errors collapse to "missing from result"
      * (caller treats that as 0% delta contribution, matching PortfolioRace).
      * Used by publishMatchSquad to capture entry prices and by the live-pnl
@@ -396,7 +396,7 @@ export class SessionManager {
     async fetchSpotPrices(mints: string[]): Promise<Record<string, number>> {
         const out: Record<string, number> = {};
         if (mints.length === 0) return out;
-        if (!this.birdeyeApiKey) return out; // dev mode — no Birdeye, no prices
+        if (!this.birdeyeApiKey) return out; // dev mode - no Birdeye, no prices
         const list = mints.slice(0, 100).join(',');
         const url = `https://public-api.birdeye.so/defi/multi_price?list_address=${list}`;
         try {

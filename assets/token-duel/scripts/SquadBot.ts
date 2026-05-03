@@ -1,5 +1,5 @@
 /**
- * SquadBot.ts — synthesizes a bot opponent for Paper-mode betting-duel matches.
+ * SquadBot.ts - synthesizes a bot opponent for Paper-mode betting-duel matches.
  *
  * The stack-jump era used `BotOpponent.ts` (sampled tower heights from a
  * leaderboard-anchored distribution). Betting-duel needs a competitor whose
@@ -9,10 +9,10 @@
  *
  * Two modes of sampling, picked based on how long the caller wants to wait:
  *
- *   1. **Live** — fetch entry prices now, wait windowMs, fetch again,
+ *   1. **Live** - fetch entry prices now, wait windowMs, fetch again,
  *      compute real delta. Used when PortfolioRace is already waiting.
  *
- *   2. **Synthetic** — don't wait. Use each token's 24h change as a noise
+ *   2. **Synthetic** - don't wait. Use each token's 24h change as a noise
  *      seed to generate a plausible delta over `windowMs`. Used for the
  *      Paper-bot-match fast path where we don't want an extra N-second wait
  *      after the player's race ends.
@@ -48,7 +48,7 @@ export interface BotSquadEntry {
     /** The bot's current delta for this token at the most-recent sample tick. */
     deltaPct: number;
     /** Birdeye logo URI carried through from the VettedMint pool, used by the
-     *  in-race opponent token cards. Optional — empty when the vetted entry
+     *  in-race opponent token cards. Optional - empty when the vetted entry
      *  has no logoUri populated yet. */
     logoUri?: string;
 }
@@ -189,7 +189,7 @@ export class LiveSquadBot {
 
 /**
  * Instant synthetic outcome for the paper-bot-match post-race ranking.
- * Does NOT fetch prices or wait — seeded purely by current time bucket so
+ * Does NOT fetch prices or wait - seeded purely by current time bucket so
  * two paper matches in quick succession feel different.
  *
  * Phase E: difficulty drives both the token universe and a height

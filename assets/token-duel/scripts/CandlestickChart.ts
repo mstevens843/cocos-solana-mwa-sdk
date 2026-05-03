@@ -1,15 +1,15 @@
 /**
- * CandlestickChart.ts — native Cocos candlestick renderer.
+ * CandlestickChart.ts - native Cocos candlestick renderer.
  *
  * Ported semantics from solpulse's `BirdeyeChart.jsx` (which uses TradingView's
- * lightweight-charts). We draw with `cc.Graphics` directly — no external libs.
+ * lightweight-charts). We draw with `cc.Graphics` directly - no external libs.
  *
  * API:
  *   CandlestickChart.render(graphics, candles, area, opts)
  *
  * Draws:
  *   - High→low wick per candle (thin vertical line)
- *   - Open→close body per candle (rectangle) — emerald if close≥open, rose otherwise
+ *   - Open→close body per candle (rectangle) - emerald if close≥open, rose otherwise
  *   - Volume histogram along the bottom 20% of the chart area
  *
  * Deliberately simple: no crosshair, no zoom, no tooltip. Those can layer later.
@@ -35,7 +35,7 @@ export interface ChartArea {
 
 export interface ChartRenderOpts {
     timeframe?: OhlcvType;
-    /** 'USD' (default) or 'SOL' — display-only label; we don't rescale y. */
+    /** 'USD' (default) or 'SOL' - display-only label; we don't rescale y. */
     denom?: 'USD' | 'SOL';
     /** If true, draws 'price' (candles on price axis); if 'mcap' caller must pre-scale. */
     mode?: 'price' | 'mcap';
@@ -105,7 +105,7 @@ export function renderCandles(
         if (c.v > maxVol) maxVol = c.v;
     }
     if (!Number.isFinite(hiPrice) || !Number.isFinite(loPrice) || hiPrice <= loPrice) {
-        console.log(`${TAG} RENDER | FLAT_RANGE hi=${hiPrice} lo=${loPrice} — fallback render`);
+        console.log(`${TAG} RENDER | FLAT_RANGE hi=${hiPrice} lo=${loPrice} - fallback render`);
         hiPrice = loPrice * 1.1 || 1;
     }
     // Inject 2% headroom top/bottom so candles don't touch edges.

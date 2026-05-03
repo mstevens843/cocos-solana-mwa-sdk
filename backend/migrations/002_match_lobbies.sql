@@ -1,4 +1,4 @@
--- Token Duel — Open lobby projection (DB Stage 6)
+-- Token Duel - Open lobby projection (DB Stage 6)
 -- One row per Match PDA at the moment a host commits the create tx.
 -- On-chain Match account remains the source of truth for live state; this
 -- table exists for funnel analytics ("how many lobbies were opened?",

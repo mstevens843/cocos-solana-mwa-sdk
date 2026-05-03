@@ -1,5 +1,5 @@
 /**
- * LeaderboardRpc.ts — fetch + parse per-mode Leaderboard PDAs.
+ * LeaderboardRpc.ts - fetch + parse per-mode Leaderboard PDAs.
  *
  * Session D Part 7. Each GameMode (0..=3) has its own `Leaderboard` PDA at
  * seeds `[b"leaderboard", &[mode]]`. Layout on-chain mirrors the singleton
@@ -67,7 +67,7 @@ export function parseLeaderboardEntries(raw: Uint8Array): LeaderboardEntry[] {
 }
 
 /**
- * 2026-04-28 — Always-on mock fixture so the Leaderboard panel stays fully
+ * 2026-04-28 - Always-on mock fixture so the Leaderboard panel stays fully
  * populated during UX iteration even when the on-chain PDA only has the
  * signed-in user. Heights span the u8 range to demonstrate ordering and
  * settledAt timestamps stagger across the past week. The real entries from

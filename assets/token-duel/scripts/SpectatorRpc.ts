@@ -1,11 +1,11 @@
 /**
- * SpectatorRpc.ts — Part 12 Bundle D.
+ * SpectatorRpc.ts - Part 12 Bundle D.
  *
  * Two channels per spectated match:
- *   1. On-chain polling at 3s cadence — fetches the Match PDA + emits a
+ *   1. On-chain polling at 3s cadence - fetches the Match PDA + emits a
  *      MatchState via `onState`. Works even when no live backend session
  *      exists (legacy settle path or empty match).
- *   2. Optional backend WebSocket at `/match/:matchPda/spectate` — emits
+ *   2. Optional backend WebSocket at `/match/:matchPda/spectate` - emits
  *      per-drop events with ~200ms latency for the "feels live" experience.
  *      Gracefully skipped if the backend is unreachable.
  *
@@ -68,14 +68,14 @@ export interface SpectatorCallbacks {
     onOpponentSquad?: (ev: SpectatorOpponentSquadEvent) => void;
     onWsConnected?: () => void;
     onWsClosed?: (reason: string) => void;
-    /** Phase F7 — fired when auto-reconnect succeeds. Caller may want to refresh UI state. */
+    /** Phase F7 - fired when auto-reconnect succeeds. Caller may want to refresh UI state. */
     onWsReconnected?: (attempt: number) => void;
-    /** Phase F7 — fired when reconnect attempts are exhausted (WS lost permanently). */
+    /** Phase F7 - fired when reconnect attempts are exhausted (WS lost permanently). */
     onWsGiveUp?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SQUADS_HIDDEN_UNTIL_RACE_START — Phase C guard
+// SQUADS_HIDDEN_UNTIL_RACE_START - Phase C guard
 //
 // Squad-mint payloads (`opponent-squad` events + `spectate-ready` snapshot
 // squads) MUST NOT reach the UI until the race actually starts (after
@@ -138,7 +138,7 @@ export function subscribeToMatch(
             if (!stopped) cb.onState(state);
             // Auto-stop polling once match is Settled/Cancelled.
             if (state && (state.status === 2 || state.status === 3) && !stopped) {
-                console.log(`${TAG} poll | match terminal status=${state.status} — stopping poll`);
+                console.log(`${TAG} poll | match terminal status=${state.status} - stopping poll`);
                 if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
             }
         } catch (e) {
@@ -178,7 +178,7 @@ export function subscribeToMatch(
                     else if (data.kind === 'match-over') cb.onMatchOver?.(data);
                     else if (data.kind === 'spectate-ready') {
                         console.log(`${TAG} ws | ready session=${data.sessionId ?? 'null'} squads=${data.squads?.length ?? 0}`);
-                        // SQUADS_HIDDEN_UNTIL_RACE_START — strip squad snapshot
+                        // SQUADS_HIDDEN_UNTIL_RACE_START - strip squad snapshot
                         // before forwarding the ready event, then queue each
                         // squad as if it had arrived as an opponent-squad msg.
                         const sanitized: SpectatorReadyEvent = { ...data, squads: [] };
@@ -218,7 +218,7 @@ export function subscribeToMatch(
             };
             ws.onerror = (evt) => { console.log(`${TAG} ws | ERROR ${evt}`); };
         } catch (e) {
-            console.log(`${TAG} ws | open failed ${e} — will retry`);
+            console.log(`${TAG} ws | open failed ${e} - will retry`);
             ws = null;
             if (!stopped && reconnectAttempts < RECONNECT_MAX_ATTEMPTS) {
                 const backoff = Math.min(RECONNECT_MAX_BACKOFF_MS, 1000 * Math.pow(2, reconnectAttempts));
@@ -258,14 +258,14 @@ function _routeOpponentSquad(
     }
     let queue = _preRaceBuffer.get(matchPda);
     if (!queue) { queue = []; _preRaceBuffer.set(matchPda, queue); }
-    // Dedupe by playerPubkey — only keep latest squad per player.
+    // Dedupe by playerPubkey - only keep latest squad per player.
     const existing = queue.findIndex((q) => q.playerPubkey === ev.playerPubkey);
     if (existing >= 0) queue[existing] = ev; else queue.push(ev);
     console.log(`${TAG} buffer | match=${matchPda.slice(0, 8)}... player=${ev.playerPubkey.slice(0, 8)}... queued (released=false)`);
 }
 
 /**
- * betting-duel live opponent delta — POST this player's 3 squad mints to
+ * betting-duel live opponent delta - POST this player's 3 squad mints to
  * the backend after Real-match commit. Fire-and-forget; logs on failure
  * but doesn't throw (a missing backend should not block the race). The
  * backend's in-memory board expires entries after ~10 min.

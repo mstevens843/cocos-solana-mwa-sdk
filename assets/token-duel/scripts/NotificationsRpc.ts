@@ -1,5 +1,5 @@
 /**
- * NotificationsRpc.ts — DB Stage 10 cross-device notification sync.
+ * NotificationsRpc.ts - DB Stage 10 cross-device notification sync.
  *
  * Wraps the three /notifications/:pubkey endpoints:
  *   - GET                            → fetchNotifications

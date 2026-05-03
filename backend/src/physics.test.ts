@@ -1,5 +1,5 @@
 /**
- * physics.test.ts — unit tests for the physics validator.
+ * physics.test.ts - unit tests for the physics validator.
  *
  * Hand-rolled asserts so no test framework needed. Run `npm run test:physics`.
  */

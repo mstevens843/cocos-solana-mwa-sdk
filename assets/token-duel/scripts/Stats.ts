@@ -1,5 +1,5 @@
 /**
- * Stats.ts — per-mode game statistics.
+ * Stats.ts - per-mode game statistics.
  *
  * Paper mode → sys.localStorage (key: `tokenduel:paper-stats`).
  * Real  mode → stub for Session D on-chain UserStats PDA.
@@ -37,7 +37,7 @@ const PAPER_KEY = 'tokenduel:paper-stats';
 const LAST_MATCH_KEY = 'tokenduel:last-match';
 
 /**
- * 2026-04-28 home UX polish — single-row snapshot of the user's most-recent
+ * 2026-04-28 home UX polish - single-row snapshot of the user's most-recent
  * settled match. Drives the HomeMatchTicker "Last Result" strip. Persists
  * across sessions in localStorage (paper) so guests + signed-in users see
  * the same anchor on Home.
@@ -52,7 +52,7 @@ export interface LastMatchRecord {
 
 // Cocos sys.localStorage is SQLite-backed on native (Android/iOS) and
 // LocalStorage on Web. Plain `localStorage` is undefined on native, which
-// is why every paper-stats write was silently lost — see AuthCache.ts:5.
+// is why every paper-stats write was silently lost - see AuthCache.ts:5.
 function safeStorage(): KVStorage | null {
     try {
         const s = (sys as any)?.localStorage as KVStorage | undefined;
@@ -80,7 +80,7 @@ function readPaper(): StatsRecord {
             xp: Number(parsed.xp) || 0,
         };
     } catch (e) {
-        console.log(`${TAG} readPaper | PARSE_ERROR error=${e} — returning empty`);
+        console.log(`${TAG} readPaper | PARSE_ERROR error=${e} - returning empty`);
         return { ...EMPTY };
     }
 }
@@ -88,7 +88,7 @@ function readPaper(): StatsRecord {
 function writePaper(rec: StatsRecord): void {
     const ls = safeStorage();
     if (!ls) {
-        console.log(`${TAG} writePaper | STORAGE_UNAVAILABLE — record lost`);
+        console.log(`${TAG} writePaper | STORAGE_UNAVAILABLE - record lost`);
         return;
     }
     try {
@@ -106,7 +106,7 @@ export const Stats = {
      */
     record(mode: StatsMode, win: boolean, profitLamports: number): void {
         if (mode === 'real') {
-            console.log(`${TAG} record | REAL_STUB win=${win} profit=${profitLamports} — Session D will wire on-chain UserStats`);
+            console.log(`${TAG} record | REAL_STUB win=${win} profit=${profitLamports} - Session D will wire on-chain UserStats`);
             return;
         }
         const rec = readPaper();
@@ -122,7 +122,7 @@ export const Stats = {
     load(mode: StatsMode): StatsRecord {
         if (mode === 'real') {
             // Real-mode stats live in an on-chain UserStats PDA (Session D).
-            console.log(`${TAG} load | REAL_STUB — returning empty until Session D`);
+            console.log(`${TAG} load | REAL_STUB - returning empty until Session D`);
             return { ...EMPTY };
         }
         return readPaper();
@@ -142,7 +142,7 @@ export const Stats = {
 
     /**
      * Persist a snapshot of the most-recent settled match for the home
-     * "Last Result" strip. Overwrites any prior snapshot — single-slot.
+     * "Last Result" strip. Overwrites any prior snapshot - single-slot.
      */
     recordLastMatch(rec: LastMatchRecord): void {
         const ls = safeStorage();

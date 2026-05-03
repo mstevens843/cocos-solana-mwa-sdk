@@ -1,5 +1,5 @@
 /**
- * ReceiptSigner.ts — Part 10 Bundle 1 client.
+ * ReceiptSigner.ts - Part 10 Bundle 1 client.
  *
  * Talks to the Token Duel backend at RECEIPT_BACKEND_URL:
  *   1. POST /session/start with match + squad details → backend returns
@@ -111,7 +111,7 @@ export class ReceiptSession {
         }
         this._sessionId = resp.sessionId;
 
-        // Open WS. We resolve `start` immediately — drops can queue until OPEN.
+        // Open WS. We resolve `start` immediately - drops can queue until OPEN.
         try {
             this._ws = new WebSocket(resp.wsUrl);
             this._ws.onopen = () => this._flushQueue();
@@ -200,7 +200,7 @@ export class ReceiptSession {
     private _flushQueue(): void {
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
         for (const m of this._queued) this._ws.send(JSON.stringify(m));
-        console.log(`${TAG} ws OPEN — flushed ${this._queued.length} queued msgs`);
+        console.log(`${TAG} ws OPEN - flushed ${this._queued.length} queued msgs`);
         this._queued = [];
     }
 
@@ -246,12 +246,12 @@ export class ReceiptSession {
 }
 
 /**
- * Phase F2 — one-shot receipt sign for betting-duel real-track matches.
+ * Phase F2 - one-shot receipt sign for betting-duel real-track matches.
  *
  * No WS, no session state. POSTs the height + (matchPda, player) to the
  * backend, gets back the Ed25519 precompile ix data ready to drop into
  * settle_match_verified ix[1]. On any error returns null and the caller
- * surfaces a "Backend unavailable — try again or wait for force-settle"
+ * surfaces a "Backend unavailable - try again or wait for force-settle"
  * toast (the unverified path is gated onchain after Phase F2 redeploy).
  */
 export async function requestReceiptSign(opts: {

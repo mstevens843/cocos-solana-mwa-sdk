@@ -1,12 +1,12 @@
 /**
- * PaperMatchHistoryRpc.ts — backend client for the paper_match_history table
+ * PaperMatchHistoryRpc.ts - backend client for the paper_match_history table
  * (DB Stage 8). Signed-in users POST here on settle / forfeit so a future
  * "Match History" UI can render the full off-chain history. Guests skip.
  *
- * All calls are best-effort — failures are logged but never thrown so a
+ * All calls are best-effort - failures are logged but never thrown so a
  * backend hiccup can't block the post-match flow.
  *
- * 2026-04-28 — Added a localStorage mirror so paper / bot history is visible
+ * 2026-04-28 - Added a localStorage mirror so paper / bot history is visible
  * even when the backend is unreachable, the user is a guest, or the row
  * never made it server-side. `listPaperMatchHistory` merges the backend page
  * with the local mirror, dedupes by id, and re-sorts desc by settledAt.
@@ -29,7 +29,7 @@ function safeStorage(): KVStorage | null {
         const s = (sys as any)?.localStorage as KVStorage | undefined;
         if (s && typeof s.getItem === 'function') return s;
     } catch (_) { /* native shim not yet ready */ }
-    // Mirrors Stats.ts:56-66 — sys.localStorage isn't bound on every runtime
+    // Mirrors Stats.ts:56-66 - sys.localStorage isn't bound on every runtime
     // (Editor Preview, some web builds), so fall back to the global before
     // silently no-op'ing the local-mirror write.
     try {
@@ -158,7 +158,7 @@ export function recordLocalHistory(row: PaperMatchHistoryRow): void {
 }
 
 /**
- * Diagnostic helper — returns count of rows currently in the localStorage
+ * Diagnostic helper - returns count of rows currently in the localStorage
  * mirror. Used by the [HIST_DBG] instrumentation to confirm the local-mirror
  * write actually persisted. No side effects.
  */
@@ -177,7 +177,7 @@ export async function listPaperMatchHistory(
     if (offset > 0) return backend;
 
     const local = readLocalAll().filter((r) => r.pubkey === pubkey);
-    // [HIST_DBG] split-decision diagnostic — distinguishes empty-backend vs
+    // [HIST_DBG] split-decision diagnostic - distinguishes empty-backend vs
     // empty-local-mirror so the History-tab decision tree can route to the
     // right fix (write-path vs read-path). Per ~/.claude/plans/cached-growing-leaf.md.
     console.log(`${TAG} list | backend=${backend.length} local=${local.length} pubkey=${pubkey.slice(0, 8)}…`);

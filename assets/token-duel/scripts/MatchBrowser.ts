@@ -1,12 +1,12 @@
 /**
- * MatchBrowser.ts — refresh + filter state for the FindMatchPanel.
+ * MatchBrowser.ts - refresh + filter state for the FindMatchPanel.
  *
  * Wraps `findAllOpenMatchesUnfiltered` with auto-refresh + client-side
  * filter chips (mode / wagerTier / window / hideFull). The panel binds
  * once and calls `getRows()` every render.
  *
  * Filters are independent and ALL must match for a row to be visible.
- * Setting a filter to `null` means "any". hideFull is just a convenience —
+ * Setting a filter to `null` means "any". hideFull is just a convenience -
  * the underlying RPC already excludes Active matches.
  */
 
@@ -30,6 +30,8 @@ export interface MatchBrowserFilters {
 
 export type MatchBrowserListener = (rows: MatchState[]) => void;
 
+export type MatchBrowserPaperFetcher = () => Promise<MatchState[]>;
+
 export class MatchBrowser {
     private _rpc: TokenDuelRpc;
     private _all: MatchState[] = [];
@@ -38,15 +40,18 @@ export class MatchBrowser {
     private _timer: any = null;
     private _refreshing = false;
     private _intervalMs: number;
-    /** Phase H2 — toggle between open lobbies and live (Active) matches. */
+    /** Phase H2 - toggle between open lobbies and live (Active) matches. */
     private _browserMode: MatchBrowserMode = 'open';
+    /** Optional fetcher for backend paper / bot active matches (Live mode only). */
+    private _paperLiveFetcher: MatchBrowserPaperFetcher | null = null;
 
-    constructor(rpc: TokenDuelRpc, intervalMs: number = 5000) {
+    constructor(rpc: TokenDuelRpc, intervalMs: number = 5000, paperLiveFetcher?: MatchBrowserPaperFetcher) {
         this._rpc = rpc;
         this._intervalMs = intervalMs;
+        this._paperLiveFetcher = paperLiveFetcher ?? null;
     }
 
-    /** Phase H2 — switch between open-lobbies and live-matches feeds. */
+    /** Phase H2 - switch between open-lobbies and live-matches feeds. */
     setMode(mode: MatchBrowserMode): void {
         if (this._browserMode === mode) return;
         this._browserMode = mode;
@@ -82,7 +87,7 @@ export class MatchBrowser {
         });
     }
 
-    /** All matches before filters — useful for empty-state diagnostics. */
+    /** All matches before filters - useful for empty-state diagnostics. */
     getAllRowCount(): number {
         return this._all.length;
     }
@@ -101,9 +106,35 @@ export class MatchBrowser {
         }
         this._refreshing = true;
         try {
-            const rows = this._browserMode === 'live'
-                ? await findActiveMatchesUnfiltered(this._rpc)
-                : await findAllOpenMatchesUnfiltered(this._rpc);
+            let rows: MatchState[];
+            if (this._browserMode === 'live') {
+                const [chain, paper] = await Promise.all([
+                    findActiveMatchesUnfiltered(this._rpc),
+                    this._paperLiveFetcher
+                        ? this._paperLiveFetcher().catch((e: any) => {
+                            console.log(`${TAG} refresh | paperLiveFetcher ERROR ${e?.message ?? e}`);
+                            return [] as MatchState[];
+                        })
+                        : Promise.resolve([] as MatchState[]),
+                ]);
+                const seen = new Set<string>();
+                const merged: MatchState[] = [];
+                for (const m of chain) {
+                    if (seen.has(m.pda)) continue;
+                    seen.add(m.pda);
+                    merged.push(m);
+                }
+                for (const m of paper) {
+                    if (seen.has(m.pda)) continue;
+                    seen.add(m.pda);
+                    merged.push(m);
+                }
+                merged.sort((a, b) => Number(b.startedAt - a.startedAt));
+                rows = merged;
+                console.log(`${TAG} refresh | mode=live chain=${chain.length} paper=${paper.length} merged=${merged.length}`);
+            } else {
+                rows = await findAllOpenMatchesUnfiltered(this._rpc);
+            }
             this._all = rows;
             console.log(`${TAG} refresh | mode=${this._browserMode} all=${rows.length} visible=${this.getRows().length}`);
             this._fanout();

@@ -1,5 +1,5 @@
 /**
- * EnterMatchTransition.ts — cinematic morph from "Configure Your Duel"
+ * EnterMatchTransition.ts - cinematic morph from "Configure Your Duel"
  * setup screen into the race arena.
  *
  * Phases (timings relative to the start of runEnterMatchCinematic):
@@ -16,7 +16,7 @@
  *
  * All Graphics components are added through safeGraphics' post-DRAW queue so
  * the engine never SIGSEGVs at 0x28 in js_cc_UIModelProxy_activeSubModels
- * (Cocos 3.8 native render-pipeline bug — see safeGraphics.ts header).
+ * (Cocos 3.8 native render-pipeline bug - see safeGraphics.ts header).
  */
 
 import { Color, Graphics, Node, UIOpacity, UITransform, Vec3, tween, Tween } from 'cc';
@@ -257,7 +257,7 @@ export function runEnterMatchCinematic(opts: EnterMatchOptions): Promise<EnterMa
 }
 
 /**
- * Phase 5 — particle burst from the orb's resting center, canvas-scale punch,
+ * Phase 5 - particle burst from the orb's resting center, canvas-scale punch,
  * orb dissolve. Destroys the overlay before resolving so the caller can
  * immediately reveal the race UI underneath.
  */

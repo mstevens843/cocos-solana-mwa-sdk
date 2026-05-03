@@ -1,5 +1,5 @@
 /**
- * VettedMints.ts — Part 10 Bundle 2.
+ * VettedMints.ts - Part 10 Bundle 2.
  *
  * A hand-curated 20-mint safelist of tokens known to be liquid, legitimate,
  * and vaguely fun to play with. Used as a Quick-Play fallback when Birdeye
@@ -7,7 +7,7 @@
  * when the current window has no gainers data yet.
  *
  * NEVER auto-rug a new player: we only ship established tokens here. Add
- * new entries conservatively — one bad rug in this list torpedoes trust.
+ * new entries conservatively - one bad rug in this list torpedoes trust.
  */
 
 export interface VettedMint {
@@ -57,7 +57,7 @@ export function randomVettedTrio(): [VettedMint, VettedMint, VettedMint] {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Phase E — Bot difficulty universes.
+// Phase E - Bot difficulty universes.
 //
 // Easy   → STABLE_BLUECHIP_MINTS (low-vol, predictable deltas).
 // Medium → VETTED_MINTS (the full safelist above; current behavior).
@@ -67,7 +67,7 @@ export function randomVettedTrio(): [VettedMint, VettedMint, VettedMint] {
 // Mints are referenced by symbol against VETTED_MINTS to avoid duplication.
 // ═══════════════════════════════════════════════════════════════════
 
-/** Easy universe — stables + LSTs + bluechip protocol tokens. Low vol. */
+/** Easy universe - stables + LSTs + bluechip protocol tokens. Low vol. */
 export const STABLE_BLUECHIP_SYMBOLS = ['USDC', 'USDT', 'JitoSOL', 'mSOL', 'bSOL', 'JUP', 'RAY', 'ORCA'];
 
 export const STABLE_BLUECHIP_MINTS: VettedMint[] = VETTED_MINTS.filter(
@@ -85,7 +85,7 @@ export function randomEasyTrio(): [VettedMint, VettedMint, VettedMint] {
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 /**
- * Hard universe — pulled live from Birdeye gainers by AppUI before kicking
+ * Hard universe - pulled live from Birdeye gainers by AppUI before kicking
  * a Hard bot match, then handed to SquadBot via this snapshot. If empty or
  * malformed, randomTrioForDifficulty falls back to VETTED_MINTS so a paper
  * match never fails on a network blip.
